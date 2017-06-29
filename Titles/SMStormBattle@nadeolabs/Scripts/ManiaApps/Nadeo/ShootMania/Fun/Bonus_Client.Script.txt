@@ -1,0 +1,415 @@
+/**
+ *	Display bonus UI
+ */
+#Const Version		"2017-05-05"
+#Const ScriptName	"ManiaApps/Nadeo/ShootMania/Fun/Bonus_Client.Script.txt"
+
+// ---------------------------------- //
+// Libraries
+// ---------------------------------- //
+#Include "ManiaApps/Nadeo/Layers.Script.txt" as Layers
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_LayerName "Fun_Bonus"
+#Const C_ImgPath """file://Media/Manialinks/Nadeo/ShootMania/Fun/"""
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+// ---------------------------------- //
+/** Return the version number of the script
+ *
+ *  @return   The version number of the script
+ */
+Text GetScriptVersion() {
+  return Version;
+}
+
+// ---------------------------------- //
+/** Return the name of the script
+ *
+ *  @return   The name of the script
+ */
+Text GetScriptName() {
+  return ScriptName;
+}
+
+// ---------------------------------- //
+/** Get the bonus manialink
+ *
+ *  @return                           The manialink
+ */
+Text GetUILayerBonus() {
+	return """
+<manialink name="{{{C_LayerName}}}" version="3">
+<frame z-index="100" hidden="1" id="frame-global">
+  <frame pos="0 -38" id="frame-roulette-position">
+    <frame hidden="1" id="frame-roulette">
+      <quad z-index="1" size="20 20" halign="center" valign="center" image="{{{C_ImgPath}}}bonus-background.dds" />
+      <quad z-index="2" size="14 14" halign="center" valign="center" id="quad-roulette-icon" />
+      <label pos="0 10" z-index="3" size="200 10" halign="center" valign="bottom" style="TextInfoMedium" textsize="4" textemboss="1" id="label-roulette-message" />
+      <label pos="0 16" z-index="4" size="200 10" halign="center" valign="bottom" style="TextInfoMedium" textsize="4" textemboss="1" id="label-roulette-name" />
+    </frame>
+  </frame>
+  <frame pos="-15 -53" id="frame-timer-position">
+    <frame hidden="1" id="frame-timer">
+      <quad z-index="1" size="15 15" halign="right" valign="center" image="{{{C_ImgPath}}}bonus-background.dds" />
+      <quad pos="-2.1 0" z-index="2" size="10.5 10.5" halign="right" valign="center" id="quad-bonus-icon" />
+      <gauge pos="-5.5 0" z-index="0" size="50 8" valign="center" style="EnergyBar" id="gauge-bonus-timer" />
+    </frame>
+  </frame>
+  <frame pos="0 77" id="frame-teams-position">
+    <frame hidden="1" id="frame-teams">
+      <quad pos="-7 0" z-index="1" size="8 8" halign="center" valign="center" image="{{{C_ImgPath}}}bonus-background.dds" />
+      <quad pos="-7 0" z-index="2" size="5 5" halign="center" valign="center" id="quad-bonus-1" />
+      <quad pos="7 0" z-index="1" size="8 8" halign="center" valign="center" image="{{{C_ImgPath}}}bonus-background.dds" />
+      <quad pos="7 0" z-index="2" size="5 5" halign="center" valign="center" id="quad-bonus-2" />
+    </frame>
+  </frame>
+</frame>
+<script><!--
+#Include "MathLib" as ML
+#Include "AnimLib" as AL
+#Include "TextLib" as TL
+
+#Const C_AnimRoulette_StartValue 0.
+#Const C_AnimRoulette_ChangeValue 10.
+#Const C_AnimRoulette_HideTime 2000
+#Const C_DefaultPositions [
+  0 => <0., -45.>,
+  1 => <-15., -60.>,
+  2 => <0., 77.>
+]
+#Const C_UI_Roulette 0
+#Const C_UI_Timer 1
+#Const C_UI_Teams 2
+
+declare Integer G_AnimRoulette_StartTime;
+declare Integer G_AnimRoulette_EndTime;
+declare Integer G_AnimRoulette_HideTime;
+declare Integer G_AnimRoulette_Value;
+declare Text[] G_AnimRoulette_Bonuses;
+declare Text G_AnimRoulette_Bonus;
+
+declare Integer G_AnimTimer_StartTime;
+declare Integer G_AnimTimer_EndTime;
+declare Integer G_AnimTimer_Hiding;
+
+declare CMlQuad G_Quad_RouletteIcon;
+declare CMlGauge G_Gauge_BonusTimer;
+
+Void StartRouletteAnimation(Text _Bonus, Integer _EndTime, Text[Text] _Messages, Text _Name) {
+  G_AnimRoulette_StartTime = Now;
+  G_AnimRoulette_EndTime = G_AnimRoulette_StartTime + (_EndTime - ArenaNow);
+  G_AnimRoulette_HideTime = -1;
+  G_AnimRoulette_Value = ML::NearestInteger(C_AnimRoulette_StartValue);
+
+  declare netread Net_LibFunBonus_Bonuses for Teams[0] = Text[Text];
+  G_AnimRoulette_Bonuses.clear();
+  foreach (Bonus => ImgPath in Net_LibFunBonus_Bonuses) {
+    if (Bonus != _Bonus) G_AnimRoulette_Bonuses.add(ImgPath);
+  }
+  if (Net_LibFunBonus_Bonuses.existskey(_Bonus)) {
+    G_AnimRoulette_Bonus = Net_LibFunBonus_Bonuses[_Bonus];
+  }
+
+  declare Frame_Roulette <=> (Page.GetFirstChild("frame-roulette") as CMlFrame);
+  declare Label_RouletteMessage <=> (Frame_Roulette.GetFirstChild("label-roulette-message") as CMlLabel);
+  declare Label_RouletteName <=> (Frame_Roulette.GetFirstChild("label-roulette-name") as CMlLabel);
+  Label_RouletteMessage.Visible = False;
+  Frame_Roulette.Visible = True;
+  Frame_Roulette.RelativeScale = 0.;
+  AnimMgr.Add(Frame_Roulette, "<frame scale=\"1\" />", 200, CAnimManager::EAnimManagerEasing::QuadOut);
+
+  if (_Name != "") {
+    //L16N [Fun] Message displayed when a player picks up a bonus and shares it with the other players of his team. %1 is the name of the player. Below this message the name and the icon of the bonus shared are displayed.
+    Label_RouletteName.Value = TL::Compose(_("$<%1$> shares"), _Name);
+    Label_RouletteName.Visible = True;
+  } else {
+    Label_RouletteName.Visible = False;
+  }
+
+  if (_Messages.existskey(_Bonus)) {
+    Label_RouletteMessage.Value = _Messages[_Bonus];
+  } else {
+    Label_RouletteMessage.Value = "";
+  }
+}
+
+Void UpdateRouletteAnimation() {
+  if (G_AnimRoulette_EndTime >= 0) {
+    if (Now < G_AnimRoulette_EndTime) {
+      declare X = ML::NearestInteger(AL::EaseOutSine(Now - G_AnimRoulette_StartTime, C_AnimRoulette_StartValue, C_AnimRoulette_ChangeValue, G_AnimRoulette_EndTime - G_AnimRoulette_StartTime));
+      if (G_AnimRoulette_Value != X) {
+        G_AnimRoulette_Value = X;
+        if (G_AnimRoulette_Bonuses.count > 0) {
+          declare Key = X % G_AnimRoulette_Bonuses.count;
+          G_Quad_RouletteIcon.ImageUrl = G_AnimRoulette_Bonuses[Key];
+          Audio.PlaySoundEvent(CAudioManager::ELibSound::ScoreIncrease, 0, 0.);
+        } else {
+          G_Quad_RouletteIcon.ImageUrl = G_AnimRoulette_Bonus;
+        }
+      }
+    } else {
+      G_AnimRoulette_StartTime = -1;
+      G_AnimRoulette_EndTime = -1;
+      G_AnimRoulette_HideTime = Now + C_AnimRoulette_HideTime;
+      G_Quad_RouletteIcon.ImageUrl = G_AnimRoulette_Bonus;
+
+      Audio.PlaySoundEvent(CAudioManager::ELibSound::ScoreIncrease, 2, 0.);
+
+      declare Frame_Roulette <=> (Page.GetFirstChild("frame-roulette") as CMlFrame);
+      declare Label_RouletteMessage <=> (Frame_Roulette.GetFirstChild("label-roulette-message") as CMlLabel);
+      Label_RouletteMessage.Visible = Label_RouletteMessage.Value != "";
+    }
+  }
+  if (G_AnimRoulette_HideTime >= 0 && Now >= G_AnimRoulette_HideTime) {
+    G_AnimRoulette_HideTime = -1;
+    declare Frame_Roulette <=> (Page.GetFirstChild("frame-roulette") as CMlFrame);
+    Frame_Roulette.RelativeScale = 1.;
+    AnimMgr.Add(Frame_Roulette, "<frame scale=\"0\" hidden=\"1\" />", 200, CAnimManager::EAnimManagerEasing::QuadOut);
+  }
+}
+
+Void StopRouletteAnimation() {
+  if (G_AnimRoulette_EndTime >= 0 || G_AnimRoulette_HideTime >= 0) {
+    G_AnimRoulette_StartTime = -1;
+    G_AnimRoulette_EndTime = -1;
+    G_AnimRoulette_HideTime = -1;
+    declare Frame_Roulette <=> (Page.GetFirstChild("frame-roulette") as CMlFrame);
+    AnimMgr.Add(Frame_Roulette, "<frame scale=\"0\" hidden=\"1\" />", 200, CAnimManager::EAnimManagerEasing::QuadOut);
+  }
+}
+
+Void StartTimerAnimation(Text _Bonus, Integer _EndTime) {
+  G_AnimTimer_StartTime = Now;
+  G_AnimTimer_EndTime = G_AnimTimer_StartTime + (_EndTime - ArenaNow);
+
+  declare netread Net_LibFunBonus_Bonuses for Teams[0] = Text[Text];
+  declare IconUrl = "";
+  if (Net_LibFunBonus_Bonuses.existskey(_Bonus)) {
+    IconUrl = Net_LibFunBonus_Bonuses[_Bonus];
+  }
+
+  declare Frame_Timer <=> (Page.GetFirstChild("frame-timer") as CMlFrame);
+  declare Quad_BonusIcon <=> (Frame_Timer.GetFirstChild("quad-bonus-icon") as CMlQuad);
+  declare Gauge_BonusTimer <=> (Frame_Timer.GetFirstChild("gauge-bonus-timer") as CMlGauge);
+  Quad_BonusIcon.ImageUrl = IconUrl;
+  Frame_Timer.Visible = True;
+  Frame_Timer.RelativeScale = 0.;
+  Gauge_BonusTimer.Size.X = 0.;
+  AnimMgr.Add(Frame_Timer, "<frame scale=\"1\" />", 200, CAnimManager::EAnimManagerEasing::QuadOut);
+  AnimMgr.Add(Gauge_BonusTimer, "<gauge />", 100, CAnimManager::EAnimManagerEasing::QuadOut);
+  AnimMgr.AddChain(Gauge_BonusTimer, "<gauge size=\"50 8\" />", 200, CAnimManager::EAnimManagerEasing::QuadOut);
+}
+
+Void UpdateTimerAnimation() {
+  if (G_AnimTimer_EndTime >= 0) {
+    if (Now < G_AnimTimer_EndTime) {
+      G_Gauge_BonusTimer.Ratio = (G_AnimTimer_EndTime - Now) * 1. / (G_AnimTimer_EndTime - G_AnimTimer_StartTime);
+    } else {
+      G_AnimTimer_EndTime = -1;
+      G_AnimTimer_StartTime = -1;
+
+      Audio.PlaySoundEvent(CAudioManager::ELibSound::HideMenu, 0, 0.);
+      
+      if (Now > G_AnimTimer_Hiding) {
+        G_AnimTimer_Hiding = Now + 300;
+        declare Frame_Timer <=> (Page.GetFirstChild("frame-timer") as CMlFrame);
+        declare Gauge_BonusTimer <=> (Frame_Timer.GetFirstChild("gauge-bonus-timer") as CMlGauge);
+        Frame_Timer.RelativeScale = 1.;
+        Gauge_BonusTimer.Size.X = 50.;
+        AnimMgr.Add(Frame_Timer, "<frame />", 100, CAnimManager::EAnimManagerEasing::QuadOut);
+        AnimMgr.AddChain(Frame_Timer, "<frame scale=\"0\" hidden=\"1\" />", 200, CAnimManager::EAnimManagerEasing::QuadOut);
+        AnimMgr.Add(Gauge_BonusTimer, "<gauge size=\"0 8\" />", 200, CAnimManager::EAnimManagerEasing::QuadOut);
+      }
+    }
+  }
+}
+
+Void UpdateTeamBonuses(Text[Text] _Bonuses, Text _BonusTeam1, Text _BonusTeam2) {
+  declare Frame_Teams <=> (Page.GetFirstChild("frame-teams") as CMlFrame);
+  declare Quad_Bonus1 <=> (Page.GetFirstChild("quad-bonus-1") as CMlQuad);
+  declare Quad_Bonus2 <=> (Page.GetFirstChild("quad-bonus-2") as CMlQuad);
+  if (_BonusTeam1 != "" && _Bonuses.existskey(_BonusTeam1)) {
+    Quad_Bonus1.ImageUrl = _Bonuses[_BonusTeam1];
+    Quad_Bonus1.Visible = True;
+  } else {
+    Quad_Bonus1.Visible = False;
+  }
+  if (_BonusTeam2 != "" && _Bonuses.existskey(_BonusTeam2)) {
+    Quad_Bonus2.ImageUrl = _Bonuses[_BonusTeam2];
+    Quad_Bonus2.Visible = True;
+  } else {
+    Quad_Bonus2.Visible = False;
+  }
+}
+
+main() {
+  declare Frame_Global <=> (Page.GetFirstChild("frame-global") as CMlFrame);
+  declare Frame_Roulette <=> (Page.GetFirstChild("frame-roulette") as CMlFrame);
+  G_Quad_RouletteIcon <=> (Frame_Roulette.GetFirstChild("quad-roulette-icon") as CMlQuad);
+  declare Frame_Timer <=> (Page.GetFirstChild("frame-timer") as CMlFrame);
+  G_Gauge_BonusTimer <=> (Frame_Timer.GetFirstChild("gauge-bonus-timer") as CMlGauge);
+  declare Frame_Teams <=> (Page.GetFirstChild("frame-teams") as CMlFrame);
+
+  declare Frame_RoulettePosition <=> (Page.GetFirstChild("frame-roulette-position") as CMlFrame);
+  declare Frame_TimerPosition <=> (Page.GetFirstChild("frame-timer-position") as CMlFrame);
+  declare Frame_TeamsPosition <=> (Page.GetFirstChild("frame-teams-position") as CMlFrame);
+
+  G_AnimRoulette_StartTime = -1;
+  G_AnimRoulette_EndTime = -1;
+  G_AnimRoulette_HideTime = -1;
+  G_AnimTimer_Hiding = -1;
+
+  declare netread Net_LibFunBonus_Bonuses for Teams[0] = Text[Text];
+	declare netread Net_LibFunBonus_Visibility for Teams[0] = False;
+  declare netread Net_LibFunBonus_Messages for Teams[0] = Text[Text];
+  declare netread Net_LibFunBonus_Positions for UI = C_DefaultPositions;
+  declare netread Net_LibFunBonus_PositionsUpdate for UI = -1;
+  declare netread Net_LibFunBonus_TeamBonusVisibility for Teams[0] = False;
+  declare netread Net_LibFunBonus_BonusTeam1 for Teams[0] = "";
+  declare netread Net_LibFunBonus_BonusTeam2 for Teams[0] = "";
+  declare netread Net_LibFunBonus_PlayCantTakeSound for UI = 0;
+  declare netread Net_LibFunBonus_ResetAnimation for Teams[0] = -1;
+
+  declare PrevBonusUpdate = -1;
+  declare PrevTimedBonusUpdate = -1;
+  declare PrevPositionsUpdate = -1;
+  declare PrevBonusTeam1 = "";
+  declare PrevBonusTeam2 = "";
+  declare PrevPlayCantTakeSound = 0;
+  declare PrevResetAnimation = -1;
+
+  declare Sound_CantTakeBonus <=> Audio.CreateSound("file://Media/Sounds/Nadeo/ShootMania/Fun/CantTakeBonus.wav");
+
+  declare Initialization = True;
+
+  UpdateTeamBonuses(Net_LibFunBonus_Bonuses, PrevBonusTeam1, PrevBonusTeam2);
+
+	while (True) {
+		yield;
+		if (!PageIsVisible) continue;
+
+    UpdateRouletteAnimation();
+    UpdateTimerAnimation();
+		
+    if (PrevResetAnimation != Net_LibFunBonus_ResetAnimation) {
+      PrevResetAnimation = Net_LibFunBonus_ResetAnimation;
+
+      Frame_Roulette.Visible = False;
+      Frame_Timer.Visible = False;
+    }
+
+    if (Frame_Global.Visible != Net_LibFunBonus_Visibility) {
+      Frame_Global.Visible = Net_LibFunBonus_Visibility;
+    }
+
+    if (PrevPositionsUpdate != Net_LibFunBonus_PositionsUpdate) {
+      PrevPositionsUpdate = Net_LibFunBonus_PositionsUpdate;
+      if (Net_LibFunBonus_Positions.existskey(C_UI_Roulette)) {
+        AnimMgr.Add(Frame_RoulettePosition, "<frame pos=\""^Net_LibFunBonus_Positions[C_UI_Roulette].X^" "^Net_LibFunBonus_Positions[C_UI_Roulette].Y^"\" />", 250, CAnimManager::EAnimManagerEasing::QuadOut);
+      }
+      if (Net_LibFunBonus_Positions.existskey(C_UI_Timer)) {
+        AnimMgr.Add(Frame_TimerPosition, "<frame pos=\""^Net_LibFunBonus_Positions[C_UI_Timer].X^" "^Net_LibFunBonus_Positions[C_UI_Timer].Y^"\" />", 250, CAnimManager::EAnimManagerEasing::QuadOut);
+      }
+      if (Net_LibFunBonus_Positions.existskey(C_UI_Teams)) {
+        AnimMgr.Add(Frame_TeamsPosition, "<frame pos=\""^Net_LibFunBonus_Positions[C_UI_Teams].X^" "^Net_LibFunBonus_Positions[C_UI_Teams].Y^"\" />", 250, CAnimManager::EAnimManagerEasing::QuadOut);
+      }
+    }
+
+    if (Frame_Teams.Visible != Net_LibFunBonus_TeamBonusVisibility) {
+      Frame_Teams.Visible = Net_LibFunBonus_TeamBonusVisibility;
+    }
+
+    if (PrevBonusTeam1 != Net_LibFunBonus_BonusTeam1) {
+      PrevBonusTeam1 = Net_LibFunBonus_BonusTeam1;
+      UpdateTeamBonuses(Net_LibFunBonus_Bonuses, Net_LibFunBonus_BonusTeam1, Net_LibFunBonus_BonusTeam2);
+    }
+    if (PrevBonusTeam2 != Net_LibFunBonus_BonusTeam2) {
+      PrevBonusTeam2 = Net_LibFunBonus_BonusTeam2;
+      UpdateTeamBonuses(Net_LibFunBonus_Bonuses, Net_LibFunBonus_BonusTeam1, Net_LibFunBonus_BonusTeam2);
+    }
+
+    if (PrevPlayCantTakeSound != Net_LibFunBonus_PlayCantTakeSound) {
+      PrevPlayCantTakeSound = Net_LibFunBonus_PlayCantTakeSound;
+      Sound_CantTakeBonus.Stop();
+      Sound_CantTakeBonus.Play();
+    }
+
+    declare Player <=> GUIPlayer;
+    if (Player == Null) Player <=> InputPlayer;
+    if (Player != Null) {
+      declare netread Net_LibFunBonus_BonusUpdate for Player = -1;
+      declare netread Net_LibFunBonus_TimedBonusUpdate for Player = -1;
+
+      if (Initialization) {
+        PrevBonusUpdate = Net_LibFunBonus_BonusUpdate;
+        PrevTimedBonusUpdate = Net_LibFunBonus_TimedBonusUpdate;
+        Frame_Roulette.Visible = False;
+        Frame_Timer.Visible = False;
+        Initialization = False;
+      }
+
+      if (PrevBonusUpdate != Net_LibFunBonus_BonusUpdate) {
+        PrevBonusUpdate = Net_LibFunBonus_BonusUpdate;
+        declare netread Net_LibFunBonus_Bonus for Player = "";
+        declare netread Net_LibFunBonus_PickerName for Player = "";
+        declare netread Net_LibFunBonus_BonusActivationTime for Player = -1;
+        if (Net_LibFunBonus_Bonus != "") {
+          StartRouletteAnimation(Net_LibFunBonus_Bonus, Net_LibFunBonus_BonusActivationTime, Net_LibFunBonus_Messages, Net_LibFunBonus_PickerName);
+        } else {
+          StopRouletteAnimation();
+        }
+      }
+
+      if (PrevTimedBonusUpdate != Net_LibFunBonus_TimedBonusUpdate) {
+        PrevTimedBonusUpdate = Net_LibFunBonus_TimedBonusUpdate;
+        declare netread Net_LibFunBonus_TimedBonus for Player = "";
+        declare netread Net_LibFunBonus_TimedBonusEndTime for Player = -1;
+        if (Net_LibFunBonus_TimedBonus != "") {
+          StartTimerAnimation(Net_LibFunBonus_TimedBonus, Net_LibFunBonus_TimedBonusEndTime);
+        } else {
+          if (G_AnimTimer_EndTime >= 0) {
+            G_AnimTimer_EndTime = -1;
+            G_AnimTimer_StartTime = -1;
+            Audio.PlaySoundEvent(CAudioManager::ELibSound::HideMenu, 0, 0.);
+          }
+
+          if (Now > G_AnimTimer_Hiding) {
+            G_AnimTimer_Hiding = Now + 300;
+            declare Gauge_BonusTimer <=> (Frame_Timer.GetFirstChild("gauge-bonus-timer") as CMlGauge);
+            Frame_Timer.RelativeScale = 1.;
+            Gauge_BonusTimer.Size.X = 50.;
+            AnimMgr.Add(Frame_Timer, "<frame />", 100, CAnimManager::EAnimManagerEasing::QuadOut);
+            AnimMgr.AddChain(Frame_Timer, "<frame scale=\"0\" hidden=\"1\" />", 200, CAnimManager::EAnimManagerEasing::QuadOut);
+            AnimMgr.Add(Gauge_BonusTimer, "<gauge size=\"0 8\" />", 200, CAnimManager::EAnimManagerEasing::QuadOut);
+          }
+        }
+      }
+    }
+	}
+}
+--></script>
+</manialink>
+	""";
+}
+
+// ---------------------------------- //
+/// Unload the library
+Void Unload() {
+	Layers::Destroy(C_LayerName);
+}
+
+// ---------------------------------- //
+/// Load the library
+Void Load() {
+	Unload();
+	Layers::Create(C_LayerName, GetUILayerBonus());
+	Layers::SetAnimationType(C_LayerName, CUILayer::EUILayerAnimation::DownFast);
+}

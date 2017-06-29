@@ -1,0 +1,1857 @@
+/**
+ *	Battle Fun
+ */
+#Extends "Modes/ShootMania/Battle/BattleBase.Script.txt"
+
+#Const CompatibleMapTypes	"BattleArena,LobbyArena"
+#Const Version							"2017-06-02"
+#Const ScriptName						"Modes/ShootMania/Battle/BattleFun.Script.txt"
+
+// ---------------------------------- //
+// Libraries
+// ---------------------------------- //
+#Include "Libs/Nadeo/Interface.Script.txt" as Interface
+#Include "Libs/Nadeo/TabsServer.Script.txt" as Tabs
+#Include "Libs/Nadeo/Top2.Script.txt" as Top
+#Include "Libs/Nadeo/ShootMania/BeginnersWelcome.Script.txt" as Beginners
+#Include "Libs/Nadeo/ShootMania/WarmUp2.Script.txt" as WarmUp2
+#Include "Libs/Nadeo/ShootMania/Fun/Manager.Script.txt" as FunMgr
+
+// ---------------------------------- //
+// Settings
+// ---------------------------------- //
+// Waves Settings
+#Setting S_TimeLimitForFirstCapture		300		as _("Time limit for first capture") // en s
+#Setting S_TimeLimitAfterFirstCapture	600		as _("Time limit after first capture") // en s
+#Setting S_WaveDuration								15		as _("Wave duration") // en s
+#Setting S_StayInAttackOnCapture				True	as _("Reset timer when a pole is beeing captured")
+// General settings
+#Setting S_CaptureMaxValue			30		as _("Pole capture duration") ///< Pole capture duration (seconds)
+#Setting S_UseOvertime					True	as _("Use overtime") ///< Activate the overtime system
+#Setting S_MapsToWin						1			as _("Maps to win") ///< Number of maps to win a match
+#Setting S_RoundsToWin					2			as _("Rounds to win") ///< Number of rounds to win a map
+#Setting S_RoundGapToWin				1			as _("Round gap to win") ///< Minimum gap between the two leaders to win a map
+#Setting S_RoundsLimit					3			as _("Rounds limit") ///< Point limit on map
+#Setting S_WarmUpDuration			0			as _("Warm up duration") ///< Duration of the warm up round (0 = no warmup)
+#Setting S_AllowBeginners			False	as "<hidden>" //_("Is a Beginners Welcome server")
+#Setting S_NbPlayersPerTeamMax	0			as "<hidden>" ///< Do not spawn players beyond this limit, 0=no limit
+#Setting S_NbPlayersPerTeamMin	1			as "<hidden>" ///< Wait until this minimum is reach
+// UI setting
+#Setting S_DisplayTopsRound				True	as _("Display the tops at the end of the round")
+#Setting S_DisplayTopsMap					True	as _("Display the tops at the end of the map")
+#Setting S_DisplayTopsOnlyShooter	False	as "<hidden>" //_("Only display the shooter top")
+#Setting S_DisplayPoleRecords			False	as _("Display pole running time record")
+// Auto balance
+#Setting S_AutoBalance				True	as _("Use map autobalance") ///< Use auto balance at the start of the map
+#Setting S_AutoBalanceRound	True	as _("Use round autobalance") ///< Use auto balance at the end of the round
+#Setting S_AutoBalanceDelta	2			as _("Maximum clan players number difference") ///< Maximum difference of players number before autobalance
+
+#Setting S_ScriptEnvironment "production"/*/"development"*/
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_HudModulePath "Nadeo/ShootMania/Battle/Hud.Module.Gbx"
+#Const C_ManiaAppUrl "file://Media/ManiaApps/Nadeo/ShootMania/Battle/BattleFun.Script.txt"
+#Const C_BattleWaves True ///< Force waves mode
+#Const C_TimeLimit 300 ///< Time limit when not in waves mode
+#Const C_RespawnTime 6001 ///< Time before respawn
+#Const C_AlternativePoints False ///< Use atk and def points as score
+#Const C_ArmorPoints 2 ///< Armor points of the player
+#Const C_GladiatorMode False ///< Give bonus on hit
+
+// Score Constants (used to be settings)
+#Const C_HotSpotsRadius						20.
+#Const C_AtkHotSpotsRadius					4.
+#Const C_ScoreDefense_HitOnPole		3
+#Const C_ScoreDefense_HitNearPole	3
+#Const C_ScoreAttack_HitNearPole		2
+#Const C_ScoreAttack_ClassicHit		1
+#Const C_PointsPerPole							10.
+#Const C_DefPointOnDenyForOnePole	20.
+#Const C_ScoreDefense_CaptureJiT		1	//as _("Defense points granted for a Just In Time capture")
+#Const C_PointsOnEngage						1	//as _("Attack points granted for the engage pole")
+
+// round phases for UI
+#Const C_RoundPhase_Playing	1
+#Const C_RoundPhase_EndRound	2
+
+#Const S_ResetTimeOnCapturedPole	False
+#Const C_ImgBaseDir							"file://Media/Manialinks/Shootmania/Common/"
+#Const UITickPeriod							200
+#Const C_JustInTimeLimit					3000 //milli sec.
+#Const C_NoCollisionsDuration		6000	///< No collision duration at the beginning of the round
+#Const C_Top5SequenceDuration		10000	///< Duration of the top 5 sequence at the end of the round and the map
+#Const C_MinimumExtendedTime			30000	///< Minimum duration of the extended time
+
+#Const C_PoleCaptureState_Neutral		0
+#Const C_PoleCaptureState_Capturing	1
+#Const C_PoleCaptureState_Captured		2
+#Const C_PoleCaptureState_Protected	3
+#Const C_PoleCaptureState_Locked			4
+#Const C_PoleCaptureState_Denied			5
+
+#Const C_TopId_Hit 		"HIT"
+#Const C_TopId_Capture	"CAPTURE"
+#Const C_TopId_Defense "DEFENSE"
+#Const C_TopId_Attack	"ATTACK"
+#Const C_TopId_Combo		"COMBO"
+
+#Const C_SlideId_Attack	0
+#Const C_SlideId_Defense	1
+#Const C_SlideId_Combo		3
+
+#Const C_Layer_RoundInfo "Battle_RoundInfo"
+#Const C_Layer_TimeLeft "Battle_TimeLeft"
+#Const C_Layer_Markers "Battle_Markers"
+#Const C_Layer_Top5 "Battle_Top5"
+
+#Const C_ReferenceMinPoints 100 ///< Minimum reference points per round for channel progression
+
+#Const Description _("Capture the poles of the opposing team when you are in attack. Protect your poles when you are in defense. The first team to capture all the opponent's poles wins.")
+
+#Const C_DisplayRulesReminder	True
+#Const C_Battle_BlueBots				0
+#Const C_Battle_RedBots				0
+
+#Const C_BonusRespawnTime 25000 ///< Time before respawning a bonus
+#Const C_ShareBonusWithTeam True ///< Share the picked up bonus with the other player of the clan
+
+#Const C_BonusUI_DefaultPos <0., 0.> ///< Default position of the bonus UI
+#Const C_BonusUI_HighPos <0., 17.> ///< Higher position of the bonus UI
+
+// ---------------------------------- //
+// Extends
+// ---------------------------------- //
+***MM_SetupMatchmaking***
+***
+MM_SetFormat([S_NbPlayersPerTeamMax, S_NbPlayersPerTeamMax]);
+if (S_NbPlayersPerTeamMax > S_NbPlayersPerTeamMin) {
+	MM_SetProgressiveFormats([1, 1], S_NbPlayersPerTeamMin, S_NbPlayersPerTeamMax-1);
+}
+***
+
+***Lobby_MatchRulesManialink***
+***
+ManialinkRules = """<label posn="-62.5 25" sizen="125 50" autonewline="1" maxline="10" textemboss="1" textsize="2" text="{{{Description}}}" />""";
+***
+
+***Match_LogVersions***
+***
+Log::RegisterScript(ScriptName, Version);
+Log::RegisterScript(Top::GetScriptName(), Top::GetScriptVersion());
+Log::RegisterScript(WarmUp2::GetScriptName(), WarmUp2::GetScriptVersion());
+Log::RegisterScript(Interface::GetScriptName(), Interface::GetScriptVersion());
+Log::RegisterScript(Tabs::GetScriptName(), Tabs::GetScriptVersion());
+Log::RegisterScript(Beginners::GetScriptName(), Beginners::GetScriptVersion());
+Log::RegisterScript(Map::GetScriptName(), Map::GetScriptVersion());
+Log::RegisterScript(FunMgr::GetScriptName(), FunMgr::GetScriptVersion());
+***
+
+***Match_LoadLibraries***
+***
+WarmUp2::Load();
+FunMgr::Load();
+***
+
+***Match_UnloadLibraries***
+***
+FunMgr::Unload();
+WarmUp2::Unload();
+***
+
+***Match_Settings***
+***
+MB_Settings_UseDefaultHud = False;
+MB_Settings_UseDefaultClansScoresUI = False;
+MB_Settings_UseDefaultTimer = False;
+***
+
+***Match_Rules***
+***
+ModeInfo::SetName("Battle Fun");
+ModeInfo::SetType(ModeInfo::C_Type_Teams);
+ModeInfo::SetRules(Description);
+UpdateModeStatusMessage();
+***
+
+***Match_LoadHud***
+***
+Hud_Load(C_HudModulePath);
+if (Hud != Null && Hud.ScoresTable != Null) {
+	Hud.ScoresTable.Scores_Sort(CModulePlaygroundScoresTable::EScoreSortOrder::SMPoints);
+	Hud.ScoresTable.SetColumnVisibility("Capture", False);
+	Hud.ScoresTable.SetColumnVisibility("Attack", False);
+	Hud.ScoresTable.SetColumnVisibility("Defense", False);
+}
+***
+
+***Match_SpawnScreen***
+***
+SpawnScreen::CreateScores("Score.RoundPoints + Score.Points");
+***
+
+***Match_InitServer***
+***
+declare Integer CurrentRoundIndex;
+***
+
+***Match_StartServer***
+***
+// Initialize mode
+UseClans = True;
+ClientManiaAppUrl = C_ManiaAppUrl;
+CurrentRoundIndex = 0;
+// Objects::SetAllowedObjects([FunMgr::C_BoxItem]);
+// Objects::SetAnchorsObjectsRespawnTime(C_BonusRespawnTime);
+Objects::SetAutoPickUp(False);
+ChannelProgression::Enable(S_IsChannelServer);
+
+Dispenser::SetAutoPickUp(False);
+Dispenser::SetAnchorsObjectsRespawnTime(C_BonusRespawnTime);
+
+// TODO : sperate beginners for Battle/waves ?
+if(C_BattleWaves) {
+	Beginners::Load("Nadeo_Battle");
+	Beginners::CreateWelcomeWindow(TL::Compose(_("Welcome to Battle!")), TL::Compose(_("Capture the $<$0f0poles$> to win.\nYou cannot capture during $<$0f0defense$> phases."), TL::ToText(S_WaveDuration), TL::ToText(S_RoundsToWin)));
+} else {
+	Beginners::Load("Nadeo_Battle");
+	Beginners::CreateWelcomeWindow(TL::Compose(_("Welcome to Battle!")), TL::Compose(_("Capture the $<$0f0poles$> to win.")));
+}
+
+// Create various layers for the UI :
+// * Tops			- the tops (in a sperate tab)
+// * LayerRoundInfo - infos about the game always shown in the UI (e.g. captured poles, capture state, etc.).
+// * LayerMarkers	- markers above poles
+// * TabsLayer		- A layer for the tabs and tabs management
+// /////////
+// Tops
+Top::Load();
+CreateTops();
+
+// /////////	
+// Round info
+Layers::Create(C_Layer_RoundInfo);
+Layers::SetVisibility(C_Layer_RoundInfo, False);
+Layers::Attach(C_Layer_RoundInfo);
+
+// /////////	
+// Markers
+Layers::Create(C_Layer_Markers);
+Layers::SetType(C_Layer_Markers, CUILayer::EUILayerType::Markers);
+Layers::SetVisibility(C_Layer_Markers, False);
+Layers::Attach(C_Layer_Markers);
+
+// /////////
+// Tabs
+CreateScoresTableTabs();
+
+// /////////	
+// Time left
+if (C_BattleWaves) {
+	Layers::Create(C_Layer_TimeLeft);
+	Layers::SetVisibility(C_Layer_TimeLeft, False);
+	Layers::Attach(C_Layer_TimeLeft);
+}
+
+CreateRulesReminderLayer();
+
+// ---------------------------------- //
+// Create layers
+Layers::Create(C_Layer_Top5, GetMLTop5());
+Layers::Attach(C_Layer_Top5);
+Layers::Hide(C_Layer_Top5);
+
+FunMgr::SetUIVisibility(False);
+FunMgr::SetTeamBonusVisibility(True);
+FunMgr::SetBonusDuration([
+	FunMgr::C_Bonus_InstantCapture => 15000,
+	FunMgr::C_Bonus_SuperShootman => 7500,
+	FunMgr::C_Bonus_SuperArmorRegen => 7500,
+	FunMgr::C_Bonus_SuperAmmoGain => 7500,
+	FunMgr::C_Bonus_SuperStamina => 7500,
+	FunMgr::C_Bonus_Nucleus => 7500
+]);
+
+// Load actions
+ActionList_Begin();
+FunMgr::LoadActions();
+ActionList_End();
+
+// Load items
+ItemList_Begin();
+FunMgr::LoadItems();
+Dispenser::LoadItems();
+ItemList_End();
+***
+
+***Match_StartMatch***
+***
+// Reset clan scores
+Scores::SetClanMapPoints(1, 0);
+Scores::SetClanMapPoints(2, 0);
+***
+
+***Match_InitMap***
+***
+declare Integer CaptureMaxValue;
+***
+
+***Match_StartMap***
+***
+Users_SetNbFakeUsers(C_Battle_BlueBots, C_Battle_RedBots); // add bots for debug purpose
+
+MM_SetScores([Scores::GetClanMapPoints(1), Scores::GetClanMapPoints(2)]);
+CurrentRoundIndex = 0;
+CaptureMaxValue = ComputeCaptureMaxValue(S_CaptureMaxValue);
+ResetMapRunnersRanking();
+
+foreach (Score in Scores) {
+	Score.Clear();
+	
+	declare Integer Battle_ScoreDefenseBonus	for Score;
+	declare Integer Battle_ScoreAttackBonus for Score;
+	declare Integer Battle_ScoreAlternative for Score;
+	declare Integer Battle_ScoreHit for Score;
+	declare Integer Battle_TotalCaptureTime for Score;
+	declare Integer Battle_TotalDenyTime for Score;
+	Battle_ScoreDefenseBonus = 0;
+	Battle_ScoreAttackBonus = 0;
+	Battle_ScoreAlternative = 0;
+	Battle_ScoreHit = 0;
+	Battle_TotalCaptureTime = 0;
+	Battle_TotalDenyTime = 0;
+	
+	Scores::SetPlayerMapPoints(Score, 0);
+	Scores::SetPlayerRoundPoints(Score, 0);
+	
+	declare Battle_MapPoints for Score = 0;
+	Battle_MapPoints = 0;
+}
+
+foreach (Player in AllPlayers) {
+	declare Integer MapHit for Player = 0;
+	declare Integer MapCombo for Player = 0;
+	declare Integer MapCapture for Player = 0;
+	declare Integer MapDefense for Player = 0;
+	declare Integer MapAttack for Player = 0;
+	MapHit 		= 0;
+	MapCombo	= 0;
+	MapCapture 	= 0;
+	MapDefense 	= 0;
+	MapAttack 	= 0;
+	
+	declare Integer Battle_RoundIndex for Player.Score = -1;
+	Battle_RoundIndex = 0;
+	
+	declare Integer RoundCombo for Player = 0;
+	RoundCombo = 0;
+	
+	declare Integer Battle_ScoreCapture for Player;
+	declare Integer Battle_ScoreDefense for Player;
+	declare Integer Battle_ScoreAttack for Player;
+	declare Integer Battle_ScoreBonus for Player;
+	Battle_ScoreCapture = 0;
+	Battle_ScoreDefense = 0;
+	Battle_ScoreAttack = 0;
+	Battle_ScoreBonus = 0;
+	
+	declare Battle_BalanceClan for Player = -1;
+	Battle_BalanceClan = -1;
+		
+	BattleFun_InitializePlayer(Player, "", CurrentRoundIndex, CaptureMaxValue);
+}
+
+Top::ResetAll();
+
+InitWarmUp();
+
+if (!MM_IsMatchServer()) {
+	if (S_WarmUpDuration > 0 && S_NbPlayersPerTeamMax > 0) {
+		DoWarmUp();
+	} else {
+		WaitForPlayers(S_NbPlayersPerTeamMin, S_WarmUpDuration);
+		
+		// Team balance
+		if (S_AutoBalance && !MM_IsMatchmakingServer()) MB_AutoTeamBalance();
+	}
+}
+
+// ---------------------------------- //
+// Matchmaking : allow substitutes
+if (MM_IsMatchServer()) MM_AllowSubstitutes(True);
+MM_SetScores([Scores::GetClanMapPoints(1), Scores::GetClanMapPoints(2)]);
+
+// ---------------------------------- //
+// Create tops slider
+Interface::CreateSlider();
+Interface::SetSliderAnimation(<-208., 40.>, <-160., 40.>);
+//Interface::AddSlide(C_SlideId_Attack, "Top", _("|Battle Top5 Attack|Top Attack"), C_TopId_Attack);
+//Interface::AddSlide(C_SlideId_Defense, "Top", _("|Battle Top5 Defense|Top Defense"), C_TopId_Defense);
+Interface::AddSlide(C_SlideId_Combo, "Top", _("|Top5 hits combo|Top Combo"), C_TopId_Combo);
+***
+
+***Match_InitRound***
+***
+declare Ident EngagePoleId;
+declare Text PoleMarkers;
+declare Boolean UpdateLayerScoresTable;
+declare Boolean AllowBeginners;
+declare Boolean CaptureOngoing;
+declare Ident OvertimeCaptureUserId;
+declare Integer NoCollisionsEndTime;
+declare Integer CurrentAtkClan;
+declare Ident LastestCapturedGoalId;
+declare Ident FinalCaptureUserId;
+declare Integer FirstWaveClanAttack;
+declare Integer DurationBeforePivot;
+declare Integer WavesDuration;
+declare Integer FirstClanToStartCapture;
+declare Integer FirstWaveStartTime;
+declare Integer WaveStartTime;
+declare Boolean[Ident] PoleTakers;
+declare Boolean[Ident] PoleDeniers;
+declare Boolean DoUpdateScore;
+declare CSmMapLandmark[][Integer] ClanPoles;
+declare Integer NbPolesByClan;
+declare Integer LatestUITick;
+declare Integer[Integer] TotalCaptureValue;
+declare Integer[Integer] NumberOfCapturedPoles;
+declare Ident TouchdownUserId;
+declare Real ExtendedTimeRatio;
+declare CSmMapLandmark[Integer] ClanSpawnAnchors;
+declare Integer PrevMarkersUpdate;
+declare SqDistanceToScoreNearPole = C_HotSpotsRadius * C_HotSpotsRadius;
+declare SqDistanceAtkNearPole = C_AtkHotSpotsRadius * C_AtkHotSpotsRadius;
+***
+
+***Match_StartRound***
+***
+TouchdownUserId = NullId;
+ExtendedTimeRatio = 0.5;
+ClanPoles = [1=>CSmMapLandmark[], 2=>CSmMapLandmark[]];
+EngagePoleId = NullId;
+UpdateLayerScoresTable = False; ///< The scores table UI need an update
+AllowBeginners = S_AllowBeginners;
+CaptureOngoing = False;
+OvertimeCaptureUserId = NullId;
+FinalCaptureUserId = NullId;
+LastestCapturedGoalId = NullId;
+FirstClanToStartCapture = 0;
+LatestUITick = Now;
+NumberOfCapturedPoles = [1 => 0,2 => 0];
+TotalCaptureValue = [1 => 0,2 => 0];
+DoUpdateScore = True;
+PoleTakers = Boolean[Ident]; // Emulates a Set (collection of unique elements - the boolean value is never read)
+PoleDeniers = Boolean[Ident]; 
+// for Waves Mode
+FirstWaveClanAttack = 0;
+DurationBeforePivot = 0;
+CurrentAtkClan = 0;
+FirstWaveStartTime = -1;
+WaveStartTime = -1;
+WavesDuration = S_WaveDuration; // Waves durations can only be changed between rounds.
+
+SetOvertime(False);
+SetOvertimeAdvantage(-1);
+
+CaptureMaxValue = ComputeCaptureMaxValue(S_CaptureMaxValue);
+
+declare MapSidesIndices = [1=>(MB_GetRoundCount() % 2)+1, 2=>2-(MB_GetRoundCount() % 2)];
+ClanSpawnAnchors = [
+	1=>Map::GetLandmarkPlayerSpawn("Spawn", MapSidesIndices[1]),
+	2=>Map::GetLandmarkPlayerSpawn("Spawn", MapSidesIndices[2])
+];
+for (Clan, 1, 2) {
+	foreach (Pole in MapLandmarks_Gauge) {
+		if((Pole.Tag == "Goal") || (Pole.Tag == "Checkpoint")) { // for retro-compatibility
+			if((Pole.Order == 3) && (EngagePoleId == NullId)) { // Engage Pole
+				EngagePoleId = Pole.Id;
+				Pole.Gauge.Clan = 0;
+			} else {
+				if (Pole.Order != MapSidesIndices[Clan]) continue;
+				ClanPoles[Clan].add(Pole);
+				Pole.Gauge.Value = 0;
+				Pole.Gauge.Max = CaptureMaxValue;
+				Pole.Gauge.Clan = 3-Clan;
+			} 
+		}
+	}
+}
+NbPolesByClan = ClanPoles[1].count;
+
+// build Pole indice
+declare Integer[Ident] PolesIndice;
+for (Clan, 1, 2) {
+	declare Integer PoleIndex = 0;
+	foreach (Pole in ClanPoles[Clan]) 
+	{
+		PoleIndex += 1;
+		PolesIndice[Pole.Id] = PoleIndex;
+	}
+}
+
+// ////////////////////////////
+// INITIALIZE MARKERS	
+// build Markers list
+PoleMarkers = "";
+foreach(Pole in MapLandmarks_Gauge) {
+	if (Pole.Tag != "Goal" && Pole.Tag != "Checkpoint") continue;
+	
+	declare Vec3 Pos = Pole.Position + <0., 25., 0.>;
+	if(Pole.Gauge.Clan == 0) {
+		Pos.Y = Pole.Position.Y + 5.; // only 5 meters for the engage checkpoint
+	}
+	PoleMarkers ^= """<marker pos="{{{Pos.X}}} {{{Pos.Y}}} {{{Pos.Z}}}" manialinkframeid="PoleMarker{{{Pole.Id}}}"/>
+""";
+}
+
+CurrentRoundIndex += 1;
+
+UIManager.UIAll.UISequence = CUIConfig::EUISequence::Playing;
+UIManager.UIAll.ScoreTableVisibility = CUIConfig::EVisibility::Normal;
+
+SM::SetupDefaultVisibility();
+
+StartTime = Now + C_RespawnTime;
+if(C_BattleWaves) {
+	EndTime = StartTime + S_TimeLimitForFirstCapture*1000;
+} else {
+	EndTime = StartTime + C_TimeLimit*1000;
+}
+
+// No collisions at the beginning of the round
+NoCollisionsEndTime = StartTime + C_NoCollisionsDuration;
+UsePvPCollisions = False;
+
+UpdateBasesColors(ClanSpawnAnchors);
+
+// ---------------------------------- //
+// Init capture time records
+declare Text EngageLogin for This;
+EngageLogin = "";
+declare netwrite Integer[Text] Net_RoundTop_CaptureTimeRecords for Teams[0];
+declare netwrite Integer Net_RoundTop_CaptureTimeRecordsUpdate for Teams[0];
+Net_RoundTop_CaptureTimeRecords.clear();
+Net_RoundTop_CaptureTimeRecordsUpdate = Now;
+foreach (Score in Scores) {
+	declare Integer[Ident] RoundTop_CaptureTime for Score;
+	RoundTop_CaptureTime.clear();
+	
+	declare Integer Battle_ScoreCombo for Score;
+	Battle_ScoreCombo = 0;
+}
+
+foreach (Player in AllPlayers) {
+	declare Integer RoundCombo for Player = 0;
+	declare Integer Battle_ScoreBonus for Player;
+	RoundCombo = 0;
+	Battle_ScoreBonus = 0;
+	
+	BattleFun_InitializePlayer(Player, PoleMarkers, CurrentRoundIndex, CaptureMaxValue);
+}
+
+MB_Sleep(1);
+Layers::Update(C_Layer_RoundInfo, GetRoundInfoML(ClanPoles));
+Layers::SetVisibility(C_Layer_RoundInfo, True);
+
+// Set markers layer
+Layers::Update(C_Layer_Markers, GetMarkersML(ClanPoles, EngagePoleId, PolesIndice));
+Layers::SetVisibility(C_Layer_Markers, True);
+
+// UpdateScore
+---Battle_UpdateTotalCapture---
+UpdateTeamsScoresUI(TotalCaptureValue, NbPolesByClan, ClanPoles, CaptureMaxValue);
+
+if(C_BattleWaves) {
+	Layers::Update(C_Layer_TimeLeft, GetTimeLeftML(WavesDuration));
+	Layers::SetVisibility(C_Layer_TimeLeft, True);
+}
+
+if (Hud != Null && Hud.ScoresTable != Null) {
+	Hud.ScoresTable.SetFooterText(TL::Compose("%1 "^S_RoundsToWin, _("Points limit : ")));
+}
+
+PrevMarkersUpdate = -1;
+FunMgr::SetUIVisibility(True);
+FunMgr::ResetWaveReversalRequest();
+
+// Disable default bonus reload when playing in gladiator mode
+//UseAmmoBonusOnHit = !C_GladiatorMode;
+***
+
+***Battle_UpdateTotalCapture***
+***
+// Victory
+for (Clan, 1, 2) {
+	TotalCaptureValue[Clan] = 0;
+	NumberOfCapturedPoles[Clan] = 0;
+	foreach (Pole in ClanPoles[3-Clan]) {
+		TotalCaptureValue[Clan] += Pole.Gauge.Value;
+		if (Pole.Gauge.Captured) {
+			NumberOfCapturedPoles[Clan] += 1;
+		}
+	}
+	if (NumberOfCapturedPoles[Clan] == ClanPoles[3-Clan].count) SetRoundWinnerIfNoWinner(Clan);
+}
+
+if (Now >= EndTime) {
+	// Overtime
+	if (S_UseOvertime && C_BattleWaves && FirstWaveStartTime >= 0) {
+		if (EndTime >= 0) {
+			UIManager.UIAll.OverlayHideCountdown = True;
+			EndTime = -1;
+			Message::CleanAllMessages();
+			Message::SendBigMessage(_("Overtime"), 3000, 1, CUIConfig::EUISound::PhaseChange, 0);
+		}
+		SetOvertime(True);
+		
+		if (CurrentAtkClan == 1 || CurrentAtkClan == 2) {
+			if (GetOvertimeAdvantage() < 0) {
+				if (TotalCaptureValue[CurrentAtkClan] > TotalCaptureValue[3 - CurrentAtkClan]) {
+					SetOvertimeAdvantage(CurrentAtkClan);
+				} 
+				// Attacking clan has less points
+				else {
+					SetOvertimeAdvantage(3 - CurrentAtkClan);
+				}
+			}
+		
+			// Advantaged clan is attacking
+			if (GetOvertimeAdvantage() == CurrentAtkClan) {
+				// Advantaged clan touch an active pole, win of this clan
+				if (CaptureOngoing) {
+					SetOvertime(False);
+					SetRoundWinnerIfNoWinner(GetOvertimeAdvantage());
+					TouchdownUserId = OvertimeCaptureUserId;
+				}
+			} 
+			// Disadvantaged clan is attacking
+			else {
+				// Disadvantaged clan catch back, extended time
+				if (TotalCaptureValue[3 - GetOvertimeAdvantage()] >= TotalCaptureValue[GetOvertimeAdvantage()]) {
+					SetOvertime(False);
+					declare ExtendedTime = ML::NearestInteger(S_TimeLimitAfterFirstCapture * ExtendedTimeRatio * 1000.);
+					if (ExtendedTime < C_MinimumExtendedTime) {
+						ExtendedTime = C_MinimumExtendedTime;
+					} else {
+						ExtendedTimeRatio *= 0.5;
+					}
+					EndTime = Now + ExtendedTime;
+					UIManager.UIAll.OverlayHideCountdown = False;
+					Message::CleanAllMessages();
+					Message::SendBigMessage(_("Extended time"), 5000, 1, CUIConfig::EUISound::PhaseChange, 0);
+					
+					declare TeamA = GetOvertimeAdvantage() - 1;
+					declare TeamB = 3 - GetOvertimeAdvantage() - 1;
+					if (Teams.existskey(TeamA) && Teams.existskey(TeamB)) {
+						Message::SendStatusMessage(
+							TL::Compose(
+								_("|%1 and %2 are teams names|$<%1$> has equaled $<%2$> score, the round continues."), 
+								Teams[TeamB].ColorizedName, 
+								Teams[TeamA].ColorizedName
+							), 
+							5000, 
+							1
+						);
+					}
+					
+					SetOvertimeAdvantage(-1);
+				}
+			}
+		}
+	} else {
+		// First Criteria : Current Score
+		if (NumberOfCapturedPoles[1] > NumberOfCapturedPoles[2]) SetRoundWinnerIfNoWinner(1);
+		if (NumberOfCapturedPoles[2] > NumberOfCapturedPoles[1]) SetRoundWinnerIfNoWinner(2);
+		// 2nd Criteria : most captured
+		if (TotalCaptureValue[1] > TotalCaptureValue[2]) SetRoundWinnerIfNoWinner(1);
+		if (TotalCaptureValue[2] > TotalCaptureValue[1]) SetRoundWinnerIfNoWinner(2);
+		// 3rd Criteria : First capture
+		if (FirstClanToStartCapture != 0) SetRoundWinnerIfNoWinner(FirstClanToStartCapture);
+		// 4rth Criteria : Draw
+		
+		FinalCaptureUserId = NullId;
+		SetOvertime(False);
+		SetOvertimeAdvantage(-1);
+		MB_StopRound();
+		if(C_BattleWaves) {
+			CurrentAtkClan = 0;
+			OnRoundStop(DurationBeforePivot, CurrentAtkClan);
+		}
+	}
+} else {
+	SetOvertime(False);
+	SetOvertimeAdvantage(-1);
+}
+
+if(Scores::GetClanWinner() > 0) {
+	MB_StopRound();
+	if(C_BattleWaves) {
+		CurrentAtkClan = 0;
+		OnRoundStop(DurationBeforePivot, CurrentAtkClan);
+	}
+}
+***
+
+***Match_Yield***
+***
+Top::Loop();
+Tabs::XmlRpcLoop();
+FunMgr::Yield();
+***
+
+***Match_PlayLoop***
+***
+// ---------------------------------- //
+// Create a custom event when a player is added to the Players array
+foreach (Player in Players) {
+	declare Battle_NewPlayer for Player = True;
+	declare Battle_NewSpectator for Player = True;
+	
+	if (Battle_NewPlayer) {
+		Battle_NewPlayer = False;
+		Battle_NewSpectator = True;
+		
+		BattleFun_InitializePlayer(Player, PoleMarkers^FunMgr::GetMarkers(), CurrentRoundIndex, CaptureMaxValue);
+		// Show welcome window to beginners
+		if(S_AllowBeginners) {
+			Beginners::NotifyNewPlayer(Player);
+		}
+		if (Now > StartTime + 10) UpdateLayerScoresTable = True;
+		
+		Interface::ShowSlider(Player, 0);
+		
+		SetPoleCaptureState(Player, UIManager.GetUI(Player), C_PoleCaptureState_Neutral);
+	}
+}
+// ---------------------------------- //
+// Create a custom event when a spectator is added to the Spectators array
+foreach (Spectator in Spectators) {
+	declare Battle_NewPlayer for Spectator = True;
+	declare Battle_NewSpectator for Spectator = True;
+	
+	if (Battle_NewSpectator) {
+		Battle_NewPlayer = True;
+		Battle_NewSpectator = False;
+		
+		BattleFun_InitializePlayer(Spectator, PoleMarkers^FunMgr::GetMarkers(), CurrentRoundIndex, CaptureMaxValue);
+		if (Now > StartTime + 10) UpdateLayerScoresTable = True;
+		Interface::ShowSlider(Spectator, 0);
+		
+		SetPoleCaptureState(Spectator, UIManager.GetUI(Spectator), C_PoleCaptureState_Neutral);
+	}
+}
+
+if(AllowBeginners != S_AllowBeginners) {
+	Beginners::ResetPlayers();
+	MB_StopMatch();
+}
+
+CaptureOngoing = False;
+OvertimeCaptureUserId = NullId;
+
+// No collisions
+if (NoCollisionsEndTime > 0 && NoCollisionsEndTime <= Now) {
+	NoCollisionsEndTime = -1;
+	UsePvPCollisions = True;
+}
+
+foreach (Event in PendingEvents) {
+	if (Event.Type == CSmModeEvent::EType::OnHit) {
+		if (Event.Victim == Null || Event.Shooter == Null) { //< Hit on shield or turret shot
+			if(S_AllowBeginners) {
+				Event.Damage = Beginners::GetDamage(Event.Shooter, Event.Victim, Event.Damage);
+			}
+			Events::Valid(Event);
+		} else if (Event.Shooter == Event.Victim) { //< Hit self
+			Events::Invalid(Event);
+		} else if (UseClans && Event.Shooter.CurrentClan == Event.Victim.CurrentClan) { //< Hit teammate
+			Events::Invalid(Event);
+		} else {
+			if(S_AllowBeginners) {
+				Event.Damage = Beginners::GetDamage(Event.Shooter, Event.Victim, Event.Damage);
+			}
+
+			if (Event.Damage > 0) {
+				declare CSmPlayer Victim  <=> Event.Victim;
+				declare CSmPlayer Shooter <=> Event.Shooter;
+				
+				if(S_AllowBeginners) Beginners::NotifyHit(Shooter);
+				declare Boolean GivePoints = (!S_AllowBeginners) || Beginners::ShouldGivePoints(Shooter, Victim);
+				if(! GivePoints) {
+					Event.ShooterPoints = 0;
+					Events::Valid(Event);
+					continue;
+				}
+					
+				
+				// declare Boolean GiveExraPointsForDefenseActions = True;
+				declare Integer PointsGivenToTheShooter = 1;
+				declare Integer Battle_ScoreHit for Shooter.Score;
+				declare CustomScorePlayer <=> Shooter;
+				// Score::AddPoints(Shooter, PointsGivenToTheShooter);
+				
+				declare Integer Battle_ScoreDefenseBonus for Shooter.Score;
+				declare Integer Battle_ScoreAttackBonus  for Shooter.Score;
+				
+				Battle_ScoreHit += PointsGivenToTheShooter;
+				
+				// Combo
+				declare Integer Battle_ScoreCombo as ComboShooter for Shooter.Score;
+				declare Integer Battle_ScoreCombo as ComboVictim for Victim.Score;
+				declare Integer MapCombo for Shooter;
+				declare Integer RoundCombo for Shooter;
+				ComboShooter += 1;
+				ComboVictim = 0;
+				if (ComboShooter > MapCombo) MapCombo = ComboShooter;
+				if (ComboShooter > RoundCombo) RoundCombo = ComboShooter;
+				
+				declare Boolean BonusGranted = False;
+				// 1. Check if the victim is currently taking a pole
+				if( Victim.CapturedLandmark != Null && Victim.CapturedLandmark.Gauge != Null) {
+					declare CSmMapLandmark Pole <=> Victim.CapturedLandmark;
+					declare IsPoleActive = IsPoleActive(!Pole.Gauge.Captured, Pole, CurrentAtkClan);
+					if((IsPoleActive) && (Victim.CapturedLandmark.Gauge.Clan == Victim.CurrentClan)) {
+						// Defensive move : the victim has been shot while taking a pole
+						Battle_ScoreDefenseBonus += C_ScoreDefense_HitOnPole;
+						BonusGranted = True;
+					}
+				}
+				
+				// 2. Check if the victim or the shooter is in a hot spot
+				if (! BonusGranted) {
+					foreach(Pole in MapLandmarks_Gauge) {
+						if (Pole.Tag != "Goal" && Pole.Tag != "Checkpoint") continue;
+						declare IsPoleActive = IsPoleActive(!Pole.Gauge.Captured, Pole, CurrentAtkClan);
+						if(IsPoleActive) {
+							declare Boolean ShooterInDefHotSpot = SqCloserThan(Pole.Position, Shooter.Position, SqDistanceToScoreNearPole);
+							declare Boolean VictimInDefHotSpot  = SqCloserThan(Pole.Position, Victim.Position , SqDistanceToScoreNearPole);
+							if(ShooterInDefHotSpot || VictimInDefHotSpot) {
+								if(Pole.Gauge.Clan == 3-Shooter.CurrentClan) {
+									// Defensive Move : the shooter is close to a pole of his/her clan
+									Battle_ScoreDefenseBonus += C_ScoreDefense_HitNearPole;
+									declare CustomScorePlayer <=> Shooter;
+									BonusGranted = True;
+									break;
+								}
+							}
+							
+							declare Boolean ShooterInAtkHotSpot = SqCloserThan(Pole.Position, Shooter.Position, SqDistanceAtkNearPole);
+							declare Boolean VictimInAtkHotSpot  = SqCloserThan(Pole.Position, Victim.Position , SqDistanceAtkNearPole);
+							if(ShooterInAtkHotSpot || VictimInAtkHotSpot) {
+								if(Pole.Gauge.Clan == Shooter.CurrentClan) {
+									// Offensive Move : the victim is close to a pole of his/her clan
+									Battle_ScoreAttackBonus += C_ScoreAttack_HitNearPole;
+									declare CustomScorePlayer <=> Shooter;
+									BonusGranted = True;
+									break;
+								}
+							}
+						}
+					}
+					
+					if (! BonusGranted) {
+						// 1 "classic" hit => Attack Points
+						Battle_ScoreAttackBonus += C_ScoreAttack_ClassicHit;
+					}
+				}
+				
+				// Gladiator mode
+				if (C_GladiatorMode) {
+					if (Event.Shooter.Armor < Event.Shooter.ArmorMax) {
+						Event.Shooter.Armor += 100;
+						if (Event.Shooter.Armor > Event.Shooter.ArmorMax) {
+							Event.Shooter.Armor = Event.Shooter.ArmorMax;
+						}
+					}
+					
+					/*if (Weapons.existskey(Event.WeaponNum)) {
+						declare Weapon = Weapons[Event.WeaponNum];
+						AddPlayerAmmo(Event.Shooter, Weapon, 1.);
+					}*/
+				}
+				
+				SetCustomScoreHit(CustomScorePlayer, CaptureMaxValue);
+			}
+			Events::Valid(Event);
+		}
+	} else if (Event.Type == CSmModeEvent::EType::OnArmorEmpty) {
+		Interface::ShowSlider(Event.Victim, 0);
+		Events::Valid(Event);
+	} else if (Event.Type == CSmModeEvent::EType::OnCapture) {
+		if (Event.Landmark.Tag == "Goal") {
+			UpdateBasesColors(ClanSpawnAnchors);
+			LastestCapturedGoalId = Event.Landmark.Id;
+			
+			// Get last capturer user id
+			foreach(PlayerId in Event.Landmark.Sector.PlayersIds) {
+				if (!Players.existskey(PlayerId)) continue;
+				declare Player <=> Players[PlayerId];
+				if (Player.CurrentClan != Event.Landmark.Gauge.Clan) continue;
+				FinalCaptureUserId = Player.User.Id;
+				break;
+			}
+		}
+		
+		Events::Valid(Event);
+	} else if (Event.Type == CSmModeEvent::EType::OnPlayerRequestRespawn) {
+		Interface::ShowSlider(Event.Player, 0);
+		Events::Valid(Event);
+	} else if (Event.Type == CSmModeEvent::EType::OnPlayerTouchesObject) {
+		if (FunMgr::IsBonus(Event.Object)) {
+			declare ClanHasTimedBonus = False;
+			foreach (Player in Players) {
+				if (
+					Player.CurrentClan == Event.Player.CurrentClan &&
+					FunMgr::HasTimedBonus(Player)
+				) {
+					ClanHasTimedBonus = True;
+					break;
+				}
+			}
+			
+			if (ClanHasTimedBonus) {
+				declare BattleFun_LastBonusWarnSound for Event.Player = 0;
+				if (Now - BattleFun_LastBonusWarnSound > 500) {
+					BattleFun_LastBonusWarnSound = Now;
+					FunMgr::CantTakeBonus(Event.Player);
+				}
+				Events::Invalid(Event);
+			}  else {
+				if(Dispenser::IsDispanserObject(Event.Object)) {
+					Dispenser::PickUp(Event.Object);
+					// declare BattleFun_EmptyBonusWarnSound for Event.Player = Now;
+					// BattleFun_EmptyBonusWarnSound = Now;
+				} else {
+					Objects::PickUp(Event.Object);
+				}
+				
+				Events::Valid(Event);
+			}
+		} else {
+			if(Dispenser::IsObjectEmptyBonus(Event.Object)) {
+				// declare BattleFun_EmptyBonusWarnSound for Event.Player = Now;
+				// if (Now - BattleFun_EmptyBonusWarnSound > 1000) {
+					// BattleFun_EmptyBonusWarnSound = Now;
+					// FunMgr::CantTakeBonus(Event.Player);
+				// }
+				Events::Invalid(Event);			
+			} else {
+				if(Dispenser::IsDispanserObject(Event.Object)) {
+					Dispenser::PickUp(Event.Object);
+				} else {
+					Objects::PickUp(Event.Object);
+				}
+				Events::Valid(Event);
+			}
+		}
+	} else {
+		Events::Valid(Event);
+	}
+	
+	if (Events::Validated(Event)) {
+		if (Event.Type == CSmModeEvent::EType::OnPlayerTouchesObject) {
+			FunMgr::OnEvent(Event, C_ShareBonusWithTeam, GetBonuses(Event.Player, CurrentAtkClan, WaveStartTime, DurationBeforePivot, TotalCaptureValue, NbPolesByClan, CaptureMaxValue));
+			if (FunMgr::IsBonus(Event.Object) && Event.Player != Null) {
+				declare Integer Battle_ScoreBonus for Event.Player;
+				Battle_ScoreBonus += 1;
+			}
+		} else {
+			FunMgr::OnEvent(Event);
+		}
+	}
+}
+
+if(C_BattleWaves) {
+	if (FunMgr::IsRequestingWaveReversal()) {
+		DurationBeforePivot = 0;
+		//L16N [Battle Fun] Message displayed in Battle when the player picks up a bonus that reverse the current wave. Attacking players will start defending and defending players will start attacking.
+		Message::SendBigMessage(_("Wave Reversal"), 5000, 1);
+	}
+	
+	// Update atk countdown and switch atk side when it reaches 0
+	if (FirstWaveClanAttack != 0) {
+		DurationBeforePivot -= Period;
+		if (DurationBeforePivot <= 0) {
+			CurrentAtkClan = 3-CurrentAtkClan;
+			DurationBeforePivot = WavesDuration * 1000;	// redemarre la jauge.;
+			WaveStartTime = Now;
+			UIManager.UIAll.SendNotice("", CUIConfig::ENoticeLevel::PlayerInfo, Null, CUIConfig::EAvatarVariant::Default, 
+					CUIConfig::EUISound::PhaseChange, 0);
+			// G_UpdateMarkers = True;
+		}
+	}
+
+	// Check engagement pole
+	if(EngagePoleId != NullId && (CurrentAtkClan==0)) {
+		declare CSmMapLandmark EngagePole <=> MapLandmarks_Gauge[EngagePoleId];
+		if(EngagePole != Null && ! EngagePole.Gauge.Captured) {
+			declare EngageClan = -1;
+			declare EngageName = "";
+			declare Text EngageLogin for This;
+			foreach(PlayerId in EngagePole.Sector.PlayersIds) {
+				if (!Players.existskey(PlayerId)) continue;
+				declare Player <=> Players[PlayerId];
+				declare PlayerClan = Player.CurrentClan;
+				if (EngageClan < 0) {
+					EngageClan = PlayerClan;
+					EngageName = Player.User.Name;
+					EngageLogin = Player.User.Login;
+				} else if (EngageClan != PlayerClan) {
+					// 2 diff clans on the pole : no capture
+					EngageClan = -1;
+					EngageName = "";
+					EngageLogin = "";
+					break;
+				}
+			}
+			
+			if (EngageClan > 0) {
+				EngagePole.Gauge.Max = 1;
+				EngagePole.Gauge.Value = 1;
+				EngagePole.Gauge.Captured = True;
+				EngagePole.Gauge.Clan = 0;
+				
+				FirstClanToStartCapture = EngageClan;
+				CurrentAtkClan = EngageClan;
+				FirstWaveClanAttack = EngageClan;
+				
+				FirstWaveStartTime = Now;
+				WaveStartTime = Now;
+				EndTime = Now + S_TimeLimitAfterFirstCapture*1000;
+				DurationBeforePivot = WavesDuration * 1000;
+				
+				//G_UpdateMarkers = True;
+				UIManager.UIAll.SendNotice("", CUIConfig::ENoticeLevel::PlayerInfo, Null, CUIConfig::EAvatarVariant::Default, 
+					CUIConfig::EUISound::PhaseChange, 0);
+				
+				if (EngageName != "") Message::SendBigMessage(TL::Compose(_("$<%1$> captured the pole."), EngageName), 3000, 1);
+				
+				foreach(PlayerId in EngagePole.Sector.PlayersIds) {
+					if (!Players.existskey(PlayerId)) continue;
+					declare Player <=> Players[PlayerId];
+					declare Integer Battle_ScoreAttackBonus for Player.Score;
+					Battle_ScoreAttackBonus += C_PointsOnEngage;
+					PoleTakers[PlayerId] = True;
+					DoUpdateScore = True;
+				}
+			}
+		}
+	}
+}
+
+// Spawning players
+foreach (Player in Players) {
+	if (Player.SpawnStatus == CSmPlayer::ESpawnStatus::NotSpawned && !Player.RequestsSpectate) {
+		// Skip invalid player in matchmaking
+		if (!MM_PlayerIsAllowedToPlay(Player)) continue;
+		
+		// Set player clan
+		SetPlayerClan(Player, Battle_GetRequestedClan(Player));
+		if (SpawnIsLimited()) {
+			WarmUp2::Clean();
+			if (Player.CurrentClan == 1) WarmUp2::SetPlayerGroup(Player, "Clan1");
+			else if (Player.CurrentClan == 2) WarmUp2::SetPlayerGroup(Player, "Clan2");
+			WarmUp2::Fill();
+		}
+		if (!IsSpawnable(Player)) continue;
+		
+		if(S_AllowBeginners) {
+			Beginners::UpdateBeginnerStatus(Player);
+			
+			declare CUIConfig PlayerUI <=> UIManager.GetUI(Player);
+			if(PlayerUI != Null) {
+				declare netwrite Boolean Battle_IsBeginner for PlayerUI;
+				Battle_IsBeginner = Beginners::IsBeginner(Player);
+			}
+		}
+		/*
+		Player.ArmorMax = 200;
+		declare Integer BaseArmor = 200;
+		
+		// 1. get the difference between beginners and regular players
+		declare Integer BeginnerExtraArmor = (Player.ArmorMax - BaseArmor) / 100;
+		if(BeginnerExtraArmor <= 0) BeginnerExtraArmor = 0;
+		
+		// 2. get the armor setting in correct boundaries
+		declare Integer ArmorSetting = C_ArmorPoints;
+		if(ArmorSetting <= 0) ArmorSetting = 1;
+		else if (ArmorSetting > 9) ArmorSetting = 9;
+	
+		// 3. compute armor for beginners-or-not
+		declare Integer TotalArmorFactor = ArmorSetting + BeginnerExtraArmor;
+		if(TotalArmorFactor > 9) TotalArmorFactor = 9;
+	
+		// 4. set it
+		declare Integer TotalArmor = 100 * TotalArmorFactor;
+		Player.ArmorMax = TotalArmor;
+		Player.Armor	= TotalArmor;
+		*/
+		
+		// Reset combo
+		declare Integer Battle_ScoreCombo for Player.Score;
+		Battle_ScoreCombo = 0;
+		
+		// Reset touched poles
+		declare Ident[] RoundTop_TouchedPoles for Player;
+		RoundTop_TouchedPoles.clear();
+		
+		FunMgr::InitializePlayer(Player);
+		SM::Spawn(Player, Player.CurrentClan, ClanSpawnAnchors[Player.CurrentClan].PlayerSpawn, Now + C_RespawnTime);
+		
+		Interface::HideSlider(Player, 5000);
+		
+		if(S_AllowBeginners) {
+			Beginners::HighlightPlayer(Player);
+		}
+		/*
+		declare AutoBalance_ReloadSpeedBonus for Player.User = 1.;
+		Player.AmmoGain = AutoBalance_ReloadSpeedBonus;
+		*/
+	}
+}
+
+// check if a pole is beeing captured
+for (Clan, 1, 2) {
+	declare Integer PoleIndex = -1;
+	declare PolesOfClan = ClanPoles[Clan];
+	foreach (Pole in PolesOfClan) {
+		PoleIndex += 1;
+
+		// This section is useful only if you want to give points to pole denial.
+		declare IsGoalThreatened = False; // Is an attacker on the pole ?
+		foreach (PlayerId in Pole.Sector.PlayersIds) {
+			if (!Players.existskey(PlayerId)) continue;
+			declare Player <=> Players[PlayerId];
+			if (Player.CurrentClan != Clan) {
+				IsGoalThreatened = True;
+				break;
+			}
+		}
+		if(!IsGoalThreatened) {
+			Pole.Gauge.Speed = 0;
+			continue;
+		}
+		
+		declare IsGoalDenied = False;
+		foreach (PlayerId in Pole.Sector.PlayersIds) {
+			if (!Players.existskey(PlayerId)) continue;
+			declare Player <=> Players[PlayerId];
+			if (Player.CurrentClan == Clan) { // GoalClan
+				IsGoalDenied = True;
+				// Was
+				//break;
+				PoleDeniers[PlayerId] = True;
+				declare Integer Battle_TotalDenyTime for Player.Score;
+				Battle_TotalDenyTime += Period;
+				DoUpdateScore = True; // fuu
+			}
+		}
+		
+		// Capture time record
+		if (S_DisplayPoleRecords && Pole.Sector.PlayersIds.count > 0) {
+			foreach (PlayerId in Pole.Sector.PlayersIds) {
+				if (!Players.existskey(PlayerId)) continue;
+				declare Player <=> Players[PlayerId];
+				
+				// We can only touch the poles of the opponent
+				if (Player.CurrentClan == Clan) continue;
+				
+				declare Ident[] RoundTop_TouchedPoles for Player;										
+				if (RoundTop_TouchedPoles.exists(Pole.Id)) continue;
+				RoundTop_TouchedPoles.add(Pole.Id);
+				
+				// Personnal best
+				declare Integer[Ident] RoundTop_CaptureTime for Player.Score;
+				declare CaptureTime = Now - Player.StartTime;
+				if (RoundTop_CaptureTime.existskey(Pole.Id)) {
+					if (CaptureTime < RoundTop_CaptureTime[Pole.Id]) {
+						RoundTop_CaptureTime[Pole.Id] = CaptureTime;
+						SendCaptureTime(Player);
+					}
+				} else {
+					RoundTop_CaptureTime[Pole.Id] = CaptureTime;
+					SendCaptureTime(Player);
+				}
+				
+				// Round best
+				declare netwrite Integer[Text] Net_RoundTop_CaptureTimeRecords for Teams[0];
+				declare netwrite Integer Net_RoundTop_CaptureTimeRecordsUpdate for Teams[0];
+				if (Net_RoundTop_CaptureTimeRecords.existskey(""^Pole.Id)) {
+					if (CaptureTime < Net_RoundTop_CaptureTimeRecords[""^Pole.Id]) {
+						Net_RoundTop_CaptureTimeRecords[""^Pole.Id] = CaptureTime;
+						Net_RoundTop_CaptureTimeRecordsUpdate = Now;
+					}
+				} else {
+					Net_RoundTop_CaptureTimeRecords[""^Pole.Id] = CaptureTime;
+					Net_RoundTop_CaptureTimeRecordsUpdate = Now;
+				}
+			}
+		}
+		
+		declare Boolean IsCapturePossible;
+		if(C_BattleWaves) {
+			declare IsGoalClanAttacking = (CurrentAtkClan != 0) && (Clan == CurrentAtkClan);
+			IsCapturePossible = !IsGoalDenied && !IsGoalClanAttacking;
+			if((EngagePoleId != NullId) && CurrentAtkClan == 0) {
+				IsCapturePossible = False;
+			}
+		} else {
+			IsCapturePossible = !IsGoalDenied;
+		}
+		if (IsCapturePossible && (Pole.Sector.PlayersIds.count > 0)) {
+			declare Integer PoleGlobalIndex = ((Clan-1)*NbPolesByClan) + PoleIndex;
+			
+			declare NumberOfPlayerCapturing = 0;
+			foreach (PlayerId in Pole.Sector.PlayersIds) {
+				if (!Players.existskey(PlayerId)) continue;
+				declare Player <=> Players[PlayerId];
+				if (Player.CurrentClan == Clan) continue; // Opponent team only
+				
+				declare UI <=> UIManager.GetUI(Player);
+				NumberOfPlayerCapturing += 1;
+				OvertimeCaptureUserId = Player.User.Id;
+				if (FirstClanToStartCapture == 0) {
+					FirstClanToStartCapture = Player.CurrentClan;
+					if(C_BattleWaves) {
+						if(EngagePoleId == NullId) {
+							CurrentAtkClan = Player.CurrentClan;
+							declare Integer Battle_ScoreAttackBonus for Player.Score;
+							Battle_ScoreAttackBonus += C_PointsOnEngage;
+							// it is ok to give points only to this player.
+							// the case where more than 1 player take the pole at the same time is unlikely and invisible.
+							// it is just bad luck for the other guys...
+						}
+					}
+				}
+				
+				PoleTakers[PlayerId] = True;
+				
+				if (Pole.Gauge.Value < CaptureMaxValue) {
+					declare Integer Battle_TotalCaptureTime for Player.Score;
+					Battle_TotalCaptureTime += Period;
+										
+					if (UI != Null) {
+						declare netwrite Integer Battle_PoleCaptureRate for UI;
+						SetPoleCaptureState(Player, UI, C_PoleCaptureState_Capturing);
+						Battle_PoleCaptureRate = (100 * Pole.Gauge.Value) / CaptureMaxValue;
+					}
+				} else {
+					if (UI != Null) {
+						SetPoleCaptureState(Player, UI, C_PoleCaptureState_Captured);
+					}
+				}
+			}
+			
+			if(C_BattleWaves) {
+				// is this parameter is set to false, attack phase is not reset when an attacker captures a pole
+				if (NumberOfPlayerCapturing > 0) {
+					if(S_StayInAttackOnCapture) {
+						if((Pole.Gauge.Value < CaptureMaxValue) || S_ResetTimeOnCapturedPole) {
+							// Add def points for a "just in time" capture
+							if((DurationBeforePivot > 0) && (DurationBeforePivot <= C_JustInTimeLimit)) {
+								foreach (PlayerId in Pole.Sector.PlayersIds) {
+									if (!Players.existskey(PlayerId)) continue;
+									declare CustomScorePlayer <=> Players[PlayerId];
+									if (CustomScorePlayer.CurrentClan == Clan) continue; // Opponent team only
+									else {
+										declare Integer Battle_ScoreDefenseBonus for CustomScorePlayer.Score;
+										Battle_ScoreDefenseBonus += C_ScoreDefense_CaptureJiT;
+										SetCustomScoreDefenseAction(CustomScorePlayer, CaptureMaxValue);
+									}
+								}
+							}
+							
+							if (!GetOvertime()) {
+								// Display the name of the player who did the pivot
+								if (DurationBeforePivot <= (WavesDuration * 1000) / 5) {
+									foreach (PlayerId in Pole.Sector.PlayersIds) {
+										if (!Players.existskey(PlayerId)) continue;
+										declare Player <=> Players[PlayerId];
+										if (Player.CurrentClan != Clan) {
+											declare TimeSplit = TL::Split(".", TL::ToText(DurationBeforePivot / 1000.));
+											declare Time = "0";
+											if (TimeSplit.existskey(0)) Time = TimeSplit[0];
+											if (TimeSplit.existskey(1)) Time ^= "."^TL::SubText(TimeSplit[1], 0, 1);
+											declare Message = TL::Compose(_("|Battle: 1=Player name, 2=Time in seconds|$<%1$> restarts attack countdown (%2s)"), Player.User.Name, Time);
+											Message::SendBigMessage(Message, 3000, 1);
+											break;
+										}
+										
+									}
+								}
+								DurationBeforePivot = WavesDuration * 1000;	//< Reset the atk countdown
+							}
+						}
+					}
+			
+					if (FirstWaveStartTime == -1) {
+						FirstWaveStartTime = Now;
+						FirstWaveClanAttack = 3 - Clan;
+						WaveStartTime = Now;
+						EndTime = Now + S_TimeLimitAfterFirstCapture*1000;
+					}
+				}
+			}
+			Pole.Gauge.Speed = NumberOfPlayerCapturing;
+			
+			
+			if (NumberOfPlayerCapturing > 0) {
+				DoUpdateScore = True;
+				
+				if (!Pole.Gauge.Captured) {
+					CaptureOngoing = True;
+				}
+			}
+			
+		} else {
+			Pole.Gauge.Speed = 0;
+			if(C_BattleWaves) {
+				declare Integer PoleClan = Pole.Gauge.Clan;
+				foreach (PlayerId in Pole.Sector.PlayersIds) {
+					if (!Players.existskey(PlayerId)) continue;
+					declare Player <=> Players[PlayerId];
+					declare UI <=> UIManager.GetUI(Player);
+					if (UI != Null) {
+						declare Integer PlayerClan = Player.CurrentClan;
+						
+						if(PoleClan == PlayerClan) { // A pole current player must capture
+							if (Pole.Gauge.Value < CaptureMaxValue) { // not captured yet
+								if((PlayerClan != CurrentAtkClan) || (CurrentAtkClan==0)) { // pole locked if player is not attacking
+									SetPoleCaptureState(Player, UI, C_PoleCaptureState_Locked);
+								} else {
+									SetPoleCaptureState(Player, UI, C_PoleCaptureState_Denied);
+								}
+							} else { // already captured
+								SetPoleCaptureState(Player, UI, C_PoleCaptureState_Captured);
+							}
+						} else { // A pole current player must defend
+							if (Pole.Gauge.Value < CaptureMaxValue) { // pole protected
+								SetPoleCaptureState(Player, UI, C_PoleCaptureState_Protected);
+							} else { // already captured
+								SetPoleCaptureState(Player, UI, C_PoleCaptureState_Neutral);
+							}
+						}
+					}
+				}
+			} else {
+				declare Integer PoleClan = Pole.Gauge.Clan;
+				foreach (PlayerId in Pole.Sector.PlayersIds) {
+					if (!Players.existskey(PlayerId)) continue;
+					declare Player <=> Players[PlayerId];
+					
+					declare UI <=> UIManager.GetUI(Player);
+					if (UI != Null) {
+						if (Pole.Gauge.Value < CaptureMaxValue) {
+							if(Player.CurrentClan == PoleClan) {
+								SetPoleCaptureState(Player, UI, C_PoleCaptureState_Denied);
+							} else {
+								SetPoleCaptureState(Player, UI, C_PoleCaptureState_Protected);
+							}
+						} else if(PoleClan == Player.CurrentClan) {
+							SetPoleCaptureState(Player, UI, C_PoleCaptureState_Captured);
+						} else {
+							SetPoleCaptureState(Player, UI, C_PoleCaptureState_Neutral);
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+// set default state to neutral if no capture
+foreach (Player in Players) {
+	if (GetPoleCaptureStateUpdate(Player) != Now) {
+		declare UI <=> UIManager.GetUI(Player);
+		if (UI != Null) {
+			SetPoleCaptureState(Player, UI, C_PoleCaptureState_Neutral);
+		}
+	}
+}
+
+// Overtime, disadvantaged clan touch an active pole, stop countdown decrease
+if (GetOvertimeAdvantage() != CurrentAtkClan) {
+	if (CaptureOngoing) {
+		DurationBeforePivot += Period;
+	}
+}
+
+if (Now >= EndTime) DoUpdateScore = True;
+
+if (PrevMarkersUpdate != FunMgr::GetMarkersUpdate()) {
+	PrevMarkersUpdate = FunMgr::GetMarkersUpdate();
+	declare Markers = PoleMarkers ^ FunMgr::GetMarkers();
+	foreach (Player in AllPlayers) {
+		declare UI <=> UIManager.GetUI(Player);
+		if (UI != Null) {
+			UpdateMarkers(UI, Markers);
+		}
+	}
+}
+
+// Update UI
+if (Now > LatestUITick + UITickPeriod) 
+{
+	LatestUITick = Now;
+	
+	UpdateTeamsScoresUI(TotalCaptureValue, NbPolesByClan, ClanPoles, CaptureMaxValue);
+	
+	UpdateUIAll(DurationBeforePivot, CurrentAtkClan);
+	
+	if (DoUpdateScore) {
+		DoUpdateScore = False;
+		---Battle_UpdateTotalCapture---
+		
+		foreach(PlayerId => PoleTaken in PoleTakers) {
+			if(! Players.existskey(PlayerId)) continue;
+			declare CustomScorePlayer <=> Players[PlayerId];
+			SetCustomScorePole(CustomScorePlayer, CaptureMaxValue);
+		}
+		PoleTakers.clear();
+		foreach(PlayerId => PoleDenied in PoleDeniers) {
+			if(! Players.existskey(PlayerId)) continue;
+			declare CustomScorePlayer <=> Players[PlayerId];
+			SetCustomScoreDefenseAction(CustomScorePlayer, CaptureMaxValue);
+		}
+		PoleDeniers.clear();
+	}
+}
+
+// Update the status message
+UpdateModeStatusMessage();
+
+// Stop match if there's not enough players left in matchmaking
+if (MM_IsMatchServer()) {
+	if (ClansNbPlayers[1] <= 0 || ClansNbPlayers[2] <= 0) {
+		MB_StopMatch();
+	}
+}
+***
+
+***Match_EndRound***
+***
+Message::CleanAllMessages();
+FunMgr::SetUIVisibility(False);
+
+foreach(Player in Players) {
+	if(Player.Score == Null) continue;
+	
+	declare Integer Battle_ScoreHit for Player.Score;
+	declare Real 	AutoBalance_ReloadSpeedBonus for Player.User = 1.;
+	
+	
+	if(S_AllowBeginners && Beginners::IsBeginner(Player)) {
+		Beginners::BalanceBeginner(Player, Battle_ScoreHit);
+	} else {
+		if(Battle_ScoreHit <= 1) {
+			if (AutoBalance_ReloadSpeedBonus < 1.3) AutoBalance_ReloadSpeedBonus += .1;
+		} else {
+			AutoBalance_ReloadSpeedBonus = 1.;
+		}
+	}
+}
+
+foreach(Player in AllPlayers) {
+	Interface::HideSlider(Player, 0);
+	declare UI <=> UIManager.GetUI(Player);
+	if(UI == Null) continue;
+	
+	declare netwrite Integer Battle_UIRoundPhase for UI;
+	Battle_UIRoundPhase = C_RoundPhase_EndRound;
+}
+
+ResetAllUIs();
+// LayerMarkers.ManialinkPage = "";
+Layers::SetVisibility(C_Layer_Markers, False);
+
+// update map tops
+foreach(Player in Players) {
+	declare Integer MapHit for Player = 0;
+	declare Integer MapCapture for Player = 0;
+	declare Integer MapDefense for Player = 0;
+	declare Integer MapAttack for Player = 0;
+	
+	declare Integer Battle_ScoreCapture for Player;
+	declare Integer Battle_ScoreDefense for Player;
+	declare Integer Battle_ScoreAttack for Player;
+	declare Integer Battle_ScoreHit for Player.Score;
+	declare Integer Battle_ScoreBonus for Player;
+
+	MapHit += Battle_ScoreHit;
+	MapCapture += Battle_ScoreCapture;
+	MapDefense += Battle_ScoreDefense;
+	MapAttack += Battle_ScoreAttack;
+	
+	// Update channel progression scores
+	declare Battle_MapPoints for Player.Score = 0;
+	Battle_MapPoints += Battle_ScoreHit + Battle_ScoreCapture + Battle_ScoreDefense + Battle_ScoreAttack + Battle_ScoreBonus;
+	Log::Log("""[Battle] {{{Player.User.Login}}} get {{{(Battle_ScoreHit + Battle_ScoreCapture + Battle_ScoreDefense + Battle_ScoreAttack + Battle_ScoreBonus)}}} map points > Battle_ScoreHit : {{{Battle_ScoreHit}}} | Battle_ScoreCapture : {{{Battle_ScoreCapture}}} | Battle_ScoreDefense : {{{Battle_ScoreDefense}}} | Battle_ScoreAttack : {{{Battle_ScoreAttack}}} | Battle_ScoreBonus : {{{Battle_ScoreBonus}}}""");
+}
+UpdateMapRunnersRanking();
+UpdatePlayersScores(CaptureMaxValue);
+
+StartTime = -1;
+EndTime = -1;
+UIManager.UIAll.OverlayHideCountdown = False;
+for (Clan, 1, 2) {
+	foreach (Pole in ClanPoles[Clan]) {
+		Pole.Gauge.Speed = 0;
+	}
+}
+
+MB_Sleep(1700);
+
+UIManager.UIAll.BigMessageSound = CUIConfig::EUISound::EndRound;
+if (TouchdownUserId != NullId && Users.existskey(TouchdownUserId)) {
+	UIManager.UIAll.StatusMessage = TL::Compose(_("$<%1$> touched the pole."), Users[TouchdownUserId].Name);
+} else if (FinalCaptureUserId != NullId && Users.existskey(FinalCaptureUserId)) {
+	UIManager.UIAll.StatusMessage = TL::Compose(_("$<%1$> captured the last pole."), Users[FinalCaptureUserId].Name);
+}
+if (Scores::GetClanWinner() == 1) {
+	UIManager.UIAll.BigMessage = TL::Compose(_("$<%1$> wins the round!"), Teams[0].ColorizedName);
+	Scores::AddClanMapPoints(1, 1);
+} else if (Scores::GetClanWinner() == 2) {
+	UIManager.UIAll.BigMessage = TL::Compose(_("$<%1$> wins the round!"), Teams[1].ColorizedName);
+	Scores::AddClanMapPoints(2, 1);
+} else {
+	UIManager.UIAll.BigMessage = _("Draw round");
+}
+MM_SetScores([Scores::GetClanMapPoints(1), Scores::GetClanMapPoints(2)]);
+// UIManager.UIAll.ScoreSummary_Points1 = Clan1Score;
+// UIManager.UIAll.ScoreSummary_Points2 = Clan2Score;
+UpdateTeamsScoresUI(TotalCaptureValue, NbPolesByClan, ClanPoles, CaptureMaxValue);
+
+if (Hud != Null && Hud.ScoresTable != Null) {
+	Hud.ScoresTable.SetFooterText(TL::Compose("%1 "^S_RoundsToWin, _("Points limit : ")));
+}
+declare ClanWinsMap = [1 => False, 2 => False];
+declare TmpClanScores = [1 => Scores::GetClanMapPoints(1), 2 => Scores::GetClanMapPoints(2)];
+for(Clan, 1, 2) {
+	ClanWinsMap[Clan] = (
+		TmpClanScores[Clan] >= S_RoundsLimit ||
+		(
+			TmpClanScores[Clan] >= S_RoundsToWin && 
+			TmpClanScores[Clan] - TmpClanScores[3-Clan] >= S_RoundGapToWin
+		)
+	);
+}
+if (ClanWinsMap[1] && !ClanWinsMap[2]) {
+	Scores::SetClanWinner(1);
+} else if (!ClanWinsMap[1] && ClanWinsMap[2]) {
+	Scores::SetClanWinner(2);
+} else {
+	Scores::SetClanWinner(0);
+}
+
+foreach (Player in Players) {
+	UnspawnPlayer(Player);
+}
+
+UIManager.UIAll.UISequence = CUIConfig::EUISequence::EndRound;
+if (S_DisplayTopsRound) {
+	UIManager.UIAll.ScoreTableVisibility = CUIConfig::EVisibility::ForcedVisible;
+	MB_Sleep(5000);
+	UIManager.UIAll.ScoreTableVisibility = CUIConfig::EVisibility::Normal;
+	LaunchTop5Sequence("round");
+} else {
+	UIManager.UIAll.ScoreTableVisibility = CUIConfig::EVisibility::ForcedVisible;
+	MB_Sleep(7*1000);
+}
+
+if (C_AlternativePoints) {
+	foreach (Score in Scores) {
+		declare Integer Battle_ScoreAlternative for Score;
+		Scores::SetPlayerRoundPoints(Score, Battle_ScoreAlternative);
+	}
+}
+
+// Match / Map win
+if (Scores::GetClanWinner() > 0) {
+	MB_StopMap();
+} else {
+	// Autoround balance
+	if (S_AutoBalanceRound && !MM_IsMatchmakingServer()) {
+		AutoTeamBalanceRound();
+	}
+}
+
+UIManager.UIAll.ScoreTableVisibility = CUIConfig::EVisibility::Normal;
+ResetAllUIs();
+// LayerMarkers.ManialinkPage = ""; // Crash.
+
+if(C_BattleWaves) {
+	// once again, to ensure an update of the UI in case of early endround (e.g. vote for next map)
+	CurrentAtkClan = 0;
+	OnRoundStop(DurationBeforePivot, CurrentAtkClan);
+
+	if(EngagePoleId != NullId) {
+		declare CSmMapLandmark EngagePole <=> MapLandmarks_Gauge[EngagePoleId];
+		if(EngagePole != Null) {
+			EngagePole.Gauge.Captured	= False;
+			EngagePole.Gauge.Value 		= 0;
+		}
+	}
+}
+***
+
+***Match_EndMap***
+***
+declare MapWinner = Scores::GetClanWinner();
+if (MapWinner > 0) {
+	Scores::AddClanMatchPoints(MapWinner, 1);
+	if (Scores::GetClanMatchPoints(1) >= S_MapsToWin || Scores::GetClanMatchPoints(2) >= S_MapsToWin) {
+		MB_StopMatch();
+		if (Scores::GetClanMatchPoints(1) > Scores::GetClanMatchPoints(2)) {
+			Scores::SetClanWinner(1);
+		} else if (Scores::GetClanMatchPoints(2) > Scores::GetClanMatchPoints(1)) {
+			Scores::SetClanWinner(2);
+		} else {
+			Scores::ResetClanWinner();
+		}
+	}
+	UIManager.UIAll.ScoreSummary_MatchPoints1 = Scores::GetClanMatchPoints(1);
+	UIManager.UIAll.ScoreSummary_MatchPoints2 = Scores::GetClanMatchPoints(2);
+}
+
+ResetAllUIs();
+Layers::SetVisibility(C_Layer_Markers, False);
+Interface::DestroySlider();
+***
+
+***Match_BeforeCloseLadder***
+***
+if (ChannelProgression::IsEnabled()) {
+	declare RoundCount = MB_GetRoundCount();
+	declare ReferencePoints = C_ReferenceMinPoints * RoundCount;
+	foreach (Score in Scores) {
+		declare Battle_MapPoints for Score = 0;
+		if (Battle_MapPoints > ReferencePoints) ReferencePoints = Battle_MapPoints;
+	}
+	foreach (Score in Scores) {
+		declare Battle_MapPoints for Score = 0;
+		
+		declare Performance = 0.;
+		if (ReferencePoints > 0) Performance = Battle_MapPoints / (ReferencePoints * 1.);
+		
+		Log::Log("""[Battle] Performance > {{{Score.User.Login}}} > RoundCount : {{{RoundCount}}} | Battle_MapPoints : {{{Battle_MapPoints}}} | ReferencePoints : {{{ReferencePoints}}} | Performance: {{{Performance}}}""");
+		
+		ChannelProgression::SetPlayerPerformance(Score, Performance);
+	}
+}
+***
+
+***Match_BeforePodiumSequence***
+***
+MB_Sleep(1000); //< Force UISequence podium to end
+***
+
+***Match_AfterPodiumSequence***
+***
+if (S_DisplayTopsMap) {
+	UIManager.UIAll.UISequence = CUIConfig::EUISequence::EndRound;
+	MB_Sleep(1000);
+	LaunchTop5Sequence("map");
+}
+***
+
+***Match_EndServer***
+***
+// Destroy layers
+Layers::Detach(C_Layer_Top5);
+Layers::Detach(C_Layer_RoundInfo);
+Layers::Detach(C_Layer_TimeLeft);
+Layers::Detach(C_Layer_Markers);
+Layers::Destroy(C_Layer_Top5);
+Layers::Destroy(C_Layer_RoundInfo);
+Layers::Destroy(C_Layer_TimeLeft);
+Layers::Destroy(C_Layer_Markers);
+***
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+// ---------------------------------- //
+/** Get the bonuses drop rate for the
+ *	given player
+ *
+ *	@param	_Player										The player to check
+ *	@param	_AtkClan									The current attacking clan
+ *	@param	_WaveStartTime						The starting time of the current wave
+ *	@param	_DurationBeforePivot			Time before the end of the wave
+ */
+Integer[Text] GetBonuses(
+	CSmPlayer _Player,
+	Integer _AtkClan,
+	Integer _WaveStartTime,
+	Integer _DurationBeforePivot,
+	Integer[Integer] _TotalCaptureValue,
+	Integer _NbPolesByClan,
+	Integer _CaptureMaxValue
+) {
+	declare CaptureProgression = [
+		1 => (100 * _TotalCaptureValue[1]) / (_CaptureMaxValue * _NbPolesByClan),
+		2 => (100 * _TotalCaptureValue[2]) / (_CaptureMaxValue * _NbPolesByClan)
+	];
+	declare BonusesClansCount = [1 => 0, 2 => 0];
+	declare PlayersClansCount = [1 => 0, 2 => 0];
+	foreach (Player in Players) {
+		if (Player.CurrentClan == 1 || Player.CurrentClan == 2) {
+			BonusesClansCount[Player.CurrentClan] += FunMgr::GetActiveBonusesCount(Player);
+			PlayersClansCount[Player.CurrentClan] += 1;
+		}
+	}
+	declare BonusCancelRate = 0;
+	declare CaptureDifference = 0;
+	if (_Player.CurrentClan == 1 || _Player.CurrentClan == 2) {
+		// To get a BonusCancel the player's team must have less bonuses
+		if (BonusesClansCount[_Player.CurrentClan] < BonusesClansCount[3 - _Player.CurrentClan]) {
+			BonusCancelRate = 2 * ML::Abs((BonusesClansCount[1] / PlayersClansCount[1]) - (BonusesClansCount[2] / PlayersClansCount[2]));
+		}
+		
+		CaptureDifference = CaptureProgression[_Player.CurrentClan] - CaptureProgression[3 - _Player.CurrentClan];
+	}
+  if (BonusCancelRate > 20) BonusCancelRate = 20; //< Cap cancel bonus drop rate
+	Log::Log("""[Battle Fun] BonusCancel rate : {{{BonusCancelRate}}}""");
+	Log::Log("""[Battle Fun] Clans capture progression : {{{CaptureProgression}}} | Capture difference : {{{CaptureDifference}}}""");
+	
+	declare Bonuses = Integer[Text];
+	
+	if (BonusCancelRate > 0) {
+		//Bonuses[FunMgr::C_Bonus_BonusCancel] = BonusCancelRate;
+	}
+	
+	// Waves started
+	if (_WaveStartTime >= 0) {
+		// From 100 to 20 capture difference
+		if (CaptureDifference >= 20) {
+			Bonuses[FunMgr::C_Bonus_SuperShootman] = 1;
+			Bonuses[FunMgr::C_Bonus_Nucleus] = 2;
+			Bonuses[FunMgr::C_Bonus_Shield] = 1;
+			Bonuses[FunMgr::C_Bonus_SuperArmorRegen] = 1;
+			Bonuses[FunMgr::C_Bonus_SuperAmmoGain] = 20;
+			Bonuses[FunMgr::C_Bonus_SuperStamina] = 30;
+		}
+		// From 20 to -10 capture difference
+		else if (CaptureDifference >= -10) {
+			Bonuses[FunMgr::C_Bonus_SuperShootman] = 5;
+			Bonuses[FunMgr::C_Bonus_Nucleus] = 10;
+			Bonuses[FunMgr::C_Bonus_Shield] = 5;
+			Bonuses[FunMgr::C_Bonus_SuperArmorRegen] = 5;
+			Bonuses[FunMgr::C_Bonus_SuperAmmoGain] = 30;
+			Bonuses[FunMgr::C_Bonus_SuperStamina] = 20;
+		}
+		// From -10 to -20 capture difference
+		else if (CaptureDifference >= -20) {
+			Bonuses[FunMgr::C_Bonus_SuperShootman] = 10;
+			Bonuses[FunMgr::C_Bonus_Nucleus] = 15;
+			Bonuses[FunMgr::C_Bonus_Shield] = 10;
+			Bonuses[FunMgr::C_Bonus_SuperArmorRegen] = 10;
+			Bonuses[FunMgr::C_Bonus_SuperAmmoGain] = 30;
+			Bonuses[FunMgr::C_Bonus_SuperStamina] = 20;
+		}
+		// From -20 to -30 difference
+		else if (CaptureDifference >= -30) {
+			Bonuses[FunMgr::C_Bonus_SuperShootman] = 30;
+			Bonuses[FunMgr::C_Bonus_Nucleus] = 30;
+			Bonuses[FunMgr::C_Bonus_Shield] = 15;
+			Bonuses[FunMgr::C_Bonus_SuperArmorRegen] = 15;
+			Bonuses[FunMgr::C_Bonus_SuperAmmoGain] = 30;
+			Bonuses[FunMgr::C_Bonus_SuperStamina] = 15;
+		}
+		// From -30 to -100 difference
+		else {
+			Bonuses[FunMgr::C_Bonus_SuperShootman] = 60;
+			Bonuses[FunMgr::C_Bonus_Nucleus] = 50;
+			Bonuses[FunMgr::C_Bonus_Shield] = 20;
+			Bonuses[FunMgr::C_Bonus_SuperArmorRegen] = 20;
+			Bonuses[FunMgr::C_Bonus_SuperAmmoGain] = 30;
+			Bonuses[FunMgr::C_Bonus_SuperStamina] = 10;
+		}
+		
+		// Defending clan
+		if (_Player.CurrentClan != _AtkClan && _DurationBeforePivot > FunMgr::C_BonusDelay + 100) {
+			declare TimeSinceWaveStart = Now - _WaveStartTime;
+			Log::Log("""[Battle Fun] Time since defense wave start for {{{_Player.User.Login}}} : {{{TimeSinceWaveStart}}} seconds""");
+			// Defending since less than 15 seconds
+			if (TimeSinceWaveStart < 15000) {
+				Bonuses[FunMgr::C_Bonus_WaveReversal] = 2;
+			}
+			// Defending since 15 to 30 seconds
+			else if (TimeSinceWaveStart < 30000) {
+				Bonuses[FunMgr::C_Bonus_WaveReversal] = 4;
+			}
+			// Defending since 30 to 45 seconds
+			else if (TimeSinceWaveStart < 45000) {
+				Bonuses[FunMgr::C_Bonus_WaveReversal] = 8;
+			}
+			// Defending since 45 seconds and above
+			else {
+				Bonuses[FunMgr::C_Bonus_WaveReversal] = 16;
+			}
+		}
+	}
+	// Waves not started
+	else {
+		Bonuses[FunMgr::C_Bonus_SuperShootman] = 5;
+		Bonuses[FunMgr::C_Bonus_Nucleus] = 10;
+		Bonuses[FunMgr::C_Bonus_Shield] = 5;
+		Bonuses[FunMgr::C_Bonus_SuperArmorRegen] = 5;
+		Bonuses[FunMgr::C_Bonus_SuperAmmoGain] = 30;
+		Bonuses[FunMgr::C_Bonus_SuperStamina] = 100;
+	}
+	
+	Log::Log("""[Battle Fun] {{{_Player.User.Login}}} bonus drop rate : {{{Bonuses}}}""");
+	
+	return Bonuses;
+}
+
+// ---------------------------------- //
+/** Initialize a player before spawn
+ *	Overload the InitializePlayer() function
+ *	from BattleBase
+ */
+Void BattleFun_InitializePlayer(CSmPlayer _Player, Text _Markers, Integer _CurrentRoundIndex, Integer _CaptureMaxValue) {
+	InitializePlayer(_Player, _Markers, _CurrentRoundIndex, _CaptureMaxValue);
+	FunMgr::SetUIPosition(_Player, C_BonusUI_DefaultPos);
+}
+
+// ---------------------------------- //
+/** Update the pole capture state
+ *	and send it to the player UI
+ *
+ *	@param	_Player										The player to update
+ *	@param	_UI												The UI of the player to update
+ *	@param	_CaptureState							The new capture state
+ */
+Void SetPoleCaptureState(CSmPlayer _Player, CUIConfig _UI, Integer _CaptureState) {
+	if (_UI == Null || _Player == Null) return;
+	
+	declare netwrite Integer Battle_PoleCaptureState for _UI;
+	declare Battle_PoleCaptureStateUpdate for _Player = -1;
+	Battle_PoleCaptureStateUpdate = Now;
+	
+	if (Battle_PoleCaptureState != _CaptureState) {
+		Battle_PoleCaptureState = _CaptureState;
+		if (_CaptureState == C_PoleCaptureState_Neutral) {
+			FunMgr::SetUIPosition(_Player, C_BonusUI_DefaultPos);
+		} else {
+			FunMgr::SetUIPosition(_Player, C_BonusUI_HighPos);
+		}
+	}
+}
+
+// ---------------------------------- //
+/** Get the last time the pole capture
+ *	state was updated for the given player
+ *
+ *	@param	_Player										The player to check
+ *
+ *	@return														The last update time
+ */
+Integer GetPoleCaptureStateUpdate(CSmPlayer _Player) {
+	if (_Player == Null) return Now;
+	declare Battle_PoleCaptureStateUpdate for _Player = -1;
+	return Battle_PoleCaptureStateUpdate;
+}

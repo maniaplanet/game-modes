@@ -1,0 +1,2118 @@
+/**
+ *	Common code for Battle Fun, Pro and Exp
+ */
+#Extends "Modes/ShootMania/Base/ModeShootmania.Script.txt"
+
+#Const BB_Version			"2017-05-05"
+#Const BB_ScriptName	"Modes/ShootMania/Battle/BattleBase.Script.txt"
+
+// ---------------------------------- //
+// Libraries
+// ---------------------------------- //
+#Include "TextLib" as TL
+#Include "MathLib" as ML
+#Include "Libs/Nadeo/ShootMania/Map.Script.txt" as Map
+
+// ---------------------------------- //
+// Globales
+// ---------------------------------- //
+declare Text G_ScoreTeam1;
+declare Text G_ScoreTeam2;
+declare Boolean G_OvertimeActivated;
+declare Integer G_OvertimeAdvantage;
+
+// ---------------------------------- //
+// Extends
+// ---------------------------------- //
+***Match_LogVersions***
+***
+Log::RegisterScript(BB_ScriptName, BB_Version);
+***
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+// ---------------------------------- //
+/// Create and intialize the tops
+Void CreateTops() {
+	declare Real TopXPosition	= -76.;
+	declare Real TopYPosition	= 31.;
+	declare Real TopXOffset 	= 38.;
+	declare Integer NbPlayersPerTop = 12;
+	declare Text TopBGImg		= C_ImgBaseDir^"topsBg.dds";
+	Top::SetTopWidth(37.);
+	Top::SetDefaultTitle();
+	Top::Create(C_TopId_Hit, _("Hit"), NbPlayersPerTop, <TopXPosition, TopYPosition>);
+	TopXPosition += TopXOffset;
+	Top::Create(C_TopId_Capture, _("Capture"), NbPlayersPerTop, <TopXPosition, TopYPosition>);
+	TopXPosition += TopXOffset;
+	Top::Create(C_TopId_Defense, _("Defense"), NbPlayersPerTop, <TopXPosition, TopYPosition>);
+	TopXPosition += TopXOffset;
+	Top::Create(C_TopId_Attack, _("|Substantive|Attack"), NbPlayersPerTop, <TopXPosition, TopYPosition>);
+	TopXPosition += TopXOffset;
+	Top::Create(C_TopId_Combo, "Combo", NbPlayersPerTop, <TopXPosition, TopYPosition>);
+	Top::SetTitle("Tops");
+	Top::SetZIndex(20);
+	Top::SetColor("CommonBackground", "000d");
+	Top::SetCommonBackgroundImage(TopBGImg,  <0.05, 95.75>, <207., 175.75>);
+	Top::SetLayerType(CUILayer::EUILayerType::AltMenu);
+}
+
+// ---------------------------------- //
+/// Create the tabs for the scores table
+Void CreateScoresTableTabs() {
+	Tabs::Load();
+	declare TabsLayer <=> Tabs::CreateTabPaneLayer(
+	[
+		"TopTab"	=> "Buddies",
+		Tabs::C_ScoresTableTabName => "Rankings"
+	], 29, -5, False);
+	TabsLayer.Type = CUILayer::EUILayerType::AltMenu;
+	UIManager.UIAll.UILayers.add(TabsLayer);
+}
+
+Integer ComputeCaptureMaxValue(Integer _SettingCaptureMaxValue) {
+	declare CaptureMaxValue = (_SettingCaptureMaxValue * 1000) - 100; // small margin to ensure the pole is captured on time.
+	if (CaptureMaxValue < 500) CaptureMaxValue = 500; // 0.5 sec. min
+	return CaptureMaxValue;
+}
+
+Void SetRoundWinnerIfNoWinner(Integer _Clan) {
+	if (Scores::GetClanWinner() <= 0) {
+		Scores::SetClanWinner(_Clan);
+	}
+}
+
+/**
+ * @return True iff the squared distance between A and B is lower than _SqDistance.
+ * i.e. ||AB||² <= _SqDistance
+ */
+Boolean SqCloserThan(Vec3 _A, Vec3 _B, Real _SqDistance) {
+	declare Vec3 VecDistance   = _A - _B;
+	declare Real ABSqDistance  = (VecDistance.X*VecDistance.X) + (VecDistance.Y*VecDistance.Y) + (VecDistance.Z*VecDistance.Z);
+		
+	return ABSqDistance <= _SqDistance;
+}
+
+Boolean IsPoleActive(Boolean _IsPoleActive, CSmMapLandmark _Pole, Integer _CurrentAtkClan) {
+	if (!C_BattleWaves) return _IsPoleActive;
+	
+	return (
+		_IsPoleActive &&
+		_Pole.Gauge.Clan > 0 &&
+		_Pole.Gauge.Clan == _CurrentAtkClan
+	);
+}
+
+// ---------------------------------- //
+/** Turn on/off the overtime
+ * 
+ *	@param	_Activate		If True activate overtime
+ */
+Void SetOvertime(Boolean _Activate) {
+	G_OvertimeActivated = _Activate;
+	
+	declare netwrite Boolean Net_OvertimeActivated for Teams[0];
+	Net_OvertimeActivated = G_OvertimeActivated;
+}
+
+// ---------------------------------- //
+/** Get the current status of the overtime
+ *
+ *	@return		True if the overtime is activated, False otherwise
+ */
+Boolean GetOvertime() {
+	return G_OvertimeActivated;
+}
+
+// ---------------------------------- //
+/** Set the overtime advantage
+ * 
+ *	@param	_Advantage		The clan who has the advantage
+ */
+Void SetOvertimeAdvantage(Integer _Advantage) {
+	G_OvertimeAdvantage = _Advantage;
+	
+	declare netwrite Integer Net_OvertimeAdvantage for Teams[0];
+	Net_OvertimeAdvantage = G_OvertimeAdvantage;
+}
+
+// ---------------------------------- //
+/** Get the current overtime advantage
+ *
+ *	@return		The clan that has the advantage
+ */
+Integer GetOvertimeAdvantage() {
+	return G_OvertimeAdvantage;
+}
+
+// ---------------------------------- //
+/** Get the requested clan of a player
+ *
+ *	@param	_Player		The player to check
+ *
+ *	@return				The requested clan of the player
+ */
+Integer Battle_GetRequestedClan(CSmPlayer _Player) {
+	if (MM_IsMatchServer()) {
+		return MM_GetRequestedClan(_Player);
+	} else {
+		if (_Player == Null) return 0;
+		
+		declare Battle_BalanceClan for _Player = -1;
+		if (S_AutoBalanceRound && (Battle_BalanceClan == 1 || Battle_BalanceClan == 2)) {
+			return Battle_BalanceClan;
+		} else {
+			return _Player.RequestedClan;
+		}
+	}
+	
+	return 0;
+}
+
+// ---------------------------------- //
+/** Check if the spawns of the players are limited to a specific list
+ *
+ *	@return		True if the player spawns are limited, False otherwise
+ */
+Boolean SpawnIsLimited() {
+	if (WarmUp2::GroupExists("Clan1") && WarmUp2::GroupExists("Clan2")) return True;
+	return False;
+}
+
+// ---------------------------------- //
+/** Check if a player is spawnable
+ *
+ *	@param	_Player		The player to check
+ *
+ *	@return		True if the player is spawnable, false otherwise
+ */
+Boolean IsSpawnable(CSmPlayer _Player) {
+	if (_Player == Null) return False;
+	if (_Player.RequestsSpectate) return False;
+	if (!SpawnIsLimited()) return True;
+	
+	if (WarmUp2::GetPlayerSlot(_Player) <= 0) return False;
+	if (_Player.CurrentClan == 1 && WarmUp2::GetPlayerGroup(_Player) == "Clan1") return True;
+	if (_Player.CurrentClan == 2 && WarmUp2::GetPlayerGroup(_Player) == "Clan2") return True;
+	
+	return False;
+}
+
+// ---------------------------------- //
+/// End map timer for MatchMaking
+Void UpdateBasesColors(CSmMapLandmark[Integer] _ClanSpawnAnchors) {
+	foreach (Base in MapBases) {
+		Base.Clan = 0;
+		Base.IsActive = True;
+	}
+	
+	declare UpdatedBases = Ident[];
+	
+	foreach (Clan => Spawn in _ClanSpawnAnchors) {
+		if (Spawn.Base == Null) continue;
+		
+		Spawn.Base.Clan = Clan;
+		Spawn.Base.IsActive = True;
+		UpdatedBases.add(Spawn.Base.Id);
+	}
+	
+	foreach (Pole in MapLandmarks_Gauge) {
+		declare Clan = 0;
+		if (Pole.Gauge.Clan == 1 || Pole.Gauge.Clan == 2) {
+			if (Pole.Gauge.Value < Pole.Gauge.Max) Clan = 3 - Pole.Gauge.Clan;
+			else Clan = Pole.Gauge.Clan;
+		}
+		
+		if (Pole.Base != Null) {
+			if (!UpdatedBases.exists(Pole.Base.Id)) {
+				Pole.Base.Clan = Clan;
+				UpdatedBases.add(Pole.Base.Id);
+			} else if (Pole.Base.Clan != Clan) {
+				Pole.Base.Clan = 0;
+			}
+		}
+	}
+}
+
+// ---------------------------------- //
+/** Transfert player for auto team balance
+ *
+ *	@param	_CountClan1		Number of players in clan 1
+ *	@param	_CountClan2		Number of players in clan 2
+ *	@param	_HitClan1		Number of hits in clan 1
+ *	@param	_HitClan2		Number of hits in clan 2
+ *
+ *	@return					True if a player was transfered, False otherwise
+ */
+Boolean AutoTeamBalanceRound_Recursive(Integer _CountClan1, Integer _CountClan2, Integer _HitClan1, Integer _HitClan2) {
+	if (_CountClan1 > _CountClan2) {
+		declare Diff = (_HitClan1 - _HitClan2) / 2;
+		if (Diff < 0) Diff = 0;
+		declare MinDiff = -1;
+		declare CSmPlayer TransfertPlayer;
+		
+		foreach (Player in Players) {
+			if (Player.Score == Null || Player.CurrentClan != 1) continue;
+			declare CurDiff = ML::Abs(Diff - Scores::GetPlayerRoundPoints(Player.Score));
+			if (MinDiff < 0 || CurDiff < MinDiff) {
+				MinDiff = CurDiff;
+				TransfertPlayer <=> Player;
+				if (MinDiff == 0) break;
+			}
+		}
+		
+		if (TransfertPlayer != Null) {
+			declare Battle_BalanceClan for TransfertPlayer = -1;
+			Battle_BalanceClan = 2;
+			
+			UnspawnPlayer(TransfertPlayer);
+			SetPlayerClan(TransfertPlayer, Battle_BalanceClan);
+			
+			return True;
+		}
+	} else if (_CountClan2 > _CountClan1) {
+		declare Diff = (_HitClan2 - _HitClan1) / 2;
+		if (Diff < 0) Diff = 0;
+		declare MinDiff = -1;
+		declare CSmPlayer TransfertPlayer;
+		
+		foreach (Player in Players) {
+			if (Player.Score == Null || Player.CurrentClan != 2) continue;
+			declare CurDiff = ML::Abs(Diff - Scores::GetPlayerRoundPoints(Player.Score));
+			if (MinDiff < 0 || CurDiff < MinDiff) {
+				MinDiff = CurDiff;
+				TransfertPlayer <=> Player;
+				if (MinDiff == 0) break;
+			}
+		}
+		
+		if (TransfertPlayer != Null) {
+			declare Battle_BalanceClan for TransfertPlayer = -1;
+			Battle_BalanceClan = 1;
+			
+			UnspawnPlayer(TransfertPlayer);
+			SetPlayerClan(TransfertPlayer, Battle_BalanceClan);
+		
+			return True;
+		}
+	}
+		
+	return False;
+}
+
+// ---------------------------------- //
+/// Auto team balance depending on hit and players number
+Void AutoTeamBalanceRound() {
+	declare IterationCount = 0;
+	
+	// Set the player in the clan they requested before doing the balance
+	foreach (Player in Players) {
+		declare Battle_BalanceClan for Player = -1;
+		declare Battle_PrevClan for Player = -1;
+		Battle_BalanceClan = -1;
+		Battle_PrevClan = Player.CurrentClan;
+		
+		UnspawnPlayer(Player);
+		SetPlayerClan(Player, Battle_GetRequestedClan(Player));
+	}
+	
+	while (True) {
+		IterationCount += 1;
+		if (IterationCount > 128) break;
+		
+		declare CountClan1 = 0;
+		declare CountClan2 = 0;
+		declare HitClan1 = 0;
+		declare HitClan2 = 0;
+		
+		foreach (Player in Players) {
+			if (Player.CurrentClan == 1) {
+				CountClan1 += 1;
+				if (Player.Score != Null) HitClan1 += Scores::GetPlayerRoundPoints(Player.Score);
+			} else if (Player.CurrentClan == 2) {
+				CountClan2 += 1;
+				if (Player.Score != Null) HitClan2 += Scores::GetPlayerRoundPoints(Player.Score);
+			}
+		}
+		
+		declare CountDiff = ML::Abs(CountClan1 - CountClan2);
+		if (CountDiff < S_AutoBalanceDelta || CountDiff < 2) break;
+	
+		declare Transfered = AutoTeamBalanceRound_Recursive(CountClan1, CountClan2, HitClan1, HitClan2);
+		if (!Transfered) break;
+		
+		MB_Yield();
+	}
+	
+	foreach (Player in Players) {
+		declare Battle_PrevClan for Player = -1;
+		if (Battle_PrevClan >= 0 && Battle_PrevClan != Player.CurrentClan && (Player.CurrentClan == 1 || Player.CurrentClan == 2)) {
+			declare UI <=> UIManager.GetUI(Player);
+			if (UI != Null) UI.SendChat(TL::Compose(
+				_("|%1 is the name of the team|Auto team balance, you are transfered to the $<%1$> team."), 
+				Teams[Player.CurrentClan-1].ColorizedName)
+			);
+		}
+	}
+}
+
+Void UpdatePlayerScore(CSmPlayer Player, Integer CaptureMaxValue) {
+	if(Player.Score == Null) return;
+	
+	declare Real ScoreCaptureFactor = 1.;
+	declare Real ScoreDenyFactor	= 1.; 
+	if (CaptureMaxValue != 0) {
+		ScoreCaptureFactor = C_PointsPerPole / CaptureMaxValue;
+		ScoreDenyFactor = C_DefPointOnDenyForOnePole / CaptureMaxValue;
+	}
+	
+	declare Integer Battle_ScoreDefenseBonus for Player.Score;
+	declare Integer Battle_ScoreAttackBonus for Player.Score;
+	declare Integer Battle_ScoreAlternative for Player.Score;
+	declare Integer Battle_ScoreHit for Player.Score;
+	declare Integer Battle_TotalCaptureTime for Player.Score;
+	declare Integer Battle_TotalDenyTime for Player.Score;
+	
+	declare Real ScoreCapture = ScoreCaptureFactor * Battle_TotalCaptureTime;
+	declare Real ScoreDeny = ScoreDenyFactor * Battle_TotalDenyTime;
+
+	declare Integer Battle_ScoreCapture for Player;
+	declare Integer Battle_ScoreDefense for Player;
+	declare Integer Battle_ScoreAttack for Player;
+	Battle_ScoreCapture = ML::NearestInteger(ScoreCapture);
+	Battle_ScoreAttack = Battle_ScoreAttackBonus + Battle_ScoreCapture;  //  etc.
+	Battle_ScoreDefense = Battle_ScoreDefenseBonus + ML::NearestInteger(ScoreDeny); // etc.
+	Battle_ScoreAlternative = Battle_ScoreAttack + Battle_ScoreDefense;
+	
+	Scores::SetPlayerRoundPoints(Player.Score, Battle_ScoreHit);
+}
+
+Void UpdatePlayersScores(Integer CaptureMaxValue)
+{
+	foreach(Player in Players) {
+		UpdatePlayerScore(Player, CaptureMaxValue);
+	}
+}
+
+Void SetCustomScoreDefenseAction(CSmPlayer _CustomScorePlayer, Integer _CaptureMaxValue) {
+	UpdatePlayerScore(_CustomScorePlayer, _CaptureMaxValue);
+	
+	declare Integer Battle_ScoreDefense for _CustomScorePlayer;
+	if (Hud != Null && Hud.ScoresTable != Null) {
+		Hud.ScoresTable.SetColumnValue(_CustomScorePlayer.Score, "Defense", Battle_ScoreDefense);
+	}
+	
+	// update tops
+	declare Integer MapDefense for _CustomScorePlayer = 0;
+	Top::SetRecord(_CustomScorePlayer, C_TopId_Defense, ""^(MapDefense + Battle_ScoreDefense), -(MapDefense + Battle_ScoreDefense));
+}
+
+Void SetCustomScoreHit(CSmPlayer _CustomScorePlayer, Integer _CaptureMaxValue) {
+	UpdatePlayerScore(_CustomScorePlayer, _CaptureMaxValue);
+	
+	declare Integer Battle_ScoreDefense for _CustomScorePlayer;
+	declare Integer Battle_ScoreAttack	for _CustomScorePlayer;
+	declare Integer Battle_ScoreHit for _CustomScorePlayer.Score; 
+	
+	if (Hud != Null && Hud.ScoresTable != Null) {
+		Hud.ScoresTable.SetColumnValue(_CustomScorePlayer.Score, "Attack", Battle_ScoreAttack);
+		Hud.ScoresTable.SetColumnValue(_CustomScorePlayer.Score, "Defense", Battle_ScoreDefense);
+	}
+	
+	// update tops
+	declare Integer MapHit for _CustomScorePlayer = 0;
+	declare Integer MapCombo for _CustomScorePlayer = 0;
+	declare Integer MapDefense for _CustomScorePlayer = 0;
+	declare Integer MapAttack for _CustomScorePlayer = 0;
+	
+	declare Integer RoundCombo	for _CustomScorePlayer = 0;
+	
+	Top::SetRecord(_CustomScorePlayer, C_TopId_Hit, ""^(MapHit + Battle_ScoreHit), -(MapHit + Battle_ScoreHit));
+	Top::SetRecord(_CustomScorePlayer, C_TopId_Combo, ""^(RoundCombo), -RoundCombo);
+	Top::SetRecord(_CustomScorePlayer, C_TopId_Defense, ""^(MapDefense + Battle_ScoreDefense), -(MapDefense + Battle_ScoreDefense));
+	Top::SetRecord(_CustomScorePlayer, C_TopId_Attack, ""^(MapAttack + Battle_ScoreAttack), -(MapAttack + Battle_ScoreAttack));
+}
+
+Void SetCustomScorePole(CSmPlayer _CustomScorePlayer, Integer _CaptureMaxValue) {
+	UpdatePlayerScore(_CustomScorePlayer, _CaptureMaxValue);
+	
+	declare Integer Battle_ScoreCapture for _CustomScorePlayer;
+	declare Integer Battle_ScoreAttack for _CustomScorePlayer;
+	
+	if (Hud != Null && Hud.ScoresTable != Null) {
+		Hud.ScoresTable.SetColumnValue(_CustomScorePlayer.Score, "Attack", Battle_ScoreAttack);
+		Hud.ScoresTable.SetColumnValue(_CustomScorePlayer.Score, "Capture", Battle_ScoreCapture);
+	}
+	
+	// update tops
+	declare Integer MapCapture for _CustomScorePlayer = 0;
+	declare Integer MapAttack for _CustomScorePlayer = 0;
+	
+	Top::SetRecord(_CustomScorePlayer, C_TopId_Capture, ""^(MapCapture + Battle_ScoreCapture), -(MapCapture + Battle_ScoreCapture));
+	Top::SetRecord(_CustomScorePlayer, C_TopId_Attack, ""^(MapAttack + Battle_ScoreAttack), -(MapAttack + Battle_ScoreAttack));
+}
+
+Void SetCustomScoreAll(CSmPlayer _CustomScorePlayer, Integer _CaptureMaxValue) {
+	UpdatePlayerScore(_CustomScorePlayer, _CaptureMaxValue);
+	
+	declare Integer Battle_ScoreCapture for _CustomScorePlayer;
+	declare Integer Battle_ScoreDefense for _CustomScorePlayer;
+	declare Integer Battle_ScoreAttack for _CustomScorePlayer;
+	declare Integer Battle_ScoreHit for _CustomScorePlayer.Score;
+	if (Hud != Null && Hud.ScoresTable != Null) {
+		Hud.ScoresTable.SetColumnValue(_CustomScorePlayer.Score, "Capture", Battle_ScoreCapture);
+		Hud.ScoresTable.SetColumnValue(_CustomScorePlayer.Score, "Attack", Battle_ScoreAttack);
+		Hud.ScoresTable.SetColumnValue(_CustomScorePlayer.Score, "Defense", Battle_ScoreDefense);
+	}
+	
+	// update tops
+	declare Integer MapHit for _CustomScorePlayer = 0;
+	declare Integer MapCombo for _CustomScorePlayer = 0;
+	declare Integer MapCapture for _CustomScorePlayer = 0;
+	declare Integer MapDefense for _CustomScorePlayer = 0;
+	declare Integer MapAttack for _CustomScorePlayer = 0;
+	
+	declare Integer RoundCombo for _CustomScorePlayer = 0;
+	
+	Top::SetRecord(_CustomScorePlayer, C_TopId_Hit, ""^(MapHit + Battle_ScoreHit), -(MapHit + Battle_ScoreHit));
+	Top::SetRecord(_CustomScorePlayer, C_TopId_Combo, ""^(RoundCombo), -(RoundCombo));
+	Top::SetRecord(_CustomScorePlayer, C_TopId_Capture, ""^(MapCapture + Battle_ScoreCapture), -(MapCapture + Battle_ScoreCapture));
+	Top::SetRecord(_CustomScorePlayer, C_TopId_Defense, ""^(MapDefense + Battle_ScoreDefense), -(MapDefense + Battle_ScoreDefense));
+	Top::SetRecord(_CustomScorePlayer, C_TopId_Attack, ""^(MapAttack + Battle_ScoreAttack), -(MapAttack + Battle_ScoreAttack));
+}
+
+// ---------------------------------- //
+/** Set the top 5 name and ranking
+ *
+ *	@param	_Name		Name of the top 5
+ *	@param	_Ranking	Ranking of the top 5
+ */
+Void UpdateTop5(Text _Name, Integer[Text] _Ranking) {
+	declare netwrite Integer Net_RoundTop_Update for Teams[0];
+	declare netwrite Integer[Text] Net_RoundTop_Ranking for Teams[0];
+	declare netwrite Text Net_RoundTop_Name for Teams[0];
+	
+	Net_RoundTop_Ranking = _Ranking;
+	Net_RoundTop_Name = _Name;
+	Net_RoundTop_Update = Now;
+}
+
+// ---------------------------------- //
+/** Get the runners ranking
+ *
+ *	@param		_Level		Can be "round" or "map"
+ *
+ *	@return		An array containing the ranking of the runners
+ */
+Integer[Text] GetRunnersRanking(Text _Level) {
+	if (_Level == "map") {
+		declare Integer[Text] MapTop_CaptureTimePoints for This;
+		return MapTop_CaptureTimePoints;
+	}
+	
+	declare Integer[Text] Ranking;
+	declare Integer[Text][Ident] CaptureTimeRanking;
+	
+	foreach (Player in AllPlayers) {
+		declare Integer[Ident] RoundTop_CaptureTime for Player.Score;
+		foreach (PoleId => CaptureTime in RoundTop_CaptureTime) {
+			if (!CaptureTimeRanking.existskey(PoleId)) CaptureTimeRanking[PoleId] = Integer[Text];
+			CaptureTimeRanking[PoleId][Player.User.Login] = CaptureTime;
+		}
+	}
+	
+	declare PointsRepartition = [10, 6, 4, 3, 2, 1];
+	foreach (PoleId => PoleRanking in CaptureTimeRanking) {
+		declare SortedRanking = PoleRanking.sort();
+		declare PointsKey = 0;
+		foreach (PlayerLogin => CaptureTime in SortedRanking) {
+			if (!Ranking.existskey(PlayerLogin)) Ranking[PlayerLogin] = 0;
+			declare Points = 0;
+			if (PointsRepartition.existskey(PointsKey)) Points = PointsRepartition[PointsKey];
+			Ranking[PlayerLogin] -= Points;
+			PointsKey += 1;
+		}
+	}
+	
+	declare Text EngageLogin for This;
+	if (EngageLogin != "") {
+		if (!Ranking.existskey(EngageLogin)) Ranking[EngageLogin] = 0;
+		Ranking[EngageLogin] -= 10;
+	}
+	
+	return Ranking;
+}
+
+// ---------------------------------- //
+/// Add the round points to the map points
+Void UpdateMapRunnersRanking() {
+	declare RoundRanking = GetRunnersRanking("round");
+	declare Integer[Text] MapTop_CaptureTimePoints for This;
+	
+	foreach (Login => Points in RoundRanking) {
+		if (!MapTop_CaptureTimePoints.existskey(Login)) MapTop_CaptureTimePoints[Login] = 0;
+		MapTop_CaptureTimePoints[Login] += Points;
+	}
+}
+
+// ---------------------------------- //
+/// Reset the runners map ranking
+Void ResetMapRunnersRanking() {
+	declare Integer[Text] MapTop_CaptureTimePoints for This;
+	MapTop_CaptureTimePoints.clear();
+}
+
+// ---------------------------------- //
+/** Launch the top 5 sequence
+ *
+ *	@param	_Level	Can be "round" or "map"
+ */
+Void LaunchTop5Sequence(Text _Level) {
+	if (ServerShutdownRequested || MatchEndRequested) return;
+	
+	declare PrevUISequence = UIManager.UIAll.UISequence;
+	UIManager.UIAll.UISequence = CUIConfig::EUISequence::EndRound;
+	UIManager.UIAll.UISequence = CUIConfig::EUISequence::Podium;
+	UIManager.UIAll.BigMessageSound = CUIConfig::EUISound::Silence;
+	Layers::Show(C_Layer_Top5);
+	
+	declare Tops = ["Runners", "Attack", "Defense", "Capture", "Hits"];
+	if (!S_DisplayPoleRecords) {
+		declare Removed = Tops.remove("Runners");
+	}
+	if (S_DisplayTopsOnlyShooter) Tops = ["Hits"];
+	foreach (Top in Tops) {
+		declare Integer[Text] Ranking;
+		
+		switch (Top) {
+			case "Runners": {
+				Ranking = GetRunnersRanking(_Level);
+				if (_Level == "round") {
+					UIManager.UIAll.StatusMessage = _("Best runner of the round");
+				} else {
+					UIManager.UIAll.StatusMessage = _("Best runner of the map");
+				}
+			}
+			case "Attack": {
+				if (_Level == "round") {
+					foreach (Player in AllPlayers) {
+						declare Integer Battle_ScoreAttack for Player;
+						Ranking[Player.User.Login] = -Battle_ScoreAttack;
+					}
+					UIManager.UIAll.StatusMessage = _("Best attacker of the round");
+				} else {
+					foreach (Player in AllPlayers) {
+						declare Integer MapAttack for Player;
+						Ranking[Player.User.Login] = -MapAttack;
+					}
+					UIManager.UIAll.StatusMessage = _("Best attacker of the map");
+				}
+			}
+			case "Defense": {
+				if (_Level == "round") {
+					foreach (Player in AllPlayers) {
+						declare Integer Battle_ScoreDefense for Player;
+						Ranking[Player.User.Login] = -Battle_ScoreDefense;
+					}
+					UIManager.UIAll.StatusMessage = _("Best defender of the round");
+				} else {
+					foreach (Player in AllPlayers) {
+						declare Integer MapDefense for Player;
+						Ranking[Player.User.Login] = -MapDefense;
+					}
+					UIManager.UIAll.StatusMessage = _("Best defender of the map");
+				}
+			}
+			case "Capture": {
+				if (_Level == "round") {
+					foreach (Player in AllPlayers) {
+						declare Integer Battle_ScoreCapture for Player;
+						Ranking[Player.User.Login] = -Battle_ScoreCapture;
+					}
+					UIManager.UIAll.StatusMessage = _("Best capturer of the round");
+				} else {
+					foreach (Player in AllPlayers) {
+						declare Integer MapCapture for Player;
+						Ranking[Player.User.Login] = -MapCapture;
+					}
+					UIManager.UIAll.StatusMessage = _("Best capturer of the map");
+				}
+			}
+			case "Hits": {
+				if (_Level == "round") {
+					foreach (Player in AllPlayers) {
+						declare Integer Battle_ScoreHit for Player.Score;
+						Ranking[Player.User.Login] = -Battle_ScoreHit;
+					}
+					UIManager.UIAll.StatusMessage = _("Best shooter of the round");
+				} else {
+					foreach (Player in AllPlayers) {
+						declare Integer MapHit for Player;
+						Ranking[Player.User.Login] = -MapHit;
+					}
+					UIManager.UIAll.StatusMessage = _("Best shooter of the map");
+				}
+			}
+		}
+		
+		declare InvertedRanking = Ranking.sort();
+		Ranking.clear();
+		UIManager.UIAll.UISequence_PodiumPlayersWin = "";
+		declare BestPlayerName = "";
+		declare Count = 0;
+		foreach (Login => Points in InvertedRanking) {
+			Count += 1;
+			Ranking[Login] = Points * -1;
+			if (BestPlayerName == "") {
+				declare User = SM::GetUser(Login);
+				if (User != Null) BestPlayerName = User.Name;
+			}
+			if (Count <= 3) {
+				if (UIManager.UIAll.UISequence_PodiumPlayersWin != "") UIManager.UIAll.UISequence_PodiumPlayersWin ^= ",";
+				UIManager.UIAll.UISequence_PodiumPlayersWin ^= Login;
+			}
+		}
+		
+		UpdateTop5(Top, Ranking);
+		UIManager.UIAll.BigMessage = BestPlayerName;
+		UIManager.UIAll.SendNotice(
+			"", 
+			CUIConfig::ENoticeLevel::PlayerInfo, Null, 
+			CUIConfig::EAvatarVariant::Default, 
+			CUIConfig::EUISound::Notice, 0
+		);
+		MB_Sleep(C_Top5SequenceDuration / Tops.count);
+	}
+	
+	Layers::Hide(C_Layer_Top5);
+	UIManager.UIAll.UISequence_PodiumPlayersWin = "";
+	UIManager.UIAll.UISequence = CUIConfig::EUISequence::EndRound;
+	UIManager.UIAll.UISequence = PrevUISequence;
+	UIManager.UIAll.StatusMessage = "";
+	UIManager.UIAll.BigMessage = "";
+}
+
+// ---------------------------------- //
+/** Wait for enough players to play
+ *
+ *	@param	_Duration			Duration of the warm up
+ *	@param	_MinimumNbPlayers	The number of players to wait in each clan before starting the map if there's no duration
+ */
+Void WaitForPlayers(Integer _MinimumNbPlayers, Integer _Duration) {
+	declare OldSequence = UIManager.UIAll.UISequence;
+	UIManager.UIAll.UISequence = CUIConfig::EUISequence::Playing;
+	UIManager.UIAll.BigMessageSound = CUIConfig::EUISound::Warning;
+	StartTime = Now;
+	if (_Duration > 0) {
+		UIManager.UIAll.CountdownEndTime = Now + (_Duration * 1000);
+		UIManager.UIAll.BigMessage = _("Warm up");
+	} else {
+		UIManager.UIAll.BigMessage = _("Waiting for players in each team...");
+	}
+	
+	foreach (Player in AllPlayers) {
+		declare UI <=> UIManager.GetUI(Player);
+		if (UI != Null) Tabs::UseTabs(UI, "ScoresTab");
+	}
+	
+	while (!ServerShutdownRequested && !MatchEndRequested) {
+		MB_Yield();
+		
+		if (_Duration > 0) {
+			if (Now >= UIManager.UIAll.CountdownEndTime) break;
+		} else {
+			if (ClansNbPlayers[1] >= _MinimumNbPlayers && ClansNbPlayers[2] >= _MinimumNbPlayers) break;
+		}
+		
+		SM::UnspawnPlayersChangingClan();
+		foreach(Player in Players) {
+			if (Player.SpawnStatus == CSmPlayer::ESpawnStatus::NotSpawned) {
+				declare Clan = Battle_GetRequestedClan(Player);
+				declare Spawn <=> Map::GetPlayerSpawn("Spawn", Clan);
+				if (Spawn != Null) SM::Spawn(Player, Clan, Spawn);
+			}
+		}
+		
+		foreach (Event in PendingEvents) {
+			if (Event.Type == CSmModeEvent::EType::OnPlayerAdded) {
+				declare UI <=> UIManager.GetUI(Event.Player);
+				if (UI != Null) Tabs::UseTabs(UI, "ScoresTab");
+			}
+		}
+		
+		WarmUp2::ManageEvents();
+	}
+	
+	SM::UnspawnAllPlayers();
+	StartTime = -1;
+	UIManager.UIAll.CountdownEndTime = -1;
+	UIManager.UIAll.BigMessage = "";
+	UIManager.UIAll.UISequence = OldSequence;
+}
+
+// ---------------------------------- //
+/// Initialize the warm up properties
+Void InitWarmUp() {
+	if (S_NbPlayersPerTeamMax > 0) {
+		if (WarmUp2::GroupExists("Clan1")) WarmUp2::SetSlotsNb("Clan1", S_NbPlayersPerTeamMax);
+		else WarmUp2::CreateGroup("Clan1", S_NbPlayersPerTeamMax);
+		if (WarmUp2::GroupExists("Clan2")) WarmUp2::SetSlotsNb("Clan2", S_NbPlayersPerTeamMax);
+		else WarmUp2::CreateGroup("Clan2", S_NbPlayersPerTeamMax);
+		WarmUp2::DisplayClanSelection(True);
+	} else {
+		WarmUp2::DestroyGroup("Clan1");
+		WarmUp2::DestroyGroup("Clan2");
+		WarmUp2::DisplayClanSelection(False);
+	}
+}
+
+Void DoWarmUp() {
+	// Shutdown the poles during warmup
+	foreach (Goal in MapLandmarks_Gauge) {
+		Goal.Gauge.Clan = 0;
+		Goal.Gauge.Speed = 0;
+		Goal.Gauge.Value = 0;
+		Goal.Gauge.Max = 1000;
+		Goal.Gauge.Captured = False;
+	}
+	
+	UIManager.UIAll.UISequence = CUIConfig::EUISequence::Playing;
+	UIManager.UIAll.BigMessageSound = CUIConfig::EUISound::PhaseChange;
+	UIManager.UIAll.BigMessageSoundVariant = 0;
+	UIManager.UIAll.StatusMessage = _("Press F6 once you're ready.");
+	UIManager.UIAll.BigMessage = TL::Compose("$f90%1", _("Warm-up"));
+	
+	// Wait players sycnhro
+	MB_Synchro();
+	SM::UnspawnAllPlayers();
+	foreach (Player in AllPlayers) {
+		SetPlayerClan(Player, Battle_GetRequestedClan(Player));
+		if (Player.CurrentClan == 1) WarmUp2::SetPlayerGroup(Player, "Clan1");
+		else if (Player.CurrentClan == 2) WarmUp2::SetPlayerGroup(Player, "Clan2");
+		
+		declare UI <=> UIManager.GetUI(Player);
+		if (UI != Null) Tabs::UseTabs(UI, "ScoresTab");
+	}
+	
+	WarmUp2::Clean();
+	WarmUp2::Begin();
+	WarmUp2::Fill();
+	
+	declare PrevWarmUpDuration = S_WarmUpDuration-1;
+	
+	while (!WarmUp2::Stop()) {
+		MB_Yield();
+		
+		// Let the server sleep if there's no players on it
+		if (PlayersNbTotal <= 0) continue;
+		
+		foreach (Player in Players) {
+			declare RequestedClan = Battle_GetRequestedClan(Player);
+			if (Player.CurrentClan != RequestedClan) {
+				UnspawnPlayer(Player);
+				SetPlayerClan(Player, RequestedClan);
+				if (Player.CurrentClan == 1) WarmUp2::SetPlayerGroup(Player, "Clan1");
+				else if (Player.CurrentClan == 2) WarmUp2::SetPlayerGroup(Player, "Clan2");
+			}
+		}
+		
+		if (PrevWarmUpDuration != S_WarmUpDuration) {
+			PrevWarmUpDuration = S_WarmUpDuration;
+			
+			declare LongTimer = S_WarmUpDuration*1000;
+			declare ShortTimer = 5000;
+			if (LongTimer <= 0) { LongTimer = 0; ShortTimer = 0; }
+			
+			WarmUp2::SetGroupTimers("Clan1", [ShortTimer => [-1, S_NbPlayersPerTeamMin], LongTimer => [1, S_NbPlayersPerTeamMin]]);
+			WarmUp2::SetGroupTimers("Clan2", [ShortTimer => [-1, S_NbPlayersPerTeamMin], LongTimer => [1, S_NbPlayersPerTeamMin]]);
+		}
+		
+		WarmUp2::Fill();
+		WarmUp2::Loop();
+		
+		foreach(Player in Players) {
+			if (Player.SpawnStatus == CSmPlayer::ESpawnStatus::NotSpawned) {
+				declare Spawn <=> Map::GetPlayerSpawn("Spawn", Battle_GetRequestedClan(Player));
+				if (Spawn != Null) SM::Spawn(Player, Player.CurrentClan, Spawn);
+			}
+		}
+		
+		foreach (Event in PendingEvents) {
+			if (Event.Type == CSmModeEvent::EType::OnPlayerAdded) {
+				declare UI <=> UIManager.GetUI(Event.Player);
+				if (UI != Null) Tabs::UseTabs(UI, "ScoresTab");
+			}
+		}
+		
+		WarmUp2::ManageEvents();
+	}
+	
+	WarmUp2::End();
+	
+	UIManager.UIAll.UISequence = CUIConfig::EUISequence::EndRound;
+	UIManager.UIAll.StatusMessage = "";
+	UIManager.UIAll.BigMessage = "";
+	SM::UnspawnAllPlayers();
+}
+
+Void UpdateTimeLeftUI(CSmPlayer Player, Integer CurrentAtkClan, Integer DurationInSeconds) {
+	declare UI <=> UIManager.GetUI(Player);
+	if (UI == Null) return;
+	
+	declare netwrite Integer BattleWaves_TimeLeft for UI;
+	declare netwrite Integer BattleWaves_AtkClan for UI;
+	
+	BattleWaves_AtkClan  = CurrentAtkClan;
+	BattleWaves_TimeLeft = DurationInSeconds;
+}
+
+Void UpdateUIAll(Integer _DurationBeforePivot, Integer _CurrentAtkClan) {
+	declare Integer DurationInSeconds = (_DurationBeforePivot/1000) + 1;
+	
+	foreach(Player in Players) {
+		UpdateTimeLeftUI(Player, _CurrentAtkClan, DurationInSeconds);
+	}
+	foreach(Spectator in Spectators) {
+		UpdateTimeLeftUI(Spectator, _CurrentAtkClan, DurationInSeconds);
+	}
+}
+
+Void ResetAllUIs() 
+{
+	UIManager.UIAll.BigMessage ="";
+	UIManager.UIAll.StatusMessage ="";
+	
+	Layers::SetVisibility(C_Layer_RoundInfo, False);
+	
+	// Remove markers
+	foreach (UI in UIManager.UI) {
+		UI.MarkersXML = "";
+	}
+}
+
+Void OnRoundStop(Integer _DurationBeforePivot, Integer _CurrentAtkClan) {
+	// Update the UI before starting the "end round" business
+	Layers::SetVisibility(C_Layer_TimeLeft, False);
+	if(C_BattleWaves) {
+		UpdateUIAll(_DurationBeforePivot, _CurrentAtkClan);
+	}
+}
+
+Void UpdateScoreTeamsUI(CSmPlayer Player, Text _ScoreTeam1, Text _ScoreTeam2) {
+	declare UI <=> UIManager.GetUI(Player);
+	if (UI == Null) return;
+	
+	declare netwrite Text Battle_ScoreTeam1 for UI;
+	declare netwrite Text Battle_ScoreTeam2 for UI;
+
+	Battle_ScoreTeam1 = _ScoreTeam1;
+	Battle_ScoreTeam2 = _ScoreTeam2;
+}
+
+Void UpdateTeamsScoresUI(Integer[Integer] _TotalCaptureValue, Integer _NbPolesByClan, CSmMapLandmark[][Integer] _ClanPoles, Integer _CaptureMaxValue) {
+	// Update UI
+	declare ClanTotalRatios1 = 100 * _TotalCaptureValue[1] / (_CaptureMaxValue * _NbPolesByClan);
+	declare ClanTotalRatios2 = 100 * _TotalCaptureValue[2] / (_CaptureMaxValue * _NbPolesByClan);
+	
+	// Show a precise score if needed
+	if(ClanTotalRatios1 == ClanTotalRatios2) {
+		if(ClanTotalRatios1 == 0) {
+			G_ScoreTeam1 = "";
+			G_ScoreTeam2 = "";
+		} else {
+			declare Real RealRatio1 = _TotalCaptureValue[1] / (1.0* (_CaptureMaxValue * _ClanPoles[1].count));
+			declare Real RealRatio2 = _TotalCaptureValue[2] / (1.0* (_CaptureMaxValue * _ClanPoles[2].count));
+			declare Coma1 = ML::NearestInteger(1000.*RealRatio1) % 10;
+			declare Coma2 = ML::NearestInteger(1000.*RealRatio2) % 10;
+			
+			G_ScoreTeam1 = ClanTotalRatios1^"."^Coma1^"%";
+			G_ScoreTeam2 = ClanTotalRatios2^"."^Coma2^"%";
+		}
+	} else {
+		G_ScoreTeam1 = ClanTotalRatios1^"%";
+		G_ScoreTeam2 = ClanTotalRatios2^"%";
+	}
+
+	
+	foreach(Player in Players) {
+		UpdateScoreTeamsUI(Player, G_ScoreTeam1, G_ScoreTeam2);
+	}
+	foreach(Spectator in Spectators) {
+		UpdateScoreTeamsUI(Spectator, G_ScoreTeam1, G_ScoreTeam2);
+	}
+	
+	// Update OverlayScoreSummary
+	declare PlayerClan1Id = NullId;
+	declare PlayerClan2Id = NullId;
+	foreach (Player in Players) {
+		if ((PlayerClan1Id == NullId) && (Player.CurrentClan == 1)) PlayerClan1Id = Player.Id;
+		if ((PlayerClan2Id == NullId) && (Player.CurrentClan == 2)) PlayerClan2Id = Player.Id;
+		
+		if (PlayerClan1Id != NullId && PlayerClan2Id != NullId) break;
+	}
+	
+	if (PlayerClan1Id != NullId && PlayerClan2Id != NullId) {
+		UIManager.UIAll.OverlayScoreSummary = True;
+		UIManager.UIAll.ScoreSummary_Player1 = PlayerClan1Id;
+		UIManager.UIAll.ScoreSummary_Points1 = Scores::GetClanMapPoints(1);
+		UIManager.UIAll.ScoreSummary_Gauge1 = ClanTotalRatios1/100.;
+		UIManager.UIAll.ScoreSummary_MatchPoints1 = Scores::GetClanMatchPoints(1);
+		UIManager.UIAll.ScoreSummary_Player2 = PlayerClan2Id;
+		UIManager.UIAll.ScoreSummary_Points2 = Scores::GetClanMapPoints(2);
+		UIManager.UIAll.ScoreSummary_Gauge2 = ClanTotalRatios2/100.;
+		UIManager.UIAll.ScoreSummary_MatchPoints2 = Scores::GetClanMatchPoints(2);
+	} else {
+		UIManager.UIAll.OverlayScoreSummary = False;
+	}
+}
+
+Void UpdateModeStatusMessage() {
+	declare Text BaseRules = _("Capture the poles of the opposing team!");
+	declare Text RoundsToWinSetting = ""^S_RoundsToWin;
+	declare Text MatchScore = Scores::GetClanMapPoints(1) ^ " - " ^ Scores::GetClanMapPoints(2);
+	declare Text RoundScore;
+	if((G_ScoreTeam1 == "") && (G_ScoreTeam2 == "")) {
+		RoundScore = "0% - 0%";
+	} else {
+		RoundScore = G_ScoreTeam1 ^ " - " ^G_ScoreTeam2;
+	}
+	
+	ModeInfo::SetStatusMessage(TL::Compose("%1\nRounds to win: %3\nMatch Score: %4, Round Score: %5", BaseRules, RoundsToWinSetting, MatchScore, RoundScore));
+}
+
+Void SendCaptureTime(CSmPlayer _Player) {
+	declare UI <=> UIManager.GetUI(_Player);
+	if (UI == Null) return;
+	
+	declare Integer[Ident] RoundTop_CaptureTime for _Player.Score;
+	declare netwrite Integer[Text] Net_RoundTop_CaptureTime for UI;
+	declare netwrite Integer Net_RoundTop_CaptureTimeUpdate for UI;
+	Net_RoundTop_CaptureTime.clear();
+	foreach (PoleId => CaptureTime in RoundTop_CaptureTime) {
+		Net_RoundTop_CaptureTime[""^PoleId] = CaptureTime;
+	}
+	Net_RoundTop_CaptureTimeUpdate = Now;
+}
+
+Void UpdateMarkers(CUIConfig _UI, Text _Markers) {
+	if (_UI == Null) return;
+	_UI.MarkersXML = _Markers;
+}
+
+Void InitializePlayer(CSmPlayer Player, Text _Markers, Integer _CurrentRoundIndex, Integer _CaptureMaxValue) {
+	SetPlayerClan(Player, Battle_GetRequestedClan(Player));
+	
+	if(Player.Score == Null) return;
+	
+	declare Integer Battle_TotalCaptureTime for Player.Score;
+	declare Integer Battle_TotalDenyTime for Player.Score;
+	declare Integer Battle_ScoreDefenseBonus for Player.Score;
+	declare Integer Battle_ScoreAttackBonus for Player.Score;
+	declare Integer Battle_ScoreAlternative for Player.Score;
+	declare Integer Battle_ScoreHit for Player.Score;
+	
+	declare Integer Battle_RoundIndex for Player.Score = -1;
+
+	if(Battle_RoundIndex != _CurrentRoundIndex) {
+		// reinit the score
+		Battle_RoundIndex = _CurrentRoundIndex;
+		
+		Battle_TotalCaptureTime = 0;
+		Battle_TotalDenyTime = 0;
+		Battle_ScoreDefenseBonus = 0;
+		Battle_ScoreAttackBonus = 0;
+		Battle_ScoreAlternative = 0;
+		Battle_ScoreHit = Scores::GetPlayerRoundPoints(Player.Score); // keep trace of previous score if the player disconnects.
+	}
+	
+	declare CustomScorePlayer <=> Player;
+	SetCustomScoreAll(CustomScorePlayer, _CaptureMaxValue);
+	
+	// update tops
+	declare Integer MapHit for Player = 0;
+	declare Integer MapCombo for Player = 0;
+	declare Integer MapCapture for Player = 0;
+	declare Integer MapDefense for Player = 0;
+	declare Integer MapAttack for Player = 0;
+	//MapHit = 0;
+	//MapCombo = 0;
+	//MapCapture = 0;
+	//MapDefense = 0;
+	//MapAttack = 0;
+
+	declare UI <=> UIManager.GetUI(Player);
+	if (UI == Null) return;
+	
+	declare netwrite Integer Battle_PoleCaptureState for UI;
+	declare netwrite Integer Battle_PoleCaptureRate  for UI;
+	declare netwrite Boolean Battle_ServToUIShowFrame for UI = False;
+	declare netwrite Integer Battle_UIRoundPhase for UI;
+	
+	Battle_PoleCaptureState = C_PoleCaptureState_Neutral;
+	Battle_PoleCaptureRate  = 0;
+	Battle_ServToUIShowFrame = ! Battle_ServToUIShowFrame;
+	Battle_UIRoundPhase = C_RoundPhase_Playing;
+	
+	UpdateMarkers(UI, _Markers);
+	Tabs::UseTabs(UI, "ScoresTab");
+	UpdateScoreTeamsUI(Player, G_ScoreTeam1, G_ScoreTeam2);
+	SendCaptureTime(Player);
+}
+
+Text GetMLColor(Text DollarColor) {
+	return TL::SubString(DollarColor, 1, 3)^"f";
+}
+
+/**
+ * Convert Integers from 1 to 9 into letters from A to I
+ */
+Text GetLetterFromNumber(Integer N) {
+	declare Suffix = "";
+	if (N > 26) Suffix = TL::ToText(((N - 1) / 26) + 1);
+	
+	switch(N) {
+		case 1 : return "A"^Suffix;
+		case 2 : return "B"^Suffix;
+		case 3 : return "C"^Suffix;
+		case 4 : return "D"^Suffix;
+		case 5 : return "E"^Suffix;
+		case 6 : return "F"^Suffix;
+		case 7 : return "G"^Suffix;
+		case 8 : return "H"^Suffix;
+		case 9 : return "I"^Suffix;
+		case 10: return "J"^Suffix;
+		case 11: return "K"^Suffix;
+		case 12: return "L"^Suffix;
+		case 13: return "M"^Suffix;
+		case 14: return "N"^Suffix;
+		case 15: return "O"^Suffix;
+		case 16: return "P"^Suffix;
+		case 17: return "Q"^Suffix;
+		case 18: return "R"^Suffix;
+		case 19: return "S"^Suffix;
+		case 20: return "T"^Suffix;
+		case 21: return "U"^Suffix;
+		case 22: return "V"^Suffix;
+		case 23: return "W"^Suffix;
+		case 24: return "X"^Suffix;
+		case 25: return "Y"^Suffix;
+		case 26: return "Z"^Suffix;
+	}
+	
+	return "?"^Suffix;
+}
+
+Text GetTimeLeftML(Integer _WavesDuration) {
+	// declare EmblemSize 	 = 18;
+	declare ArrowsHeight = 18;
+	declare EmblemOffset = 24;
+	
+	declare Text ImgActionLeft  = C_ImgBaseDir^"action_left.dds";
+	declare Text ImgActionRight = C_ImgBaseDir^"action_right.dds";
+	
+	declare Vec3 ColorClan1 = Teams[1].ColorPrimary;
+	declare Vec3 ColorClan2 = Teams[0].ColorPrimary;
+	
+	declare MLText = """
+<manialink version="1" name="Battle:TimeLeft">
+<frame posn="0 55 40" halign="center" valign="center" hidden="1" id="FrameTimeLeft">
+	<frame posn="0 4">
+		<label posn="0 4" halign="center" valign="center" style="TextRaceMessageBig" textsize="4" id="LabelAttack" />
+		<label posn="0 -2" halign="center" valign="center" style="TextRaceMessageBig" textsize="4" id="Label_AdditionalRules" />
+		<label posn="0 -8" halign="center" valign="center" style="TextRaceMessageBig" textsize="4" id="LabelTimeLeft" />
+	</frame>
+</frame>
+<script><!--
+#Include "MathLib" as ML
+#Include "TextLib" as TL
+
+main() {
+	declare netread Integer BattleWaves_TimeLeft 	for UI;
+	declare netread Integer BattleWaves_AtkClan 	for UI;
+	declare netread Boolean Battle_IsBeginner		for UI;
+	declare netread Boolean Net_OvertimeActivated for Teams[0];
+	declare netread Integer Net_OvertimeAdvantage for Teams[0];
+	
+	declare CMlFrame FrameTimeLeft 	<=> (Page.GetFirstChild("FrameTimeLeft") as CMlFrame);
+	declare CMlLabel LabelTimeLeft 	<=> (Page.GetFirstChild("LabelTimeLeft") as CMlLabel);
+	declare CMlLabel LabelAttack 	<=> (Page.GetFirstChild("LabelAttack") as CMlLabel);
+	declare CMlLabel Label_AdditionalRules 	<=> (Page.GetFirstChild("Label_AdditionalRules") as CMlLabel);
+	
+	declare Clan1Color = Teams[0].ColorText;
+	declare Clan2Color = Teams[1].ColorText;
+	
+	declare PrevAtkClan = -1;
+	declare CurrentPlayerClan = -1;
+	declare PrevPlayerClan = -1;
+	declare PrevOvertimeActivated = False;
+	declare PrevOvertimeAdvantage = -1;
+	declare PrevBigMessage = "";
+	
+	while(True) {
+		sleep(100);
+		
+		if (GUIPlayer != Null) CurrentPlayerClan = GUIPlayer.CurrentClan;
+		else if (InputPlayer != Null && !InputPlayer.RequestsSpectate) CurrentPlayerClan = InputPlayer.CurrentClan;
+		else CurrentPlayerClan = -1;
+		
+		if (
+			PrevAtkClan != BattleWaves_AtkClan 
+			|| PrevPlayerClan != CurrentPlayerClan 
+			|| PrevOvertimeActivated != Net_OvertimeActivated
+			|| PrevOvertimeAdvantage != Net_OvertimeAdvantage
+			|| PrevBigMessage != UI.BigMessage
+		) {
+			PrevAtkClan = BattleWaves_AtkClan;
+			PrevPlayerClan = CurrentPlayerClan;
+			PrevOvertimeActivated = Net_OvertimeActivated;
+			PrevOvertimeAdvantage = Net_OvertimeAdvantage;
+			PrevBigMessage = UI.BigMessage;
+			
+			if (BattleWaves_AtkClan <= 0) {
+				FrameTimeLeft.Visible = False;
+			} else {
+				FrameTimeLeft.Visible = True;
+				
+				if (CurrentPlayerClan == BattleWaves_AtkClan) {
+					LabelAttack.SetText(TL::Compose("$s%1", _("|Imperative|Attack")));
+					if (Battle_IsBeginner) {
+						Label_AdditionalRules.SetText(_("Capture the poles of the opposing team!"));
+						LabelTimeLeft.RelativePosition.Y = -8.;
+					} else if (Net_OvertimeActivated && UI.BigMessage == "") {
+						declare TeamA = Net_OvertimeAdvantage - 1;
+						declare TeamB = 3 - Net_OvertimeAdvantage - 1;
+						if (Teams.existskey(TeamA) && Teams.existskey(TeamB)) {
+							if (BattleWaves_AtkClan == Net_OvertimeAdvantage) {
+								Label_AdditionalRules.Value = TL::Compose(
+									"{{{_("|%1 is a team name|$<%1$> must attack a pole to win.")}}}", 
+									Teams[TeamA].ColorizedName
+								);
+							} else {
+								Label_AdditionalRules.Value = TL::Compose(
+									"{{{_("|%1 and %2 are teams names|$<%1$> must equal $<%2$> score.")}}}",  
+									Teams[TeamB].ColorizedName,
+									Teams[TeamA].ColorizedName
+								);
+							}
+							LabelTimeLeft.RelativePosition.Y = -8.;
+						} else {
+							Label_AdditionalRules.SetText("");
+							LabelTimeLeft.RelativePosition.Y = -2.;
+						}
+					} else {
+						Label_AdditionalRules.SetText("");
+						LabelTimeLeft.RelativePosition.Y = -2.;
+					}
+				} else if (CurrentPlayerClan == 3 - BattleWaves_AtkClan) {
+					LabelAttack.SetText(TL::Compose("$s%1", _("|Imperative|Defend")));
+					if (Battle_IsBeginner) {
+						Label_AdditionalRules.SetText(_("Prevent your poles from being captured!"));
+						LabelTimeLeft.RelativePosition.Y = -8.;
+					} else if (Net_OvertimeActivated && UI.BigMessage == "") {
+						declare TeamA = Net_OvertimeAdvantage - 1;
+						declare TeamB = 3 - Net_OvertimeAdvantage - 1;
+						if (Teams.existskey(TeamA) && Teams.existskey(TeamB)) {
+							if (BattleWaves_AtkClan == Net_OvertimeAdvantage) {
+								Label_AdditionalRules.Value = TL::Compose(
+									"{{{_("|%1 is a team name|$<%1$> must attack a pole to win.")}}}", 
+									Teams[TeamA].ColorizedName
+								);
+							} else {
+								Label_AdditionalRules.Value = TL::Compose(
+									"{{{_("|%1 and %2 are teams names|$<%1$> must equal $<%2$> score.")}}}",  
+									Teams[TeamB].ColorizedName,
+									Teams[TeamA].ColorizedName
+								);
+							}
+							LabelTimeLeft.RelativePosition.Y = -8.;
+						} else {
+							Label_AdditionalRules.SetText("");
+							LabelTimeLeft.RelativePosition.Y = -2.;
+						}
+					} else {
+						Label_AdditionalRules.SetText("");
+						LabelTimeLeft.RelativePosition.Y = -2.;
+					}
+				} else {
+					if (Teams.existskey(BattleWaves_AtkClan-1)) {
+						LabelAttack.SetText(TL::Compose("{{{_("|TeamName is attacking|$<%1$> is attacking")}}}", Teams[BattleWaves_AtkClan-1].ColorizedName));
+						if (Net_OvertimeActivated && UI.BigMessage == "") {
+							declare TeamA = Net_OvertimeAdvantage - 1;
+							declare TeamB = 3 - Net_OvertimeAdvantage - 1;
+							if (Teams.existskey(TeamA) && Teams.existskey(TeamB)) {
+								if (BattleWaves_AtkClan == Net_OvertimeAdvantage) {
+									Label_AdditionalRules.Value = TL::Compose(
+										"{{{_("|%1 is a team name|$<%1$> must attack a pole to win.")}}}", 
+										Teams[TeamA].ColorizedName
+									);
+								} else {
+									Label_AdditionalRules.Value = TL::Compose(
+										"{{{_("|%1 and %2 are teams names|$<%1$> must equal $<%2$> score.")}}}",  
+										Teams[TeamB].ColorizedName,
+										Teams[TeamA].ColorizedName
+									);
+								}
+								LabelTimeLeft.RelativePosition.Y = -8.;
+							} else {
+								Label_AdditionalRules.SetText("");
+								LabelTimeLeft.RelativePosition.Y = -2.;
+							}
+						} else {
+							Label_AdditionalRules.SetText("");
+							LabelTimeLeft.RelativePosition.Y = -2.;
+						}
+					} else {
+						LabelAttack.SetText("");
+						Label_AdditionalRules.SetText("");
+						LabelTimeLeft.RelativePosition.Y = -2.;
+					}
+				}
+			}
+		}
+		
+		if(BattleWaves_TimeLeft <= {{{_WavesDuration}}}) {
+			LabelTimeLeft.SetText("$s"^BattleWaves_TimeLeft);
+		} else {
+			LabelTimeLeft.SetText("");
+		}
+	}
+}
+--></script>
+</manialink>""";
+	
+	
+	return MLText;
+}
+
+Void CreateRulesReminderLayer() {
+	if(! C_DisplayRulesReminder) return;
+
+	declare Text WelcomeBgImage		= C_ImgBaseDir^"WelcomeBg.dds";
+
+	declare Text TitleText 			= _("You are spectating the game");
+	declare Text ModeName	 		= _("Battle Mode");
+	declare Text RulesReminder 		= _("Help your team capture the poles of the opposing team to win.\nYour contribution to victory is given by capture (Cap), attack (Atk) and defense (Def) scores.\nYour ranking depends on the number of hits you performed (Hits) during the match.");
+	declare Text DoNotShowAgain		= _("Do Not Show Again");
+	declare Text Close				= _("Close");
+	
+	declare Integer WindowWidth		= 270;
+	declare Integer WindowHeight	= 25;
+	declare Real 	WindowX			= 0.;
+	declare Real 	WindowY			= 30.;	
+	
+	declare Text MLText = """
+	<script><!--
+		// for the "do not show again" feature
+		declare persistent Boolean NadeoBattle_PersistentShowRulesReminder for This = True;
+		
+		declare Boolean _TabsLib_ScoresLayerIsVisible 	for UI;
+		declare Boolean _TabsLib_AltLayerIsVisible 		for UI;
+		
+		
+		// NadeoBattle_PersistentShowRulesReminder = True; // Uncomment for testing purpose
+		
+		declare netwrite Boolean Battle_UIToServShowRulesReminder for UI = True;
+		declare netread  Boolean Battle_ServToUIShowFrame for UI;
+		declare netread  Integer Battle_UIRoundPhase for UI;
+		
+		Battle_UIToServShowRulesReminder = True;
+		if(! NadeoBattle_PersistentShowRulesReminder) {
+			Battle_UIToServShowRulesReminder = False;
+			return;
+		}
+		
+		declare Button_DoNotShowAgain <=> (Page.GetFirstChild("Button_DoNotShowAgain") as CMlLabel);
+		declare Button_Close <=> (Page.GetFirstChild("Button_Close") as CMlLabel);
+		declare RulesReminderMainFrame <=> (Page.GetFirstChild("RulesReminderMainFrame") as CMlFrame);
+		
+		declare Boolean ShowFrame = False;
+		declare Boolean SwitchShowFrame = False;
+		while(True) {
+			yield;
+			
+			if(Battle_ServToUIShowFrame != SwitchShowFrame) {
+				SwitchShowFrame = Battle_ServToUIShowFrame;
+				ShowFrame = True;
+			}
+			
+			if(
+				! IsSpectatorMode || 
+				(_TabsLib_ScoresLayerIsVisible || _TabsLib_AltLayerIsVisible) || 
+				(Battle_UIRoundPhase != {{{C_RoundPhase_Playing}}})) 
+			{
+				RulesReminderMainFrame.Hide();
+				continue;
+			}
+			
+			if(ShowFrame) {
+				RulesReminderMainFrame.Show();
+			}
+			
+			foreach(Event in PendingEvents) {
+				switch(Event.Type){
+					case CMlEvent::Type::MouseClick: {
+						if(Event.ControlId == "Button_DoNotShowAgain") {
+							NadeoBattle_PersistentShowRulesReminder = False;
+							Battle_UIToServShowRulesReminder = False;
+							RulesReminderMainFrame.Hide();
+							return; // End of this behavior
+						}
+						if(Event.ControlId == "Button_Close") {
+							RulesReminderMainFrame.Hide();
+							ShowFrame = False;
+						}
+					}
+					case CMlEvent::Type::KeyPress: {
+						if(Event.KeyName == "F1" ) { // F1
+							RulesReminderMainFrame.Hide();
+							ShowFrame = False;
+						}
+					}
+				}
+			}
+		}
+		
+	--></script>
+	<frame id="RulesReminderMainFrame" hidden="true" posn="{{{WindowX}}} {{{WindowY}}} 100" >
+		<quad  posn="0 -2" 	halign="center"	valign="center" sizen="292 44" image="{{{WelcomeBgImage}}}" />
+		<label posn="0 {{{(WindowHeight/2)-3}}}" 	halign="center" valign="center" text="{{{TitleText}}}"  textsize="5" />
+		<label posn="{{{-(WindowWidth/2)+2}}} {{{(WindowHeight/2)-8}}}" 	halign="left" valign="center" text="{{{ModeName}}}" textsize="3" textprefix="$0f0"/>
+		<label posn="{{{-(WindowWidth/2)+2}}} {{{(WindowHeight/2)-12}}}" 	halign="left" valign="center" text="{{{RulesReminder}}}" textsize="2"/>
+		<label posn="{{{(WindowWidth/2)-2}}} {{{-(WindowHeight/2)+2}}}" 	halign="right" valign="center" text="{{{DoNotShowAgain}}}" style="CardButtonSmall" ScriptEvents="true" id="Button_DoNotShowAgain" />
+		<label posn="{{{(WindowWidth/2)-42}}} {{{-(WindowHeight/2)+2}}}" 	halign="right" valign="center" text="{{{Close}}}" style="CardButtonSmall" ScriptEvents="true" id="Button_Close" />
+		<!--<label halign="center" 	valign="bottom"	posn="0 {{{-(WindowHeight/2)}}}"  text="{{{
+				_("Press $<$o$f00F1$> to close this window.")}}}" />-->
+	</frame>
+	""";
+	
+	Layers::Create("RulesReminder", MLText);
+	Layers::Attach("RulesReminder");
+}
+
+Text GetMarkersML(CSmMapLandmark[][Integer] ClanPoles, Ident _EngagePoleId, Integer[Ident] _PolesIndice) 
+{
+	declare Text ImgPole 	 	= C_ImgBaseDir^"goal.dds";
+	declare Text ImgPoleCapture	= C_ImgBaseDir^"goal_cap.dds";
+	declare Integer ServerPolesByClan = ClanPoles[1].count;
+	
+	declare Text MLPage = """
+		<script><!--
+			
+			
+			#Include "MathLib" as ML
+			
+			main() {
+				while(InputPlayer == Null) yield;
+				
+				declare CMlFrame[][Integer] PoleFrame;
+				declare CMlQuad [][Integer] PoleQuad;
+				declare CMlGauge[][Integer] PoleGauge;
+				
+				declare Real[Integer][Integer] CurrentClanPoles;
+				declare Integer[Integer][Integer] HighlightTimer;
+				
+				declare Integer PolesByClan = 0;
+				foreach (Pole in MapLandmarks_Gauge) {
+					if (Pole.Tag != "Goal") continue;
+					PolesByClan += 1;
+				}
+				PolesByClan /= 2;
+				
+								
+				// Wait data on map change.
+				declare Boolean WaitData = True;
+				while(WaitData) {
+					yield;
+					WaitData = False;
+					for(ClanIndex, 1, 2) {
+						CurrentClanPoles[ClanIndex] = Real[Integer];
+						PoleFrame[ClanIndex] = CMlFrame[];
+						PoleQuad[ClanIndex] = CMlQuad[];
+						PoleGauge[ClanIndex] 	= CMlGauge[];
+						HighlightTimer[ClanIndex] = Integer[Integer];
+						for (I, 0, PolesByClan - 1) {
+							CurrentClanPoles[ClanIndex][I] = 0.;
+							declare CMlFrame TheFrame <=> (Page.GetFirstChild("PoleFrame"^I^"_"^ClanIndex) as CMlFrame);
+							if(TheFrame == Null) {
+								WaitData = True;
+								continue;
+							}
+							PoleFrame[ClanIndex].add(TheFrame);
+							PoleQuad[ClanIndex].add((Page.GetFirstChild("PoleQuad"^I^"_"^ClanIndex) as CMlQuad));
+							PoleGauge[ClanIndex].add((Page.GetFirstChild("PoleGauge"^I^"_"^ClanIndex) as CMlGauge));
+							HighlightTimer[ClanIndex][I] = Now;
+						}
+					}
+				}
+				
+				""";
+				
+				if(C_BattleWaves) {
+					MLPage ^= """
+					declare netread Integer BattleWaves_AtkClan for UI;
+					declare Integer CurrentStateOfAckClanVariable = -1;
+					""";
+				
+					if(_EngagePoleId != NullId) {
+					MLPage ^= """
+						declare CMlFrame EngagePoleFrame = (Page.GetFirstChild("EngagePoleFrame") as CMlFrame);""";
+					}
+				}
+				MLPage ^= """
+				declare Text NeutralColor = "$o$888";
+				
+				while(True) {
+					sleep(200);
+					if(!PageIsVisible) continue;
+					
+					declare Clan1PoleIndex = -1;
+					declare Clan2PoleIndex = -1;
+					foreach(Pole in MapLandmarks_Gauge) {
+						if (Pole.Tag != "Goal" && Pole.Tag != "Checkpoint") continue;
+						
+						declare Integer PoleClan = Pole.Gauge.Clan;
+						declare Integer PoleIndex = -1;
+						if(PoleClan == 1) {
+							Clan1PoleIndex += 1;
+							PoleIndex = Clan1PoleIndex;
+						} else if (PoleClan == 2) {
+							Clan2PoleIndex += 1;
+							PoleIndex = Clan2PoleIndex;
+						}
+						
+						if(PoleIndex >= 0) {
+							declare Integer OpposingClan = 3-PoleClan;
+							declare Text ClanTextColor 	 = Teams[2-PoleClan].ColorText;
+							declare Real ServerCapture = Pole.Gauge.ValueReal;
+							
+							if(ServerCapture != CurrentClanPoles[OpposingClan][PoleIndex]) {
+								CurrentClanPoles[OpposingClan][PoleIndex] = ServerCapture;
+								HighlightTimer[OpposingClan][PoleIndex] = Now + 500;
+							}
+							
+							if(ServerCapture >= 0.01) {
+								PoleGauge[OpposingClan][PoleIndex].Show();
+							}
+							
+							if(ServerCapture >= 1.) {
+								PoleFrame[OpposingClan][PoleIndex].Hide();
+							} else if(HighlightTimer[OpposingClan][PoleIndex] > Now) {
+								PoleQuad[OpposingClan][PoleIndex].ImageUrl = "{{{ImgPoleCapture}}}";
+							} else {
+								PoleQuad[OpposingClan][PoleIndex].ImageUrl = "{{{ImgPole}}}";
+							}
+							
+							declare Text CaptureLevel = ML::NearestInteger(ServerCapture*100)^"%";
+							declare Real FakeValue = (ML::Sqrt(ServerCapture) + ServerCapture) / 2;
+							PoleGauge[OpposingClan][PoleIndex].SetRatio(FakeValue);
+						}
+					}
+					""";
+					if(C_BattleWaves) {
+						MLPage ^= """
+							if(CurrentStateOfAckClanVariable != BattleWaves_AtkClan) {
+								CurrentStateOfAckClanVariable = BattleWaves_AtkClan;
+								if(BattleWaves_AtkClan > 0) {""";
+					
+						if(_EngagePoleId != NullId) {
+							MLPage ^= """
+									EngagePoleFrame.Hide();""";
+						}
+					
+						MLPage ^= """
+									for (I, 0, PolesByClan-1) {
+										PoleFrame[BattleWaves_AtkClan][I].Hide();
+										PoleFrame[3-BattleWaves_AtkClan][I].Show();
+									}
+								} else {""";
+						if(_EngagePoleId != NullId) {
+							MLPage ^= """
+									EngagePoleFrame.Show();
+									for(ClanIndex, 1, 2) {
+										for (I, 0, PolesByClan-1) {
+											PoleFrame[ClanIndex][I].Hide();
+										}
+									}
+									""";
+						} else {
+							MLPage ^= """
+									declare Integer PlayerClan;
+									if(InputPlayer != Null) {
+										if((InputPlayer.CurrentClan == 1) || (InputPlayer.CurrentClan == 2)) {
+											PlayerClan = InputPlayer.CurrentClan;
+										} else {
+											PlayerClan = 1;
+										}
+									} else {
+										// arbitrary
+										PlayerClan = 1;
+									}
+									
+									/*
+									// sometimes, GUIPlayer does not exist.
+									if(GUIPlayer != Null) {
+										PlayerClan = GUIPlayer.CurrentClan;
+									} else {
+										PlayerClan = InputPlayer.CurrentClan;
+									}
+									*/
+									
+									for (I, 0, PolesByClan-1) {
+										PoleFrame[3-PlayerClan][I].Show();
+										PoleFrame[  PlayerClan][I].Hide();
+									}
+									""";
+						}
+					
+					
+						MLPage ^= """
+									
+								}
+							}
+						""";
+					}
+					MLPage ^= """
+				}	
+			}
+		--></script>""";
+
+	declare Real PoleIdLabelYOffset = 1.8;//1.5;//2.;
+	declare Real WidthFactor = 9./16.;
+	declare Real ImgSize = 9.;//8.;//10.;
+	declare Integer NbPoles = ClanPoles[1].count-1;
+	
+		//<gauge id="PoleGauge{{{I}}}_{{{ClanIndex}}}" posn="-5 {{{ImgSize}}}" halign="left" sizen="{{{ImgSize}}} {{{ImgSize}}}" clan="{{{3-ClanIndex}}}" style="EnergyBar" drawbg="false" rotation="0"/>
+		
+	for(ClanIndex, 1, 2) {
+		declare Vec3 ClanColor 		= Teams[2-ClanIndex].ColorPrimary;
+		declare Text ClanColorTextVector = """{{{ClanColor.X}}} {{{ClanColor.Y}}} {{{ClanColor.Z}}} 1.""";
+		declare Text ClanTextColor 	= Teams[2-ClanIndex].ColorText;
+		for (I, 0, NbPoles) {
+			declare PoleZIndice = (((ClanIndex-1)*NbPoles) + I);
+			declare Pole <=> ClanPoles[ClanIndex][I];
+			MLPage ^= """
+			<frame id="PoleMarker{{{Pole.Id}}}">
+				<frame id="PoleFrame{{{I}}}_{{{ClanIndex}}}" posn="0 0 {{{PoleZIndice}}}" >
+					<gauge id="PoleGauge{{{I}}}_{{{ClanIndex}}}" posn="2.5 -3. -1" sizen="{{{ImgSize*1.5}}} 6." color="{{{ClanColorTextVector}}}" style="EnergyBar" drawbg="false" rotation="-90" hidden="1" drawblockbg="false" />
+					<label posn="0 9" halign="center" id="PoleGaugeLabel{{{I}}}_{{{ClanIndex}}}" textsize="1" />
+					<quad  halign="center" valign="center" sizen="{{{WidthFactor*ImgSize}}} {{{ImgSize}}}" image="{{{
+						ImgPole}}}" id="PoleQuad{{{I}}}_{{{ClanIndex}}}" colorize="{{{
+						ClanColor.X}}} {{{ClanColor.Y}}} {{{ClanColor.Z}}}" autoscale="False" />
+					<label id="PoleIndexLabel{{{I}}}_{{{ClanIndex}}}" halign="center" valign="center" posn="0 {{{PoleIdLabelYOffset}}}" text="{{{ClanTextColor}}}{{{GetLetterFromNumber(_PolesIndice[Pole.Id])}}}" textsize="1" />
+				</frame>
+			</frame>""";
+		}
+	}
+	
+
+	if(C_BattleWaves) {
+		if(_EngagePoleId != NullId) {
+			declare Vec3 Clan1Color	= Teams[1].ColorPrimary; // inverted to avoid the "blue/white/red" effect with default teams ;)
+			declare Vec3 Clan2Color	= Teams[0].ColorPrimary;
+	
+			declare Text ImgPoleEngageLeft 	= C_ImgBaseDir^"shield_left.dds";
+			declare Text ImgPoleEngageRight	= C_ImgBaseDir^"shield_right.dds";
+			
+			declare Vec3 EngageColor = <.5, .5, .5>;
+			declare Real EngagePoleImgSize = 10.;
+			declare Pole <=> MapLandmarks_Gauge[_EngagePoleId];
+			MLPage ^= """
+				<frame id="PoleMarker{{{Pole.Id}}}" >
+					<frame id="EngagePoleFrame">
+						<quad posn="-0.1 0." halign="center" valign="center" sizen="{{{WidthFactor*EngagePoleImgSize}}} {{{EngagePoleImgSize}}}" image="{{{
+							ImgPoleEngageLeft}}}" colorize="{{{Clan1Color.X}}} {{{Clan1Color.Y}}} {{{Clan1Color.Z}}}" autoscale="False" />
+						<quad posn="0.1 0." halign="center" valign="center" sizen="{{{WidthFactor*EngagePoleImgSize}}} {{{EngagePoleImgSize}}}" image="{{{
+							ImgPoleEngageRight}}}" colorize="{{{Clan2Color.X}}} {{{Clan2Color.Y}}} {{{Clan2Color.Z}}}" autoscale="False" />
+					</frame>
+				</frame>""";
+		}
+	}
+	
+	return MLPage;
+}
+
+// ---------------------------------- //
+/// Get the top 5 manialink
+Text GetMLTop5() {
+	declare BgTop = C_ImgBaseDir^"topsbg2.dds";
+	declare BgLine = C_ImgBaseDir^"TopsLine.png";
+	declare BgTitle = "file://Media/Manialinks/Common/Lobbies/small-button-RED.dds";
+	
+	declare CardSizeY = 6.;
+	declare RankSizeX = 5.;
+	declare NameSizeX = 30.;
+	declare RecordSizeX = 9.;
+	declare NamePosX = RankSizeX;
+	declare RecordPosX = NamePosX + NameSizeX + RecordSizeX;
+	
+	return """
+<manialink version="1" name="Battle:Top5">
+<framemodel id="Framemodel_TopEntry">
+	<format style="TextCardSmallScores2" />
+	<label posn="{{{RankSizeX/2.}}} 0.3" sizen="{{{RankSizeX}}} {{{CardSizeY}}}" halign="center" valign="center" style="TextTitle3" textcolor="000" opacity="0.5" id="Label_Rank" />
+	<quad posn="{{{NamePosX+0.15}}} 3 2" sizen="{{{NameSizeX+RecordSizeX-0.1}}} {{{CardSizeY}}}" image="{{{BgLine}}}" opacity="0.8" />
+	<quad posn="{{{NamePosX+0.8}}} 1.6 3" sizen="3.5 3.5" image="file://Avatars/LoginDuJoueur/Default" id="Quad_Avatar"/>
+	<label posn="{{{NamePosX+4.8}}} 0.3 4" sizen="{{{NameSizeX-2.}}} {{{CardSizeY}}}" valign="center" id="Label_Name" />
+	<label posn="{{{RecordPosX-1.}}} 0.3 5" sizen="{{{RecordSizeX-5.}}} {{{CardSizeY}}}" halign="right" valign="center" id="Label_Value" />
+</framemodel>
+<frame posn="-160 31" id="Frame_Tops">
+	<quad posn="-5.70 5 -1" sizen="60 42" image="{{{BgTop}}}" />
+	<quad posn="3 3" sizen="43 6" image="{{{BgTitle}}}" id="Quad_ButtonRed" />
+	<label posn="25 -1.8" sizen="50 5" scale="0.8" halign="center" valign="bottom" style="TextButtonBig" textcolor="fff"  textemboss="1" id="Label_Title"/>
+	<frame posn="2 -1" id="Frame_Top">
+		<frameinstance posn="0  -6" modelid="Framemodel_TopEntry" />
+		<frameinstance posn="0 -12" modelid="Framemodel_TopEntry" />
+		<frameinstance posn="0 -18" modelid="Framemodel_TopEntry" />
+		<frameinstance posn="0 -24" modelid="Framemodel_TopEntry" />
+		<frameinstance posn="0 -30" modelid="Framemodel_TopEntry" />
+	</frame>
+</frame>
+<frame posn="0 42" id="Frame_Message">
+	<label halign="center" textemboss="1" style="TextValueSmallSm" textcolor="fff" text="bla" id="Label_MyRank" />
+</frame>
+<script><!--
+#Include "TextLib" as TL
+
+Text GetNickname(Text _Login) {
+	foreach (Player in Players) {
+		if (Player.Login == _Login) return Player.Name;
+	}
+	return _Login;
+}
+
+Void UpdateRanking(Text _Name, Integer[Text] _Ranking) {
+	declare Label_Title <=> (Page.GetFirstChild("Label_Title") as CMlLabel);
+	Label_Title.Value = _Name;
+	
+	declare Integer[] Points;
+	declare Text[] Logins;
+	declare MaxRank = 0;
+	declare MyRank = 0;
+	foreach (Login => Score in _Ranking) {
+		Logins.add(Login);
+		Points.add(Score);
+		MaxRank += 1;
+		if (Login == InputPlayer.Login) MyRank = MaxRank;
+	}
+	
+	declare Label_MyRank <=> (Page.GetFirstChild("Label_MyRank") as CMlLabel);
+	if (MaxRank > 0 && MyRank > 0) {
+		Label_MyRank.Value = TL::Compose("{{{_("You are ranked %1/%2")}}}", TL::ToText(MyRank), TL::ToText(MaxRank));
+		Label_MyRank.Visible = True;
+	} else {
+		Label_MyRank.Visible = False;
+	}
+	
+	declare Frame_Top <=> (Page.GetFirstChild("Frame_Top") as CMlFrame);
+	foreach (Key => Control in Frame_Top.Controls) {
+		declare Frame_TopEntry <=> (Control as CMlFrame);
+		declare Label_Rank	<=> (Frame_TopEntry.GetFirstChild("Label_Rank")		as CMlLabel);
+		declare Quad_Avatar	<=> (Frame_TopEntry.GetFirstChild("Quad_Avatar")	as CMlQuad);
+		declare Label_Name	<=> (Frame_TopEntry.GetFirstChild("Label_Name")		as CMlLabel);
+		declare Label_Value	<=> (Frame_TopEntry.GetFirstChild("Label_Value")	as CMlLabel);
+		
+		Label_Rank.Value = TL::ToText(Key + 1);
+		if (Logins.existskey(Key)) {
+			declare Login = Logins[Key];
+			Quad_Avatar.Visible = True;
+			Quad_Avatar.ImageUrl = "file://Avatars/"^Login^"/Default";
+			Label_Name.Value = GetNickname(Login);
+			Label_Value.Value = TL::ToText(Points[Key]);
+		} else {
+			Quad_Avatar.Visible = False;
+			Label_Name.Value = "---";
+			Label_Value.Value = "---";
+		}
+	}
+}
+
+main() {
+	declare netread Integer Net_RoundTop_Update for Teams[0];
+	declare netread Integer[Text] Net_RoundTop_Ranking for Teams[0];
+	declare netread Text Net_RoundTop_Name for Teams[0];
+	
+	declare PrevTopName = "";
+	declare PrevUpdate = -1;
+	
+	while (True) {
+		yield;
+		if (!PageIsVisible || InputPlayer == Null) continue;
+		
+		if (PrevUpdate != Net_RoundTop_Update) {
+			PrevUpdate = Net_RoundTop_Update;
+			
+			UpdateRanking(Net_RoundTop_Name, Net_RoundTop_Ranking);
+		}
+	}
+}
+--></script>
+</manialink>
+""";
+}
+
+Text GetRoundInfoML(CSmMapLandmark[][Integer] ClanPoles) 
+{
+	declare Integer GaugesXPos = 93; //50
+	declare Integer GaugesYPos = 71; //57
+	declare Integer PolesXPos = 0;
+	declare Integer PolesYPos = 0;
+	
+	
+	
+	declare Text ImgGoalCaptured  = C_ImgBaseDir^"c_goal_captured.dds";
+	declare Text ImgGoalCapture   = C_ImgBaseDir^"c_goal_capture.dds";
+	declare Text ImgGoalProtected = C_ImgBaseDir^"c_goal_shield.dds";
+	declare Text ImgGoalDenied	  = C_ImgBaseDir^"c_goal_shield_block.dds";
+	declare Text ImgGoalLocked    = C_ImgBaseDir^"c_goal_lock.dds";
+	declare Text ImgGoalBg   	  = C_ImgBaseDir^"goal.dds";
+	
+	declare Team0Color = GetMLColor(Teams[0].ColorText);
+	declare Team1Color = GetMLColor(Teams[1].ColorText);
+	
+	declare Text MLPage = """
+	<script><!--
+		#Include "MathLib" as ML
+		#Include "TextLib" as TL
+		
+		Text TimeToText(Integer _Time) {
+			if (_Time < 0) {
+				return "???";
+			}
+			
+			declare MilliSeconds = _Time % 1000;
+			declare CentiSeconds = (_Time / 10) % 100;
+			declare Seconds = (_Time / 1000) % 60;
+			declare Minutes = (_Time / 60000) % 60;
+			declare Hours = (_Time / 3600000) % 24;
+			
+			declare Time = TL::FormatInteger(Seconds, 2)^"."^TL::FormatInteger(CentiSeconds, 2);
+			if (Minutes > 0) Time = TL::FormatInteger(Minutes, 2)^":"^Time;
+			if (Hours > 0) Time = Hours^":"^Time;
+			return Time;
+		}
+		
+		Void UpdateCaptureTime(Boolean _IsRoundRecord, Integer[Text] _CaptureTime) {
+			foreach (PoleId => CaptureTime in _CaptureTime) {
+				declare Frame_Pole <=> (Page.GetFirstChild("PoleId_"^PoleId) as CMlFrame);
+				if (Frame_Pole == Null) continue;
+				
+				if (_IsRoundRecord) {
+					declare Label_RB <=> (Frame_Pole.GetFirstChild("Label_RB") as CMlLabel);
+					Label_RB.Value = TimeToText(CaptureTime);
+				} else {
+					declare Label_PB <=> (Frame_Pole.GetFirstChild("Label_PB") as CMlLabel);
+					Label_PB.Value = TimeToText(CaptureTime);
+				}
+			}
+		}
+	
+		main() {
+			
+			while(InputPlayer == Null) yield;
+			
+			declare netread Text Battle_ScoreTeam1 for UI;
+			declare netread Text Battle_ScoreTeam2 for UI;
+			declare netread Integer Battle_PoleCaptureState for UI;
+			declare netread Integer Battle_PoleCaptureRate for UI;
+			
+			declare netread Integer[Text] Net_RoundTop_CaptureTimeRecords for Teams[0];
+			declare netread Integer Net_RoundTop_CaptureTimeRecordsUpdate for Teams[0];
+			declare netread Integer[Text] Net_RoundTop_CaptureTime for UI;
+			declare netread Integer Net_RoundTop_CaptureTimeUpdate for UI;
+			
+			declare LabelScoreTeam1 	<=> (Page.GetFirstChild("LabelScoreTeam1") as CMlLabel);
+			declare LabelScoreTeam2 	<=> (Page.GetFirstChild("LabelScoreTeam2") as CMlLabel);
+			declare FrameSmallPoleText 	<=> (Page.GetFirstChild("FrameSmallPoleText") as CMlFrame);
+			declare LabelCaptureMessage	<=> (Page.GetFirstChild("LabelCaptureMessage") as CMlLabel);
+			declare QuadCaptureMessage 	<=> (Page.GetFirstChild("QuadCaptureMessage") as CMlQuad);
+			declare Frame_Clan1			<=> (Page.GetFirstChild("Frame_Clan1") as CMlFrame);
+			declare Frame_Clan2			<=> (Page.GetFirstChild("Frame_Clan2") as CMlFrame);
+			
+			declare CMlQuad[] QuadGaugesTeam1;
+			declare CMlQuad[] QuadGaugesTeam2;
+			declare CMlFrame[][Integer] PoleFrame;
+			declare CMlFrame[][Integer] PoleCapturedFrame;
+			declare CMlGauge[][Integer] PoleGauges;
+			
+			declare CMlGauge CaptureGauge	<=> (Page.GetFirstChild("CaptureGauge") as CMlGauge);
+						
+			declare Real[Integer][Integer] CurrentClanPoles;
+			declare Integer[Integer][Integer] HighlightTimer;
+			
+			for(ClanIndex, 1, 2) {
+				CurrentClanPoles[ClanIndex] = Real[Integer];
+				PoleFrame[ClanIndex] = CMlFrame[];
+				PoleCapturedFrame[ClanIndex] = CMlFrame[];
+				HighlightTimer[ClanIndex] = Integer[Integer];
+				PoleGauges[ClanIndex] = CMlGauge[];
+			}
+			
+			declare Clan1PoleIndex = -1;
+			declare Clan2PoleIndex = -1;
+			foreach(Pole in MapLandmarks_Gauge) {
+				if (Pole.Tag != "Goal" && Pole.Tag != "Checkpoint") continue;
+				
+				declare Integer PoleClan = Pole.Gauge.Clan;
+				declare Integer PoleIndex = -1;
+				
+				if(PoleClan == 1) {
+					Clan1PoleIndex += 1;
+					PoleIndex = Clan1PoleIndex;
+				} else if (PoleClan == 2) {
+					Clan2PoleIndex += 1;
+					PoleIndex = Clan2PoleIndex;
+				}
+				
+				if(PoleIndex >= 0) {
+					CurrentClanPoles[PoleClan][PoleIndex] = Pole.Gauge.ValueReal; // presumably 0.
+					PoleFrame[PoleClan].add((Page.GetFirstChild("PoleFrame"^PoleIndex^"_"^PoleClan) as CMlFrame));
+					PoleCapturedFrame[PoleClan].add((Page.GetFirstChild("PoleCapturedFrame"^PoleIndex^"_"^PoleClan) as CMlFrame));
+					PoleGauges[PoleClan].add((Page.GetFirstChild("PoleUIGauge"^PoleIndex^"_"^PoleClan) as CMlGauge));
+					HighlightTimer[PoleClan][PoleIndex] = Now;
+				}
+			}
+			
+			declare Blinker = 0;
+			declare BlinkDelay = 4;
+			declare PreviousState = -1;
+			declare PrevClan = -1;
+			declare PrevCaptureTimeUpdate = -1;
+			declare PrevCaptureTimeRecordsUpdate = -1;
+						
+			while(True) {
+				
+				// yield;
+				sleep(200);
+				
+				if (!PageIsVisible) continue;
+				if (InputPlayer == Null) continue;
+				
+				if (PrevClan != InputPlayer.CurrentClan) {
+					PrevClan = InputPlayer.CurrentClan;
+					
+					Page.GetClassChildren("ClanSpecific", Page.MainFrame, True);
+					foreach (Control in Page.GetClassChildren_Result) {
+						if (Control.HasClass("Clan1")) {
+							if (InputPlayer.CurrentClan == 1 || IsSpectatorMode) Control.Visible = True;
+							else Control.Visible = False;
+						} else if (Control.HasClass("Clan2")) {
+							if (InputPlayer.CurrentClan == 2 || IsSpectatorMode) Control.Visible = True;
+							else Control.Visible = False;
+						}
+					}
+				}
+				
+				if (PrevCaptureTimeRecordsUpdate != Net_RoundTop_CaptureTimeRecordsUpdate) {
+					PrevCaptureTimeRecordsUpdate = Net_RoundTop_CaptureTimeRecordsUpdate;
+					UpdateCaptureTime(True, Net_RoundTop_CaptureTimeRecords);
+				}
+				
+				if (PrevCaptureTimeUpdate != Net_RoundTop_CaptureTimeUpdate) {
+					PrevCaptureTimeUpdate = Net_RoundTop_CaptureTimeUpdate;
+					UpdateCaptureTime(False, Net_RoundTop_CaptureTime);
+				}
+				
+				LabelScoreTeam1.SetText("$s$fff"^Battle_ScoreTeam1);
+				LabelScoreTeam2.SetText("$s$fff"^Battle_ScoreTeam2);
+				
+				if(PreviousState != Battle_PoleCaptureState) {
+					PreviousState = Battle_PoleCaptureState;
+					switch(Battle_PoleCaptureState) {
+						case {{{C_PoleCaptureState_Neutral}}} : {
+							CaptureGauge.Hide();
+							FrameSmallPoleText.Hide();
+						}
+						case {{{C_PoleCaptureState_Capturing}}} : {
+							QuadCaptureMessage.ImageUrl = "{{{ImgGoalCapture}}}";
+							CaptureGauge.Show();
+							FrameSmallPoleText.Show();
+						}
+						case {{{C_PoleCaptureState_Captured}}} : {
+							LabelCaptureMessage.SetText(TL::Compose("$s%1", _("Pole captured")));
+							QuadCaptureMessage.ImageUrl = "{{{ImgGoalCaptured}}}";
+							CaptureGauge.Hide();
+							FrameSmallPoleText.Show();
+						}
+						case {{{C_PoleCaptureState_Protected}}} : {
+							LabelCaptureMessage.SetText(TL::Compose("$s%1", _("Pole protected")));
+							QuadCaptureMessage.ImageUrl = "{{{ImgGoalProtected}}}";
+							CaptureGauge.Hide();
+							FrameSmallPoleText.Show();
+						}
+						case {{{C_PoleCaptureState_Denied}}} : {
+							LabelCaptureMessage.SetText(TL::Compose("$s%1", _("Pole denied")));
+							QuadCaptureMessage.ImageUrl = "{{{ImgGoalDenied}}}";
+							CaptureGauge.Hide();
+							FrameSmallPoleText.Show();
+						}
+						case {{{C_PoleCaptureState_Locked}}} : {
+							LabelCaptureMessage.SetText(TL::Compose("$s%1", _("Pole locked")));
+							QuadCaptureMessage.ImageUrl = "{{{ImgGoalLocked}}}";
+							CaptureGauge.Hide();
+							FrameSmallPoleText.Show();
+						}
+					}
+				}
+				
+				if(Battle_PoleCaptureState == {{{C_PoleCaptureState_Capturing}}}) {					
+					LabelCaptureMessage.SetText(TL::Compose("$s%1 (%2%%)", _("Capturing"), ""^Battle_PoleCaptureRate));
+					CaptureGauge.SetRatio(Battle_PoleCaptureRate/100.);
+				}
+				
+				
+				declare Clan1PoleIndex = -1;
+				declare Clan2PoleIndex = -1;
+				foreach(Pole in MapLandmarks_Gauge) {
+					if (Pole.Tag != "Goal" && Pole.Tag != "Checkpoint") continue;
+					
+					declare Integer PoleClan = Pole.Gauge.Clan;
+					if(PoleClan == 0) continue; // inconsistent data.
+					if(CurrentClanPoles[PoleClan].count <= 0) continue; // inconsistent data.
+					
+					declare Integer PoleIndex = -1;
+					if(PoleClan == 1) {
+						Clan1PoleIndex += 1;
+						PoleIndex = Clan1PoleIndex;
+					} else if (PoleClan == 2) {
+						Clan2PoleIndex += 1;
+						PoleIndex = Clan2PoleIndex;
+					}
+					
+					if(PoleIndex >= 0) {
+						declare Integer OpposingClan = 3-PoleClan;
+						declare PoleFrameOppClan	 = PoleFrame[PoleClan];
+						
+						declare Real ServerCapture = Pole.Gauge.ValueReal;
+						// Blink timer
+						if(ServerCapture != CurrentClanPoles[PoleClan][PoleIndex]) {
+							CurrentClanPoles[PoleClan][PoleIndex] 	= ServerCapture;
+							HighlightTimer[PoleClan][PoleIndex] 	= Now + 500;
+						}
+						
+						declare Real FakeValue = (ML::Sqrt(ServerCapture) + ServerCapture) / 2;
+						//PoleGauges[PoleClan][PoleIndex].SetRatio(ServerCapture);
+						PoleGauges[PoleClan][PoleIndex].SetRatio(FakeValue);
+						
+						if(ServerCapture >= 1.) {
+							PoleFrame[PoleClan][PoleIndex].Hide();
+							PoleCapturedFrame[PoleClan][PoleIndex].Show();
+						} else if(HighlightTimer[PoleClan][PoleIndex] > Now) {
+							if((Blinker % BlinkDelay) == 0) {
+								//PoleFrameOppClan[PoleIndex].Show();
+								PoleCapturedFrame[PoleClan][PoleIndex].Show();
+							} else if((Blinker % BlinkDelay) == (BlinkDelay/2)) {
+								//PoleFrameOppClan[PoleIndex].Hide();
+								PoleCapturedFrame[PoleClan][PoleIndex].Hide();
+							}
+						} else {
+							PoleFrame[PoleClan][PoleIndex].Show();
+							PoleCapturedFrame[PoleClan][PoleIndex].Hide();
+						}
+					}
+				}
+				Blinker += 1;
+			} // end while
+		}
+	--></script>
+	<frame>
+		<frame posn="0 76 257">
+			<label id="LabelScoreTeam1" valign="bottom" posn="-37 0 0" halign="right" scale="1" />
+			<label id="LabelScoreTeam2" valign="bottom" posn=" 37 0 0" halign="left"  scale="1" />
+		</frame>
+		<frame id="FrameSmallPoleText" hidden="1" posn="0 -56 3">
+			<label id="LabelCaptureMessage" valign="center" halign="center" posn="0 0 1" textsize="5" />
+			<quad  id="QuadCaptureMessage"  valign="center" halign="center" sizen="18 18" />
+			<gauge posn="-30 -5" sizen="60 6" halign="left" style="EnergyBar" id="CaptureGauge" />
+		</frame>
+		""";
+		
+		declare Real ScoresXPos = 93.;//22.;//30;//28;//95; //138
+		declare Real ScoresYPos = 90.;//68.5; //71
+		declare Real ScoresZPos = 200.; //4
+		declare CommonAttribs = """ valign="center" halign="center" """;
+		declare PolesByClan = ClanPoles[1].count-1;
+		
+		declare Width = 80.;
+		declare Margin = 0.5;
+		declare ItemNb = 9;
+		declare ItemWidth = (Width / ItemNb) - Margin;
+		declare ItemHeight = ItemWidth;
+		declare LabelTextSize = 1.5;
+		declare LeftPosX = -160. + Width - ((ItemWidth + Margin) / 2.);
+		declare RightPosX = LeftPosX * -1;
+		declare RecordsHidden = "0";
+		if (!S_DisplayPoleRecords) RecordsHidden = "1";
+		
+		declare Clan1TextColor = Teams[0].ColorText;
+		declare Clan2TextColor = Teams[1].ColorText;
+		declare Clan1Color = Teams[0].ColorPrimary;
+		declare Clan2Color = Teams[1].ColorPrimary;
+		declare Text Clan1ColorTextVector = """{{{Clan1Color.X}}} {{{Clan1Color.Y}}} {{{Clan1Color.Z}}} 1.""";
+		declare Text Clan2ColorTextVector = """{{{Clan2Color.X}}} {{{Clan2Color.Y}}} {{{Clan2Color.Z}}} 1.""";
+		
+		MLPage ^= """<frame posn="{{{LeftPosX}}} {{{ScoresYPos}}} {{{ScoresZPos}}}" id="Frame_Clan1" >""";
+		
+		for (I, 0, PolesByClan) {
+			declare PoleId = "";
+			if (ClanPoles[2].existskey(I)) {
+				PoleId = ""^ClanPoles[2][I].Id;
+			}
+			MLPage ^= """
+<frame posn="{{{-I*(ItemWidth + Margin)}}} 0 0" id="PoleId_{{{PoleId}}}">
+	<frame id="PoleFrame{{{I}}}_1" >
+		<label posn="0 {{{-ItemHeight*0.3}}} 0" halign="center" valign="center" text="{{{GetLetterFromNumber(I+1)}}}" textsize="{{{LabelTextSize}}}" />
+		<quad sizen="{{{ItemWidth}}} {{{ItemHeight}}}" halign="center" image="{{{ImgGoalBg}}}" colorize="000" />
+	</frame>
+	<frame hidden="1" id="PoleCapturedFrame{{{I}}}_1" >
+		<label posn="0 {{{-ItemHeight*0.3}}} 0" halign="center" valign="center" text="{{{Clan1TextColor}}}{{{GetLetterFromNumber(I+1)}}}" textsize="{{{LabelTextSize}}}"/>	
+		<quad sizen="{{{ItemWidth}}} {{{ItemHeight}}}" halign="center" image="{{{ImgGoalBg}}}" colorize="{{{Clan1ColorTextVector}}}"/>
+	</frame>
+	<gauge posn="{{{ItemWidth*0.4}}} {{{-ItemHeight*0.9}}}" sizen="{{{ItemHeight*1.5}}} 6." color="{{{Clan1ColorTextVector}}}" style="EnergyBar" drawbg="false" rotation="-90" drawblockbg="false" id="PoleUIGauge{{{I}}}_1" />
+	<frame hidden="{{{RecordsHidden}}}">
+		<frame posn="0 -{{{ItemHeight + Margin}}}" class="ClanSpecific Clan1">
+			<quad posn="{{{-ItemWidth/2.}}} 0" sizen="3 3" style="Icons64x64_1" substyle="First" />
+			<label posn="{{{(-ItemWidth/2.)+3}}} 0" sizen="{{{ItemWidth-3}}} 3" textsize="1" text="--.--" id="Label_RB" />
+			<quad posn="{{{-ItemWidth/2.}}} -3" sizen="3 3" style="UIConstruction_Buttons" substyle="Author" />
+			<label posn="{{{(-ItemWidth/2.)+3}}} -3" sizen="{{{ItemWidth-3}}} 3" textsize="1" text="--.--" id="Label_PB" /> 
+		</frame>
+	</frame>
+</frame>
+""";
+		}
+		
+		MLPage ^= """</frame><frame posn="{{{RightPosX}}} {{{ScoresYPos}}} {{{ScoresZPos}}}" id="Frame_Clan2" >""";
+			
+		for (I, 0, PolesByClan) {
+			declare PoleId = "";
+			if (ClanPoles[1].existskey(I)) {
+				PoleId = ""^ClanPoles[1][I].Id;
+			}
+			MLPage ^= """
+<frame posn="{{{I*(ItemWidth + Margin)}}} 0 0" id="PoleId_{{{PoleId}}}">
+	<frame id="PoleFrame{{{I}}}_2" >
+		<label posn="0 {{{-ItemHeight*0.3}}} 0" halign="center" valign="center" text="{{{GetLetterFromNumber(I+1)}}}" textsize="{{{LabelTextSize}}}" />
+		<quad sizen="{{{ItemWidth}}} {{{ItemHeight}}}" halign="center" image="{{{ImgGoalBg}}}" colorize="000" />
+	</frame>
+	<frame hidden="1" id="PoleCapturedFrame{{{I}}}_2" >
+		<label posn="0 {{{-ItemHeight*0.3}}} 0" halign="center" valign="center" text="{{{Clan2TextColor}}}{{{GetLetterFromNumber(I+1)}}}" textsize="{{{LabelTextSize}}}"/>	
+		<quad sizen="{{{ItemWidth}}} {{{ItemHeight}}}" halign="center" image="{{{ImgGoalBg}}}" colorize="{{{Clan2ColorTextVector}}}"/>
+	</frame>
+	<gauge posn="{{{ItemWidth*0.4}}} {{{-ItemHeight*0.9}}}" sizen="{{{ItemHeight*1.5}}} 6." color="{{{Clan2ColorTextVector}}}" style="EnergyBar" drawbg="false" rotation="-90" drawblockbg="false" id="PoleUIGauge{{{I}}}_2" />
+	<frame hidden="{{{RecordsHidden}}}">
+		<frame posn="0 -{{{ItemHeight + Margin}}}" hidden="{{{RecordsHidden}}}" class="ClanSpecific Clan2">
+			<quad posn="{{{-ItemWidth/2.}}} 0" sizen="3 3" style="Icons64x64_1" substyle="First" />
+			<label posn="{{{(-ItemWidth/2.)+3}}} 0" sizen="{{{ItemWidth-3}}} 3" textsize="1" text="--.--" id="Label_RB" />
+			<quad posn="{{{-ItemWidth/2.}}} -3" sizen="3 3" style="UIConstruction_Buttons" substyle="Author" />
+			<label posn="{{{(-ItemWidth/2.)+3}}} -3" sizen="{{{ItemWidth-3}}} 3" textsize="1" text="--.--" id="Label_PB" /> 
+		</frame>
+	</frame>
+</frame>
+""";
+		}
+		
+		MLPage ^= """</frame>""";
+	MLPage ^= """</frame>""";
+	
+	return MLPage;
+}

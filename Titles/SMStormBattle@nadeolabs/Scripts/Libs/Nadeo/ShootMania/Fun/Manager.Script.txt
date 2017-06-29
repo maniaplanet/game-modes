@@ -1,0 +1,1151 @@
+/**
+ * Fun Manager
+ *
+ *	Link all the Fun libraries
+ */
+#Const Version    "2017-05-12"
+#Const ScriptName "Libs/Nadeo/ShootMania/Fun/Manager.Script.txt"
+
+// ---------------------------------- //
+// Libraries
+// ---------------------------------- //
+#Include "TextLib" as TL
+#Include "MathLib" as ML
+#Include "Libs/Nadeo/Log.Script.txt" as Log
+#Include "Libs/Nadeo/Message.Script.txt" as Message
+#Include "Libs/Nadeo/ShootMania/Objects.Script.txt" as Objects
+#Include "Libs/Nadeo/ShootMania/Dispenser.Script.txt" as Dispenser
+#Include "Libs/Nadeo/ShootMania/Attributes.Script.txt" as Attributes
+#Include "ManiaApps/Nadeo/ShootMania/Fun/Bonus_Server.Script.txt" as BonusUI
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+// Bonuses
+#Const C_BonusImgPath """file://Media/Manialinks/Nadeo/ShootMania/Fun/Bonus/"""
+#Const C_Bonuses [
+	"InstantCapture",
+	"Shield",
+	"ArmorBonus",
+	"AmmoBonus",
+	"SuperAmmoBonus",
+	"SuperShootman",
+	"SuperArmorRegen",
+	"SuperAmmoGain",
+	"WaveReversal",
+	"BonusCancel",
+	"SuperStamina",
+	"Nucleus"
+]
+#Const C_BonusesRates [ ///< Bonuses drop rates
+	"InstantCapture"	=> 40,
+	"Shield"					=> 15,
+	"SuperShootman"		=> 5,
+	"SuperAmmoGain"		=> 30,
+	"Nucleus"					=> 10
+]
+#Const C_BonusPrefix						"LibFun_"
+#Const C_Bonus_InstantCapture	"InstantCapture"
+#Const C_Bonus_Shield					"Shield"
+#Const C_Bonus_ArmorBonus			"ArmorBonus"
+#Const C_Bonus_AmmoBonus 			"AmmoBonus"
+#Const C_Bonus_SuperAmmoBonus	"SuperAmmoBonus"
+#Const C_Bonus_SuperShootman		"SuperShootman"
+#Const C_Bonus_SuperArmorRegen	"SuperArmorRegen"
+#Const C_Bonus_SuperAmmoGain		"SuperAmmoGain"
+#Const C_Bonus_WaveReversal		"WaveReversal"
+#Const C_Bonus_BonusCancel			"BonusCancel"
+#Const C_Bonus_SuperStamina		"SuperStamina"
+#Const C_Bonus_Nucleus					"Nucleus"
+// Duration of timed bonus
+#Const C_Duration_InstantCapture		15000
+#Const C_Duration_SuperShootman		10000
+#Const C_Duration_SuperArmorRegen	10000
+#Const C_Duration_SuperAmmoGain		10000
+#Const C_Duration_SuperStamina			10000
+#Const C_Duration_Nucleus					10000
+#Const C_Duration_Shield						10000
+// Default player attribute
+#Const C_Default_CaptureSpeed 1. ///< Capture speed of the pole
+#Const C_Default_ArmorMax 200. ///< Number of armors when spawning
+#Const C_Default_ArmorReplenishGain 0. ///< Default armor regeneration
+#Const C_Default_AmmoGain 1. ///< Default ammo gain at spawn
+#Const C_Default_RocketAmmoMax  4. ///< Number of ammo in the base weapon
+#Const C_Default_ArrowAmmoMax  3. ///< Number of ammo in the base weapon
+#Const C_Default_NucleusAmmoMax  2. ///< Number of ammo in the base weapon
+#Const C_Default_LaserAmmoMax  1. ///< Number of ammo in the base weapon
+#Const C_Default_StaminaMax 1. ///< Default stamina max at spawn
+// Actions
+#Const C_ActionsPath "Nadeo/ShootMania/Fun/"
+#Const C_Actions_Shield "ShieldAuto.Action.gbx"
+#Const C_Slots_Shield CSmMode::EActionSlot::Slot_H
+// Items
+#Const C_ItemsPath "Nadeo/ShootMania/Fun/"
+#Const C_Items_Bonus "BonusBoxHologram_BoxGravity/BonusBoxHologram_BoxGravity.Item.gbx"
+// Gameplay settings
+#Const C_BaseWeapon CSmMode::EWeapon::Rocket ///< Default weapon
+#Const C_MissileAmmo 6 ///< Number of ammo in the missile weapon
+#Const C_BoxItem """Nadeo\ShootMania\Fun\BonusBoxHologram_Box\BonusBoxHologram_Box.Item.gbx""" ///< Path to the box item
+#Const C_BonusAutoSwitchWeapon False ///< Let players change weapon on tech platform when they have a bonus weapon
+#Const C_DefaultAutoSwitchWeapon True ///< Let players change weapon on tech platform when they do not have a bonus weapon
+#Const C_BonusDelay 1000 ///< Delay between the pick up of a bonus and its activation
+#Const C_SingleBonus	True ///< Picking up a bonus before the previous one is activated cancel the first one.
+
+// ---------------------------------- //
+// Globales
+// ---------------------------------- //
+declare Text[] G_DisabledBonuses; ///< Bonus that can be picked up
+declare Ident[] G_SuperShootmen; ///< Player id of the players with the SuperShootman bonus
+declare Integer G_MarkersUpdate; ///< Last time the markers were updated
+declare Text G_Markers; ///< Markers' XML
+declare Ident G_ActionId_Shield; ///< Id of the shield action
+declare Ident G_ItemId_Bonus; ///< Id of the bonus item
+declare CSmObject[] G_Bonuses; ///< Bonuses objects
+declare Boolean G_RequestWaveReversal; ///< Request a wave reversal
+declare Boolean G_TeamBonusIsVisible; ///< Visibility of the team bonus UI
+declare Text G_BonusTeam1; ///< Active bonus of the first team
+declare Text G_BonusTeam2; ///< Active bonus of the second team
+declare Integer[Text] G_BonusDuration; ///< Duration of the bonuses
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+// ---------------------------------- //
+// Private
+// ---------------------------------- //
+// ---------------------------------- //
+/// Update the markers xml
+Void Private_UpdateMarkers() {
+	G_Markers = "";
+	foreach (PlayerId in G_SuperShootmen) {
+		if (!Players.existskey(PlayerId)) continue;
+		G_Markers ^= """<marker playerlogin="{{{Players[PlayerId].User.Login}}}" imageurl="{{{C_BonusImgPath}}}SuperShootman.dds" visibility="Always" />""";
+	}
+	G_MarkersUpdate = Now;
+}
+
+// ---------------------------------- //
+/** Reload the shield of a player
+ *
+ *	@param	_Player										The player to reload
+ */
+Void Private_ReloadShield(CSmPlayer _Player) {
+	if (_Player == Null) return;
+	
+	declare LibFunMgr_ShieldVariant for _Player = 0;
+	LibFunMgr_ShieldVariant += 1;
+	if (LibFunMgr_ShieldVariant > 1000) LibFunMgr_ShieldVariant = 0;
+	ActionSetVariant(_Player, C_Slots_Shield, LibFunMgr_ShieldVariant);
+}
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+// ---------------------------------- //
+/** Return the version number of the script
+ *
+ *  @return   The version number of the script
+ */
+Text GetScriptVersion() {
+  return Version;
+}
+
+// ---------------------------------- //
+/** Return the name of the script
+ *
+ *  @return   The name of the script
+ */
+Text GetScriptName() {
+  return ScriptName;
+}
+
+// ---------------------------------- //
+/**	Set the visibility of the fun UI
+ *
+ *	@param	_Visible									True to show, False to hide
+ */
+Void SetUIVisibility(Boolean _Visible) {
+	BonusUI::SetVisibility(_Visible);
+	BonusUI::ResetAnimations();
+}
+
+// ---------------------------------- //
+/** Set the position of the bonus UI
+ *	for the given player
+ *
+ *	@param	_Player										The player to update
+ *	@param	_Position									The new position
+ *	@param	_ZIndex										The new z-index
+ */
+Void SetUIPosition(CSmPlayer _Player, Vec2 _Position) {
+	declare DefaultPositions = BonusUI::C_DefaultPositions;
+	BonusUI::SetPosition(_Player, BonusUI::C_UI_Roulette, DefaultPositions[BonusUI::C_UI_Roulette] + _Position);
+	BonusUI::SetPosition(_Player, BonusUI::C_UI_Timer, DefaultPositions[BonusUI::C_UI_Timer] + _Position);
+}
+
+// ---------------------------------- //
+/** Hide or display the team bonus UI
+ *
+ *	@param	_Visible									True to show, False to hide
+ */
+Void SetTeamBonusVisibility(Boolean _Visible) {
+	G_TeamBonusIsVisible = _Visible;
+	BonusUI::SetTeamBonusVisibility(_Visible);
+}
+
+// ---------------------------------- //
+/** Play a sound when the player cant
+ *	pick up the bonus he's standing on
+ *
+ *	@param	_Player										The player who will hear the sound
+ */
+Void CantTakeBonus(CSmPlayer _Player) {
+	BonusUI::PlayCantTakeSound(_Player);
+}
+
+// ---------------------------------- //
+/** Check if a wave reversal was requested
+ *
+ *	@return														True if a wave reversal is requested
+ *																		False otherwise
+ */
+Boolean IsRequestingWaveReversal() {
+	if (G_RequestWaveReversal) {
+		G_RequestWaveReversal = False;
+		return True;
+	}
+	
+	return False;
+}
+
+// ---------------------------------- //
+/** Reset any active wave reversal
+ *	request
+ */
+Void ResetWaveReversalRequest() {
+	G_RequestWaveReversal = False;
+}
+
+// ---------------------------------- //
+/** Disable a bonus
+ *
+ *	@param	_Bonus										The bonus to disable
+ */
+Void DisableBonus(Text _Bonus) {
+	if (!G_DisabledBonuses.exists(_Bonus)) G_DisabledBonuses.add(_Bonus);
+}
+
+// ---------------------------------- //
+/** Enable a bonus
+ *
+ *	@param	_Bonus										The bonus to enable
+ */
+Void EnableBonus(Text _Bonus) {
+	declare Removed = G_DisabledBonuses.remove(_Bonus);
+}
+
+// ---------------------------------- //
+/** Set the duration of a timed bonus
+ *
+ *	@param	_Bonus										The bonus to update
+ *	@param	_Duration									The new duration
+ */
+Void SetBonusDuration(Text _Bonus, Integer _Duration) {
+	G_BonusDuration[_Bonus] = _Duration;
+}
+
+// ---------------------------------- //
+/** Set the duration of several timed bonuses
+ *
+ *	@param	_BonusDuration						The duration of the bonuses
+ *																		[Bonus' name => Duration in ms]
+ *																		["SuperBonus" => 2500]
+ */
+Void SetBonusDuration(Integer[Text] _BonusDuration) {
+	foreach (Bonus => Duration in _BonusDuration) {
+		SetBonusDuration(Bonus, Duration);
+	}
+}
+
+// ---------------------------------- //
+/** Check if a player has the given
+ *	timed bonus
+ *
+ *	@param	_Player										The player to check
+ *	@param	_Bonus										The bonus to check
+ *
+ *	@return														True if the player has the bonus
+ *																		False otherwise
+ */
+Boolean HasTimedBonus(CSmPlayer _Player, Text _Bonus) {
+	if (_Player == Null) return False;
+	
+	declare LibFunMgr_TimedBonus for _Player = Integer[Text];
+	return LibFunMgr_TimedBonus.existskey(_Bonus);
+}
+
+// ---------------------------------- //
+/** Give a timed bonus to a player
+ *
+ *	@param	_Player										The player receiving the bonus
+ *	@param	_Bonus										The bonus to give
+ *	@param	_Duration									The duration of the bonus
+ */
+Void GiveTimedBonus(CSmPlayer _Player, Text _Bonus, Integer _Duration) {
+	if (_Player == Null) return;
+	
+	declare LibFunMgr_TimedBonus for _Player = Integer[Text];
+	LibFunMgr_TimedBonus[_Bonus] = Now + _Duration;
+	
+	BonusUI::ActivateTimedBonus(_Player, _Bonus, Now + _Duration);
+	
+	switch (_Bonus) {
+		case C_Bonus_InstantCapture: {
+			Attributes::AddBonus(_Player, Attributes::C_Attribute_CaptureSpeed, C_BonusPrefix^C_Bonus_InstantCapture, 1000000.);
+		}
+		case C_Bonus_SuperShootman: {
+			Attributes::AddBonus(_Player, Attributes::C_Attribute_ArmorMax, C_BonusPrefix^C_Bonus_SuperShootman, 700.);
+			Attributes::AddBonus(_Player, Attributes::C_Attribute_ArmorReplenishGain, C_BonusPrefix^C_Bonus_SuperShootman, 1500.);
+			Attributes::AddBonus(_Player, Attributes::C_Attribute_AmmoGain, C_BonusPrefix^C_Bonus_SuperShootman, 1.5);
+			SetPlayerWeapon(_Player, CSmMode::EWeapon::Missile, C_BonusAutoSwitchWeapon);
+			SetPlayerAmmoMax(_Player, CSmMode::EWeapon::Missile, C_MissileAmmo);
+			if (_Player.SpawnStatus != CSmPlayer::ESpawnStatus::NotSpawned) {
+				SetPlayerAmmo(_Player, CSmMode::EWeapon::Missile, GetPlayerAmmoMax(_Player, CSmMode::EWeapon::Missile));
+			}
+			if (!G_SuperShootmen.exists(_Player.Id)) {
+				G_SuperShootmen.add(_Player.Id);
+				Private_UpdateMarkers();
+			}
+		}
+		case C_Bonus_SuperArmorRegen: {
+			Attributes::AddBonus(_Player, Attributes::C_Attribute_ArmorReplenishGain, C_BonusPrefix^C_Bonus_SuperArmorRegen, 1000.);
+		}
+		case C_Bonus_SuperAmmoGain: {
+			SetPlayerWeapon(_Player, CSmMode::EWeapon::Rocket, C_BonusAutoSwitchWeapon);
+			Attributes::AddBonus(_Player, Attributes::C_Attribute_AmmoGain, C_BonusPrefix^C_Bonus_SuperAmmoGain, 5.);
+		}
+		case C_Bonus_SuperStamina: {
+			Attributes::AddBonus(_Player, Attributes::C_Attribute_StaminaMax, C_BonusPrefix^C_Bonus_SuperStamina, 3.);
+		}
+		case C_Bonus_Nucleus: {
+			SetPlayerWeapon(_Player, CSmMode::EWeapon::Nucleus, C_BonusAutoSwitchWeapon);
+			SetPlayerAmmo(_Player, CSmMode::EWeapon::Nucleus, GetPlayerAmmoMax(_Player, CSmMode::EWeapon::Nucleus));
+		}
+		case C_Bonus_Shield: {
+			ActionBind(_Player, C_Slots_Shield, CSmMode::EActionInput::Activable4);
+			Private_ReloadShield(_Player);
+		}
+	}
+	
+	Attributes::Apply(_Player);
+	
+	// Refill armors
+	if (_Bonus == C_Bonus_SuperShootman) {
+		_Player.Armor = _Player.ArmorMax;
+	}
+}
+
+// ---------------------------------- //
+/** Remove one timed bonus of a player
+ *
+ *	@param	_Player										The player logins its bonuses
+ *	@param	_Bonus										The bonus to remove
+ */
+Void RemoveTimedBonus(CSmPlayer _Player, Text _Bonus) {
+	if (_Player == Null) return;
+	
+	declare LibFunMgr_TimedBonus for _Player = Integer[Text];
+	declare Removed = LibFunMgr_TimedBonus.removekey(_Bonus);
+	
+	BonusUI::CancelTimedBonus(_Player);
+	
+	switch (_Bonus) {
+		case C_Bonus_InstantCapture: {
+			Attributes::RemoveBonus(_Player, Attributes::C_Attribute_CaptureSpeed, C_BonusPrefix^C_Bonus_InstantCapture);
+		}
+		case C_Bonus_SuperShootman: {
+			Attributes::RemoveBonus(_Player, Attributes::C_Attribute_ArmorMax, C_BonusPrefix^C_Bonus_SuperShootman);
+			Attributes::RemoveBonus(_Player, Attributes::C_Attribute_ArmorReplenishGain, C_BonusPrefix^C_Bonus_SuperShootman);
+			Attributes::RemoveBonus(_Player, Attributes::C_Attribute_AmmoGain, C_BonusPrefix^C_Bonus_SuperShootman);
+			SetPlayerWeapon(_Player, C_BaseWeapon, C_DefaultAutoSwitchWeapon);
+			if (G_SuperShootmen.exists(_Player.Id)) {
+				declare Removed = G_SuperShootmen.remove(_Player.Id);
+				Private_UpdateMarkers();
+			}
+		}
+		case C_Bonus_SuperArmorRegen: {
+			Attributes::RemoveBonus(_Player, Attributes::C_Attribute_ArmorReplenishGain, C_BonusPrefix^C_Bonus_SuperArmorRegen);
+		}
+		case C_Bonus_SuperAmmoGain: {
+			SetPlayerWeapon(_Player, C_BaseWeapon, C_DefaultAutoSwitchWeapon);
+			Attributes::RemoveBonus(_Player, Attributes::C_Attribute_AmmoGain, C_BonusPrefix^C_Bonus_SuperAmmoGain);
+		}
+		case C_Bonus_SuperStamina: {
+			Attributes::RemoveBonus(_Player, Attributes::C_Attribute_StaminaMax, C_BonusPrefix^C_Bonus_SuperStamina);
+		}
+		case C_Bonus_Nucleus: {
+			SetPlayerWeapon(_Player, C_BaseWeapon, C_DefaultAutoSwitchWeapon);
+		}
+		case C_Bonus_Shield: {
+			ActionBind(_Player, C_Slots_Shield, CSmMode::EActionInput::None);
+		}
+	}
+	
+	Attributes::Apply(_Player);
+	
+	// Ceil player's stamina to its maximum value
+	if (_Bonus == C_Bonus_SuperStamina) {
+		declare StaminaMax = ML::NearestInteger(_Player.StaminaMax * 3600.);
+		if (_Player.Stamina > StaminaMax) {
+			_Player.Stamina = StaminaMax;
+		}
+	}
+}
+
+// ---------------------------------- //
+/** Remove all timed bonus of a player
+ *
+ *	@param	_Player										The player logins its bonuses
+ */
+Void RemoveTimedBonuses(CSmPlayer _Player) {
+	declare LibFunMgr_TimedBonus for _Player = Integer[Text];
+	declare TimedBonus = LibFunMgr_TimedBonus;
+	foreach (Bonus => BonusEndTime in TimedBonus) {
+		RemoveTimedBonus(_Player, Bonus);
+	}
+}
+
+// ---------------------------------- //
+/** Manage the timed bonus of a player
+ *	and remove it when it reached its
+ *	limit
+ *
+ *	@param	_Player										The player to manage
+ */
+Void UpdateTimedBonuses(CSmPlayer _Player) {
+	if (_Player == Null) return;
+	
+	declare LibFunMgr_TimedBonus for _Player = Integer[Text];
+	declare TimedBonus = LibFunMgr_TimedBonus;
+	foreach (Bonus => BonusEndTime in TimedBonus) {
+		if (Now >= BonusEndTime) {
+			RemoveTimedBonus(_Player, Bonus);
+		}
+	}
+}
+
+// ---------------------------------- //
+/** Check if a player has a timed bonus
+ *
+ *	@param	_Player										The player to check
+ *
+ *	@return														True if the player has a bonus
+ *																		False otherwise
+ */
+Boolean HasTimedBonus(CSmPlayer _Player) {
+	if (_Player == Null) return False;
+	
+	declare LibFunMgr_TimedBonus for _Player = Integer[Text];
+	return LibFunMgr_TimedBonus.count > 0;
+}
+
+// ---------------------------------- //
+/** Reset the pick up count of bonus
+ *	for a player
+ *
+ *	@param	_Player										The player to reset
+ */
+Void ResetPickedBonuses(CSmPlayer _Player) {
+	if (_Player == Null) return;
+	
+	declare LibFunMgr_PickedBonus for _Player = Integer[Text];
+	LibFunMgr_PickedBonus.clear();
+}
+
+// ---------------------------------- //
+/** Get the number of bonuses stacked
+ *	by a player (eg: armor, ammo, ...)
+ *	and active at the same time
+ *
+ *	@param	_Player										The player to check
+ *
+ *	@return														The number of bonuses cumulated
+ */
+Integer GetActiveBonusesCount(CSmPlayer _Player) {
+	if (_Player == Null) return 0;
+	
+	declare Count = 0;
+	
+	declare LibFunMgr_TimedBonus for _Player = Integer[Text];
+	Count += LibFunMgr_TimedBonus.count;
+	
+	declare LibFunMgr_PickedBonus for _Player = Integer[Text];
+	foreach (Bonus => Amount in LibFunMgr_PickedBonus) {
+		if (Amount > 0) {
+			Count += Amount;
+		}
+	}
+	
+	return Count;
+}
+
+// ---------------------------------- //
+/** Check if a player has a bonus
+ *
+ *	@param	_Player										The player to check
+ *	@param	_Bonus										The bonus to find
+ *
+ *	@return														True if the player has the bonus
+ *																		False otherwise
+ */
+Boolean HasPickedBonus(CSmPlayer _Player, Text _Bonus) {
+	if (_Player == Null) return False;
+	
+	declare LibFunMgr_PickedBonus for _Player = Integer[Text];
+	return LibFunMgr_PickedBonus.existskey(_Bonus) && LibFunMgr_PickedBonus[_Bonus] > 0;
+}
+
+// ---------------------------------- //
+/** Check if a player has a bonus in
+ *	its waiting list
+ *
+ *	@param	_Player										The player to check
+ *	@param	_Bonus										The bonus to find
+ *
+ *	@return														True if the player has the bonus
+ *																		False otherwise
+ */
+Boolean HasWaitingBonus(CSmPlayer _Player, Text _Bonus) {
+	if (_Player == Null) return False;
+	
+	declare LibFunMgr_WaitingBonus for _Player = Text[][Integer];
+	foreach (ActivationTime => Bonuses in LibFunMgr_WaitingBonus) {
+		if (Bonuses.exists(_Bonus)) {
+			return True;
+		}
+	}
+	
+	return False;
+}
+
+// ---------------------------------- //
+/** Cancel bonus waiting for the roulette
+ *	to end
+ *
+ *	@param	_Player										The player that get its bonuses cancelled
+ */
+Void CancelWaitingBonuses(CSmPlayer _Player) {
+	if (_Player == Null) return;
+	
+	declare LibFunMgr_PickedBonus for _Player = Integer[Text];
+	declare LibFunMgr_WaitingBonus for _Player = Text[][Integer];
+	
+	foreach (ActivationTime => Bonuses in LibFunMgr_WaitingBonus) {
+		foreach (Bonus in Bonuses) {
+			if (LibFunMgr_PickedBonus.existskey(Bonus)) {
+				LibFunMgr_PickedBonus[Bonus] -= 1;
+				if (LibFunMgr_PickedBonus[Bonus] <= 0) {
+					declare Removed = LibFunMgr_PickedBonus.removekey(Bonus);
+				}
+			}
+		}
+	}
+	LibFunMgr_WaitingBonus.clear();
+	
+	BonusUI::PickRandomBonus(_Player, "", -1, "");
+}
+
+// ---------------------------------- //
+/** Add a bonus to the waiting list
+ *
+ *	@param	_Player										The player picking the bonus
+ *	@param	_Bonus										Drop bonus to add
+ *	@param	_PickerName								Name of the player who picked the bonus
+ *																		Leave empty to not display any name
+ */
+Void PickBonus(CSmPlayer _Player, Text _Bonus, Text _PickerName) {
+	if (_Player == Null) return;
+	if (!C_Bonuses.exists(_Bonus)) return;
+	
+	declare LibFunMgr_PickedBonus for _Player = Integer[Text];
+	if (!LibFunMgr_PickedBonus.existskey(_Bonus)) {
+		LibFunMgr_PickedBonus[_Bonus] = 1;
+	} else {
+		LibFunMgr_PickedBonus[_Bonus] += 1;
+	}
+	
+	if (C_SingleBonus) {
+		CancelWaitingBonuses(_Player);
+	}
+	
+	declare LibFunMgr_WaitingBonus for _Player = Text[][Integer];
+	declare ActivationTime = Now + C_BonusDelay;
+	if (!LibFunMgr_WaitingBonus.existskey(ActivationTime)) {
+		LibFunMgr_WaitingBonus[ActivationTime] = [_Bonus];
+	} else {
+		LibFunMgr_WaitingBonus[ActivationTime].add(_Bonus);
+	}
+	
+	BonusUI::PickRandomBonus(_Player, _Bonus, ActivationTime, _PickerName);
+}
+
+// ---------------------------------- //
+/** Pick a random bonus and add it to
+ *	the waiting list
+ *
+ *	@param	_Player										The player picking the bonus
+ *	@param	_BonusesRates							Drop rate of the bonuses
+ */
+Text PickRandomBonus(CSmPlayer _Player, Integer[Text] _BonusesRates) {
+	if (_Player == Null) return "";
+	
+	declare BonusRate = Integer[Text];
+	declare Sum = 0;
+	foreach (Bonus => Rate in _BonusesRates) {
+		// The bonus is disabled
+		if (G_DisabledBonuses.exists(Bonus)) {
+			continue;
+		}
+		// Disable the armor regen bonus when SuperShootman is active
+		else if (
+			Bonus == C_Bonus_SuperArmorRegen && (
+				HasTimedBonus(_Player, C_Bonus_SuperShootman) || HasWaitingBonus(_Player, C_Bonus_SuperShootman)
+			)
+		) {
+			continue;
+		}
+		// Disable ammo gain bonus when not using the default weapon
+		else if (
+			Bonus == C_Bonus_SuperAmmoGain && (
+				HasTimedBonus(_Player, C_Bonus_SuperShootman) || HasWaitingBonus(_Player, C_Bonus_SuperShootman)
+			)
+		) {
+			continue;
+		}
+		Sum += Rate;
+		BonusRate[Bonus] = Sum;
+	}
+	declare Key = ML::Rand(0, Sum);
+	declare SelectedBonus = "";
+	foreach (Bonus => Rate in BonusRate) {
+		if (Key <= Rate) {
+			SelectedBonus = Bonus;
+			break;
+		}
+	}
+	
+	// Update roulette pictures
+	declare BonusesIcons = Text[Text];
+	foreach (Bonus => Rate in BonusRate) {
+		BonusesIcons[Bonus] = C_BonusImgPath ^ Bonus ^ ".dds";
+	}
+	BonusUI::SetBonuses(BonusesIcons);
+	
+	PickBonus(_Player, SelectedBonus, "");
+	
+	return SelectedBonus;
+}
+
+// ---------------------------------- //
+/** Remove the bonus effects from a player
+ *
+ *	@param	_Player										The player to update
+ */
+Void RemoveBonuses(CSmPlayer _Player) {
+	if (_Player == Null) return;
+	
+	ActionBind(_Player, C_Slots_Shield, CSmMode::EActionInput::None);
+	Attributes::RemoveBonus(_Player, Attributes::C_Attribute_ArmorMax, C_BonusPrefix^C_Bonus_ArmorBonus);
+	Attributes::RemoveBonus(_Player, Attributes::C_Attribute_RocketAmmoMax, C_BonusPrefix^C_Bonus_AmmoBonus);
+	Attributes::RemoveBonus(_Player, Attributes::C_Attribute_NucleusAmmoMax, C_BonusPrefix^C_Bonus_AmmoBonus);
+	Attributes::RemoveBonus(_Player, Attributes::C_Attribute_LaserAmmoMax, C_BonusPrefix^C_Bonus_AmmoBonus);
+	Attributes::RemoveBonus(_Player, Attributes::C_Attribute_ArrowAmmoMax, C_BonusPrefix^C_Bonus_AmmoBonus);
+	Attributes::RemoveBonus(_Player, Attributes::C_Attribute_RocketAmmoMax, C_BonusPrefix^C_Bonus_SuperAmmoBonus);
+	Attributes::RemoveBonus(_Player, Attributes::C_Attribute_NucleusAmmoMax, C_BonusPrefix^C_Bonus_SuperAmmoBonus);
+	Attributes::RemoveBonus(_Player, Attributes::C_Attribute_LaserAmmoMax, C_BonusPrefix^C_Bonus_SuperAmmoBonus);
+	Attributes::RemoveBonus(_Player, Attributes::C_Attribute_ArrowAmmoMax, C_BonusPrefix^C_Bonus_SuperAmmoBonus);
+	Attributes::Apply(_Player);
+}
+
+// ---------------------------------- //
+/** Cancel all bonuses of a player
+ *
+ *	@param	_Player										The player who will lose his bonuses
+ */
+Void CancelAllBonuses(CSmPlayer _Player) {
+	if (_Player == Null) return;
+	
+	Log::Log("""[FunMgr] Cancel all bonuses of {{{_Player.User.Login}}}""");
+	
+	RemoveBonuses(_Player);
+	RemoveTimedBonuses(_Player);
+	ResetPickedBonuses(_Player);
+	SetPlayerWeapon(_Player, C_BaseWeapon, C_DefaultAutoSwitchWeapon);
+}
+
+// ---------------------------------- //
+/** Activate a bonus on a player
+ *
+ *	@param	_Player										The player receiving the bonus
+ *	@param	_Bonus										The bonus to activate
+ */
+Void ActivateBonus(CSmPlayer _Player, Text _Bonus) {
+	if (_Player == Null) return;
+	
+	declare LibFunMgr_PickedBonus for _Player = Integer[Text];
+	
+	switch (_Bonus) {
+		case C_Bonus_InstantCapture: {
+			RemoveTimedBonuses(_Player);
+			GiveTimedBonus(_Player, C_Bonus_InstantCapture, G_BonusDuration[C_Bonus_InstantCapture]);
+		}
+		case C_Bonus_Shield: {
+			RemoveTimedBonuses(_Player);
+			GiveTimedBonus(_Player, C_Bonus_Shield, G_BonusDuration[C_Bonus_Shield]);
+		}
+		case C_Bonus_ArmorBonus: {
+			Attributes::AddBonus(_Player, Attributes::C_Attribute_ArmorMax, C_BonusPrefix^C_Bonus_ArmorBonus, 100. * LibFunMgr_PickedBonus[C_Bonus_ArmorBonus]);
+			Attributes::Apply(_Player);
+			_Player.Armor += 100;
+		}
+		case C_Bonus_AmmoBonus: {
+			declare AmmoBonus = 1. * LibFunMgr_PickedBonus[C_Bonus_AmmoBonus];
+			Attributes::AddBonus(_Player, Attributes::C_Attribute_RocketAmmoMax, C_BonusPrefix^C_Bonus_AmmoBonus, AmmoBonus);
+			Attributes::AddBonus(_Player, Attributes::C_Attribute_NucleusAmmoMax, C_BonusPrefix^C_Bonus_AmmoBonus, AmmoBonus);
+			Attributes::AddBonus(_Player, Attributes::C_Attribute_LaserAmmoMax, C_BonusPrefix^C_Bonus_AmmoBonus, AmmoBonus);
+			Attributes::AddBonus(_Player, Attributes::C_Attribute_ArrowAmmoMax, C_BonusPrefix^C_Bonus_AmmoBonus, AmmoBonus);
+			Attributes::Apply(_Player);
+			AddPlayerAmmo(_Player, CSmMode::EWeapon::Rocket, 1.);
+			AddPlayerAmmo(_Player, CSmMode::EWeapon::Nucleus, 1.);
+			AddPlayerAmmo(_Player, CSmMode::EWeapon::Laser, 1.);
+			AddPlayerAmmo(_Player, CSmMode::EWeapon::Arrow, 1.);
+		}
+		case C_Bonus_SuperAmmoBonus: {
+			declare AmmoBonus = 5. * LibFunMgr_PickedBonus[C_Bonus_SuperAmmoBonus];
+			Attributes::AddBonus(_Player, Attributes::C_Attribute_RocketAmmoMax, C_BonusPrefix^C_Bonus_SuperAmmoBonus, AmmoBonus);
+			Attributes::AddBonus(_Player, Attributes::C_Attribute_NucleusAmmoMax, C_BonusPrefix^C_Bonus_SuperAmmoBonus, AmmoBonus);
+			Attributes::AddBonus(_Player, Attributes::C_Attribute_LaserAmmoMax, C_BonusPrefix^C_Bonus_SuperAmmoBonus, AmmoBonus);
+			Attributes::AddBonus(_Player, Attributes::C_Attribute_ArrowAmmoMax, C_BonusPrefix^C_Bonus_SuperAmmoBonus, AmmoBonus);
+			Attributes::Apply(_Player);
+			AddPlayerAmmo(_Player, CSmMode::EWeapon::Rocket, 5.);
+			AddPlayerAmmo(_Player, CSmMode::EWeapon::Nucleus, 5.);
+			AddPlayerAmmo(_Player, CSmMode::EWeapon::Laser, 5.);
+			AddPlayerAmmo(_Player, CSmMode::EWeapon::Arrow, 5.);
+		}
+		case C_Bonus_SuperShootman: {
+			RemoveTimedBonuses(_Player);
+			GiveTimedBonus(_Player, C_Bonus_SuperShootman, G_BonusDuration[C_Bonus_SuperShootman]);
+		}
+		case C_Bonus_SuperArmorRegen: {
+			RemoveTimedBonuses(_Player);
+			GiveTimedBonus(_Player, C_Bonus_SuperArmorRegen, G_BonusDuration[C_Bonus_SuperArmorRegen]);
+		}
+		case C_Bonus_SuperAmmoGain: {
+			RemoveTimedBonuses(_Player);
+			GiveTimedBonus(_Player, C_Bonus_SuperAmmoGain, G_BonusDuration[C_Bonus_SuperAmmoGain]);
+		}
+		case C_Bonus_SuperStamina: {
+			RemoveTimedBonuses(_Player);
+			GiveTimedBonus(_Player, C_Bonus_SuperStamina, G_BonusDuration[C_Bonus_SuperStamina]);
+			_Player.Stamina = ML::NearestInteger(_Player.StaminaMax * 3600.);
+		}
+		case C_Bonus_WaveReversal: {
+			G_RequestWaveReversal = True;
+		}
+		case C_Bonus_BonusCancel: {
+			// In teams cancel the bonuses of the opposing team
+			if (UseClans) {
+				foreach (Player in AllPlayers) {
+					if (Player.CurrentClan != _Player.CurrentClan) {
+						CancelAllBonuses(Player);
+					}
+				}
+				Message::SendBigMessage(
+					3 - _Player.CurrentClan,
+					//L16N [Fun] Message displayed to the players that get their bonuses canceled by another player.
+					_("Bonuses canceled"),
+					5000, 2,
+					CUIConfig::EUISound::Warning, 0
+				);
+			} 
+			// In free for all cancel the bonuses of all other players
+			else {
+				foreach (Player in AllPlayers) {
+					if (Player != _Player) {
+						CancelAllBonuses(Player);
+					}
+				}
+			}
+		}
+		case C_Bonus_Nucleus: {
+			RemoveTimedBonuses(_Player);
+			GiveTimedBonus(_Player, C_Bonus_Nucleus, G_BonusDuration[C_Bonus_Nucleus]);
+		}
+	}
+}
+
+// ---------------------------------- //
+/** Activate bonus for player when required
+ *
+ *	@param	_Player										The player to update
+ */
+Void UpdateWaitingBonuses(CSmPlayer _Player) {
+	if (_Player == Null) return;
+	
+	declare LibFunMgr_WaitingBonus for _Player = Text[][Integer];
+	declare ToRemove = Integer[];
+	foreach (ActivationTime => Bonuses in LibFunMgr_WaitingBonus) {
+		if (Now >= ActivationTime) {
+			ToRemove.add(ActivationTime);
+			foreach (Bonus in Bonuses) {
+				ActivateBonus(_Player, Bonus);
+			}
+		}
+	}
+	foreach (ActivationTime in ToRemove) {
+		declare Removed = LibFunMgr_WaitingBonus.removekey(ActivationTime);
+	}
+}
+
+// ---------------------------------- //
+/** Initialize the player properties before spawning him
+ *
+ *	@param	_Player										The player to initialize
+ */
+Void InitializePlayer(CSmPlayer _Player) {
+	if (_Player == Null) return;
+		
+	declare LibFunMgr_ShieldLoaded for _Player = False;
+	if (!LibFunMgr_ShieldLoaded) {
+		ActionLoad(_Player, C_Slots_Shield, G_ActionId_Shield);
+		LibFunMgr_ShieldLoaded = True;
+	}
+	
+	CancelAllBonuses(_Player);
+}
+
+// ---------------------------------- //
+/** Get the time of the last markers update
+ *
+ *	@return														The date of the last update
+ */
+Integer GetMarkersUpdate() {
+	return G_MarkersUpdate;
+}
+
+// ---------------------------------- //
+/** Get the Fun markers
+ *
+ *	@return														The markers
+ */
+Text GetMarkers() {
+	return G_Markers;
+}
+
+// ---------------------------------- //
+/** Create a bonus object
+ *
+ *	@return														The created bonus
+ */
+CSmObject CreateBonus() {
+	declare Bonus <=> ObjectCreate(G_ItemId_Bonus);
+	G_Bonuses.add(Bonus);
+	return Bonus;
+}
+
+// ---------------------------------- //
+/** Destroy a bonus object
+ *
+ *	@param	_Bonus										The bonus to destroy
+ */
+Void DestroyBonus(CSmObject _Bonus) {
+	if (_Bonus == Null) return;
+	
+	if (G_Bonuses.exists(_Bonus)) {
+		declare Removed = G_Bonuses.remove(_Bonus);
+		if (Removed) {
+			ObjectDestroy(_Bonus);
+		}
+	}
+}
+
+// ---------------------------------- //
+/// Destroy all bonuses
+Void DestroyBonuses() {
+	foreach (Bonus in G_Bonuses) {
+		ObjectDestroy(Bonus);
+	}
+	G_Bonuses.clear();
+}
+
+// ---------------------------------- //
+/** Get the number of bonuses
+ *
+ *	@return														The number of bonuses
+ */
+Integer CountBonuses() {
+	return G_Bonuses.count;
+}
+
+// ---------------------------------- //
+/** Check if the given object is a bonus
+ *
+ *	@param	_Object										The object to check
+ *
+ *	@return														True if the object is a bonus,
+ *																		False otherwise
+ */
+Boolean IsBonus(CSmObject _Object) {
+	return (
+		_Object != Null && (
+			Objects::GetObjectName(_Object) == C_BoxItem || Dispenser::GetObjectName(_Object) == C_BoxItem ||
+			_Object.ModelId == G_ItemId_Bonus
+		)
+	);
+}
+
+// ---------------------------------- //
+/** Manage the mode events
+ *
+ *	@param	_Event										The event to manage
+ *	@param	_ShareBonusWithTeam			Share the picked up bonus
+ *																		with the other members of
+ *																		the clan
+ *	@param	_BonusesRates							Drop rate of the bonuses
+ */
+Void OnEvent(CSmModeEvent _Event, Boolean _ShareBonusWithTeam, Integer[Text] _BonusesRates) {
+	if (_Event == Null) return;
+	
+	// Player touches object
+	if (_Event.Type == CSmModeEvent::EType::OnPlayerTouchesObject) {
+		if (IsBonus(_Event.Object)) {
+			declare Bonus = PickRandomBonus(_Event.Player, _BonusesRates);
+			if (_ShareBonusWithTeam) {
+				foreach (Player in AllPlayers) {
+					if (
+						Player.CurrentClan == _Event.Player.CurrentClan &&
+						Player != _Event.Player
+					) {
+						PickBonus(Player, Bonus, _Event.Player.User.Name);
+					} 
+				}
+			}
+			if (_Event.Object.ModelId == G_ItemId_Bonus) {
+				DestroyBonus(_Event.Object);
+			}
+		}
+	}
+	// Action event
+	else if (_Event.Type == CSmModeEvent::EType::OnActionCustomEvent) {
+		if (_Event.Param1 == "ShieldDestroyed") {
+			if (_Event.Victim != Null) {
+				if (HasTimedBonus(_Event.Victim, C_Bonus_Shield)) {
+					RemoveTimedBonus(_Event.Victim, C_Bonus_Shield);
+				}
+			}
+		}
+	}
+	// Player eliminated
+	else if (_Event.Type == CSmModeEvent::EType::OnArmorEmpty) {
+		CancelWaitingBonuses(_Event.Victim);
+	}
+	// Player respawned
+	else if (_Event.Type == CSmModeEvent::EType::OnPlayerRequestRespawn) {
+		CancelWaitingBonuses(_Event.Player);
+	}
+}
+
+// ---------------------------------- //
+/** Manage the mode events
+ *
+ *	@param	_Event										The event to manage
+ */
+Void OnEvent(CSmModeEvent _Event) {
+	OnEvent(_Event, False, C_BonusesRates);
+}
+
+// ---------------------------------- //
+/// Update the library
+Void Yield() {
+	declare BonusTeam1 = "";
+	declare BonusTeam2 = "";
+	
+	foreach (Player in Players) {
+		UpdateTimedBonuses(Player);
+		UpdateWaitingBonuses(Player);
+		
+		if (G_TeamBonusIsVisible) {
+			if (BonusTeam1 == "" && Player.CurrentClan == 1) {
+				declare LibFunMgr_TimedBonus for Player = Integer[Text];
+				if (LibFunMgr_TimedBonus.count > 0) {
+					foreach (Bonus => EndTime in LibFunMgr_TimedBonus) {
+						BonusTeam1 = Bonus;
+						break;
+					}
+				}
+			}
+			if (BonusTeam2 == "" && Player.CurrentClan == 2) {
+				declare LibFunMgr_TimedBonus for Player = Integer[Text];
+				if (LibFunMgr_TimedBonus.count > 0) {
+					foreach (Bonus => EndTime in LibFunMgr_TimedBonus) {
+						BonusTeam2 = Bonus;
+						break;
+					}
+				}
+			}
+		}
+	}
+	
+	if (G_TeamBonusIsVisible && (G_BonusTeam1 != BonusTeam1 || G_BonusTeam2 != BonusTeam2)) {
+		G_BonusTeam1 = BonusTeam1;
+		G_BonusTeam2 = BonusTeam2;
+		BonusUI::SetTeamBonuses(G_BonusTeam1, G_BonusTeam2);
+	}
+	
+	// Clean supermen on player disconnect
+	if (G_SuperShootmen.count > 0) {
+		declare ToRemove = Ident[];
+		foreach (PlayerId in G_SuperShootmen) {
+			if (!Players.existskey(PlayerId) || Players[PlayerId].SpawnStatus == CSmPlayer::ESpawnStatus::NotSpawned) {
+				ToRemove.add(PlayerId);
+			}
+		}
+		if (ToRemove.count > 0) {
+			foreach (PlayerId in ToRemove) {
+				declare Removed = G_SuperShootmen.remove(PlayerId);
+			}
+			Private_UpdateMarkers();
+		}
+	}
+}
+
+// ---------------------------------- //
+/// Load fun actions
+Void LoadActions() {
+	G_ActionId_Shield = ActionList_Add(C_ActionsPath^C_Actions_Shield);
+}
+
+// ---------------------------------- //
+/// Load fun items
+Void LoadItems() {
+	G_ItemId_Bonus = ItemList_Add(C_ItemsPath^C_Items_Bonus);
+}
+
+Ident GetBonusModelIdItem() {
+	return G_ItemId_Bonus;
+}
+
+// ---------------------------------- //
+/// Unload the library
+Void Unload() {
+  G_DisabledBonuses.clear();
+	G_SuperShootmen.clear();
+	G_Markers = "";
+	G_MarkersUpdate = Now;
+	G_RequestWaveReversal = False;
+	G_TeamBonusIsVisible = False;
+	G_BonusTeam1 = "";
+	G_BonusTeam2 = "";
+	
+	foreach (Player in AllPlayers) {
+		declare LibFunMgr_WaitingBonus for Player = Text[][Integer];
+		declare LibFunMgr_TimedBonus for Player = Integer[Text];
+		declare LibFunMgr_PickedBonus for Player = Integer[Text];
+		declare LibFunMgr_ShieldLoaded for Player = False;
+		LibFunMgr_WaitingBonus.clear();
+		LibFunMgr_TimedBonus.clear();
+		LibFunMgr_PickedBonus.clear();
+		LibFunMgr_ShieldLoaded = False;
+	}
+	
+	DestroyBonuses();
+	
+	BonusUI::Unload();
+}
+
+// ---------------------------------- //
+/// Load the library
+Void Load() {
+  Unload();
+
+	BonusUI::Load();
+	
+	Attributes::SetBase(Attributes::C_Attribute_CaptureSpeed, C_Default_CaptureSpeed);
+	Attributes::SetBase(Attributes::C_Attribute_ArmorMax, C_Default_ArmorMax);
+	Attributes::SetBase(Attributes::C_Attribute_ArmorReplenishGain, C_Default_ArmorReplenishGain);
+	Attributes::SetBase(Attributes::C_Attribute_AmmoGain, C_Default_AmmoGain);
+	Attributes::SetBase(Attributes::C_Attribute_RocketAmmoMax, C_Default_RocketAmmoMax);
+	Attributes::SetBase(Attributes::C_Attribute_ArrowAmmoMax, C_Default_ArrowAmmoMax);
+	Attributes::SetBase(Attributes::C_Attribute_NucleusAmmoMax, C_Default_NucleusAmmoMax);
+	Attributes::SetBase(Attributes::C_Attribute_LaserAmmoMax, C_Default_LaserAmmoMax);
+	Attributes::SetBase(Attributes::C_Attribute_StaminaMax, C_Default_StaminaMax);
+	
+	G_BonusDuration = [
+		C_Bonus_InstantCapture => C_Duration_InstantCapture,
+		C_Bonus_SuperShootman => C_Duration_SuperShootman,
+		C_Bonus_SuperArmorRegen => C_Duration_SuperArmorRegen,
+		C_Bonus_SuperAmmoGain => C_Duration_SuperAmmoGain,
+		C_Bonus_SuperStamina => C_Duration_SuperStamina,
+		C_Bonus_Nucleus => C_Duration_Nucleus,
+		C_Bonus_Shield => C_Duration_Shield
+	];
+	
+	declare Bonuses = Text[Text];
+	declare Messages = Text[Text];
+	foreach (Bonus in C_Bonuses) {
+		Bonuses[Bonus] = C_BonusImgPath ^ Bonus ^ ".dds";
+		switch (Bonus) {
+			case C_Bonus_InstantCapture: {
+				//L16N [Fun] Message displayed when the player picks up a bonus increasing his capture speed for a short time
+				Messages[Bonus] = _("Instant pole capture");
+			}
+			case C_Bonus_Shield: {
+				//L16N [Fun] Message displayed when the player picks up a bonus giving him a shield
+				Messages[Bonus] = _("Shield");
+			}
+			case C_Bonus_ArmorBonus: {
+				//L16N [Fun] Message displayed when the player picks up a bonus giving him an additional armor
+				Messages[Bonus] = _("+1 Armor");
+			}
+			case C_Bonus_AmmoBonus: {
+				//L16N [Fun] Message displayed when the player picks up a bonus giving him an additional ammo
+				Messages[Bonus] = _("+1 ammo");
+			}
+			case C_Bonus_SuperAmmoBonus: {
+				declare AmmoBonus = 5;
+				//L16N [Fun] Message displayed when the player picks up a bonus giving him several additional ammo, %1 is the number of ammo
+				Messages[Bonus] = TL::Compose(_("+%1 ammo"), TL::ToText(AmmoBonus));
+			}
+			case C_Bonus_SuperShootman: {
+				//L16N [Fun] Message displayed when the player picks up a bonus giving him incredible powers for a short time
+				Messages[Bonus] = _("Missile Storm Plus");
+			}
+			case C_Bonus_SuperArmorRegen: {
+				//L16N [Fun] Message displayed when the player picks up a bonus regenerating his armor for a short time
+				Messages[Bonus] = _("Armor regeneration");
+			}
+			case C_Bonus_SuperAmmoGain: {
+				//L16N [Fun] Message displayed when the player picks up a bonus increasing his reload speed for a short time
+				Messages[Bonus] = _("Rocket Storm");
+			}
+			case C_Bonus_SuperStamina: {
+				//L16N [Fun] Message displayed when the player picks up a bonus increasing his stamina amount
+				Messages[Bonus] = _("Stamina increased");
+			}
+			case C_Bonus_WaveReversal: {
+				//L16N [Fun] Message displayed in Battle when the player picks up a bonus that reverse the current wave. Attacking players will start defending and defending players will start attacking.
+				Messages[Bonus] = _("Wave Reversal");
+			}
+			case C_Bonus_BonusCancel: {
+				//L16N [Fun] Message displayed when the player picks up a bonus that cancel the bonuses of his opponents
+				Messages[Bonus] = _("Bonus cancel");
+			}
+			case C_Bonus_Nucleus: {
+				Messages[Bonus] = "Nucleus";
+			}
+		}
+	}
+	
+	BonusUI::SetBonuses(Bonuses);
+	BonusUI::SetMessages(Messages);
+}
