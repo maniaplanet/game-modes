@@ -1,0 +1,910 @@
+/**
+ *	Royal XP
+ */
+#Extends "Modes/ShootMania/Royal/RoyalBase.Script.txt"
+
+#Const CompatibleMapTypes	"RoyalArena,RoyalArena2,LobbyArena"
+#Const Version							"2017-06-02"
+#Const ScriptName						"Modes/ShootMania/Royal/RoyalExp.Script.txt"
+
+// ---------------------------------- //
+// Libraries
+// ---------------------------------- //
+#Include "Libs/Nadeo/ShootMania/Exp/Manager.Script.txt" as ExpMgr
+#Include "Libs/Nadeo/ShootMania/Exp/Store.Script.txt" as Store
+
+// ---------------------------------- //
+// Settings
+// ---------------------------------- //
+#Setting S_MapPointsLimit					200		as _("Points to win a map")
+#Setting S_PoleCaptureTime					4			as _("Pole's capture time")
+#Setting S_OffZoneAutoStartTime		90		as _("Time before auto activation of the tornado")
+#Setting S_OffZoneShrinkDuration		45		as _("Tornado shrink duration")
+#Setting S_EndRoundTimeLimit				60		as _("Time limit after the tornado is completly shrunk")
+#Setting S_SpawnInterval						5			as _("Time between each wave of spawns")
+#Setting S_OffZoneMinRadius				16.		as "<hidden>" ///< Minimum size of the OffZone at the end
+#Setting S_ShopTime								5			as _("Time to shop at the beginning of the round")
+// Matchmaking
+#Setting S_NbPlayersMax	24	as "<hidden>"
+#Setting S_NbPlayersMin	2		as "<hidden>"
+#Setting S_MapsPerMatch	5		as "<hidden>"
+
+#Setting S_ScriptEnvironment "production"/*/"development"*/
+
+// ---------------------------------- //
+// Commands
+// ---------------------------------- //
+//L16N [Royal XP] Reset the players progression (store, gold and xp) and start a new game
+#Command Command_NewGame (Boolean) as _("Start a new game (reset store, gold and xp)")
+//L16N [Royal XP] Reset a part of the players progression (upgrades, items and gold) and start a new session
+#Command Command_NewSession (Boolean) as _("Start a new session (reset upgrades, items and gold)")
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_HudModulePath "Nadeo/ShootMania/Royal/Exp/Hud.Module.Gbx"
+#Const C_ManiaAppUrl "file://Media/ManiaApps/Nadeo/ShootMania/Royal/RoyalXP.Script.txt"
+#Const C_BotsNb 0
+// Gameplay settings
+#Const C_OffZoneStartRadius	300.
+#Const C_DamageMax 100
+#Const C_AutoSwitchWeapon True
+#Const C_Default_ArmorMaxOnRespawn 100. ///< Number of armors when respawning before the tornado
+#Const C_EndRoundCelebrationTime 2500 ///< Time left to the winning player before the end of the round
+#Const C_GaugeMultiplier 100 ///< Increase capture time precision
+#Const C_Item_Gold """SMCommon\Collectibles\Gold.Item.gbx"""
+// XP settings
+#Const C_MapsPlayedBeforeReset 1 ///< Number of maps to play before reseting the store
+#Const C_GoldRespawnTime 8000 ///< Respawn time of gold items on the map (in milliseconds)
+#Const C_Gold_StartRound 15 ///< Gold given at the beginning of the round
+#Const C_Gold_PickUp 5 ///< Gold given when picking up a gold item
+
+//L16N [Royal XP] Rules of the Royal XP mode.
+#Const Description _("Survive as long as possible, eliminate others players and capture the pole to score a maximum of points. Once eliminated you won't respawn before the next round. The first player to reach the points limit wins.")
+
+// ---------------------------------- //
+// Extends
+// ---------------------------------- //
+***MM_SetupMatchmaking***
+***
+declare Format = Integer[];
+for (I, 1, S_NbPlayersMax) {
+	Format.add(1);
+}
+MM_SetFormat(Format);
+Format.clear();
+declare ProgressiveFormat = Integer[][];
+for (I, 1, S_NbPlayersMin) {
+	Format.add(1);
+}
+ProgressiveFormat.add(Format);
+for (I, S_NbPlayersMin+1, S_NbPlayersMax) {
+	Format.add(1);
+	ProgressiveFormat.add(Format);
+}
+MM_SetProgressiveFormats(ProgressiveFormat);
+***
+
+***Lobby_MatchRulesManialink***
+***
+ManialinkRules = """<label posn="-62.5 25" sizen="125 50" autonewline="1" maxline="10" textemboss="1" textsize="2" text="{{{Description}}}" />""";
+***
+
+***Match_LogVersions***
+***
+Log::RegisterScript(ScriptName, Version);
+Log::RegisterScript(ExpMgr::GetScriptName(), ExpMgr::GetScriptVersion());
+Log::RegisterScript(Store::GetScriptName(), Store::GetScriptVersion());
+***
+
+***Match_LoadLibraries***
+***
+ExpMgr::Load();
+***
+
+***Match_UnloadLibraries***
+***
+ExpMgr::Unload();
+***
+
+***Match_Yield***
+***
+ExpMgr::Yield();
+
+// Manage UI events
+foreach (Event in UIManager.PendingEvents) {
+	Events_UI::Valid(Event);
+	
+	if (Events_UI::Validated(Event)) ExpMgr::OnEvent(Event);
+}
+***
+
+***Match_Settings***
+***
+MB_Settings_UseDefaultHud = False;
+MB_Settings_UseDefaultTimer = False;
+MB_Settings_UseDefaultObjects = False;
+***
+
+***Match_Rules***
+***
+ModeInfo::SetName("Royal XP");
+ModeInfo::SetType(ModeInfo::Type_FreeForAll());
+ModeInfo::SetRules(Description);
+ModeInfo::SetStatusMessage(GetStatusMessage(S_MapPointsLimit));
+***
+
+***Match_LoadHud***
+***
+Hud_Load(C_HudModulePath);
+if (Hud != Null && Hud.ScoresTable != Null) {
+	Hud.ScoresTable.Scores_Sort(CModulePlaygroundScoresTable::EScoreSortOrder::SMPoints);
+}
+***
+
+***Match_SpawnScreen***
+***
+SpawnScreen::CreateScores("Score.RoundPoints + Score.Points");
+***
+
+***Match_StartServer***
+***
+// Initialize mode
+UseClans = False;
+ClientManiaAppUrl = C_ManiaAppUrl;
+Objects::SetAllowedObjects([C_Item_Gold]);
+Objects::SetAnchorsObjectsRespawnTime(C_GoldRespawnTime);
+Objects::SetAutoPickUp(True);
+ChannelProgression::Enable(S_IsChannelServer);
+
+// Initialize UI
+UIManager.UIAll.NoticesFilter_LevelToShowAsBigMessage = CUIConfig::ENoticeLevel::MatchInfo;
+UIManager.UIAll.NoticesFilter_HideMapWarning = True; //< Hide pole capture notice
+UICommon::SetMarkersVisibility(Teams[0], False);
+UICommon::SetRoundInfoVisibility(Teams[0], False);
+UICommon::SetSideScoresTableVisibility(Teams[0], False);
+UICommon::SetRoundInfoModules(Teams[0], [
+	UICommon::RoundInfoModule_Remaining(),
+	UICommon::RoundInfoModule_Eliminator()
+]);
+if (Hud != Null && Hud.ScoresTable != Null) {
+	Hud.ScoresTable.SetColumnVisibility("Team", False);
+}
+
+UIManager.UIAll.OpposingTeamLabelsShowGauges = CUIConfig::EVisibility::ForcedVisible;
+
+// Load items
+ItemList_Begin();
+ExpMgr::LoadItems();
+ItemList_End();
+
+// Load actions
+ActionList_Begin();
+ExpMgr::LoadActions();
+ActionList_End();
+***
+
+***Match_AfterLoadMap***
+***
+Objects::CreateAnchorsObjects();
+***
+
+***Match_InitMap***
+***
+declare CSmMapLandmark Pole;
+declare CSmMapLandmark[][Integer] Spawns; //< Spawn[][Priority]
+declare Integer TotalArmorsSpawned;
+declare persistent Royal_MapsPlayed for This = 0;
+***
+
+***Match_StartMap***
+***
+// Setup fake players
+Users_SetNbFakeUsers(C_BotsNb, 0);
+
+// Find map pole
+Pole <=> Map::GetLandmarkCapturable("Goal", 0);
+if (Pole == Null) MB_StopMap();
+CreateMarkers(Pole);
+
+// Find map spawns
+foreach (Spawn in MapLandmarks_PlayerSpawn) {
+	if (!Spawns.existskey(Spawn.Order)) Spawns[Spawn.Order] = CSmMapLandmark[];
+	Spawns[Spawn.Order].add(MapLandmarks_PlayerSpawn[Spawn.Id]);
+}
+Spawns = Spawns.sortkey();
+
+// Initialize map scores
+foreach (Score in Scores) {
+	State::SetScore(Score, State::Points_Map(), 0);
+	
+	declare Royal_MapHitNb for Score = 0; ///< Number of hit done this map
+	declare Royal_MapSurvivalNb for Score = 0; ///< Number of round survived this map
+	declare Royal_MapPoleNb for Score = 0; ///< Number of pole capture this map
+	Royal_MapHitNb = 0;
+	Royal_MapSurvivalNb = 0;
+	Royal_MapPoleNb = 0;
+}
+TotalArmorsSpawned = 0;
+
+// Reset store every X maps
+Royal_MapsPlayed += 1;
+if (Royal_MapsPlayed > C_MapsPlayedBeforeReset) {
+	Royal_MapsPlayed = 1;
+}
+
+foreach (Player in AllPlayers) DisplayExpUI(Player, False);
+
+// Display map progression in a message
+if (C_MapsPlayedBeforeReset > 1) {
+	//L16N [Maniaplanet] The place where the game will be played
+	UIManager.UIAll.BigMessage = TL::Compose("%1 %2/%3", _("|Playground|Map"), TL::ToText(Royal_MapsPlayed), TL::ToText(C_MapsPlayedBeforeReset));
+	if (Royal_MapsPlayed == C_MapsPlayedBeforeReset) {
+		//L16N [Royal XP] Warn the players that the store progression will be reset at the beginning of the next map
+		UIManager.UIAll.StatusMessage = _("A new session will start at the beginning of the next map");
+		MB_Sleep(2000);
+	} else if (Royal_MapsPlayed == 1) {
+		//L16N [Royal XP] Warn the players that the store progression bas been reset at the beginning of the map
+		UIManager.UIAll.StatusMessage = _("New session");
+		MB_Sleep(2000);
+	}
+	MB_Sleep(3000);
+	UIManager.UIAll.BigMessage = "";
+	UIManager.UIAll.StatusMessage = "";
+}
+// If it is the first map of the new serie, reset store
+if (Royal_MapsPlayed <= 1) {
+	ExpMgr::NewSession();
+}
+// Let players rebuild their skills
+ExpMgr::RebuildSkills();
+***
+
+***Match_InitRound***
+***
+declare Integer NextSpawnWave;
+declare Boolean CanStartCountdown;
+declare Boolean CanSpawnPlayers;
+declare Boolean CanCapturePole;
+declare Integer OffZoneActivationTime;
+declare CUser Capturer;
+declare CSmMapLandmark[] RandomSpawns;
+declare Integer StartingSurvivorsNb;
+***
+
+***Match_StartRound***
+***
+foreach (Player in AllPlayers) DisplayExpUI(Player, False);
+
+// Initialize pole
+if (Pole.Base != Null) {
+	Pole.Base.Clan = 0;
+}
+Pole.Gauge.Clan = 0;
+Pole.Gauge.Value = 0;
+Pole.Gauge.Speed = 0;
+Pole.Gauge.Max = S_PoleCaptureTime * 1000 * C_GaugeMultiplier;
+if (Pole.Gauge.Max <= 0) Pole.Gauge.Max = 10;
+Capturer = Null;
+
+// Initialize offzone
+OffZoneRadius = -1.;
+OffZoneRadiusSpeed = 0.;
+OffZoneCenterLandmarkId = Pole.Id;
+
+// Let the server sleep until there is at least one player
+WaitForPlayers();
+
+// Initialize round scores
+foreach (Score in Scores) {
+	SetEliminator(Score, "");
+	State::SetScore(Score, State::Points_Round(), 0);
+	
+	declare Royal_IsRespawn for Score = False;
+	Royal_IsRespawn = False;
+	
+	declare Royal_HitNb for Score = 0;
+	Royal_HitNb = 0;
+	
+	if (Hud != Null && Hud.ScoresTable != Null) {
+		Hud.ScoresTable.ResetCustomColumns(Score);
+	}
+}
+
+// Unspawn gold before tornado activation
+Objects::UnspawnAnchorsObjects();
+
+// Setup store
+ExpMgr::ResetItems();
+Store::PayAllowance(C_Gold_StartRound);
+foreach (Player in AllPlayers) {
+	ExpMgr::SaveProgression(Player);
+}
+Store::Open();
+
+// Shopping time
+if (S_ShopTime > 0) {
+	UIManager.UIAll.CountdownEndTime = Now + (S_ShopTime * 1000);
+	while (Now < UIManager.UIAll.CountdownEndTime && MB_RoundIsRunning()) {
+		MB_Yield();
+	}
+	UIManager.UIAll.CountdownEndTime = -1;
+}
+
+// Initialize UI
+ModeInfo::SetStatusMessage(GetStatusMessage(S_MapPointsLimit));
+UICommon::SetMarkersVisibility(Teams[0], True);
+UICommon::SetRoundInfoVisibility(Teams[0], True);
+if (Hud != Null && Hud.ScoresTable != Null) {
+	Hud.ScoresTable.SetFooterText(TL::Compose("%1 "^S_MapPointsLimit, _("Points limit : ")));
+}
+//L16N [Royal] Message displayed while spawning players
+UIManager.UIAll.StatusMessage = _("Spawning players");
+
+// Initialize timers
+StartTime = Now + 3000;
+EndTime = -1;
+OffZoneActivationTime = -1;
+UIManager.UIAll.CountdownEndTime = OffZoneActivationTime;
+
+ClearSurvivors();
+NextSpawnWave = Now;
+CanStartCountdown = True;
+CanSpawnPlayers = True;
+CanCapturePole = False;
+RandomSpawns.clear();
+StartingSurvivorsNb = 0;
+***
+
+***Match_PlayLoop***
+***
+// Manage events
+foreach (Event in PendingEvents) {
+	// Discard further events if the round must end
+	if (!MB_RoundIsRunning()) {
+		Events::Invalid(Event);
+	}
+	// On hit
+	else if (Event.Type == CSmModeEvent::EType::OnHit) {
+		if (Event.Victim == Null || Event.Shooter == Null) { //< Hit shield or turret shot
+			Event.Damage = C_DamageMax;
+			Events::Valid(Event);
+		} else if (Event.Shooter == Event.Victim) { //< Hit self
+			Events::Invalid(Event);
+		} else {
+			// Ceiling the damages at 100
+			Event.Damage = C_DamageMax;
+			
+			declare Points = 0;
+			
+			if (Event.Shooter != Null && Event.Shooter.Score != Null) {
+				declare Royal_HitNb for Event.Shooter.Score = 0;
+				Points += (Royal_HitNb / 2) + 1;
+				Royal_HitNb += 1;
+			}
+			
+			Event.ShooterPoints = Points;
+			State::UpdateScore(Event.Shooter.Score, State::Points_RoundHit(), Points);
+			
+			Events::Valid(Event);
+		}
+	}
+	// On armor empty
+	else if (Event.Type == CSmModeEvent::EType::OnArmorEmpty) {
+		if (!CanSpawnPlayers) {
+			// Remove player from the survivors list
+			declare CSmScore Eliminated;
+			declare CSmScore Eliminator;
+			if (Event.Victim != Null) Eliminated <=> Event.Victim.Score;
+			if (Event.Shooter != Null) Eliminator <=> Event.Shooter.Score;
+			RemoveSurvivor(Eliminated, Eliminator, True);
+			
+			if (Event.Victim != Null && Event.Shooter != Null) {
+				SetEliminator(Event.Victim.Score, Event.Shooter.User.Name);
+			}
+			
+			if (Event.Victim != Null && Event.Victim.Score != Null) {
+				declare Royal_SpawnOrder for Event.Victim.Score = Now;
+				Royal_SpawnOrder = Now;
+			}
+		}
+		
+		if (Event.Victim != Null) DisplayExpUI(Event.Victim, False);
+		Events::Valid(Event);
+	}
+	// On player requests respawn
+	else if (Event.Type == CSmModeEvent::EType::OnPlayerRequestRespawn) {
+		if (!CanSpawnPlayers) {
+			// Remove player from the survivors list
+			declare CSmScore Eliminated;
+			if (Event.Player != Null) Eliminated <=> Event.Player.Score;
+			RemoveSurvivor(Eliminated, Null, True);
+			
+			if (Event.Player != Null && Event.Player.Score != Null) {
+				declare Royal_SpawnOrder for Event.Player.Score = Now;
+				Royal_SpawnOrder = Now;
+			}
+		}
+		if (Event.Player != Null) DisplayExpUI(Event.Player, False);
+		Events::Valid(Event);
+	}
+	// On pole capture
+	else if (Event.Type == CSmModeEvent::EType::OnCapture) {
+		if (Event.Landmark == Pole) {
+			OffZoneActivationTime = Now;
+			if (Pole.Base != Null) {
+				Pole.Base.Clan = Pole.Gauge.Clan;
+			}
+	
+			// Share pole points between players on the sector
+			if (Event.Landmark.Sector != Null && Event.Landmark.Sector.PlayersIds.count > 0) {
+				declare CapturingPlayers = CSmPlayer[];
+				foreach (PlayerId in Event.Landmark.Sector.PlayersIds) {
+					if (Players.existskey(PlayerId)) {
+						declare Player <=> Players[PlayerId];
+						
+						if (!CapturingPlayers.exists(Player)) {
+							CapturingPlayers.add(Player);
+						}
+						
+						// Send a notice for each capturing player
+						UIManager.UIAll.SendNotice(
+							TL::Compose(_("$<%1$> captured the pole."), Player.User.Name), 
+							CUIConfig::ENoticeLevel::MatchInfo, Null, 
+							CUIConfig::EAvatarVariant::Default, 
+							CUIConfig::EUISound::Capture, 0
+						);
+					}
+				}
+				if (CapturingPlayers.count > 0) {
+					declare Points = PlayersNbAlive / CapturingPlayers.count;
+				
+					foreach (Player in CapturingPlayers) {
+						State::UpdateScore(Player.Score, State::Points_RoundPole(), Points);
+					}
+				}
+			}
+		}
+		Events::Valid(Event);
+	}
+	// On item pick up
+	else if (Event.Type == CSmModeEvent::EType::OnPlayerTouchesObject) {
+		if (Objects::GetObjectName(Event.Object) == C_Item_Gold) {
+			Store::GiveGold(Event.Player, C_Gold_PickUp);
+			Store::SaveState(Event.Player);
+			ExpMgr::UpdateUIGold(Event.Player);
+			Events::Valid(Event);
+		} else {
+			Events::Invalid(Event);
+		}
+	}
+	// On command
+	else if (Event.Type == CSmModeEvent::EType::OnCommand) {
+		switch (Event.CommandName) {
+			case "Command_NewGame": {
+				if (Event.CommandValueBoolean) {
+					MB_StopMatch();
+					ExpMgr::ResetProgression();
+					Royal_MapsPlayed = 0;
+				}
+			}
+			case "Command_NewSession": {
+				if (Event.CommandValueBoolean) {
+					MB_StopMatch();
+					ExpMgr::NewSession();
+					Royal_MapsPlayed = 0;
+				}
+			}
+		}
+	}
+	// Others
+	else {
+		Events::Valid(Event);
+	}
+	
+	if (Events::Validated(Event)) ExpMgr::OnEvent(Event);
+}
+
+// Spawn players
+if (CanSpawnPlayers && NextSpawnWave > 0 && Now >= NextSpawnWave) {
+	// List players waiting to spawn
+	declare Integer[CSmPlayer] WaitingToSpawn;
+	foreach (Player in Players) {
+		if (Player.SpawnStatus == CSmPlayer::ESpawnStatus::NotSpawned && Player.Score != Null && MM_PlayerIsAllowedToPlay(Player)) {
+			declare Royal_IsRespawn for Player.Score = False;
+			if (!Royal_IsRespawn) {
+				declare Royal_SpawnOrder for Player.Score = Now;
+				WaitingToSpawn[Player] = Royal_SpawnOrder;
+			}
+		}
+	}
+	WaitingToSpawn = WaitingToSpawn.sort();
+	
+	// Spawn players
+	if (WaitingToSpawn.count > 0) {
+		foreach (Priotity => SpawnsList in Spawns) {
+			// Randomize spawns list
+			declare RandomSpawnsList = SpawnsList;
+			while (RandomSpawnsList.count > 0) {
+				declare Spawn <=> RandomSpawnsList[ML::Rand(0, RandomSpawnsList.count-1)];
+				declare Removed = RandomSpawnsList.remove(Spawn);
+				
+				// Get player to spawn
+				declare CSmPlayer Player;
+				foreach (PlayerToSpawn => SpawnOrder in WaitingToSpawn) {
+					Player <=> PlayerToSpawn;
+					break;
+				}
+				Removed = WaitingToSpawn.removekey(Player);
+				
+				if (Player != Null) {
+					// Setup player
+					InitPlayerForSpawn(Player, False);
+					
+					// Spawn player
+					SM::Spawn(Player, 0, Player.ArmorMax, Spawn.PlayerSpawn, Now + 3000);
+					DisplayExpUI(Player, True);
+					
+					TotalArmorsSpawned += Player.ArmorMax / 100;
+
+					declare Royal_IsRespawn for Player.Score = False;
+					Royal_IsRespawn = True;
+				}
+				
+				if (WaitingToSpawn.count <= 0) break;
+			}
+			if (WaitingToSpawn.count <= 0) break;
+		}
+	}
+	
+	// Setup next spawn wave if necessary
+	if (WaitingToSpawn.count > 0) {
+		declare SpawnInterval = S_SpawnInterval * 1000;
+		if (SpawnInterval < 0) SpawnInterval = 0;
+		NextSpawnWave = Now + SpawnInterval;
+	} else {
+		NextSpawnWave = -1;
+		CanSpawnPlayers = True;
+		UIManager.UIAll.StatusMessage = "";
+	}
+}
+
+// Start offzone activation countdown and round time limit
+if (CanStartCountdown && NextSpawnWave < 0) {
+	CanStartCountdown = False;
+	CanCapturePole = True;
+	
+	// Offzone activation countdown
+	declare OffZoneAutoStartTime = S_OffZoneAutoStartTime * 1000;
+	if (OffZoneAutoStartTime < 0) OffZoneAutoStartTime = 0;
+	OffZoneActivationTime = Now + 3000 + OffZoneAutoStartTime;
+	
+	UIManager.UIAll.CountdownEndTime = OffZoneActivationTime;
+	
+	// End round countdown
+	if (S_EndRoundTimeLimit >= 0) {
+		declare OffZoneShrinkDuration = S_OffZoneShrinkDuration * 1000;
+		if (OffZoneShrinkDuration < 0) OffZoneShrinkDuration = 10;
+		EndTime = UIManager.UIAll.CountdownEndTime + OffZoneShrinkDuration + (S_EndRoundTimeLimit * 1000);
+	}
+}
+
+// Respawn players
+if (CanSpawnPlayers && NextSpawnWave < 0) {
+	foreach (Player in Players) {
+		if (Player.SpawnStatus == CSmPlayer::ESpawnStatus::NotSpawned && MM_PlayerIsAllowedToPlay(Player)) {
+			// Select a spawn
+			if (RandomSpawns.count <= 0) {
+				foreach (Priority => SpawnsList in Spawns) {
+					foreach (Spawn in SpawnsList) {
+						RandomSpawns.add(Spawn);
+					}
+				}
+			}
+			if (RandomSpawns.count > 0) {
+				// Setup player
+				InitPlayerForSpawn(Player, True);
+			
+				declare Spawn <=> RandomSpawns[ML::Rand(0, RandomSpawns.count-1)];
+				SM::Spawn(Player, 0, Player.ArmorMax, Spawn.PlayerSpawn, Now + 3000);
+				DisplayExpUI(Player, True);
+				declare Removed = RandomSpawns.remove(Spawn);
+				
+				TotalArmorsSpawned += Player.ArmorMax / 100;
+			}
+		}
+	}
+}
+
+// Update UI
+UICommon::SetRemainingPlayersNb(Teams[0], PlayersNbAlive);
+
+// Pole capture
+if (CanCapturePole) {
+	if (Pole.Sector.PlayersIds.count > 0) {
+		declare Player <=> AllPlayers[Pole.Sector.PlayersIds[0]];
+		Pole.Gauge.Speed = ML::NearestInteger(Attributes::GetCaptureSpeed(Player) * C_GaugeMultiplier);
+		
+		if (Capturer == Null) {
+			declare Player <=> AllPlayers[Pole.Sector.PlayersIds[0]];
+			Capturer <=> Player.User;
+			Teams[0].ColorPrimary = Player.User.Color;
+			Pole.Gauge.Clan = 1;
+		}
+	} else {
+		Pole.Gauge.Speed = 0;
+		if (Capturer != Null) {
+			Capturer = Null;
+			Pole.Gauge.Clan = 0;
+		}
+	}
+}
+
+// Tornado activation
+if (OffZoneActivationTime >= 0 && Now >= OffZoneActivationTime) {
+	OffZoneActivationTime = -1;
+	UIManager.UIAll.CountdownEndTime = -1;
+	
+	CanSpawnPlayers = False;
+	CanCapturePole = False;
+	Pole.Gauge.Speed = 0;
+	
+	// Fill survivors list
+	declare CSmPlayer[] Survivors;
+	foreach (Player in Players) {
+		if (Player.SpawnStatus != CSmPlayer::ESpawnStatus::NotSpawned) {
+			Survivors.add(Player);
+		}
+	}
+	StartingSurvivorsNb = FillSurvivors(Survivors);
+	
+	// Setup tornado
+	declare OffZoneShrinkDuration = S_OffZoneShrinkDuration * 1000;
+	if (OffZoneShrinkDuration <= 0) OffZoneShrinkDuration = 10;
+	OffZoneRadius = C_OffZoneStartRadius;
+	OffZoneRadiusSpeed = (OffZoneRadius - S_OffZoneMinRadius) / (OffZoneShrinkDuration / 1000);
+	
+	// Start end round timer
+	if (S_EndRoundTimeLimit >= 0) {
+		EndTime = Now + OffZoneShrinkDuration + (S_EndRoundTimeLimit * 1000);
+	}
+	
+	// Use notice to display big message after the capturers name
+	UIManager.UIAll.SendNotice(
+		_("Tornado activated."), 
+		CUIConfig::ENoticeLevel::MatchInfo, Null, 
+		CUIConfig::EAvatarVariant::Default, 
+		CUIConfig::EUISound::PhaseChange, 0
+	);
+	
+	// Spawn gold
+	Objects::SpawnAnchorsObjects();
+}
+
+// Tornado stop
+if (OffZoneRadiusSpeed > 0. && OffZoneRadius >= 0. && OffZoneRadius <= S_OffZoneMinRadius) {
+	OffZoneRadiusSpeed = 0.;
+	OffZoneRadius = S_OffZoneMinRadius;
+	
+	// Enforce end round countdown
+	if (S_EndRoundTimeLimit >= 0) {
+		EndTime = Now + (S_EndRoundTimeLimit * 1000);
+	}
+}
+
+// Remove disconnected players and spectators
+CleanSurvivors();
+
+// End round conditions
+if (MB_RoundIsRunning() && EndTime > 0 && Now >= EndTime) {
+	MB_StopRound();
+}
+if (
+	MB_RoundIsRunning() && 
+	(PlayersNbAlive <= 0 || (StartingSurvivorsNb >= 2 && PlayersNbAlive <= 1))
+) {
+	MB_StopRound();
+}
+
+foreach (Player in AllPlayers) {
+	if (Player.RequestsSpectate) DisplayExpUI(Player, False);
+}
+***
+
+***Match_EndRound***
+***
+UIManager.UIAll.StatusMessage = "";
+Message::CleanAllMessages();
+UICommon::SetMarkersVisibility(Teams[0], False);
+UICommon::SetRoundInfoVisibility(Teams[0], False);
+
+foreach (Player in AllPlayers) {
+	DisplayExpUI(Player, False);
+}
+Store::Close();
+
+// Stop tornado, pole and timer
+OffZoneRadiusSpeed = 0.;
+OffZoneRadius = -1.;
+Pole.Gauge.Speed = 0;
+UIManager.UIAll.CountdownEndTime = -1;
+EndTime = -1;
+
+// Find survivors for channel progression
+foreach (Score in Scores) {
+	declare Royal_RoundSurvivor for Score = False;
+	Royal_RoundSurvivor = False;
+}
+foreach (Player in Players) {
+	if (Player.SpawnStatus == CSmPlayer::ESpawnStatus::Spawned && Player.Armor > 0) {
+		declare Royal_RoundSurvivor for Player.Score = False;
+		Royal_RoundSurvivor = True;
+		Log::Log("""[Royal] {{{Player.User.Login}}} survived the round""");
+	}
+}
+
+// Find the round winner and give the last survival points if
+// there is only one survivor. Otherwise the round is a draw.
+foreach (Player in Players) {
+	if (Player.SpawnStatus != CSmPlayer::ESpawnStatus::NotSpawned) {
+		RemoveSurvivor(Player.Score, Null, PlayersNbAlive <= 1);
+		if (PlayersNbAlive <= 1) {
+			Scores::SetPlayerWinner(Player.Score);
+		}
+		if (Player.Score != Null) {
+			declare Royal_SpawnOrder for Player.Score = Now;
+			Royal_SpawnOrder = Now;
+		}
+	}
+}
+
+foreach (Score in Scores) {
+	declare RoundHit = State::GetScore(Score, State::Points_RoundHit());
+	declare RoundSurvival = State::GetScore(Score, State::Points_RoundSurvival());
+	declare RoundPole = State::GetScore(Score, State::Points_RoundPole());
+	
+	// Update map scores
+	State::UpdateScore(Score, State::Points_MapHit(), RoundHit);
+	State::UpdateScore(Score, State::Points_MapSurvival(), RoundSurvival);
+	State::UpdateScore(Score, State::Points_MapPole(), RoundPole);
+	
+	// Update channel scores
+	declare Royal_MapHitNb for Score = 0;
+	declare Royal_MapSurvivalNb for Score = 0;
+	declare Royal_MapPoleNb for Score = 0;
+	declare Royal_RoundSurvivor for Score = False;
+	declare Royal_HitNb for Score = 0;
+	Royal_MapHitNb += Royal_HitNb;
+	if (Royal_RoundSurvivor) Royal_MapSurvivalNb += 1;
+	if (RoundPole > 0) Royal_MapPoleNb += 1;
+}
+
+// Display winner name
+DisplayWinnerName(Scores::GetPlayerWinner(), C_EndRoundCelebrationTime);
+
+// Cleanup
+declare MinSpawnOrder = StartTime;
+StartTime = -1;
+SM::UnspawnAllPlayers();
+
+// End round sequence
+EndRoundSequence(7500);
+
+// Update scores
+Scores::SetPlayerWinner(Null);
+Scores::AffectPlayersRoundToMapPoints();
+declare MaxPoints = -1;
+foreach (Score in Scores) {
+	// Update spawn order
+	declare Royal_SpawnOrder for Score = Now;
+	if (Royal_SpawnOrder <= MinSpawnOrder) {
+		Royal_SpawnOrder = Now;
+	}
+	
+	// End match conditions
+	declare Points = Scores::GetPlayerMapPoints(Score);
+	if (Points >= S_MapPointsLimit && Points >= MaxPoints) {
+		if (Points > MaxPoints) {
+			Scores::SetPlayerWinner(Score);
+		} else if (Points == MaxPoints) {
+			Scores::SetPlayerWinner(Null);
+		}
+		MaxPoints = Points;
+	}
+}
+
+declare MapWinner <=> Scores::GetPlayerWinner();
+if (MapWinner != Null) {
+	MB_StopMap();
+}
+***
+
+***Match_EndMap***
+***
+if (MM_IsMatchServer()) {
+	if (MB_GetMapCount() >= S_MapsPerMatch) MB_StopMatch();
+} else {
+	MB_StopMatch();
+}
+
+DestroyMarkers();
+
+// Display map scores
+foreach (Score in Scores) {
+	State::SetScore(Score, State::Points_RoundHit(), State::GetScore(Score, State::Points_MapHit()));
+	State::SetScore(Score, State::Points_RoundSurvival(), State::GetScore(Score, State::Points_MapSurvival()));
+	State::SetScore(Score, State::Points_RoundPole(), State::GetScore(Score, State::Points_MapPole()));
+	Scores::SetPlayerRoundPoints(Score, 0);
+}
+
+// Award XP to players with at least one point
+foreach (Player in AllPlayers) {
+	if (Player.Score.Points > 0) {
+		Store::GiveXp(Player, 1);
+		ExpMgr::SaveProgression(Player);
+	}
+}
+
+Scores::SetPlayerWinner(Scores::GetBestPlayerMapPoints(Scores::Order_Descending()));
+***
+
+***Match_BeforeCloseLadder***
+***
+if (ChannelProgression::IsEnabled()) {
+	declare RoundCount = MB_GetRoundCount();
+	declare ReferenceHitNb = 6 * RoundCount;
+	if (TotalArmorsSpawned / 2 > ReferenceHitNb) ReferenceHitNb = TotalArmorsSpawned / 2;
+	foreach (Score in Scores) {
+		declare Royal_MapHitNb for Score = 0;
+		if (Royal_MapHitNb > ReferenceHitNb) ReferenceHitNb = Royal_MapHitNb;
+	}
+	foreach (Score in Scores) {
+		declare Royal_MapHitNb for Score = 0;
+		declare Royal_MapSurvivalNb for Score = 0;
+		declare Royal_MapPoleNb for Score = 0;
+		
+		declare Performance = ((Royal_MapSurvivalNb / (RoundCount * 1.)) * 0.5) + ((Royal_MapPoleNb / (RoundCount * 1.)) * 0.1) + ((Royal_MapHitNb / (ReferenceHitNb * 1.)) * 0.4);
+		
+		Log::Log("""[TimeAttack] Performance > {{{Score.User.Login}}} > RoundCount : {{{RoundCount}}} | ReferenceHitNb A : {{{6 * RoundCount}}} | ReferenceHitNb B : {{{TotalArmorsSpawned / 2}}} | Royal_MapSurvivalNb : {{{Royal_MapSurvivalNb}}} | Royal_MapPoleNb : {{{Royal_MapPoleNb}}} | Royal_MapHitNb : {{{Royal_MapHitNb}}} | ReferenceHitNb : {{{ReferenceHitNb}}} | SurvivorPerf : {{{((Royal_MapSurvivalNb / (RoundCount * 1.)) * 0.5)}}} | PolePerf : {{{((Royal_MapPoleNb / (RoundCount * 1.)) * 0.1)}}} | HitPerf : {{{((Royal_MapHitNb / (ReferenceHitNb * 1.)) * 0.4)}}} | Performance: {{{Performance}}}""");
+		
+		ChannelProgression::SetPlayerPerformance(Score, Performance);
+	}
+}
+***
+
+***Match_BeforeUnloadMap***
+***
+Objects::DestroyAnchorsObjects();
+***
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+// ---------------------------------- //
+/** Initialize the player properties before spawning him
+ *
+ *	@param	_Player										The player to initialize
+ *	@param	_Respawn									Is it an initial spawn or a respawn
+ */
+Void InitPlayerForSpawn(CSmPlayer _Player, Boolean _Respawn) {
+	if (_Player == Null) return;
+	
+	if (_Respawn) {
+		Attributes::AddMax(_Player, Attributes::C_Attribute_ArmorMax, "RoyalExp_ArmorMaxOnRespawn", C_Default_ArmorMaxOnRespawn);
+		Attributes::Apply(_Player);
+	} else {
+		Attributes::RemoveMax(_Player, Attributes::C_Attribute_ArmorMax, "RoyalExp_ArmorMaxOnRespawn");
+		Attributes::Apply(_Player);
+	}
+	ExpMgr::InitPlayer(_Player);
+}
+
+// ---------------------------------- //
+/** Hide/Show Exp UI
+ *
+ *	@param	_Player										The player to update
+ *	@param	_Visible									True to show, False to hide
+ */
+Void DisplayExpUI(CSmPlayer _Player, Boolean _Visible) {
+	ExpMgr::SetUIGoldVisible(_Player, _Visible);
+}

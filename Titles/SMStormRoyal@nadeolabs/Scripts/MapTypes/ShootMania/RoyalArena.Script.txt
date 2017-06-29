@@ -1,0 +1,188 @@
+/**
+ *	MapType for Royal
+ *
+ *	At least one spawn and exactly one pole
+ */
+
+#RequireContext CSmMapType
+#Const Version			"2013-11-27"
+#Const MapTypeVersion	1
+#Const ScriptName		"RoyalArena.Script.txt"
+
+#Include "Libs/Nadeo/Anchor.Script.txt" as Anchor
+#Include "Libs/Nadeo/MapType.Script.txt" as MapType
+
+// ---------------------------------- //
+// Globales
+// ---------------------------------- //
+declare Text Rules;
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+// ---------------------------------- //
+// Initialize the anchors
+Void InitAnchors() {
+	foreach (Data in AnchorData) {
+		Data.Tag = Data.DefaultTag;
+		if (Data.Tag == "Spawn" && Data.Order != 1 && Data.Order != 2 && Data.Order != 3) Data.Order = 1;
+		if (Data.Tag == "Goal") Data.Order = 0;
+		if (Data.Tag == "Checkpoint") Data.Tag = "Goal";
+	}
+}
+
+// ---------------------------------- //
+// Check if the map is valid
+Void UpdateValidability() {
+	InitAnchors();
+	foreach(Data in AnchorData) {
+		if (Data.Tag == "Spawn" && Data.Order == 0) Data.Order = 1;
+	}
+	
+	Anchor::UpdateAnchorCounts();			
+	if (!Anchor::HasAtLeastOneAnchor("Spawn", 1, _("You must place at least one Spawn of priority 1."))) return;
+	if (!Anchor::HasExactlyOneAnchor("Goal", 0, _("You must place exactly one Goal."))) return;
+}
+
+// ---------------------------------- //
+// Return the manialink for anchor edition
+Text EditAnchorManialink() {
+	
+	declare MLText = 		
+	"""
+	<script><!--
+		#Include "TextLib" as TextLib
+		
+		main() {
+			declare Buttons = [
+			(Page.GetFirstChild("1") as CMlLabel), 
+			(Page.GetFirstChild("2") as CMlLabel), 
+			(Page.GetFirstChild("3") as CMlLabel)];
+			
+			declare Integer AnchorOrder for Page;
+			declare Boolean Finish for Page;
+			Finish = False;	
+			while(!Finish) {
+				yield;
+				foreach(Button in Buttons) {
+					if(AnchorOrder == TextLib::ToInteger(Button.ControlId))
+						Button.Value = "$090"^Button.ControlId;
+					else 
+						Button.Value = "$fff"^Button.ControlId;
+				}
+				
+				foreach(Event in PendingEvents) {
+					switch(Event.Type){
+						case CMlEvent::Type::MouseClick : {
+							if (Event.ControlId != "Cancel") AnchorOrder = TextLib::ToInteger(Event.ControlId);
+							Finish = True;
+						}	
+					}
+				}
+			}
+		}			
+	--></script>
+	<frame posn="120 35">
+		<quad posn="0 0 -1" sizen="70 23" halign="center" style="Bgs1" substyle="BgWindow2"/>
+		<quad posn="0 0 2" sizen="74 15" halign="center" valign="bottom" style="Bgs1InRace" substyle="BgTitle3_5"/>
+		<label posn="0 5 3" halign="center" valign="bottom" style="TextTitle3" textprefix="$fff" text="{{{_("Spawn priority")}}}" />
+		<frame posn="0 -4">
+			<label id="1" posn="-15 0" scale="2" halign="center" style="TextButtonMedium" ScriptEvents="true"/>
+			<label id="2" posn="0 0" scale="2" halign="center" style="TextButtonMedium" ScriptEvents="true"/>
+			<label id="3" posn="15 0" scale="2" halign="center" style="TextButtonMedium" ScriptEvents="true"/>
+		</frame>
+		<label id="Cancel" text="{{{_("Cancel")}}}" posn="0 -13" halign="center" style="CardButtonSmall" ScriptEvents="true"/>
+    </frame>
+	<frame posn="120 -3">
+		<quad posn="0 0 2" sizen="74 15" halign="center" valign="bottom" style="Bgs1InRace" substyle="BgTitle3_5"/>
+		<label posn="0 5 3" halign="center" valign="bottom" style="TextTitle3" textprefix="$fff" text="{{{_("Rules")}}}" />
+		<quad posn="0 0 -1" sizen="70 33" halign="center" style="Bgs1" substyle="BgWindow2"/>
+		<frame posn="-30 -4">
+			<label posn="0 0" sizen="60 5" autonewline="1" textcolor="fff" style="TextCardSmallScores2" text="{{{ Rules }}}" />
+		</frame>
+	</frame>
+	""";
+  
+	return MLText;
+}
+
+// ---------------------------------- //
+// Manialink for non editable anchor
+Text NoEditManialink() {
+	return """
+		<script><!--			
+			main() {
+				declare Boolean Finish for Page;
+				Finish = False;	
+				while(!Finish) {
+					yield;
+					
+					foreach(Event in PendingEvents) {
+						switch(Event.Type){
+							case CMlEvent::Type::MouseClick : {
+								Finish = True;
+							}	
+						}
+					}
+				}
+			}			
+		--></script>
+		<frame posn="120 35">
+			<quad posn="0 0 -1" sizen="70 15" halign="center" style="Bgs1" substyle="BgWindow2"/>
+			<quad posn="0 0 2" sizen="74 15" halign="center" valign="bottom" style="Bgs1InRace" substyle="BgTitle3_5"/>
+			<label posn="0 5.5 3" sizen="74 15" scale="0.9" halign="center" valign="bottom" style="TextTitle3" textprefix="$fff" text="{{{_("This anchor is not editable")}}}" />
+			<label text="OK" posn="0 -3.5 3" halign="center" style="CardButtonMedium" ScriptEvents="true"/>
+	    </frame>
+		<frame posn="120 5">
+			<quad posn="0 0 2" sizen="74 15" halign="center" valign="bottom" style="Bgs1InRace" substyle="BgTitle3_5"/>
+			<label posn="0 5 3" halign="center" valign="bottom" style="TextTitle3" textprefix="$fff" text="{{{_("Rules")}}}" />
+			<quad posn="0 0 -1" sizen="70 33" halign="center" style="Bgs1" substyle="BgWindow2"/>
+			<frame posn="-30 -4">
+				<label posn="0 0" sizen="60 5" autonewline="1" textcolor="fff" style="TextCardSmallScores2" text="{{{ Rules }}}" />
+			</frame>
+		</frame>
+	""";
+}
+
+// ---------------------------------- //
+// Show the anchor edition manialink
+Void EditAnchorData(Ident _EditedAnchorDataId)
+{	
+	declare Integer AnchorOrder for ManialinkPage;
+	declare Boolean Finish for ManialinkPage;
+	if (AnchorData[_EditedAnchorDataId].Tag == "Spawn") ManialinkText = EditAnchorManialink();
+	else ManialinkText = NoEditManialink();
+	AnchorOrder = AnchorData[_EditedAnchorDataId].Order;
+	Finish = False;
+	while(!Finish) {
+		yield;
+	}
+	if (AnchorData[_EditedAnchorDataId].Tag == "Spawn") {
+		AnchorData[_EditedAnchorDataId].Order = AnchorOrder;
+	}
+	
+	UpdateValidability();
+}
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+main() {
+	MapType::SetVersion(MapTypeVersion);
+	
+	Rules = _("You must place one Goal and as much Spawns as possible. \nYou can give a priority order to the Spawns. \nPlayers will start at Spawns with priority 1 first, then 2 and finally 3.");
+	CustomEditAnchorData = True;
+	InitAnchors();
+	UpdateValidability();
+	while (True) {	
+		yield;
+		ManialinkText = "";			
+		foreach (Event in PendingEvents) {
+			if (Event.Type == CPluginEvent::Type::MapModified) {
+				UpdateValidability();			
+			} else if (Event.Type == CPluginEvent::Type::EditAnchor) {
+				EditAnchorData(Event.EditedAnchorDataId);
+			}
+		}		
+	}	
+}

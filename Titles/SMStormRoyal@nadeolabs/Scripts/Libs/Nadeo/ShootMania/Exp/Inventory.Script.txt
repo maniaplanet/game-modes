@@ -1,0 +1,339 @@
+/**
+ *	Exp inventory
+ *
+ *	Stock actions and items for players
+ */
+#Const Version    "2017-01-10"
+#Const ScriptName "Libs/Nadeo/ShootMania/Exp/Inventory.Script.txt"
+
+// ---------------------------------- //
+// Libraries
+// ---------------------------------- //
+#Include "Libs/Nadeo/Log.Script.txt" as Log
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+// ---------------------------------- //
+// Private
+// ---------------------------------- //
+// ---------------------------------- //
+/** Initialize a player
+ *
+ *	@param	_Player										The player to initialize
+ */
+Void Private_Init(CSmPlayer _Player) {
+	if (_Player == Null) return;
+	
+	declare LibExpInventory_IsInit for _Player = False;
+	if (!LibExpInventory_IsInit) {
+		// Init inventory
+		declare LibExpInventory_Inventory for _Player = Text[][Integer];
+		LibExpInventory_Inventory.clear();
+		
+		// Try to load inventory state from a save
+		declare persistent LibExpInventory_Version for This = 0;
+		declare persistent LibExpInventory_InventoryStateVersion for _Player.User = 0;
+		declare persistent LibExpInventory_InventoryState for _Player.User = Text[][Integer];
+		// Save is too old erase it
+		if (LibExpInventory_InventoryStateVersion != LibExpInventory_Version) {
+			LibExpInventory_InventoryState.clear();
+			LibExpInventory_InventoryStateVersion = LibExpInventory_Version;
+		}
+		
+		// Reset category if necessary
+		declare persistent LibExpInventory_CategoryReset for This = Integer[Integer];
+		declare persistent LibExpInventory_CategoryCurrentReset for _Player.User = Integer[Integer];
+		foreach (Category => Reset in LibExpInventory_CategoryReset) {
+			if (
+				!LibExpInventory_CategoryCurrentReset.existskey(Category) ||
+				LibExpInventory_CategoryCurrentReset[Category] != Reset
+			) {
+				declare Removed = LibExpInventory_InventoryState.removekey(Category);
+				LibExpInventory_CategoryCurrentReset[Category] = Reset;
+			}
+		}
+		
+		// Transfert the persistent save to the player
+		if (LibExpInventory_InventoryState.count > 0) {
+			LibExpInventory_Inventory = LibExpInventory_InventoryState;
+		}
+		
+		LibExpInventory_IsInit = True;
+	}
+}
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+// ---------------------------------- //
+/** Return the version number of the script
+ *
+ *  @return   The version number of the script
+ */
+Text GetScriptVersion() {
+  return Version;
+}
+
+// ---------------------------------- //
+/** Return the name of the script
+ *
+ *  @return   The name of the script
+ */
+Text GetScriptName() {
+  return ScriptName;
+}
+
+
+// ---------------------------------- //
+/** Reset the inventory of a player
+ *
+ *	@param	_Player										The player to reset
+ */
+Void ResetState(CSmPlayer _Player) {
+	if (_Player == Null) return;
+	
+	declare persistent LibExpInventory_Version for This = 0;
+	declare persistent LibExpInventory_InventoryStateVersion for _Player.User = 0;
+	declare persistent LibExpInventory_InventoryState for _Player.User = Text[][Integer];
+	LibExpInventory_InventoryStateVersion = LibExpInventory_Version;
+	LibExpInventory_InventoryState.clear();
+	
+	declare LibExpInventory_Inventory for _Player = Text[][Integer];
+	LibExpInventory_Inventory.clear();
+	
+	declare LibExpInventory_IsInit for _Player = False;
+	LibExpInventory_IsInit = False;
+	Private_Init(_Player);
+}
+
+// ---------------------------------- //
+/// Reset all inventories
+Void ResetState() {
+	declare persistent LibExpInventory_Version for This = 0;
+	LibExpInventory_Version += 1;
+	if (LibExpInventory_Version > 2000000) {
+		LibExpInventory_Version = -2000000;
+	}
+	
+	foreach (Player in AllPlayers) {
+		ResetState(Player);
+	}
+}
+
+// ---------------------------------- //
+/** Save the state of a player's inventory
+ *
+ *	@param	_Player										The player to save
+ */
+Void SaveState(CSmPlayer _Player) {
+	Private_Init(_Player);
+	
+	if (_Player == Null) return;
+	declare persistent LibExpInventory_Version for This = 0;
+	declare persistent LibExpInventory_InventoryStateVersion for _Player.User = 0;
+	declare persistent LibExpInventory_InventoryState for _Player.User = Text[][Integer];
+	declare LibExpInventory_Inventory for _Player = Text[][Integer];
+	LibExpInventory_InventoryStateVersion = LibExpInventory_Version;
+	LibExpInventory_InventoryState = LibExpInventory_Inventory;
+}
+
+// ---------------------------------- //
+/** Reset an inventory category for
+ *	one player
+ *
+ *	@param	_Player										The player to update
+ *	@param	_Category									The category to empty
+ */
+Void ResetCategory(CSmPlayer _Player, Integer _Category) {
+	if (_Player == Null) return;
+	
+	Private_Init(_Player);
+		
+	declare LibExpInventory_Inventory for _Player = Text[][Integer];
+	declare Removed = LibExpInventory_Inventory.removekey(_Category);
+	
+	declare persistent LibExpInventory_CategoryReset for This = Integer[Integer];
+	declare persistent LibExpInventory_CategoryCurrentReset for _Player.User = Integer[Integer];
+	LibExpInventory_CategoryCurrentReset[_Category] = LibExpInventory_CategoryReset[_Category];
+}
+
+// ---------------------------------- //
+/** Reset an inventory category for
+ *	all players
+ *
+ *	@param	_Category									The category to empty
+ */
+Void ResetCategory(Integer _Category) {
+	declare persistent LibExpInventory_CategoryReset for This = Integer[Integer];
+	if (!LibExpInventory_CategoryReset.existskey(_Category)) LibExpInventory_CategoryReset[_Category] = 0;
+	LibExpInventory_CategoryReset[_Category] += 1;
+	
+	foreach (Player in AllPlayers) {
+		ResetCategory(Player, _Category);
+	}
+}
+
+// ---------------------------------- //
+/** Add an element to the player's inventory
+ *
+ *	@param	_Player										The player receiving the element
+ *	@param	_Category									The category in which the element will be added
+ *	@param	_Element									The element to add
+ */
+Void Add(CSmPlayer _Player, Integer _Category, Text _Element) {
+	Private_Init(_Player);
+	
+	if (_Player == Null) return;
+	declare LibExpInventory_Inventory for _Player = Text[][Integer];
+	if (!LibExpInventory_Inventory.existskey(_Category)) LibExpInventory_Inventory[_Category] = Text[];
+	LibExpInventory_Inventory[_Category].add(_Element);
+}
+
+// ---------------------------------- //
+/** Remove an element from the player's inventory
+ *
+ *	@param	_Player										The player losing the element
+ *	@param	_Category									The category from which the element will be removed
+ *	@param	_Element									The element to remove
+ */
+Void Remove(CSmPlayer _Player, Integer _Category, Text _Element) {
+	Private_Init(_Player);
+	
+	if (_Player == Null) return;
+	declare LibExpInventory_Inventory for _Player = Text[][Integer];
+	if (LibExpInventory_Inventory.existskey(_Category)) {
+		declare Removed = LibExpInventory_Inventory[_Category].remove(_Element);
+	}
+}
+
+// ---------------------------------- //
+/** Empty a player's inventory category
+ *
+ *	@param	_Player										The inventory owner
+ *	@param	_Category									The category to empty
+ */
+Void Empty(CSmPlayer _Player, Integer _Category) {
+	Private_Init(_Player);
+	
+	if (_Player == Null) return;
+	declare LibExpInventory_Inventory for _Player = Text[][Integer];
+	if (LibExpInventory_Inventory.existskey(_Category)) {
+		LibExpInventory_Inventory[_Category].clear();
+	}
+}
+
+// ---------------------------------- //
+/** Empty a player's inventory
+ *
+ *	@param	_Player										The inventory owner
+ */
+Void Empty(CSmPlayer _Player) {
+	Private_Init(_Player);
+	
+	if (_Player == Null) return;
+	declare LibExpInventory_Inventory for _Player = Text[][Integer];
+	LibExpInventory_Inventory.clear();
+}
+
+
+// ---------------------------------- //
+/** Check if a player has an element in
+ *	its inventory
+ *
+ *	@param	_Player										The inventory owner
+ *	@param	_Category									The category to search in
+ *	@param	_Element									The element to find
+ *
+ *	@return														True if the element was found
+ *																		False otherwise
+ */
+Boolean Has(CSmPlayer _Player, Integer _Category, Text _Element) {
+	Private_Init(_Player);
+	
+	if (_Player == Null) return False;
+	declare LibExpInventory_Inventory for _Player = Text[][Integer];
+	if (!LibExpInventory_Inventory.existskey(_Category)) return False;
+	return LibExpInventory_Inventory[_Category].exists(_Element);
+}
+
+// ---------------------------------- //
+/** List all elements contained
+ *	in a player's inventory
+ *
+ *	@param	_Player										The inventory owner
+ *	@param	_Categories								The categories to list
+ *
+ *	@return														The content of the inventory
+ */
+Text[] List(CSmPlayer _Player, Integer[] _Categories) {
+	Private_Init(_Player);
+	
+	if (_Player == Null) return Text[];
+	declare LibExpInventory_Inventory for _Player = Text[][Integer];
+	declare List = Text[];
+	foreach (Category => Items in LibExpInventory_Inventory) {
+		if (_Categories.exists(Category)) {
+			if (List.count == 0) {
+				List = Items;
+			} else {
+				foreach (Item in Items) {
+					List.add(Item);
+				}
+			}
+		}
+	}
+	return List;
+}
+
+// ---------------------------------- //
+/** List all elements contained
+ *	in a player's inventory
+ *
+ *	@param	_Player										The inventory owner
+ *	@param	_Category									The category to list
+ *
+ *	@return														The content of the inventory
+ */
+Text[] List(CSmPlayer _Player, Integer _Category) {
+	Private_Init(_Player);
+	
+	if (_Player == Null) return Text[];
+	declare LibExpInventory_Inventory for _Player = Text[][Integer];
+	if (!LibExpInventory_Inventory.existskey(_Category)) return Text[];
+	return LibExpInventory_Inventory[_Category];
+}
+
+// ---------------------------------- //
+/** Count the number of elements contained
+ *	in a category
+ *
+ *	@param	_Player										The inventory owner
+ *	@param	_Category									The category to count
+ */
+Integer Count(CSmPlayer _Player, Integer _Category) {
+	Private_Init(_Player);
+	
+	if (_Player == Null) return 0;
+	declare LibExpInventory_Inventory for _Player = Text[][Integer];
+	if (!LibExpInventory_Inventory.existskey(_Category)) return 0;
+	return LibExpInventory_Inventory[_Category].count;
+}
+
+// ---------------------------------- //
+/// Unload the library
+Void Unload() {
+	
+}
+
+// ---------------------------------- //
+/// Load the library
+Void Load() {
+	Unload();
+	
+	foreach (Player in AllPlayers) {
+		declare LibExpInventory_IsInit for Player = False;
+		LibExpInventory_IsInit = False;
+		Private_Init(Player);
+	}
+}

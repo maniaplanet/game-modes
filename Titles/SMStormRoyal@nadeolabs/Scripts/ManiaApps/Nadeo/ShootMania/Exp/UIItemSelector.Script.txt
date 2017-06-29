@@ -1,0 +1,162 @@
+/**
+ *	Display gold amount
+ */
+#Const Version		"2017-01-09"
+#Const ScriptName	"ManiaApps/Nadeo/ShootMania/Exp/UIItemSelector.Script.txt"
+
+// ---------------------------------- //
+// Libraries
+// ---------------------------------- //
+#Include "ManiaApps/Nadeo/Layers.Script.txt" as Layers
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_LayerName 		"EXP_UIItemSelector"
+#Const C_Image_Path 	"file://Media/Manialinks/Nadeo/ShootMania/"
+#Const C_Sound_Path 	"file://Media/Sounds/Nadeo/ShootMania/Exp/"
+
+#Const C_ItemSelector 				"Exp/exp_itemselector.dds"
+#Const C_ItemSelectorActive 	"Exp/exp_itemselector_active.dds"
+
+// ---------------------------------- //
+// Globales
+// ---------------------------------- //
+declare Boolean G_CanDisplayUIItemSelector;
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+// ---------------------------------- //
+/** Return the version number of the script
+ *
+ *  @return   The version number of the script
+ */
+Text GetScriptVersion() {
+  return Version;
+}
+
+// ---------------------------------- //
+/** Return the name of the script
+ *
+ *  @return   The name of the script
+ */
+Text GetScriptName() {
+  return ScriptName;
+}
+
+// ---------------------------------- //
+/** Get the UI Item Selector
+ *
+ *  @return                           The manialink
+ */
+Text GetUIItemSelector() {
+	//L16N. Action 1 input name
+	declare Text Action1 = _("Action 1");
+	return """
+<manialink name="{{{C_LayerName}}}" version="3">
+<frame pos="-35 -68 100" id="frame-global">
+	<frame id="frame-itemselector">
+		<label posn="0.0 7 10" halign="center" valign="center" textsize="1" textemboss="1" id="label-iteminput" text="Action 1" />
+		<quad posn="-0.1 -3 10" size="8.5 8.5" halign="center" valign="center" image="" id="quad-weapon1" />
+		<quad posn="0 0 0" size="22.5 22.5" halign="center" valign="center" image="{{{C_Image_Path^C_ItemSelector}}}" id="quad-itemselector1" />
+	</frame>
+</frame>
+<script><!--
+#Include "TextLib" as TL
+#Include "MathLib" as ML
+#Const ShowActiveFrame_Timer 100
+
+main() {
+	declare Quad_Weapon1 				<=> (Page.GetFirstChild("quad-weapon1") as CMlQuad);
+	declare Quad_ItemSelector 	<=> (Page.GetFirstChild("quad-itemselector1") as CMlQuad);
+	
+	declare netread Text[Text] 	Net_LibExpUI_ItemList 							for UI;
+	declare netread Integer 		Net_LibExpUI_ItemList_Update 				for UI;
+	declare netread Text 				Net_LibExpUI_EquipedItem 						for UI;
+	declare netread Text 				Net_LibExpUI_ActionPressed 					for UI;
+	declare netread Integer			Net_LibExpUI_ActionPressed_Update 	for UI;
+	
+	declare Text 			Pre_EquipedItem;
+	declare Integer 	Pre_ItemList_Update;
+	declare Integer 	Pre_ActionPressed_Update;
+	declare Integer 	ShowAction1_Active = -1;
+	
+	declare Text[Text] WeaponUrl = [
+		"Nadeo/ShootMania/Exp/Missile.Item.Gbx" => "{{{C_Image_Path}}}Icons/Items/Missile.dds",
+		"Nadeo/ShootMania/Exp/Shield.Item.Gbx" => "{{{C_Image_Path}}}Icons/Items/Shield.dds"
+	];
+
+	while (True) {
+		yield;
+		if (!PageIsVisible) continue;
+		
+		if(Pre_ItemList_Update != Net_LibExpUI_ItemList_Update) {
+			if(Net_LibExpUI_ItemList.existskey("::EActionInput::Activable1") && Net_LibExpUI_EquipedItem != Net_LibExpUI_ItemList["::EActionInput::Activable1"]) {
+				declare Text CurWeapon = Net_LibExpUI_ItemList["::EActionInput::Activable1"];
+				Quad_Weapon1.ImageUrl = WeaponUrl[CurWeapon];
+				AnimMgr.Add(Quad_Weapon1, "<quad scale=\"1\" />", 100, CAnimManager::EAnimManagerEasing::QuartOut);
+			} else {
+				// Quad_Weapon1.ImageUrl = "";
+				AnimMgr.Add(Quad_Weapon1, "<quad scale=\"0\" />", 100, CAnimManager::EAnimManagerEasing::QuartOut);
+			}
+			Pre_ItemList_Update = Net_LibExpUI_ItemList_Update;
+		}
+		
+		//If a new item is set, we remove it from the item selector. 
+		if(Pre_EquipedItem != Net_LibExpUI_EquipedItem) {
+			if(Net_LibExpUI_ItemList.existskey("::EActionInput::Activable1")) {
+				if(Net_LibExpUI_EquipedItem == Net_LibExpUI_ItemList["::EActionInput::Activable1"]) {
+					AnimMgr.Add(Quad_Weapon1, "<quad scale=\"0\" />", 100, CAnimManager::EAnimManagerEasing::QuartOut);
+				}
+			}
+			Pre_EquipedItem = Net_LibExpUI_EquipedItem;
+		}
+		
+		if(Pre_ActionPressed_Update != Net_LibExpUI_ActionPressed_Update) {
+			if(Net_LibExpUI_ActionPressed == "::EActionInput::Activable1") {
+				ShowAction1_Active = Now +  ShowActiveFrame_Timer;
+				Quad_ItemSelector.ImageUrl = "{{{C_Image_Path^C_ItemSelectorActive}}}";
+			}
+			Pre_ActionPressed_Update = Net_LibExpUI_ActionPressed_Update;
+		}
+		
+		if(Now > ShowAction1_Active && ShowAction1_Active != -1) {
+			Quad_ItemSelector.ImageUrl = "{{{C_Image_Path^C_ItemSelector}}}";
+			ShowAction1_Active = -1;
+		}
+	}
+}
+--></script>
+</manialink>
+	""";
+}
+
+// ---------------------------------- //
+/// Update the library
+Void Yield() {
+	declare netread Net_LibExpUI_UIItemSelectorVisibility for UI = False;
+	if (G_CanDisplayUIItemSelector != Net_LibExpUI_UIItemSelectorVisibility) {
+		G_CanDisplayUIItemSelector = Net_LibExpUI_UIItemSelectorVisibility;
+		Layers::SetVisibility(C_LayerName, G_CanDisplayUIItemSelector);
+	}
+}
+
+// ---------------------------------- //
+/// Unload the library
+Void Unload() {
+	Layers::Destroy(C_LayerName);
+	G_CanDisplayUIItemSelector = False;
+}
+
+// ---------------------------------- //
+/// Load the library
+Void Load() {
+	Unload();
+	Layers::Create(C_LayerName, GetUIItemSelector());
+	Layers::SetAnimationType(C_LayerName, CUILayer::EUILayerAnimation::DownFast);
+	Layers::SetVisibility(C_LayerName, G_CanDisplayUIItemSelector);
+}

@@ -1,0 +1,294 @@
+/**
+ *  Display the RoyalExp session and
+ *  game results
+ */
+#Const Version    "2016-10-12"
+#Const ScriptName "ManiaApps/Nadeo/ShootMania/Royal/StateExp.Script.txt"
+
+// ---------------------------------- //
+// Libraries
+// ---------------------------------- //
+#Include "ManiaApps/Nadeo/Layers.Script.txt" as Layers
+#Include "Libs/Nadeo/Manialink/ManiaView.Script.txt" as MV
+#Include "Libs/Nadeo/Manialink/Modules/Events.Script.txt" as MV_Events
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_LayerName "StateExp"
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+// ---------------------------------- //
+/** Return the version number of the script
+ *
+ *  @return                           The version number of the script
+ */
+Text GetScriptVersion() {
+  return Version;
+}
+
+// ---------------------------------- //
+/** Return the name of the script
+ *
+ *  @return                           The name of the script
+ */
+Text GetScriptName() {
+  return ScriptName;
+}
+
+// ---------------------------------- //
+/** Get the state exp manialink
+ *
+ *  @return                           The manialink
+ */
+Text GetStateExpML() {
+  return ""; //< Disable
+
+  //L16N [Exp mode] A period of time during which several matches are played
+  declare Text_Session = _("Session");
+  //L16N [Exp mode] A game is a set of sessions
+  declare Text_Game = _("Game");
+
+  declare Width = 60;
+  declare Height = 142;
+
+  declare ScoresList = "";
+  for (I, 0, 9) {
+    declare Pos = """0 {{{I*-12}}}""";
+    ScoresList ^= """
+<frameinstance pos="{{{Pos}}}" modelid="framemodel-score" />
+""";
+  }
+
+  declare Manialink = MV::Create(
+"""
+<framemodel id="framemodel-score">
+  <quad z-index="0" size="{{{Width-4}}} 10" bgcolor="fff" opacity="0.5" />
+  <frame z-index="1">
+    <label size="28 10" id="label-name" />
+    <frame pos="{{{Width-4}}} 0">
+      <label pos="-18 0" size="5 10" halign="right" textsize="1.5" id="label-points-pole" />
+      <label pos="-12 0" size="5 10" halign="right" textsize="1.5" id="label-points-hit" />
+      <label pos="-6 0" size="5 10" halign="right" textsize="1.5" id="label-points-srv" />
+      <label pos="0 0" size="5 10" halign="right" textsize="1.5" id="label-points" />
+    </frame>
+  </frame>
+</framemodel>
+<frame z-index="10" id="frame-global">
+  <frame pos="-128 75" id="frame-ranking">
+    <quad size="{{{Width}}} {{{Height}}}" z-index="0" halign="center" style="Bgs1" substyle="BgWindow1" />
+    <frame pos="{{{(Width*0.5)-1}}} -1" z-index="2">
+      <label pos="-30 0" halign="right" style="CardButtonSmallS" scriptevents="1" text="{{{Text_Session}}}" data-section="session" data-mv-on:MouseClick="SelectSection" class="{{{MV_Events::Class()}}}" />
+      <label halign="right" style="CardButtonSmallS" scriptevents="1" text="{{{Text_Game}}}" data-section="game" data-mv-on:MouseClick="SelectSection" class="{{{MV_Events::Class()}}}" />
+    </frame>
+    <frame pos="0 -8" z-index="2">
+      <label size="50 10" halign="center" style="TextValueSmallSm" text="{{{Text_Session}}}" id="label-title" />
+    </frame>
+    <frame pos="{{{-(Width*0.5)+2}}} -14" z-index="1" id="frame-scores">
+      {{{ScoresList}}}
+    </frame>
+    <frame pos="{{{(Width*0.5)-10}}} {{{-Height+5}}}" z-index="2" id="frame-pager">
+      <quad size="10 10" valign="center" style="Icons64x64_1" substyle="ArrowDown" scriptevents="1" data-mv-on:MouseClick="PageNext" class="{{{MV_Events::Class()}}}" />
+      <quad size="10 10" halign="right" valign="center" style="Icons64x64_1" substyle="ArrowUp" scriptevents="1" data-mv-on:MouseClick="PagePrev" class="{{{MV_Events::Class()}}}" />
+    </frame>
+  </frame>
+</frame>
+""", //< Manialink
+"""
+#Include "TextLib" as TL
+""", //< Includes
+"""
+// Points type
+// /!\ Shared with Modes/ShootMania/Royal/StateExp.Script.txt /!\
+#Const C_Points_Map             0
+#Const C_Points_MapHit          1
+#Const C_Points_MapSurvival     2
+#Const C_Points_MapPole         3
+#Const C_Points_Round           4
+#Const C_Points_RoundHit        5
+#Const C_Points_RoundSurvival   6
+#Const C_Points_RoundPole       7
+#Const C_Points_Session         8
+#Const C_Points_SessionHit      9
+#Const C_Points_SessionSurvival 10
+#Const C_Points_SessionPole     11
+#Const C_Points_Game            12
+#Const C_Points_GameHit         13
+#Const C_Points_GameSurvival    14
+#Const C_Points_GamePole        15
+#Const C_Points_All             16
+""", //< Constants
+"""
+declare CMlFrame[] G_PageScore;
+declare Integer[Text] G_SortedScores;
+declare Integer G_PageStart;
+declare Integer G_PageEnd;
+declare Integer G_ItemsTotal;
+declare Integer G_ItemsPerPage;
+declare Integer G_Section;
+""", //< Globales
+"""
+Void UpdateScore(CMlFrame _Frame, Text _Login, Integer[Integer] _Score) {
+  if (_Frame == Null) return;
+  _Frame.Visible = _Login != "";
+
+  if (_Frame.Visible) {
+    declare Label_Name <=> (_Frame.GetFirstChild("label-name") as CMlLabel);
+    declare Label_PointsPole <=> (_Frame.GetFirstChild("label-points-pole") as CMlLabel);
+    declare Label_PointsHit <=> (_Frame.GetFirstChild("label-points-hit") as CMlLabel);
+    declare Label_PointsSrv <=> (_Frame.GetFirstChild("label-points-srv") as CMlLabel);
+    declare Label_Points <=> (_Frame.GetFirstChild("label-points") as CMlLabel);
+    Label_Name.Value = _Login;
+
+    declare PointsPole = 0;
+    declare PointsHit = 0;
+    declare PointsSrv = 0;
+    if (G_Section == C_Points_Session) {
+      PointsPole = _Score[C_Points_SessionPole];
+      PointsHit = _Score[C_Points_SessionHit];
+      PointsSrv = _Score[C_Points_SessionSurvival];
+    } else {
+      PointsPole = _Score[C_Points_GamePole];
+      PointsHit = _Score[C_Points_GameHit];
+      PointsSrv = _Score[C_Points_GameSurvival];
+    }
+    Label_PointsPole.Value = TL::ToText(PointsPole);
+    Label_PointsHit.Value = TL::ToText(PointsHit);
+    Label_PointsSrv.Value = TL::ToText(PointsSrv);
+    Label_Points.Value = TL::ToText(PointsPole + PointsHit + PointsSrv);
+  }
+}
+
+Void UpdateScores() {
+  declare netread Net_RoyalExpState_Scores for Teams[0] = Integer[Integer][Text];
+  declare Frames = G_PageScore;
+  declare ItemKey = 0;
+
+  foreach (Login => Scores in G_SortedScores) {
+    if (ItemKey < G_PageStart) {
+      ItemKey += 1;
+    } else if (ItemKey >= G_PageStart && ItemKey <= G_PageEnd) {
+      declare Frame <=> Frames[0];
+      declare Removed = Frames.removekey(0);
+      UpdateScore(Frame, Login, Net_RoyalExpState_Scores[Login]);
+      ItemKey += 1;
+    } else if (ItemKey > G_PageEnd) {
+      break;
+    }
+  }
+
+  foreach (Frame in Frames) {
+    UpdateScore(Frame, "", Integer[Integer]);
+  }
+}
+
+Void UpdatePager(Integer _ItemsTotal, Integer _ItemsPerPage) {
+  G_ItemsTotal = _ItemsTotal;
+  G_ItemsPerPage = _ItemsPerPage;
+
+  if (G_PageStart > G_ItemsTotal) G_PageStart = G_ItemsTotal;
+  else if (G_PageStart < 0) G_PageStart = 0;
+
+  declare CurrentPage = G_PageStart / G_ItemsPerPage;
+  G_PageStart = CurrentPage * G_ItemsPerPage;
+  G_PageEnd = G_PageStart + G_ItemsPerPage - 1;
+}
+
+Void PageNext(CMlScriptEvent _Event) {
+  G_PageStart += G_ItemsPerPage;
+  UpdatePager(G_ItemsTotal, G_ItemsPerPage);
+  UpdateScores();
+}
+
+Void PagePrev(CMlScriptEvent _Event) {
+  G_PageStart -= G_ItemsPerPage;
+  UpdatePager(G_ItemsTotal, G_ItemsPerPage);
+  UpdateScores();
+}
+
+Integer[Text] SortScores(Integer[Integer][Text] _Scores) {
+  declare ToSort = Integer[Text];
+  foreach (Login => AllPoints in _Scores) {
+    declare Points = 0;
+    if (G_Section == C_Points_Session) {
+      Points = AllPoints[C_Points_SessionHit] + AllPoints[C_Points_SessionSurvival] + AllPoints[C_Points_SessionPole];
+    } else {
+      Points = AllPoints[C_Points_GameHit] + AllPoints[C_Points_GameSurvival] + AllPoints[C_Points_GamePole];
+    }
+    ToSort[Login] = -1 * Points;
+  }
+  return ToSort.sort();
+}
+
+Void SelectSection(CMlScriptEvent _Event) {
+  declare Label_Title <=> (Page.GetFirstChild("label-title") as CMlLabel);
+  declare Section = _Event.Control.DataAttributeGet("section");
+  if (Section == "session") {
+    G_Section = C_Points_Session;
+    Label_Title.Value = "{{{Text_Session}}}";
+  } else {
+    G_Section = C_Points_Game;
+    Label_Title.Value = "{{{Text_Game}}}";
+  }
+
+  declare netread Net_RoyalExpState_Scores for Teams[0] = Integer[Integer][Text];
+  G_SortedScores = SortScores(Net_RoyalExpState_Scores);
+  UpdateScores();
+
+}
+""", //< Functions
+"""
+  declare Frame_Ranking <=> (Page.GetFirstChild("frame-ranking") as CMlFrame);
+  declare Frame_Scores <=> (Page.GetFirstChild("frame-scores") as CMlFrame);
+  foreach (Control in Frame_Scores.Controls) {
+    G_PageScore.add((Control as CMlFrame));
+  }
+
+  declare netread Net_RoyalExpState_Update for Teams[0] = Now;
+  declare netread Net_RoyalExpState_Scores for Teams[0] = Integer[Integer][Text];
+  declare netread Net_RoyalExpState_IsVisible for Teams[0] = True;
+
+  declare PrevUpdate = -1;
+  declare PrevIsVisible = True;
+
+  G_Section = C_Points_Session;
+""", //< Main start
+"""
+    if (PrevUpdate != Net_RoyalExpState_Update) {
+      PrevUpdate = Net_RoyalExpState_Update;
+      G_SortedScores = SortScores(Net_RoyalExpState_Scores);
+      UpdatePager(G_SortedScores.count, G_PageScore.count);
+      UpdateScores();
+    }
+
+    if (PrevIsVisible != Net_RoyalExpState_IsVisible) {
+      PrevIsVisible = Net_RoyalExpState_IsVisible;
+      Frame_Ranking.Visible = Net_RoyalExpState_IsVisible;
+    }
+""", //< Main loop
+"" //< Main end
+  );
+
+  Manialink = MV_Events::Run(C_LayerName, Manialink);
+  return MV::Compile(C_LayerName, Manialink);
+}
+
+// ---------------------------------- //
+/// Unload the library
+Void Unload() {
+  Layers::Destroy(C_LayerName);
+}
+
+// ---------------------------------- //
+/// Load the library
+Void Load() {
+  Unload();
+
+  Layers::Create(C_LayerName, GetStateExpML());
+  Layers::SetType(C_LayerName, CUILayer::EUILayerType::ScoresTable);
+}

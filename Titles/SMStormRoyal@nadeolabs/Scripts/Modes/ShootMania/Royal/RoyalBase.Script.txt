@@ -1,0 +1,252 @@
+/**
+ *	Common code for Royal Fun, Pro and Exp
+ */
+#Extends "Modes/ShootMania/Base/ModeShootmania.Script.txt"
+
+#Const RB_Version			"2016-10-05"
+#Const RB_ScriptName	"Modes/ShootMania/Royal/RoyalBase.Script.txt"
+
+// ---------------------------------- //
+// Libraries
+// ---------------------------------- //
+#Include "TextLib" as TL
+#Include "MathLib" as ML
+#Include "Libs/Nadeo/ShootMania/Map.Script.txt" as Map
+#Include "ManiaApps/Nadeo/ShootMania/Royal/Common.Script.txt" as UICommon
+#Include "Libs/Nadeo/ShootMania/Royal/StateExp.Script.txt" as State
+
+// ---------------------------------- //
+// Globales
+// ---------------------------------- //
+declare CSmScore[Ident] G_Survivors;
+declare CSmScore[] G_Eliminated;
+
+// ---------------------------------- //
+// Extends
+// ---------------------------------- //
+***Match_LogVersions***
+***
+Log::RegisterScript(RB_ScriptName, RB_Version);
+Log::RegisterScript(Map::GetScriptName(), Map::GetScriptVersion());
+Log::RegisterScript(UICommon::GetScriptName(), UICommon::GetScriptVersion());
+Log::RegisterScript(State::GetScriptName(), State::GetScriptVersion());
+***
+
+***Match_LoadLibraries***
+***
+UICommon::Load();
+State::Load();
+***
+
+***Match_UnloadLibraries***
+***
+State::Unload();
+UICommon::Unload();
+***
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+// ---------------------------------- //
+/** Get the mode status message
+ *
+ *	@param	_MapPointsLimit						The current map points limit
+ *
+ *	return														The mode status message
+ */
+Text GetStatusMessage(Integer _MapPointsLimit) {
+	return ModeInfo::GetPointsLimitStatusMessage(_MapPointsLimit, Scores::GetPlayerMapPoints(Scores::GetBestPlayerMapPoints(Scores::Order_Descending())));
+}
+
+// ---------------------------------- //
+/// Let the server sleep until there is at least one player
+Void WaitForPlayers() {
+	while (MB_RoundIsRunning() && PlayersNbTotal <= 0) {
+		MB_Sleep(1000);
+	}
+}
+
+// ---------------------------------- //
+/** Display the name of the winner
+ *
+ *	@param	_Winner										The score of the winner
+ *	@param	_Duration									The sequence duration
+ */
+Void DisplayWinnerName(CSmScore _Winner, Integer _Duration) {
+	UIManager.UIAll.BigMessageSound = CUIConfig::EUISound::EndRound;
+	declare Message = "";
+	if (_Winner != Null) Message = TL::Compose(_("$<%1$> wins the round!"), _Winner.User.Name);
+	else Message = _("|Match|Draw");
+	UIManager.UIAll.BigMessage = Message;
+	if (_Duration > 0) MB_Sleep(_Duration);
+}
+
+// ---------------------------------- //
+/** Play the end round sequence
+ *
+ *	@param	_Duration									The sequence duration
+ */
+Void EndRoundSequence(Integer _Duration) {
+	declare PrevUISequence = UIManager.UIAll.UISequence;
+	declare PrevScoreTableVisibility = UIManager.UIAll.ScoreTableVisibility;
+	UIManager.UIAll.UISequence = CUIConfig::EUISequence::EndRound;
+	UIManager.UIAll.ScoreTableVisibility = CUIConfig::EVisibility::ForcedVisible;
+	MB_Sleep(_Duration);
+	UIManager.UIAll.UISequence = PrevUISequence;
+	UIManager.UIAll.ScoreTableVisibility = PrevScoreTableVisibility;
+	
+	UIManager.UIAll.BigMessageSound = CUIConfig::EUISound::Default;
+	UIManager.UIAll.BigMessage = "";
+}
+
+// ---------------------------------- //
+/** Create the 3d markers
+ *
+ *	@param	_Pole											The pole of the map
+ */
+Void CreateMarkers(CSmMapLandmark _Pole) {
+	UIManager.UIAll.MarkersXML = "";
+	
+	if (_Pole != Null) {
+		declare Position = _Pole.Position.X^" "^(_Pole.Position.Y+25.)^" "^_Pole.Position.Z;
+		// This crash for now
+		//UIManager.UIAll.MarkersXML ^= """<marker pos="{{{Position}}}" manialinkframeid="{{{UICommon::MarkerId_Pole()}}}" />""";
+		// Use this instead
+		UIManager.UIAll.MarkersXML ^= """<marker pos="{{{Position}}}" icon="PointA" visibility="Always" />""";
+	}
+}
+
+// ---------------------------------- //
+/// Destroy the 3d markers
+Void DestroyMarkers() {
+	UIManager.UIAll.MarkersXML = "";
+}
+
+// ---------------------------------- //
+/** Save the name of the player that
+ *	eliminated the given player
+ *
+ *	@param	_Score										The score of the eliminated player
+ *	@param	_Name											The name of the eliminator
+ */
+Void SetEliminator(CSmScore _Score, Text _Name) {
+	foreach (Player in AllPlayers) {
+		if (Player.Score == _Score) {
+			UICommon::SetEliminator(Player, _Name);
+			break;
+		}
+	}
+}
+
+// ---------------------------------- //
+/** Update the survival score of the given players
+ * 
+ *	@param	_Survivors								The surviving players
+ *	@param	_StartingSurvivorsNb			The initial number of survivors
+ */
+Void UpdateSurvivalScore(CSmScore[Ident] _Survivors, Integer _StartingSurvivorsNb) {
+	// Give 1 points to each survivor
+	foreach (PlayerId => Score in _Survivors) {
+		State::UpdateScore(Score, State::Points_RoundSurvival(), 1);
+	}
+	
+	// Award bonus points for the last 2 survivors
+	if (_Survivors.count == 2) {
+		foreach (PlayerId => Score in _Survivors) {
+			State::UpdateScore(Score, State::Points_RoundSurvival(), _StartingSurvivorsNb / 2);
+		}
+	}
+	// Award bonus points for the last survivor
+	else if (_Survivors.count == 1) {
+		foreach (PlayerId => Score in _Survivors) {
+			State::UpdateScore(Score, State::Points_RoundSurvival(), (_StartingSurvivorsNb / 2) + (_StartingSurvivorsNb % 2));
+		}
+	}
+}
+
+// ---------------------------------- //
+/// Clear the survivors list
+Void ClearSurvivors() {
+	G_Survivors = CSmScore[Ident];
+	G_Eliminated = CSmScore[];
+}
+
+// ---------------------------------- //
+/** Fill the survivors list with the given players
+ *
+ *	@param	_Players									The players to add in the survivors list
+ *
+ *	@return														The number of survivors
+ */
+Integer FillSurvivors(CSmPlayer[] _Players) {
+	foreach (Player in _Players) {
+		if (Player != Null) {
+			declare FixPlayer <=> AllPlayers[Player.Id]; //< Reference to id and not array key
+			declare FixScore <=> Scores[FixPlayer.Score.Id]; //< Reference to id and not array key
+			G_Survivors[FixPlayer.Id] <=> FixScore;
+			State::SetScore(Player.Score, State::Points_RoundSurvival(), 1);
+		}
+	}
+	
+	return G_Survivors.count;
+}
+
+// ---------------------------------- //
+/** Remove a survivor from the list
+ *	and update the survival score of the players
+ *
+ *	@param	_Eliminated								The player to remove from the
+ *																		survivors list
+ *	@param	_Eliminator								The player who eliminated the
+ *																		other player
+ *	@param	_GivePoints								Give survival points
+ */
+Void RemoveSurvivor(CSmScore _Eliminated, CSmScore _Eliminator, Boolean _GivePoints) {
+	if (_Eliminated == Null) return;
+	
+	declare Removed = G_Survivors.remove(_Eliminated);
+	G_Eliminated.add(_Eliminated);
+	if (_GivePoints) UpdateSurvivalScore(G_Survivors, G_Survivors.count + G_Eliminated.count);
+	
+	// Display message on first elimination
+	if (G_Eliminated.count == 1 && MB_RoundIsRunning()) {
+		declare Message = _("First player eliminated!");
+		if (_Eliminator != Null) Message = TL::Compose(_("$<%1$> did the first elimination!"), _Eliminator.User.Name);
+		Message::SendBigMessage(Message, 3000, 1, CUIConfig::EUISound::PhaseChange, 1);
+	}
+	
+	// Save eliminator name
+	if (_Eliminator != Null) SetEliminator(_Eliminated, _Eliminator.User.Name);
+	
+	// Play a sound on the last 5 players eliminations
+	if (G_Survivors.count <= 5 && G_Survivors.count > 1) {
+		declare Variant = 5 - G_Survivors.count;
+		UIManager.UIAll.SendNotice(
+			"", 
+			CUIConfig::ENoticeLevel::MatchInfo, Null, 
+			CUIConfig::EAvatarVariant::Default, 
+			CUIConfig::EUISound::TieBreakPoint, Variant
+		);
+	} else if (G_Survivors.count <= 1) {
+		UIManager.UIAll.SendNotice(
+			"", 
+			CUIConfig::ENoticeLevel::MatchInfo, Null, 
+			CUIConfig::EAvatarVariant::Default, 
+			CUIConfig::EUISound::VictoryPoint, 0
+		);
+	}
+}
+
+// ---------------------------------- //
+/** Check the survivor list and remove
+ *	disconnected players and spectators
+ */
+Void CleanSurvivors() {
+	declare CSmScore[] ToRemove;
+	foreach (PlayerId => Score in G_Survivors) {
+		if (!Players.existskey(PlayerId)) ToRemove.add(Score);
+	}
+	foreach (Score in ToRemove) {
+		RemoveSurvivor(Score, Null, True);
+	}
+}

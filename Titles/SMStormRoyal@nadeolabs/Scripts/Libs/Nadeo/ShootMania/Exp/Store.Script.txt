@@ -1,0 +1,948 @@
+/**
+ * Store exp
+ *
+ */
+#Const Version    "2017-01-26"
+#Const ScriptName "Libs/Nadeo/ShootMania/Exp/Store.Script.txt"
+
+// ---------------------------------- //
+// Libraries
+// ---------------------------------- //
+#Include "TextLib" as TL
+#Include "Libs/Nadeo/Log.Script.txt" as Log
+#Include "Libs/Nadeo/Binary.Script.txt" as Binary
+#Include "Libs/Nadeo/ShootMania/Exp/Utils.Script.txt" as Utils
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+// Categories of the store
+#Const C_Category_Upgrades	0
+#Const C_Category_Items		1
+#Const C_Category_Skills		2
+#Const C_CategoryVersion [ ///< Default category version
+	0 => 0,
+	1 => 0,
+	2 => 0
+]
+#Const C_Refund [ ///< Default refund
+	0 => 0,
+	1 => 0,
+	2 => 0
+]
+// Bits configuration of the money
+#Const C_GoldBits 15
+#Const C_GoldMax 32767
+#Const C_XpBits 16
+#Const C_XpMax 65535
+#Const C_Money_Gold 0
+#Const C_Money_Xp 1
+#Const C_MoneyVersion [
+	0 => 0,
+	1 => 0
+]
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+// ---------------------------------- //
+// Private
+// ---------------------------------- //
+// ---------------------------------- //
+/** Get a player from its UI
+ *
+ *	@param	_UI												The UI owned by the player
+ *
+ *	@return														The player owning the UI
+ */
+CSmPlayer Private_GetPlayer(CUIConfig _UI) {
+	foreach (Player in AllPlayers) {
+		if (_UI == UIManager.GetUI(Player)) {
+			return Player;
+		} 
+	}
+	return Null;
+}
+
+// ---------------------------------- //
+/** Save the amount of money stocked
+ *	into the store for the given player
+ *
+ *	@param	_Player									The player to update
+ */
+Void Private_UpdateMoney(CSmPlayer _Player) {
+	if (_Player == Null) return;
+	
+	if (Hud != Null && Hud.Store != Null) {
+		declare LibExpStore_Money for _Player = 0;
+		LibExpStore_Money = Hud.Store.GetMoney(_Player);
+	}
+}
+
+// ---------------------------------- //
+/** Get the gold of the given player
+ *	in binary form
+ *
+ *	@param	_Player										The player to check
+ *
+ *	@return														The gold in binary form
+ */
+Integer[] Private_GetBinaryGold(CSmPlayer _Player) {
+	if (_Player == Null) return Integer[];
+	 
+	if (Hud != Null && Hud.Store != Null) {
+		return Binary::Slice(Binary::ToBinary(Hud.Store.GetMoney(_Player)), 0, C_GoldBits);
+	}
+	
+	return Integer[];
+}
+
+// ---------------------------------- //
+/** Get the xp of the given player
+ *	in binary form
+ *
+ *	@param	_Player										The player to check
+ *
+ *	@return														The xp in binary form
+ */
+Integer[] Private_GetBinaryXp(CSmPlayer _Player) {
+	if (_Player == Null) return Integer[];
+	 
+	if (Hud != Null && Hud.Store != Null) {
+		return Binary::Slice(Binary::ToBinary(Hud.Store.GetMoney(_Player)), C_GoldBits, C_XpBits);
+	}
+	
+	return Integer[];
+}
+
+// ---------------------------------- //
+/** Set the amount of xp owned by a player
+ *
+ *	@param	_Player										The player to udpate
+ *	@param	_Amount										The amount of xp owned
+ */
+Void Private_SetXp(CSmPlayer _Player, Integer _Amount) {
+	if (_Player == Null) return;
+	if (Hud != Null && Hud.Store != Null) {
+		declare NewXp = _Amount;
+		if (NewXp > C_XpMax) NewXp = C_XpMax;
+		else if (NewXp < 0) NewXp = 0;
+		declare Money = Binary::ToInteger(Binary::Concat(Private_GetBinaryGold(_Player), Binary::Slice(Binary::ToBinary(NewXp), 0, C_XpBits)));
+		Hud.Store.SetMoney(_Player, Money);
+		Private_UpdateMoney(_Player);
+	}
+}
+
+// ---------------------------------- //
+/** Set the amount of gold owned by a player
+ *
+ *	@param	_Player										The player to udpate
+ *	@param	_Amount										The amount of gold owned
+ */
+Void Private_SetGold(CSmPlayer _Player, Integer _Amount) {
+	if (_Player == Null) return;
+	if (Hud != Null && Hud.Store != Null) {
+		declare NewGold = _Amount;
+		if (NewGold > C_GoldMax) NewGold = C_GoldMax;
+		else if (NewGold < 0) NewGold = 0;
+		declare Money = Binary::ToInteger(Binary::Concat(Binary::Slice(Binary::ToBinary(NewGold), 0, C_GoldBits), Private_GetBinaryXp(_Player)));
+		Hud.Store.SetMoney(_Player, Money);
+		Private_UpdateMoney(_Player);
+	}
+}
+
+// ---------------------------------- //
+/** Reset the given money of the store
+ *	for the given players
+ *
+ *	@param	_Player										The player to reset
+ *	@param	_Money										The money to reset
+ */
+Void Private_ResetMoney(CSmPlayer _Player, Integer _Money) {
+	if (_Player == Null) return;
+	if (!C_MoneyVersion.existskey(_Money)) return;
+	
+	if (Hud != Null && Hud.Store != Null) {
+		declare persistent LibExpStore_Refund for _Player.User = C_Refund;
+		switch (_Money) {
+			case C_Money_Xp: {
+				Private_SetXp(_Player, 0);
+				LibExpStore_Refund[C_Category_Skills] = 0;
+			}
+			case C_Money_Gold: {
+				declare persistent LibExpStore_AllowanceReceived for _Player.User = 0;
+				LibExpStore_AllowanceReceived = 0;
+				Private_SetGold(_Player, 0);
+				LibExpStore_Refund[C_Category_Upgrades] = 0;
+				LibExpStore_Refund[C_Category_Items] = 0;
+			}
+		}
+	}
+}
+
+// ---------------------------------- //
+/** Reset the given category of the store
+ *	for the given player
+ *
+ *	@param	_Player										The player to reset
+ *	@param	_Category									The category to reset
+ */
+Void Private_ResetCategory(CSmPlayer _Player, Integer _Category) {
+	if (_Player == Null) return;
+	if (!C_CategoryVersion.existskey(_Category)) return;
+	
+	if (Hud != Null && Hud.Store != Null) {
+		declare ItemsUrl = Hud.Store.Hack_GetAllItemsUrls();
+		foreach (ItemUrl in ItemsUrl) {
+			if (
+				(_Category == C_Category_Upgrades && Utils::IsUpgrade(ItemUrl)) ||
+				(_Category == C_Category_Skills && Utils::IsSkill(ItemUrl))
+			) {
+				Hud.Store.SetItemCanBeBought(_Player, ItemUrl, True);
+				Hud.Store.SetActionLevel(_Player, ItemUrl, 0);
+			} else if (_Category == C_Category_Items && Utils::IsItem(ItemUrl)) {
+				Hud.Store.SetItemCanBeBought(_Player, ItemUrl, True);
+			}
+		}
+	}
+}
+
+// ---------------------------------- //
+/** Refund the given category of the store
+ *	for the given player
+ *
+ *	@param	_Player										The player to refund
+ *	@param	_Category									The category to refund
+ */
+Void Private_RefundCategory(CSmPlayer _Player, Integer _Category) {
+	if (_Player == Null) return;
+	if (!C_CategoryVersion.existskey(_Category)) return;
+	
+	if (Hud != Null && Hud.Store != Null) {
+		if (_Category == C_Category_Skills) {
+			declare Xp = Binary::ToInteger(Private_GetBinaryXp(_Player));
+			declare persistent LibExpStore_Refund for _Player.User = C_Refund;
+			Private_SetXp(_Player, Xp + LibExpStore_Refund[_Category]);
+			LibExpStore_Refund[_Category] = 0;
+		} else if (_Category == C_Category_Upgrades || _Category == C_Category_Items) {
+			declare Gold = Binary::ToInteger(Private_GetBinaryXp(_Player));
+			declare persistent LibExpStore_Refund for _Player.User = C_Refund;
+			Private_SetGold(_Player, Gold + LibExpStore_Refund[_Category]);
+			LibExpStore_Refund[_Category] = 0;
+		}
+	}
+}
+
+// ---------------------------------- //
+/** Initialize a player
+ *
+ *	@param	_Player										The player to initialize
+ */
+Void Private_Init(CSmPlayer _Player) {
+	if (_Player == Null) return;
+	
+	declare LibExpStore_IsInit for _Player = False;
+	if (!LibExpStore_IsInit) {
+		if (Hud != Null && Hud.Store != Null) {
+			// Init store
+			Hud.Store.Reset(_Player);
+			Hud.Store.SetMoney(_Player, 0);
+			Private_UpdateMoney(_Player);
+			
+			// Try to load store state from a save
+			declare persistent LibExpStore_StateCurrentVersion for This = 0;
+			declare persistent LibExpStore_StateSaveVersion for _Player.User = 0;
+			declare persistent LibExpStore_StoreState for _Player.User = "";
+			declare persistent LibExpStore_AllowanceReceived for _Player.User = 0;
+			declare persistent LibExpStore_Refund for _Player.User = C_Refund;
+			// Save is too old erase it
+			if (LibExpStore_StateSaveVersion != LibExpStore_StateCurrentVersion) {
+				LibExpStore_StoreState = "";
+				LibExpStore_StateSaveVersion = LibExpStore_StateCurrentVersion;
+				LibExpStore_AllowanceReceived = 0;
+				LibExpStore_Refund = C_Refund;
+			}
+			if (LibExpStore_StoreState != "") {
+				declare Loaded = Hud.Store.SetPlayerData(_Player, LibExpStore_StoreState);
+				// The save is not compatible with the store anymore, erase it
+				if (!Loaded) {
+					LibExpStore_StoreState = "";
+					LibExpStore_StateSaveVersion = LibExpStore_StateCurrentVersion;
+					LibExpStore_AllowanceReceived = 0;
+					LibExpStore_Refund = C_Refund;
+				}
+			}
+			
+			// Reset some store categories if necessary
+			declare persistent LibExpStore_CategoryCurrentVersion for This = C_CategoryVersion;
+			declare persistent LibExpStore_CategorySaveVersion for _Player.User = C_CategoryVersion;
+			foreach (Category => Version in LibExpStore_CategoryCurrentVersion) {
+				if (Version != LibExpStore_CategorySaveVersion[Category]) {
+					Private_ResetCategory(_Player, Category);
+					LibExpStore_CategorySaveVersion[Category] = Version;
+				}
+			}
+			
+			// Reset money if necessary
+			declare persistent LibExpStore_MoneyCurrentVersion for This = C_MoneyVersion;
+			declare persistent LibExpStore_MoneySaveVersion for _Player.User = C_MoneyVersion;
+			foreach (Money => Version in LibExpStore_MoneyCurrentVersion) {
+				if (Version != LibExpStore_MoneySaveVersion[Money]) {
+					Private_ResetMoney(_Player, Money);
+					LibExpStore_MoneySaveVersion[Money] = Version;
+				}
+			}
+			
+			// Refund some store categories if necessary
+			declare persistent LibExpStore_RefundCurrentVersion for This = C_CategoryVersion;
+			declare persistent LibExpStore_RefundSaveVersion for _Player.User = C_CategoryVersion;
+			foreach (Category => Version in LibExpStore_RefundCurrentVersion) {
+				if (Version != LibExpStore_RefundSaveVersion[Category]) {
+					Private_RefundCategory(_Player, Category);
+					LibExpStore_RefundSaveVersion[Category] = Version;
+				}
+			}
+			
+			// Pay missing allowance distributed while disconnected
+			declare persistent LibExpStore_AllowanceDistributed for This = 0;
+			declare Difference = LibExpStore_AllowanceDistributed - LibExpStore_AllowanceReceived;
+			if (Difference > 0) {
+				declare Added = Hud.Store.AddMoney(_Player, Difference);
+				LibExpStore_AllowanceReceived = LibExpStore_AllowanceDistributed;
+			}
+			
+			// Save the initialized state
+			LibExpStore_StoreState = Hud.Store.GetPlayerData(_Player);
+			
+			LibExpStore_IsInit = True;
+			
+			Private_UpdateMoney(_Player);
+		}
+	}
+}
+
+// ---------------------------------- //
+/** Send store visibility to the UI
+ *
+ *	@param	_Player										The player to update
+ *	@param	_Visible									The store visibility
+ */
+Void Private_SetStoreVisibility(CSmPlayer _Player, Boolean _Visible) {
+	if (_Player == Null) return;
+	
+	declare netwrite Net_LibExpStore_StoreIsVisible for _Player = False;
+	Net_LibExpStore_StoreIsVisible = _Visible;
+}
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+// ---------------------------------- //
+/** Return the version number of the script
+ *
+ *  @return   The version number of the script
+ */
+Text GetScriptVersion() {
+  return Version;
+}
+
+// ---------------------------------- //
+/** Return the name of the script
+ *
+ *  @return   The name of the script
+ */
+Text GetScriptName() {
+  return ScriptName;
+}
+
+// ---------------------------------- //
+/** Reset the store gold and progression
+ *	of a player
+ *
+ *	@param	_Player										The player to reset
+ */
+Void ResetState(CSmPlayer _Player) {
+	if (_Player == Null) return;
+	if (Hud != Null && Hud.Store != Null) {
+		Hud.Store.Reset(_Player);
+		Private_UpdateMoney(_Player);
+		
+		declare persistent LibExpStore_StateCurrentVersion for This = 0;
+		declare persistent LibExpStore_StateSaveVersion for _Player.User = 0;
+		declare persistent LibExpStore_StoreState for _Player.User = "";
+		LibExpStore_StateSaveVersion = LibExpStore_StateCurrentVersion;
+		LibExpStore_StoreState = "";
+		
+		declare persistent LibExpStore_AllowanceReceived for _Player.User = 0;
+		LibExpStore_AllowanceReceived = 0;
+		
+		declare persistent LibExpStore_Refund for _Player.User = C_Refund;
+		LibExpStore_Refund = C_Refund;
+		
+		declare LibExpStore_IsInit for _Player = False;
+		LibExpStore_IsInit = False;
+		Private_Init(_Player);
+	}
+}
+
+// ---------------------------------- //
+/// Reset all stores gold and progression
+Void ResetState() {
+	if (Hud != Null && Hud.Store != Null) {
+		Hud.Store.Reset();
+		
+		declare persistent LibExpStore_AllowanceDistributed for This = 0;
+		LibExpStore_AllowanceDistributed = 0;
+		
+		declare persistent LibExpStore_StateCurrentVersion for This = 0;
+		LibExpStore_StateCurrentVersion += 1;
+		if (LibExpStore_StateCurrentVersion > 2000000) {
+			LibExpStore_StateCurrentVersion = -2000000;
+		}
+		
+		foreach (Player in AllPlayers) {
+			ResetState(Player);
+		}
+	}
+}
+
+// ---------------------------------- //
+/** Save the state of a player's store
+ *
+ *	@param	_Player										The player to save
+ */
+Void SaveState(CSmPlayer _Player) {
+	Private_Init(_Player);
+	
+	if (_Player == Null) return;
+	if (Hud != Null && Hud.Store != Null) {
+		declare persistent LibExpStore_StateCurrentVersion for This = 0;
+		declare persistent LibExpStore_StateSaveVersion for _Player.User = 0;
+		declare persistent LibExpStore_StoreState for _Player.User = "";
+		LibExpStore_StateSaveVersion = LibExpStore_StateCurrentVersion;
+		LibExpStore_StoreState = Hud.Store.GetPlayerData(_Player);
+	}
+}
+
+// ---------------------------------- //
+/** Reset the given category of the store
+ *	for one player
+ *
+ *	@param	_Player										The player to reset
+ *	@param	_Category									The category to reset
+ */
+Void ResetCategory(CSmPlayer _Player, Integer _Category) {
+	if (_Player == Null) return;
+	if (!C_CategoryVersion.existskey(_Category)) return;
+	
+	if (Hud != Null && Hud.Store != Null) {
+		Private_Init(_Player);
+		
+		Private_ResetCategory(_Player, _Category);
+		
+		declare persistent LibExpStore_CategorySaveVersion for _Player.User = C_CategoryVersion;
+		declare persistent LibExpStore_CategoryCurrentVersion for This = C_CategoryVersion;
+		LibExpStore_CategorySaveVersion[_Category] = LibExpStore_CategoryCurrentVersion[_Category];
+	}
+}
+
+// ---------------------------------- //
+/** Reset the given category of the store
+ *	for all players
+ *
+ *	@param	_Category									The category to reset
+ */
+Void ResetCategory(Integer _Category) {
+	if (!C_CategoryVersion.existskey(_Category)) return;
+	
+	if (Hud != Null && Hud.Store != Null) {
+		declare persistent LibExpStore_CategoryCurrentVersion for This = C_CategoryVersion;
+		LibExpStore_CategoryCurrentVersion[_Category] += 1;
+		if (LibExpStore_CategoryCurrentVersion[_Category] > 2000000) {
+			LibExpStore_CategoryCurrentVersion[_Category] = -2000000;
+		}
+		
+		foreach (Player in AllPlayers) {
+			ResetCategory(Player, _Category);
+		}
+	}
+}
+
+// ---------------------------------- //
+/** Reset the given category of the store
+ *	and refund the money spent in
+ *	this category for one player
+ *
+ *	@param	_Player										The player to refund
+ *	@param	_Category									The category to refund
+ */
+Void RefundCategory(CSmPlayer _Player, Integer _Category) {
+	if (_Player == Null) return;
+	if (!C_CategoryVersion.existskey(_Category)) return;
+	
+	if (Hud != Null && Hud.Store != Null) {
+		Private_Init(_Player);
+		
+		Private_RefundCategory(_Player, _Category);
+		
+		declare persistent LibExpStore_RefundSaveVersion for _Player.User = C_CategoryVersion;
+		declare persistent LibExpStore_RefundCurrentVersion for This = C_CategoryVersion;
+		LibExpStore_RefundSaveVersion[_Category] = LibExpStore_RefundCurrentVersion[_Category];
+	}
+}
+
+// ---------------------------------- //
+/** Reset the given category of the store
+ *	and refund the money spent in
+ *	this category
+ *
+ *	@param	_Category									The category to refund
+ */
+Void RefundCategory(Integer _Category) {
+	if (!C_CategoryVersion.existskey(_Category)) return;
+	
+	if (Hud != Null && Hud.Store != Null) {
+		declare persistent LibExpStore_RefundCurrentVersion for This = C_CategoryVersion;
+		LibExpStore_RefundCurrentVersion[_Category] += 1;
+		if (LibExpStore_RefundCurrentVersion[_Category] > 2000000) {
+			LibExpStore_RefundCurrentVersion[_Category] = -2000000;
+		}
+		
+		foreach (Player in AllPlayers) {
+			RefundCategory(Player, _Category);
+		}
+	}
+}
+
+// ---------------------------------- //
+/** Reset the given money of the store
+ *	for all players
+ *
+ *	@param	_Money										The money to reset
+ */
+Void ResetMoney(Integer _Money) {
+	if (!C_MoneyVersion.existskey(_Money)) return;
+	
+	if (Hud != Null && Hud.Store != Null) {
+		declare persistent LibExpStore_MoneyCurrentVersion for This = C_MoneyVersion;
+		LibExpStore_MoneyCurrentVersion[_Money] += 1;
+		if (LibExpStore_MoneyCurrentVersion[_Money] > 2000000) {
+			LibExpStore_MoneyCurrentVersion[_Money] = -2000000;
+		}
+		
+		// Reset distributed allowance
+		if (_Money == C_Money_Gold) {
+			declare persistent LibExpStore_AllowanceDistributed for This = 0;
+			LibExpStore_AllowanceDistributed = 0;
+		}
+		
+		foreach (Player in AllPlayers) {
+			Private_Init(Player);
+			
+			Private_ResetMoney(Player, _Money);
+			
+			declare persistent LibExpStore_MoneySaveVersion for Player.User = C_MoneyVersion;
+			LibExpStore_MoneySaveVersion[_Money] = LibExpStore_MoneyCurrentVersion[_Money];
+		}
+	}
+}
+
+// ---------------------------------- //
+/// Open the store of all players
+Void Open() {
+	if (Hud != Null && Hud.Store != Null) {
+		foreach (Player in AllPlayers) {
+			Private_Init(Player);
+			Private_SetStoreVisibility(Player, True);
+		}
+		Hud.Store.Show();
+	}
+}
+
+// ---------------------------------- //
+/** Open the store of the given player
+ *
+ *	@param	_Player										The player to update
+ */
+Void Open(CSmPlayer _Player) {
+	Private_Init(_Player);
+	
+	if (_Player == Null) return;
+	declare UI <=> UIManager.GetUI(_Player);
+	if (UI == Null) return;
+	
+	if (Hud != Null && Hud.Store != Null) {
+		Hud.Store.Show(UI);
+		Private_SetStoreVisibility(_Player, True);
+	}
+}
+
+// ---------------------------------- //
+/// Close the store of all players
+Void Close() {
+	if (Hud != Null && Hud.Store != Null) {
+		foreach (Player in AllPlayers) {
+			Private_Init(Player);
+			Private_SetStoreVisibility(Player, False);
+		}
+		Hud.Store.Hide();
+	}
+}
+
+// ---------------------------------- //
+/** Close the store of the given player
+ *
+ *	@param	_Player										The player to update
+ */
+Void Close(CSmPlayer _Player) {
+	Private_Init(_Player);
+	
+	if (_Player == Null) return;
+	declare UI <=> UIManager.GetUI(_Player);
+	if (UI == Null) return;
+	
+	if (Hud != Null && Hud.Store != Null) {
+		Hud.Store.Hide(UI);
+		Private_SetStoreVisibility(_Player, False);
+	}
+}
+
+// ---------------------------------- //
+/** Check if the store of a player is open
+ *
+ *	@param	_Player										The player to check
+ *
+ *	@return														True if the store is open
+ *																		False if the store is closed
+ */
+Boolean IsOpen(CSmPlayer _Player) {
+	Private_Init(_Player);
+	
+	if (_Player == Null) return False;
+	declare UI <=> UIManager.GetUI(_Player);
+	if (UI == Null) return False;
+	
+	if (Hud != Null && Hud.Store != Null) {
+		return Hud.Store.IsVisible(UI);
+	}
+	
+	return False;
+}
+
+// ---------------------------------- //
+/** Get the amount of xp owned by a player
+ *
+ *	@param	_Player										The player to check
+ *
+ *	@return														The amount of xp owned by the player
+ */
+Integer GetXp(CSmPlayer _Player) {
+	Private_Init(_Player);
+	
+	if (_Player == Null) return 0;
+	return Binary::ToInteger(Private_GetBinaryXp(_Player));
+}
+
+// ---------------------------------- //
+/** Set the amount of xp owned by a player
+ *
+ *	@param	_Player										The player to udpate
+ *	@param	_Amount										The amount of xp owned
+ */
+Void SetXp(CSmPlayer _Player, Integer _Amount) {
+	Private_Init(_Player);
+	Private_SetXp(_Player, _Amount);
+}
+
+// ---------------------------------- //
+/** Give xp to a player
+ *
+ *	@param	_Player										The player receiving the xp
+ *	@param	_Amount										The amount of xp to give
+ */
+Void GiveXp(CSmPlayer _Player, Integer _Amount) {
+	Private_Init(_Player);
+	if (_Player == Null) return;
+	SetXp(_Player, GetXp(_Player) + _Amount);
+}
+
+// ---------------------------------- //
+/** Take xp from a player
+ *
+ *	@param	_Player										The player losing the xp
+ *	@param	_Amount										The amount of xp to take
+ */
+Void TakeXp(CSmPlayer _Player, Integer _Amount) {
+	Private_Init(_Player);
+	if (_Player == Null) return;
+	SetXp(_Player, GetXp(_Player) - _Amount);
+}
+
+// ---------------------------------- //
+/** Get the amount of gold owned by a player
+ *
+ *	@param	_Player										The player to check
+ *
+ *	@return														The amount of gold owned by the player
+ */
+Integer GetGold(CSmPlayer _Player) {
+	Private_Init(_Player);
+	
+	if (_Player == Null) return 0;
+	return Binary::ToInteger(Private_GetBinaryGold(_Player));
+}
+
+// ---------------------------------- //
+/** Set the amount of gold owned by a player
+ *
+ *	@param	_Player										The player to udpate
+ *	@param	_Amount										The amount of gold owned
+ */
+Void SetGold(CSmPlayer _Player, Integer _Amount) {
+	Private_Init(_Player);
+	Private_SetGold(_Player, _Amount);
+}
+
+// ---------------------------------- //
+/** Give gold to a player
+ *
+ *	@param	_Player										The player receiving the gold
+ *	@param	_Amount										The amount of gold to give
+ */
+Void GiveGold(CSmPlayer _Player, Integer _Amount) {
+	Private_Init(_Player);
+	if (_Player == Null) return;
+	SetGold(_Player, GetGold(_Player) + _Amount);
+}
+
+// ---------------------------------- //
+/** Take gold from a player
+ *
+ *	@param	_Player										The player losing the gold
+ *	@param	_Amount										The amount of gold to take
+ */
+Void TakeGold(CSmPlayer _Player, Integer _Amount) {
+	Private_Init(_Player);
+	if (_Player == Null) return;
+	SetGold(_Player, GetGold(_Player) - _Amount);
+}
+
+// ---------------------------------- //
+/** Pay an allowance to all players
+ *	Disconnected players will receive
+ *	their allowance when they reconnect
+ *
+ *	@param	_Amount										The amount of gold to give
+ */
+Void PayAllowance(Integer _Amount) {
+	foreach (Player in AllPlayers) {
+		Private_Init(Player);
+		if (Hud != Null && Hud.Store != Null) {
+			GiveGold(Player, _Amount);
+			declare persistent LibExpStore_AllowanceReceived for Player.User = 0;
+			LibExpStore_AllowanceReceived += _Amount;
+		}
+	}
+	declare persistent LibExpStore_AllowanceDistributed for This = 0;
+	LibExpStore_AllowanceDistributed += _Amount;
+}
+
+// ---------------------------------- //
+/** Get the amount of allowance distributed
+ * since the previous store reset
+ *
+ *	@return														The amount of gold distributed
+ */
+Integer GetDistributedAllowance() {
+	declare persistent LibExpStore_AllowanceDistributed for This = 0;
+	return LibExpStore_AllowanceDistributed;
+}
+
+// ---------------------------------- //
+/** Set the level of an action in the
+ *	store for a player
+ *
+ *	@param	_Player										The player receiving the action level
+ *	@param	_ActionUrl								The action to update
+ *	@param	_Level										The level of the action
+ */
+Void SetActionLevel(CSmPlayer _Player, Text _ActionUrl, Integer _Level) {
+	Private_Init(_Player);
+	
+	if (_Player == Null) return;
+	if (Hud != Null && Hud.Store != Null) {
+		Hud.Store.SetActionLevel(_Player, _ActionUrl, _Level);
+	}
+}
+
+// ---------------------------------- //
+/** Get the level of an action in the
+ *	store for a player
+ *
+ *	@param	_Player										The player to get the action level for
+ *	@param	_ActionUrl								The action to get
+ *
+ *	@return														The level of the action
+ */
+Integer GetActionLevel(CSmPlayer _Player, Text _ActionUrl) {
+	Private_Init(_Player);
+	
+	if (_Player == Null) return 0;
+	if (Hud != Null && Hud.Store != Null) {
+		return Hud.Store.GetActionLevel(_Player, _ActionUrl);
+	}
+	return 0;
+}
+
+// ---------------------------------- //
+/** Get the level of an action unlocker
+ *	in the store for a player
+ *
+ *	@param	_Player										The player to get the action unlocker level for
+ *	@param	_ActionUrl								The action unlocked by the unlocker
+ *
+ *	@return														The level of the action unlocker
+ */
+Integer GetUnlockLevel(CSmPlayer _Player, Text _ActionUrl) {
+	Private_Init(_Player);
+	
+	declare UnlockUrl = TL::Replace(_ActionUrl, """\Items\""", """\Actions\""");
+	declare UnlockUrlSplit = TL::Split("""\""", UnlockUrl);
+	declare ActionName = TL::Replace(UnlockUrlSplit[UnlockUrlSplit.count-1], "Item", "Action");
+	UnlockUrlSplit[UnlockUrlSplit.count-1] = """Skills\Locks""";
+	UnlockUrlSplit.add(ActionName);
+	UnlockUrl = TL::Join("""\""", UnlockUrlSplit);
+	
+	if (_Player == Null) return 0;
+	if (Hud != Null && Hud.Store != Null) {
+		return Hud.Store.GetActionLevel(_Player, UnlockUrl);
+	}
+	return 0;
+}
+
+// ---------------------------------- //
+/** Enable or disable an item or an action
+ *	in the store of a player
+ *
+ *	@param	_Player										The player that will have an item enable/disable
+ *	@param	_Url											The url of the action or item
+ *	@param	_Enabled									True to enable, False to disable
+ */
+Void SetCanBeBought(CSmPlayer _Player, Text _Url, Boolean _Enabled) {
+	Private_Init(_Player);
+	
+	if (_Player == Null) return;
+	if (Hud != Null && Hud.Store != Null) {
+		Hud.Store.SetItemCanBeBought(_Player, _Url, _Enabled);
+	}
+}
+
+// ---------------------------------- //
+/** Enable all items in the store of
+ *	a player and allow him to buy them
+ *
+ *	@param	_Player										The player to update
+ */
+Void EnableItems(CSmPlayer _Player) {
+	Private_Init(_Player);
+	
+	if (_Player == Null) return;
+	if (Hud != Null && Hud.Store != Null) {
+		declare ItemsUrls = Hud.Store.Hack_GetAllItemsUrls();
+		foreach (ItemUrl in ItemsUrls) {
+			if (Utils::IsItem(ItemUrl)) {
+				SetCanBeBought(_Player, ItemUrl, True);
+			}
+		}
+	}
+}
+
+// ---------------------------------- //
+/** Disable all items in the store of
+ *	a player and prevent him from buying them
+ *
+ *	@param	_Player										The player to update
+ */
+Void DisableItems(CSmPlayer _Player) {
+	Private_Init(_Player);
+	
+	if (_Player == Null) return;
+	if (Hud != Null && Hud.Store != Null) {
+		declare ItemsUrls = Hud.Store.Hack_GetAllItemsUrls();
+		foreach (ItemUrl in ItemsUrls) {
+			if (Utils::IsItem(ItemUrl)) {
+				SetCanBeBought(_Player, ItemUrl, False);
+			}
+		}
+	}
+}
+
+// ---------------------------------- //
+/** Manage events related to the store
+ *
+ *	@param	_Event										The event to manage
+ */
+Void OnEvent(CUIConfigEvent _Event) {
+	if (_Event == Null) return;
+	
+	switch (_Event.Type) {
+		case CUIConfigEvent::EType::OnModuleShowRequest: {
+			if (_Event.ModuleType == CUIConfigEvent::EModuleType::Store) {
+				Private_SetStoreVisibility(Private_GetPlayer(_Event.UIConfig), True);
+			}
+		}
+		case CUIConfigEvent::EType::OnModuleHideRequest: {
+			if (_Event.ModuleType == CUIConfigEvent::EModuleType::Store) {
+				Private_SetStoreVisibility(Private_GetPlayer(_Event.UIConfig), False);
+			}
+		}
+		case CUIConfigEvent::EType::OnModuleStorePurchase: {
+			declare EventPlayer <=> Private_GetPlayer(_Event.UIConfig);
+			if (EventPlayer != Null) {
+				// Refund money and spend the right currency -> XP for skills, Gold for the rest
+				declare persistent LibExpStore_Refund for EventPlayer.User = C_Refund;
+				declare LibExpStore_Money for EventPlayer = 0;
+				declare Price = LibExpStore_Money - Hud.Store.GetMoney(EventPlayer);
+				Hud.Store.SetMoney(EventPlayer, LibExpStore_Money);
+				// Skill
+				if (Utils::IsSkill(_Event.ItemUrl)) {
+					TakeXp(EventPlayer, Price);
+					LibExpStore_Refund[C_Category_Skills] += Price;
+				} 
+				// Item
+				else if (Utils::IsItem(_Event.ItemUrl)) {
+					TakeGold(EventPlayer, Price);
+					LibExpStore_Refund[C_Category_Items] += Price;
+				} 
+				// Upgrade
+				else if (Utils::IsUpgrade(_Event.ItemUrl)) {
+					TakeGold(EventPlayer, Price);
+					LibExpStore_Refund[C_Category_Upgrades] += Price;
+				} 
+				// Something else
+				else {
+					TakeGold(EventPlayer, Price);
+				}
+				Private_UpdateMoney(EventPlayer);
+			}
+		}
+	}
+}
+
+// ---------------------------------- //
+/// Unload the library
+Void Unload() {
+	
+}
+
+// ---------------------------------- //
+/// Load the library
+Void Load() {
+  Unload();
+
+	foreach (Player in AllPlayers) {
+		declare LibExpStore_IsInit for Player = False;
+		LibExpStore_IsInit = False;
+		Private_Init(Player);
+	}
+}

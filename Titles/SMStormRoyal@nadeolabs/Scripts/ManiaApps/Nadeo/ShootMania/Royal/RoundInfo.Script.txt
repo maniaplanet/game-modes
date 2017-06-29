@@ -1,0 +1,212 @@
+/**
+ * Royal round info
+ */
+#Const Version    "2016-12-09"
+#Const ScriptName "ManiaApps/Nadeo/Royal/RoundInfo.Script.txt"
+
+// ---------------------------------- //
+// Libraries
+// ---------------------------------- //
+#Include "ManiaApps/Nadeo/Layers.Script.txt" as Layers
+#Include "ManiaApps/Nadeo/ShootMania/Royal/Common.Script.txt" as UICommon
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_LayerName "Royal_RoundInfo"
+
+// ---------------------------------- //
+// Globales
+// ---------------------------------- //
+declare Boolean G_CanDisplayRoundInfo;
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+// ---------------------------------- //
+/** Return the version number of the script
+ *
+ *  @return   The version number of the script
+ */
+Text GetScriptVersion() {
+  return Version;
+}
+
+// ---------------------------------- //
+/** Return the name of the script
+ *
+ *  @return   The name of the script
+ */
+Text GetScriptName() {
+  return ScriptName;
+}
+
+// ---------------------------------- //
+/** Get the round info manialink
+ *
+ *  @return                           The manialink
+ */
+Text Private_GetRoundInfoML() {
+  return """
+<manialink version="3" name="Royal:RoundInfo">
+<stylesheet>
+  <style class="label" textemboss="1" textsize="3" />
+</stylesheet>
+<frame z-index="10" id="frame-global">
+  <frame pos="158 -87" id="frame-info">
+    <label pos="0 24" data-height="8" halign="right" valign="bottom" hidden="1" class="module label" id="label-eliminator" />
+    <label pos="0 16" data-height="8" halign="right" valign="bottom" hidden="1" class="module label" id="label-mode" />
+    <label pos="0 8" data-height="8" halign="right" valign="bottom" hidden="1" class="module label" id="label-remaining" />
+    <frame pos="0 0" data-height="8" hidden="1" class="module" id="frame-power">
+      <label pos="-51 4" halign="right" valign="center" textsize="4" text="" id="label-power" />
+      <gauge pos="-50 0" size="50 8" valign="bottom" grading="{{{1./3.}}}" color="fff" id="gauge-power" />
+    </frame>
+  </frame>
+</frame>
+<script><!--
+#Include "TextLib" as TL
+#Include "MathLib" as ML
+
+main() {
+  declare Frame_Power <=> (Page.GetFirstChild("frame-power") as CMlFrame);
+  declare Gauge_Power <=> (Frame_Power.GetFirstChild("gauge-power") as CMlGauge);
+  declare Label_Power <=> (Frame_Power.GetFirstChild("label-power") as CMlLabel);
+  declare Label_Eliminator <=> (Page.GetFirstChild("label-eliminator") as CMlLabel);
+  declare Label_Remaining <=> (Page.GetFirstChild("label-remaining") as CMlLabel);
+  declare Label_Mode <=> (Page.GetFirstChild("label-mode") as CMlLabel);
+
+  Frame_Power.Visible = False;
+  Label_Eliminator.Visible = False;
+  Label_Remaining.Visible = False;
+  Label_Mode.Visible = False;
+
+  declare Real[Integer] ModulesHeight;
+  declare CMlControl[Integer] ModulesControl;
+  Page.GetClassChildren("module", Page.MainFrame, True);
+  foreach (Control in Page.GetClassChildren_Result) {
+    declare Module = -1;
+    switch (Control.ControlId) {
+      case "label-eliminator": Module = {{{UICommon::RoundInfoModule_Eliminator()}}};
+      case "label-mdoe": Module = {{{UICommon::RoundInfoModule_Mode()}}};
+      case "label-remaining": Module = {{{UICommon::RoundInfoModule_Remaining()}}};
+      case "frame-power": Module = {{{UICommon::RoundInfoModule_Power()}}};
+    }
+    ModulesHeight[Module] = TL::ToReal(Control.DataAttributeGet("height"));
+    ModulesControl[Module] = Page.GetFirstChild(Control.ControlId);
+  }
+
+  declare netread Net_Royal_RoundInfoModulesUpdate for Teams[0] = Now;
+  declare netread Net_Royal_RoundInfoModules for Teams[0] = Integer[];
+  declare netread Net_Royal_RemainingPlayersNb for Teams[0] = 0;
+  declare netread Net_Royal_Mode for Teams[0] = "";
+
+  declare PrevInfoModulesUpdate = 0;
+  declare PrevEliminatorName = "";
+  declare PrevRemainingPlayersNb = 0;
+  declare PrevRoyalMode = "";
+  declare PrevActionVariant = 0;
+
+  while (True) {
+    yield;
+    if (!PageIsVisible) continue;
+
+    declare Player <=> GUIPlayer;
+    if (Player == Null) Player <=> InputPlayer;
+    if (Player != Null) {
+      declare netread Net_Royal_Eliminator for Player = "";
+      declare netread Net_Royal_PowerLevel for Player = 0.;
+      declare netread Net_Royal_ActionVariant for Player = 0;
+
+      if (PrevEliminatorName != Net_Royal_Eliminator) {
+        PrevEliminatorName = Net_Royal_Eliminator;
+        if (Net_Royal_Eliminator != "") {
+          //L16N [Royal] Display the name of the player that eliminated us
+          Label_Eliminator.Value = TL::Compose("%1 %2", _("Eliminated by:"), Net_Royal_Eliminator);
+        } else {
+          Label_Eliminator.Value = "";
+        }
+      }
+
+      if (Gauge_Power.Ratio != Net_Royal_PowerLevel) {
+        Gauge_Power.Ratio = Net_Royal_PowerLevel;
+      }
+
+      if (PrevActionVariant != Net_Royal_ActionVariant) {
+        PrevActionVariant = Net_Royal_ActionVariant;
+
+        declare Color = <1., 1., 1.>;
+        if (Net_Royal_ActionVariant >= 3) Color = <1., 0., 0.>;
+        else if (Net_Royal_ActionVariant >= 2) Color = <1., 0.5, 0.>;
+        else if (Net_Royal_ActionVariant >= 1) Color = <1., 1., 0.>;
+
+        Label_Power.TextColor = Color;
+        Gauge_Power.Color = Color;
+      }
+    }
+
+    if (PrevRemainingPlayersNb != Net_Royal_RemainingPlayersNb) {
+      PrevRemainingPlayersNb = Net_Royal_RemainingPlayersNb;
+      if (Net_Royal_RemainingPlayersNb >= 0) {
+        //L16N [Royal] Display the number of players not yet eliminated
+        Label_Remaining.Value = TL::Compose("%1 %2", _("Remaining players:"), TL::ToText(Net_Royal_RemainingPlayersNb));
+      }
+    }
+
+    if (PrevRoyalMode != Net_Royal_Mode) {
+      PrevRoyalMode = Net_Royal_Mode;
+      if (Net_Royal_Mode != "") {
+        //L16N [Royal] Display the current playing mode: "Teams" or "Free for all" 
+        Label_Mode.Value = TL::Compose("%1 %2", _("Mode:"), Net_Royal_Mode);
+      }
+    }
+
+    if (PrevInfoModulesUpdate != Net_Royal_RoundInfoModulesUpdate) {
+      PrevInfoModulesUpdate = Net_Royal_RoundInfoModulesUpdate;
+      declare PosY = 0.;
+      foreach (Module in Net_Royal_RoundInfoModules) {
+        if (ModulesHeight.existskey(Module) && ModulesControl.existskey(Module)) {
+          ModulesControl[Module].RelativePosition_V3.Y = PosY;
+          PosY += ModulesHeight[Module];
+        }
+      }
+
+      foreach (ModuleId => ModuleControl in ModulesControl) {
+        ModuleControl.Visible = Net_Royal_RoundInfoModules.exists(ModuleId);
+      }
+    }
+  }
+}
+--></script>
+</manialink>
+""";
+}
+
+// ---------------------------------- //
+/// Update the UI
+Void Yield() {
+  declare CanDisplayRoundInfo = UICommon::GetMarkersVisibility(Playground.Teams[0]);
+  if (G_CanDisplayRoundInfo != CanDisplayRoundInfo) {
+    G_CanDisplayRoundInfo = CanDisplayRoundInfo;
+    Layers::SetVisibility(C_LayerName, CanDisplayRoundInfo);
+  }
+}
+
+// ---------------------------------- //
+/// Unload the library
+Void Unload() {
+  G_CanDisplayRoundInfo = True;
+
+  Layers::Destroy(C_LayerName);
+}
+
+// ---------------------------------- //
+/// Load the library
+Void Load() {
+  Unload();
+
+  Layers::Create(C_LayerName, Private_GetRoundInfoML());
+  Layers::SetAnimationType(C_LayerName, CUILayer::EUILayerAnimation::RightFast);
+}
