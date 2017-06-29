@@ -1,0 +1,123 @@
+/** 
+ * Control the turrets sound
+ */
+#Const Version		"2017-03-14"
+#Const ScriptName	"Libs/Nadeo/ShootMania/Warlords/TurretsSound.Script.txt"
+
+// ---------------------------------- //
+// Libraries
+// ---------------------------------- //
+#Include "Libs/Nadeo/Layers2.Script.txt" as Layers
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_LayerName "TurretsSound"
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+// ---------------------------------- //
+// Publics
+// ---------------------------------- //
+// ---------------------------------- //
+/** Return the version number of the script
+ *
+ *	@return														The version number of the script
+ */
+Text GetScriptVersion() {
+	return Version;
+}
+
+// ---------------------------------- //
+/** Return the name of the script
+ *
+ *	@return														The name of the script
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+// ---------------------------------- //
+/** Get the turrets sound controller manialink
+ *
+ *	@return														The manialink
+ */
+Text GetTurretsSoundML() {
+	return """
+<manialink version="3">
+<script><!--
+#Include "AnimLib" as AL
+
+#Const C_AnimDuration 2000
+
+main() {
+	declare netread LibTurretsSound_Mute for Teams[0] = False;
+	declare Muted = False;
+	declare Init = True;
+	
+	declare AnimStart = -1;
+	declare AnimEnd = -1;
+	declare AnimBase = 0.;
+	declare AnimChange = 0.;
+	
+	while (True) {
+		yield;
+		
+		if (Muted != LibTurretsSound_Mute || Init) {
+			Muted = LibTurretsSound_Mute;
+			Init = False;
+			
+			AnimStart = Now;
+			AnimEnd = Now + C_AnimDuration;
+			AnimBase = Audio.LimitSceneSoundVolumedB;
+			
+			if (Muted) {
+				AnimChange = -100. - AnimBase;
+			} else {
+				AnimChange = 0. - AnimBase;
+			}
+		}
+		
+		if (AnimEnd >= 0) {
+			if (Now < AnimEnd) {
+				Audio.LimitSceneSoundVolumedB = AL::EaseLinear(Now - AnimStart, AnimBase, AnimChange, C_AnimDuration);
+			} else {
+				AnimEnd = -1;
+				Audio.LimitSceneSoundVolumedB = AnimBase + AnimChange;
+			}
+		}
+	}
+}
+--></script>
+</manialink>	
+""";
+}
+
+// ---------------------------------- //
+/** Mute the sound of the turrets
+ *
+ *	@param	_Muted										True to mute, False to unmute
+ */
+Void Mute(Boolean _Muted) {
+	declare netwrite LibTurretsSound_Mute for Teams[0] = False;
+	LibTurretsSound_Mute = _Muted;
+}
+
+// ---------------------------------- //
+/// Unload the library
+Void Unload() {
+	declare netwrite LibTurretsSound_Mute for Teams[0] = False;
+	LibTurretsSound_Mute = False;
+	
+	Layers::Destroy(C_LayerName);
+}
+
+// ---------------------------------- //
+/// Load the library
+Void Load() {
+  Unload();
+	
+	Layers::Create(C_LayerName, GetTurretsSoundML());
+	Layers::Attach(C_LayerName);
+}

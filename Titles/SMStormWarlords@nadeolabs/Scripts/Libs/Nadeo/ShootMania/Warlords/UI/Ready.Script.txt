@@ -1,0 +1,96 @@
+#Include "Libs/Nadeo/Layers2.Script.txt"	as Layers
+#Include "Libs/Nadeo/Uized.Script.txt"	as Uized
+
+#Const C_LayerName		"Ready"
+#Const C_Address		"file://Media/Manialinks/ShootMania/Warlords/Layers/Ready.xml"
+
+#Const C_OpeningClosingAnimationDuration	1000
+
+// ---------------------------------- //
+/**
+ * Shows the world UI layer.
+ */
+Void Show() {
+
+	declare netwrite Boolean Srv_UI_G_ReadyShow for Teams[0];
+	Srv_UI_G_ReadyShow = True;
+
+	Layers::Attach(C_LayerName);
+	sleep(C_OpeningClosingAnimationDuration);
+
+}
+
+// ---------------------------------- //
+/**
+ * Hides the world UI layer.
+ */
+Void Hide() {
+
+	declare netwrite Boolean Srv_UI_G_ReadyShow for Teams[0];
+	Srv_UI_G_ReadyShow = False;
+
+	sleep(C_OpeningClosingAnimationDuration);
+	Layers::Detach(C_LayerName);
+
+}
+
+Integer GetReadyPlayersCount() {
+	declare netwrite Boolean[Text] Srv_UI_G_ReadyPlayers for Teams[0];
+	
+	declare Integer ReadyPlayersCount;
+	foreach (ReadyState in Srv_UI_G_ReadyPlayers) {
+		if (ReadyState) ReadyPlayersCount += 1;
+	}
+	
+	return ReadyPlayersCount;
+	
+}
+
+Boolean CanGo(Integer _LowerPlayersCountLimit, Integer _UpperPlayersCountLimit) {
+	
+	if (Players.count < _LowerPlayersCountLimit) return False;
+	if (Players.count >= _UpperPlayersCountLimit) return True;
+	
+	declare netwrite Boolean[Text] Srv_UI_G_ReadyPlayers for Teams[0];
+	
+	foreach (Player in Players) {
+		declare Text Login = Player.User.Login;
+		if (!Srv_UI_G_ReadyPlayers.existskey(Login)) return False;
+		if (!Srv_UI_G_ReadyPlayers[Login]) return False;
+	}
+	
+	return True;
+	
+}
+
+Void UpdatePlayersReadyState() {
+	declare netwrite Boolean[Text] Srv_UI_G_ReadyPlayers for Teams[0];
+	Srv_UI_G_ReadyPlayers.clear();
+
+	foreach (Player in Players) {
+		declare CUIConfig UI = UIManager.GetUI(Player);
+		if (UI == Null) continue;
+		declare netread Boolean Cli_UI_P_ReadyState for UI;
+		Srv_UI_G_ReadyPlayers[Player.User.Login] = Cli_UI_P_ReadyState;
+	}
+}
+
+// ---------------------------------- //
+/**
+ * Destroys the world UI layer.
+ */
+Void Unload() {
+	Layers::Destroy(C_LayerName);
+}
+
+// ---------------------------------- //
+/**
+ * Builds the world UI layer.
+ */
+Void Load() {
+	Uized::Prepare("LayerName", C_LayerName);
+	Uized::Prepare("OpeningClosingAnimationDuration", C_OpeningClosingAnimationDuration);
+	
+	declare Text TemplateRendered = Uized::Render(C_Address);
+	Layers::Create(C_LayerName, TemplateRendered);
+}

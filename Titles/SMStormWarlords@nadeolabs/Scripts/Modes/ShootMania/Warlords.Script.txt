@@ -1,0 +1,1914 @@
+#Extends "Modes/ShootMania/ModeMatchmaking.Script.txt"
+
+#Const CompatibleMapTypes	"WarlordsArena,LobbyArena"
+#Const Version		"2017-06-07"
+#Const ScriptName	"Warlords.Script.txt"
+
+#Include "Libs/Nadeo/Env.Script.txt" as Env
+#Include "Libs/Nadeo/Log.Script.txt" as Log
+#Include "Libs/Nadeo/ShootMania/Warlords/TurretsSound.Script.txt" as TurretsSound
+#Include "Libs/Nadeo/ShootMania/Warlords/Game.Script.txt"				as Game
+#Include "Libs/Nadeo/ShootMania/Warlords/World.Script.txt"			as World
+#Include "Libs/Nadeo/ShootMania/Warlords/Player.Script.txt"			as Player
+#Include "Libs/Nadeo/ShootMania/Warlords/Action.Script.txt"			as Action
+#Include "Libs/Nadeo/ShootMania/Warlords/Battle.Script.txt"			as Battle
+#Include "Libs/Nadeo/ShootMania/Warlords/Pause.Script.txt"			as Pause
+#Include "Libs/Nadeo/ShootMania/Warlords/GameSave.Script.txt"		as GameSave
+#Include "Libs/Nadeo/ShootMania/Warlords/OnlineSave.Script.txt"	as OnlineSave
+#Include "Libs/Nadeo/ShootMania/Warlords/UI.Script.txt"					as WLUI
+#Include "Libs/Nadeo/ShootMania/Warlords/Utils.Script.txt"			as Utils
+#Include "Libs/Nadeo/ShootMania/Warlords/File.Script.txt"				as File
+#Include "Libs/Nadeo/ShootMania/Scores.Script.txt" as Scores
+
+
+#Setting	S_WorldFile										"6P_KinderNeighborhood.xml"	as _("World file to load")
+#Const		S_LoadSave										False	// as _("Load a save") // EG : j'ai passé ça en cst pour ne pas qu'on s'en serve en l'état.
+#Setting	S_MaxYearsCount								20		as _("Years before sudden death")
+#Setting	S_GoldPerCastlePerYear				100		as _("Gold per planet per year")
+#Const		S_Battle_GoldToRespawn				200		// as _("Gold to Respawn (battles)")
+#Const		S_Battle_GoldToRestore				100		// as _("Gold to Restore (battles)")
+#Const		S_GoldVeinDuration						-1		// as _("Gold vein lifetime in years (-1 to deactivate)")
+#Const		S_GoldPerYearForVassals			300		// as _("The gold amount that vassals receive per year")
+#Const		S_ClanChoiceWaitTime					10		// as _("Given time to pick a clan before a battle (in seconds)")
+#Const		S_CastleTakeChoiceWaitTime		5			// as _("Given time to choose if you want to take a castle or not during a conflict (in seconds)")
+#Setting	S_TurnDuration								50		as _("Turn duration (in seconds)")
+#Setting	S_Battle_MaxTime							90		as _("Maximum time to capture a gate")
+#Const		S_BlitzGold										-1		//as _("Gold to storm a capital (-1 to deactivate)")
+#Const		S_NewVassalSystem							True	//as _("Use the new vassal system")
+#Const		S_AntiVassalRevolt						True	//as _("Prevent vassal attacks against their own masters.")
+#Const		C_AntiMasterAgression				True	//< Prevent master from attacking its vassal
+#Setting	S_RandomizeStartPointsChoice	True	as _("Automatically attribute capitals")
+
+#Setting S_MatchmakingWaitingTime	120
+#Setting S_MatchmakingPlayersNb		6
+
+#Setting S_ScriptEnvironment "production"/*/"development"*/ as "<hidden>"
+
+#Const		C_MinPlayersCount					2
+#Const		C_MaxPlayersCount					6
+
+// #Const		C_GoldPerCastlePerYear	300
+#Const		C_StartingGold						0
+#Const		C_JoiningTimeDuration		5000
+#Const		C_EndTimeDuration					20000
+#Const		C_Battle_BaseArmorDef		2
+#Const		C_Battle_BaseArmorAtk		2
+#Const		C_Battle_TimeToCapture		8000
+#Const		C_Battle_GoldForLvl2			500
+#Const		C_Battle_GoldForLvl3			2000
+#Const		C_TurnEndDuration					1000
+#Const		C_GoldVeinMultiplier			3
+#Const		C_PlayerActionSumUpDuration		3000
+#Const		C_TurnEndAnnouncementDuration	2000
+#Const		C_LosePlanetsOnVassal		True //< A new vassal lose all its planets except its capital
+
+#Const		C_OnlineXmlSaveError "$d00An error occurred while loading the save. If it persists, please contact the server's administrator."
+
+
+declare Boolean	GS_LoadSave;
+declare Text	GS_WorldFile;
+declare Integer	GS_MaxYearsCount;
+declare Integer	GS_GoldPerCastlePerYear;
+declare Integer	GS_Battle_GoldToRespawn;
+declare Integer	GS_Battle_GoldToRestore;
+declare Integer	GS_GoldVeinDuration;
+declare Integer	GS_GoldPerYearForVassals;
+declare Integer	GS_ClanChoiceWaitTime;
+declare Integer	GS_CastleTakeChoiceWaitTime;
+declare Integer	GS_TurnDuration;
+declare Integer	GS_Battle_MaxTime;
+declare Integer	GS_BlitzGold;
+declare Boolean	GS_NewVassalSystem;
+declare Boolean	GS_AntiVassalRevolt;
+declare Boolean GS_RandomizeStartPointsChoice;
+
+// ---------------------------------- //
+// Extend
+// ---------------------------------- //
+***LogVersion***
+***
+MB_LogVersion(ScriptName, Version);
+***
+
+***Save***
+***
+
+GameSave::Dump();
+
+GameSave::SaveSetting("S_MatchmakingMode",				S_MatchmakingMode);
+GameSave::SaveSetting("S_WorldFile",					S_WorldFile);
+GameSave::SaveSetting("S_MaxYearsCount",				S_MaxYearsCount);
+GameSave::SaveSetting("S_Battle_GoldToRespawn",			S_Battle_GoldToRespawn);
+GameSave::SaveSetting("S_Battle_GoldToRestore",			S_Battle_GoldToRestore);
+GameSave::SaveSetting("S_GoldVeinDuration",				S_GoldVeinDuration);
+GameSave::SaveSetting("S_GoldPerYearForVassals",		S_GoldPerYearForVassals);
+GameSave::SaveSetting("S_ClanChoiceWaitTime",			S_ClanChoiceWaitTime);
+GameSave::SaveSetting("S_CastleTakeChoiceWaitTime",		S_CastleTakeChoiceWaitTime);
+GameSave::SaveSetting("S_TurnDuration",					S_TurnDuration);
+GameSave::SaveSetting("S_Battle_MaxTime",				S_Battle_MaxTime);
+GameSave::SaveSetting("S_BlitzGold",					S_BlitzGold);
+GameSave::SaveSetting("S_NewVassalSystem",				S_NewVassalSystem);
+GameSave::SaveSetting("S_AntiVassalRevolt",				S_AntiVassalRevolt);
+GameSave::SaveSetting("S_RandomizeStartPointsChoice",	S_RandomizeStartPointsChoice);
+
+GameSave::SaveMap(World::GetXmlWorld());
+
+foreach (PlayerId in Player::GetPlayerIds()) {
+	declare CPlayer Player = Player::GetPlayer(PlayerId);
+	declare Text PlayerLogin = Player.User.Login;
+	GameSave::SavePlayer(PlayerId, PlayerLogin, Player::GetGold(PlayerId));
+	if (Player::IsVassal(PlayerId)) {
+		declare Integer MasterId	= Player::GetMasterId(PlayerId);
+		declare CPlayer Master		= Player::GetPlayer(MasterId);
+		GameSave::SaveVassal(PlayerLogin, Master.User.Login);
+	}
+	
+	foreach (CastleId in World::GetPlayerCastleIds(PlayerId)) {
+		GameSave::SaveCastleMembership(PlayerLogin, CastleId, World::GetCastleDefenseGold(CastleId), World::IsCastleCapital(CastleId));
+	}
+}
+
+GameSave::SaveState(World::GetCurrentYear());
+GameSave::SerializeState();
+
+declare Text SaveId = OnlineSave::SendSaveOnline(GameSave::GetSave());
+***
+
+Void Yield() {
+	MB_Yield();
+	
+	foreach (Player in AllPlayers) {
+		declare Warlords_RegisterOnLadder for Player = True;
+		if (Warlords_RegisterOnLadder) {
+			Warlords_RegisterOnLadder = False;
+			Ladder::AddPlayer(Player.Score);
+		}
+	}
+	
+	Message::Loop();
+	
+	if (Utils::RemoveDisconnectedPlayers()) {
+		WLUI::World_UpdateCastles();
+		WLUI::World_UpdateLinks();
+	}
+	
+	if (!Pause::IsPaused()) {
+		Pause::Loop();
+	} else {
+		Pause::PauseLoop();
+		if (Pause::IsSaveWanted()) {
+			+++Save+++
+			Pause::TogglePauseStatus(False);
+		}
+	}
+}
+
+Void Sleep(Integer _MsTime) {
+	declare Integer SleepStartTime = Now;
+	while (True) {
+		Yield();
+		if (Now - SleepStartTime > _MsTime) break;
+	}
+}
+
+***LobbyStartServer***
+***
+
+declare Integer[] PossibleConfigurations;
+
+for (Index, 1, S_MatchmakingPlayersNb) {
+	PossibleConfigurations.add(1);
+}
+
+MM_SetFormat(PossibleConfigurations);
+
+***
+
+***ST2***
+***
+
+ST2::Unload(True);
+ST2::Load(True);
+ST2::SetStyle("LibST_SMBaseOneColumn");
+ST2::SetStyle("LibST_SMBasePoints");
+ST2::SetStyle("LibST_SMWithLegends");
+ST2::SetFormat(1, 6);
+ST2::DestroyCol("LibST_SMPoints");
+ST2::SetPlayerDarkening(False);
+//L16N [Warlords] Legend above a column in the scores table that displays the master's name of a vassal
+ST2::CreateCol("Master", _("|Warlords|Master"), "-", 4., 100.);
+//L16N [Warlords] Legend above a column in the scores table that displays the percentage of planets owned by a player in the whole galaxy
+ST2::CreateCol("Domination", _("Galaxy"), "0%", 4., 101.);
+ST2::CreateCol("Planets", _("Planets"), "0", 4., 102.);
+ST2::Build("SM");
+
+***
+
+***InitServer***
+***
+Env::Load();
+Env::Set(S_ScriptEnvironment);
+Log::Load();
+TurretsSound::Load();
+	
+// ---------------------------------- //
+// GAME INITIALIZATION
+// Scores table initialization.
++++ST2+++
+
+UIManager.UIAll.AlliesLabelsVisibility	= CUIConfig::ELabelsVisibility::WhenVisible;
+UIManager.UIAll.AlliesLabelsShowGauges	= CUIConfig::EVisibility::Normal;
+UIManager.UIAll.AlliesLabelsShowNames	= CUIConfig::EVisibility::Normal;
+UIManager.UIAll.OverlayHideMapInfo = True;
+
+***
+
+***EndServer***
+***
+TurretsSound::Unload();
+Log::Unload();
+Env::Unload();
+***
+
+***StartServer***
+***
+UseClans = False;
+TurretsSound::Mute(True);
+ChannelProgression::Enable(S_IsChannelServer);
+
+declare Integer[] PossibleConfigurations;
+
+for (Index, 1, S_MatchmakingPlayersNb) {
+	PossibleConfigurations.add(1);
+}
+
+// ---------------------------------- //
+// Matchmaking mode
+if (MM_IsMatchServer()) {
+	MM_Init(PossibleConfigurations);
+}
+
+declare Boolean IsRematch = False;	///< Do the players want a rematch ?
+declare Integer RematchNb = 0;		///< Number of consecutive rematch
+
+Battle::PreloadBattle();
+***
+
+***StartMap***
+***
+// Disable any turrets
+foreach (MapBase in MapBases) {
+	MapBase.IsActive = False;
+}
+***
+
+***PauseCheck***
+***
+
+// ---------------------------------- //
+// PAUSE CHECK
+if (Pause::IsPauseWanted()) {
+
+	declare Integer PauseStart = Now;
+	
+	Pause::TogglePauseStatus(True);
+	
+	while (!Pause::IsResumeWanted()) {
+		Yield();
+	}
+	
+	Pause::TogglePauseStatus(False);
+	
+}
+
+***
+
+
+***PlayLoop***
+***
+
+ClearScores();
+
+Game::Load();
+
+// --------- Flush Game Map Ids
+Battle::FlushMapsGateGameId();
+
+// -------- LIBRARIES LOAD
+Action::Load();
+Pause::Load();
+
+Game::SetMaxYearsCount(S_MaxYearsCount);
+
+// Sets the objective.
+Game::SetPhase(Game::PHASE_SETUP());
+
+// ---------------------------------- //
+// INTRO SCREEN
+WLUI::IntroScreen_Load();
+WLUI::IntroScreen_Show();
+WLUI::IntroScreen_SetText(_("Loading"));
+
+// Saves the current settings.
+GS_LoadSave						= S_LoadSave;
+GS_WorldFile					= S_WorldFile;
+GS_MaxYearsCount				= S_MaxYearsCount;
+GS_GoldPerCastlePerYear			= S_GoldPerCastlePerYear;
+GS_Battle_GoldToRespawn			= S_Battle_GoldToRespawn;
+GS_Battle_GoldToRestore			= S_Battle_GoldToRestore;
+GS_GoldVeinDuration				= S_GoldVeinDuration;
+GS_GoldPerYearForVassals		= S_GoldPerYearForVassals;
+GS_ClanChoiceWaitTime			= S_ClanChoiceWaitTime;
+GS_CastleTakeChoiceWaitTime		= S_CastleTakeChoiceWaitTime;
+GS_TurnDuration					= S_TurnDuration;
+GS_Battle_MaxTime				= S_Battle_MaxTime;
+GS_BlitzGold					= S_BlitzGold;
+GS_NewVassalSystem				= S_NewVassalSystem;
+GS_AntiVassalRevolt				= S_AntiVassalRevolt;
+GS_RandomizeStartPointsChoice	= S_RandomizeStartPointsChoice;
+
+declare Boolean NewGame = !S_LoadSave;
+
+
+// ---------------------------------- //
+// Wait players when using matchmaking
+if (MM_IsMatchServer()) {
+	WLUI::IntroScreen_Hide();
+	if (!IsRematch) {
+		MM_MatchWait();
+	} else {
+		MM_WaitPlayers(15000);
+	}
+	WLUI::IntroScreen_Show();
+}
+
+// ---------------------------------- //
+// Matchmaking : disable substitutes
+if (MM_IsMatchServer()) MM_AllowSubstitutes(False);
+
+if (S_LoadSave) {
+
+	declare Boolean Error;
+
+	while (True) {
+	
+		WLUI::IntroScreen_SetText(_("Loading saves..."));
+		WLUI::Saves_Load();
+		WLUI::Saves_Show();
+		WLUI::IntroScreen_Hide();
+		
+		declare Text[] PlayerLogins;
+		foreach (Player in GetPlayers()) {
+			PlayerLogins.add(Player.User.Login);
+		}
+		
+		OnlineSave::UpdateAvailableSaves(PlayerLogins);
+		declare Integer ChosenSaveId;
+		while (True) {
+		
+			// Updates available saves when players join/quit.
+			foreach (Event in PendingEvents) {
+				if (Event.Type == CSmModeEvent::EType::OnPlayerAdded || Event.Type == CSmModeEvent::EType::OnPlayerRemoved) {
+					PlayerLogins.clear();
+					foreach (Player in GetPlayers()) {
+						PlayerLogins.add(Player.User.Login);
+					}
+					OnlineSave::UpdateAvailableSaves(PlayerLogins);
+					break;
+				}
+			}
+			
+			OnlineSave::UpdatePlayersChosenSaves();
+			
+			Yield();
+			
+			ChosenSaveId = OnlineSave::GetChosenSave();
+			
+			if (ChosenSaveId > OnlineSave::SAVE_NULL_ID()) break;
+		}
+		WLUI::IntroScreen_SetText(_("Loading..."));
+		WLUI::IntroScreen_Show();
+		WLUI::Saves_Hide();
+		
+		if (ChosenSaveId == OnlineSave::SAVE_NEW_GAME()) {
+			NewGame = True;
+		} else {
+			declare Text MySave = OnlineSave::RecoverSave(ChosenSaveId);
+			OnlineSave::RemoveSave(ChosenSaveId);
+			
+			declare CXmlDocument	XmlSave = Xml.Create(MySave, True, True, True);
+			Error = (XmlSave == Null);
+			if (!Error) {
+				declare CXmlNode		SettingsNode	= XmlSave.GetFirstChild("settings");
+				declare CXmlNode		PlayersNode		= XmlSave.GetFirstChild("players");
+				declare CXmlNode		StateNode		= XmlSave.GetFirstChild("state");
+				declare CXmlNode		TurnNode		= StateNode.GetFirstChild("turn");
+				declare CXmlNode		WorldNode		= StateNode.GetFirstChild("world");
+			
+				foreach (SettingNode in SettingsNode.Children) {
+					declare Text SettingName = SettingNode.GetAttributeText("name", "");
+					switch (SettingName) {
+						case "S_WorldFile": {
+							GS_WorldFile = SettingNode.GetAttributeText("value", S_WorldFile);
+						}
+						case "S_MaxYearsCount": {
+							GS_MaxYearsCount = SettingNode.GetAttributeInteger("value", S_MaxYearsCount);
+						}
+						case "S_GoldPerCastlePerYear": {
+							GS_GoldPerCastlePerYear = SettingNode.GetAttributeInteger("value", S_GoldPerCastlePerYear);
+						}
+						case "S_Battle_GoldToRespawn": {
+							GS_Battle_GoldToRespawn = SettingNode.GetAttributeInteger("value", S_Battle_GoldToRespawn);
+						}
+						case "S_Battle_GoldToRestore": {
+							GS_Battle_GoldToRestore = SettingNode.GetAttributeInteger("value", S_Battle_GoldToRestore);
+						}
+						case "S_GoldVeinDuration": {
+							GS_GoldVeinDuration = SettingNode.GetAttributeInteger("value", S_GoldVeinDuration);
+						}
+						case "S_GoldPerYearForVassals": {
+							GS_GoldPerYearForVassals = SettingNode.GetAttributeInteger("value", S_GoldPerYearForVassals);
+						}
+						case "S_ClanChoiceWaitTime": {
+							GS_ClanChoiceWaitTime = SettingNode.GetAttributeInteger("value", S_ClanChoiceWaitTime);
+						}
+						case "S_CastleTakeChoiceWaitTime": {
+							GS_CastleTakeChoiceWaitTime = SettingNode.GetAttributeInteger("value", S_CastleTakeChoiceWaitTime);
+						}
+						case "S_TurnDuration": {
+							GS_TurnDuration = SettingNode.GetAttributeInteger("value", S_TurnDuration);
+						}
+						case "S_Battle_MaxTime": {
+							GS_Battle_MaxTime = SettingNode.GetAttributeInteger("value", S_Battle_MaxTime);
+						}
+						case "S_BlitzGold": {
+							GS_BlitzGold = SettingNode.GetAttributeInteger("value", S_BlitzGold);
+						}
+						case "S_NewVassalSystem": {
+							GS_NewVassalSystem = SettingNode.GetAttributeBoolean("value", S_NewVassalSystem);
+						}
+						case "S_AntiVassalRevolt": {
+							GS_AntiVassalRevolt = SettingNode.GetAttributeBoolean("value", S_AntiVassalRevolt);
+						}
+						case "S_RandomizeStartPointsChoice": {
+							GS_RandomizeStartPointsChoice = SettingNode.GetAttributeBoolean("value", S_RandomizeStartPointsChoice);
+						}
+					}
+				}
+				
+				World::LoadFromText(WorldNode.TextRawContents);
+				Player::Load(GS_AntiVassalRevolt);
+				
+				declare Integer LastPlayerId = -1;
+				
+				foreach (Player in GetPlayers()) {
+					
+					declare CXmlNode PlayerNode;
+					foreach (ChildPlayerNode in PlayersNode.Children) {
+						if (ChildPlayerNode.GetAttributeText("login", "") == Player.User.Login) {
+							PlayerNode = ChildPlayerNode;
+							break;
+						}
+					}
+					
+					if (PlayerNode == Null) continue;
+					
+					declare Integer PlayerId	= PlayerNode.GetAttributeInteger("id", LastPlayerId + 1);
+					declare Integer PlayerGold	= PlayerNode.GetAttributeInteger("gold", 0);
+					
+					LastPlayerId = PlayerId;
+					
+					Player::InitPlayer(PlayerId, Player, PlayerGold);
+					
+					foreach (CastleNode in PlayerNode.Children) {
+						declare Integer CastleId = CastleNode.GetAttributeInteger("id", -1);
+						if (CastleId == -1) continue;
+						
+						World::SetCastleOwner(CastleId, PlayerId);
+						World::SetCastleDefenseGold(CastleId, CastleNode.GetAttributeInteger("dg", 0));
+						if (CastleNode.GetAttributeBoolean("capital", False)) World::SetCastleCapital(CastleId);
+					}
+					
+				}
+				
+				World::SetCurrentYear(TurnNode.GetAttributeInteger("year", 0));
+				
+				// Computes required castles number for victory.
+				Game::ComputeRequiredCastlesNumberForVictory();
+				
+				Yield();
+				
+				// Loads all UIs.
+				WLUI::World_Load(World::CountCastles(), World::CountLinks(), GS_GoldPerCastlePerYear, GS_BlitzGold);
+				WLUI::Load(GS_BlitzGold);
+				
+				// UI initialization.
+				WLUI::World_UpdateCastles(World::GetCastleIds());
+				yield;
+				WLUI::World_Show();
+				
+				WLUI::Info_Load(GS_BlitzGold, GS_AntiVassalRevolt);
+				WLUI::Info_HideReadyButton();
+				WLUI::Info_Show();
+				
+				WLUI::Gauge_Show();
+				
+				WLUI::Pause_Show();
+				
+				WLUI::IntroScreen_Hide();
+				
+				Action::DumpAllPlayersActions();
+				
+				WLUI::World_StopCastleHighlight();
+				WLUI::World_ResetLinksToHighlight();
+				
+				WLUI::World_UpdateCastles();
+				WLUI::World_UpdateLinks();
+				
+				UIManager.UIAll.UISequence = CUIConfig::EUISequence::RollingBackgroundIntro;
+				WLUI::IntroScreen_Hide();
+				
+				UIManager.UIAll.ScoreTableVisibility = CUIConfig::EVisibility::Normal;
+				Message::SendBigMessage(_("Welcome to Warlords."), 3000, 1, CUIConfig::EUISound::StartMatch, 0);
+				
+				Sleep(1000);
+			}
+		
+		}
+		
+		if (!Error) {
+			UIManager.UIAll.SendChat(C_OnlineXmlSaveError);
+			break; // If no error, the script can continue.
+		}
+		
+	}
+
+}
+
+if (NewGame) {
+	
+	Player::Load(GS_AntiVassalRevolt);
+	World::LoadFromText(File::GetContent(World::GetWorldDirectory() ^ GS_WorldFile));
+	
+	// Waits the required player number.
+	if (S_MatchmakingMode == 0) {
+		WLUI::Ready_Load();
+		WLUI::Ready_Show();
+		
+		while (True) {
+			
+			Yield();
+			
+			WLUI::Ready_UpdatePlayersReadyState();
+			
+			declare Integer RemainingPlayersCount	= C_MaxPlayersCount - Players.count;
+			if (RemainingPlayersCount < 0) RemainingPlayersCount = 0;
+			
+			declare Text	IntroScreenText;
+		
+			if (RemainingPlayersCount > 1) {
+				IntroScreenText = TL::Compose(_("%1 players left to go"), TL::ToText(RemainingPlayersCount));
+			} else {
+				IntroScreenText = TL::Compose(_("%1 player left to go"), TL::ToText(RemainingPlayersCount));
+			}
+		
+			WLUI::IntroScreen_SetText(IntroScreenText);
+			
+			if (WLUI::Ready_CanGo(C_MinPlayersCount, C_MaxPlayersCount)) break;
+		}
+		
+		WLUI::Ready_Hide();
+	}
+	
+	WLUI::IntroScreen_SetText(_("Ready to start"));
+	
+	Player::InitPlayers(GetPlayers());
+	Player::ResetScores();
+	
+	// Computes required castles number for victory.
+	Game::ComputeRequiredCastlesNumberForVictory();
+	
+	WLUI::Sync();
+	
+	// Loads all UIs.
+	WLUI::World_Load(World::CountCastles(), World::CountLinks(), GS_GoldPerCastlePerYear, GS_BlitzGold);
+	WLUI::Load(GS_BlitzGold);
+	
+	// UI initialization.
+	WLUI::IntroScreen_Show();
+	WLUI::World_UpdateCastles(World::GetCastleIds());
+	WLUI::World_Show();
+	
+	WLUI::Info_Load(GS_BlitzGold, GS_AntiVassalRevolt);
+	WLUI::Info_HideReadyButton();
+	WLUI::Info_Show();
+	
+	WLUI::Gauge_Show();
+	
+	WLUI::Pause_Show();
+	
+	Action::DumpAllPlayersActions();
+	
+	WLUI::World_StopCastleHighlight();
+	WLUI::World_ResetLinksToHighlight();
+	
+	WLUI::World_UpdateCastles();
+	WLUI::World_UpdateLinks();
+	
+	UIManager.UIAll.UISequence = CUIConfig::EUISequence::RollingBackgroundIntro;
+	WLUI::IntroScreen_Hide();
+	
+	UIManager.UIAll.ScoreTableVisibility = CUIConfig::EVisibility::Normal;
+	Message::SendBigMessage(_("Welcome to Warlords."), 3000, 1, CUIConfig::EUISound::StartMatch, 0);
+	
+	Sleep(1000);
+	
+	// ---------------------------------- //
+	// CAPITAL CHOICE
+	if (GS_RandomizeStartPointsChoice) {
+		// The script will assign capitals.
+		foreach (PlayerId in Player::GetPlayerIds()) {
+			declare Integer StartPointId = World::GetRandomUnownedStartPointCastle();
+			World::SetCastleOwner(StartPointId, PlayerId);
+			World::SetCastleCapital(StartPointId);
+		}
+	
+	} else {
+		// Players will choose their capital.
+		declare Boolean[Integer] PassedPlayers;
+		foreach (PlayerId in Player::GetPlayerIds()) {
+			PassedPlayers[PlayerId] = False;
+		}
+	
+		WLUI::World_ToggleStartPointsVisibility(True);
+		
+		declare Integer[] RemainingCapitals = World::GetStartPointCastles();
+		
+		foreach (PlayerId in Player::GetPlayerIds()) {
+		
+			declare CPlayer Player = Player::GetPlayer(PlayerId);
+			declare Int3 PlayerAction;
+			declare Boolean PlayerActionValid = False;
+			declare Integer TurnStartTimestamp = Now;
+			
+			WLUI::World_SetPossibleCastlesForAction(RemainingCapitals, Player);
+			WLUI::Cursor_SetCountdownEndTime(Player, TurnStartTimestamp + (1000 * GS_TurnDuration));
+			Action::Allow(PlayerId);
+			
+			Utils::SendBigMessage(TL::Compose(_("$<%1$> is placing their capital."), Player.User.Name), Player, _("Place your capital."), 3000);
+		
+			while (!PlayerActionValid && Now - TurnStartTimestamp < (1000 * GS_TurnDuration)) {
+				
+				Action::DumpPlayerAction(PlayerId);
+				Yield();
+				
+				while (!Action::IsActionDone(PlayerId) && Now - TurnStartTimestamp < (1000 * GS_TurnDuration)) {
+					Yield();
+					Sleep(100);
+				}
+				
+				PlayerAction = Action::GetPlayerAction(PlayerId);
+		
+				if (Action::GetType(PlayerAction) == 0 && World::IsCastleStartPoint(Action::GetCastleId(PlayerAction))) {
+					PlayerActionValid = True;
+				}
+				
+			}
+			
+			Action::Deny(Player);
+			WLUI::Cursor_ResetCountdownEndTime(Player);
+			WLUI::World_ClearPossibleCastlesForAction(Player);
+			
+			Yield();
+			
+			declare Integer ActionCastleId = Action::GetCastleId(PlayerAction);
+			
+			if (!Action::IsActionDone(PlayerId) || Action::GetType(PlayerAction) != 0 || !World::IsCastleStartPoint(ActionCastleId)) {
+				
+				ActionCastleId = World::GetRandomUnownedStartPointCastle(); // Gets a random start point castle that is not owned.
+				
+			}
+			
+			World::SetCastleOwner(ActionCastleId, PlayerId);
+			World::SetCastleCapital(ActionCastleId);
+			
+			declare FooKey = RemainingCapitals.remove(ActionCastleId);
+			PassedPlayers[PlayerId] = True;
+			
+			WLUI::World_UpdateCastles();
+			WLUI::Info_UpdatePlayersReadyStates(PassedPlayers);
+		
+		}
+		
+		WLUI::World_ToggleStartPointsVisibility(False);
+	}
+	
+	// Message::SendBigMessage(_("Game started."), 3000, 1, CUIConfig::EUISound::StartRound, 0);
+	Game::HistoryAppend(2, Integer[], 0, 0);
+	Sleep(1000);
+	
+	+++PauseCheck+++
+	
+	Player::ComputeScores();
+	
+	// @Debug
+	foreach (PlayerId in Player::GetPlayerIds()) {
+		Player::AddGoldAmount(PlayerId, C_StartingGold);
+	}
+}
+
+Game::SetBlitzGold(GS_BlitzGold);
+Game::SetPhase(Game::PHASE_DOMINATION());
+
+// @Debug
+/*declare CastlesIds = World::GetCastleIds();
+declare PlayersIds = Player::GetPlayerIds();
+foreach (CastleId in CastlesIds) {
+	if (World::IsCastleStartPoint(CastleId)) continue;
+	World::SetCastleOwner(CastleId, PlayersIds[ML::Rand(0, PlayersIds.count-1)]);
+	World::SetCastleDefenseGold(CastleId, ML::Rand(100, 1000));
+}*/
+//Player::SetVassal(PlayersIds[1], PlayersIds[2]);
+//Player::ComputeScores();
+
+MB_Ladder_OpenMatch_All();
+
+foreach (Score in Scores) {
+	declare Warlords_BattlesPerformances for Score = Real[];
+	Warlords_BattlesPerformances = Real[];
+}
+
+// ---------------------------------- //
+// TURN
+while (True) {
+	Yield();
+	
+	Game::UpdateGoldVein(GS_GoldVeinDuration);
+	
+	WLUI::World_UpdateCastles();
+	WLUI::World_UpdateLinks();
+		
+	Action::DumpAllPlayersActions();
+	while (!Action::IsAllPlayersActionsNeutral()) { Yield(); }
+	
+	// ---------------------------------- //
+	// POSSIBLE CASTLES COMPUTING
+	Game::ComputePossibleCastles(GS_AntiVassalRevolt, C_AntiMasterAgression, GS_BlitzGold);
+	
+	// ---------------------------------- //
+	// ACTION TIME
+	Action::AllowAll();
+	WLUI::Info_ShowReadyButton();
+	WLUI::Pause_HideButton();
+	
+	declare Integer[] DiscardedPlayerIds;
+	
+	declare Integer TurnStartTimestamp = Now;
+	WLUI::Cursor_SetCountdownEndTime(GetPlayers(), TurnStartTimestamp + (1000 * GS_TurnDuration));
+	
+	while(Now - TurnStartTimestamp < (1000 * GS_TurnDuration) && !ServerShutdownRequested && !MatchEndRequested) {
+		
+		Yield();
+		
+		WLUI::Info_UpdatePlayersReadyStates(Player::GetReadyStates());
+		
+		foreach (PlayerId in Player::GetPlayerIds()) {
+		
+			declare CPlayer Player = Player::GetPlayer(PlayerId);
+			
+			declare Integer DiscardedVassalId = Player::GetDiscardedVassalId(Player);
+			
+			if (DiscardedVassalId != -1 && !DiscardedPlayerIds.exists(DiscardedVassalId)) {
+				if (Player::IsVassal(DiscardedVassalId) && Player::GetMasterId(DiscardedVassalId) == PlayerId) {
+					
+					declare CPlayer Vassal = Player::GetPlayer(DiscardedVassalId);
+					declare Text BigMessage = TL::Compose(_("You will take $<%1$>'s planets."), Vassal.User.Name);
+					Utils::SendBigMessage(Player, BigMessage, 3000);
+					DiscardedPlayerIds.add(DiscardedVassalId);
+				}
+			}
+		}
+		
+		if (Player::AreAllPlayersReady(GS_NewVassalSystem)) break;
+	}
+	
+	Action::DenyAll();
+	WLUI::Cursor_ResetCountdownEndTime(GetPlayers());
+	WLUI::Info_HideReadyButton();
+	WLUI::Pause_ShowButton();
+	// ---------------------------------- //
+	// ACTION TIME END
+	
+	// Clears for each player all possible castles for actions.
+	foreach (PlayerIdent in Player::GetPlayers()) {
+		if (!Player::IsConnected(PlayerIdent)) continue;
+		
+		declare CPlayer Player = Player::GetPlayer(PlayerIdent);
+		WLUI::World_ClearPossibleCastlesForAction(Player);
+	}
+	
+	declare Integer[Integer] GoldToAddOnCastles;
+	// Adds the players gold on chosen castles.
+	foreach (CastleId in World::GetCastleIds()) {
+		if (!World::IsCastleOwned(CastleId)) continue;
+		
+		declare Integer OwnerId				= World::GetCastleOwner(CastleId);
+		declare CPlayer Owner				= Player::GetPlayer(OwnerId);
+		declare Integer GoldToAddOnCastle	= World::GetCastleGoldAddition(Owner, CastleId);
+		if (GoldToAddOnCastle < 0 || GoldToAddOnCastle > Player::GetGold(OwnerId)) continue;
+		
+		Player::SubGoldAmount(OwnerId, GoldToAddOnCastle);
+		GoldToAddOnCastles[CastleId] = GoldToAddOnCastle;
+	}
+	
+	// Resets their gold addition display.
+	foreach (PlayerId in Player::GetPlayerIds()) {
+		declare CPlayer Player = Player::GetPlayer(PlayerId);
+		World::ClearCastlesGoldAddition(Player);
+	}
+	
+	WLUI::Pause_ShowButton();
+	
+	Utils::SendBigMessage(_("End of the year!"), C_TurnEndAnnouncementDuration, True);
+	
+	// ---------------------------------- //
+	// RESULTS COMPUTE
+	
+	declare SkipGoldDistribution = False; //< Gold distributed before the battle, do not distribute again at the end of turn
+	declare HighestCapitalBet = -1; //< Highest gold amount bet on a capital attack
+	declare HighestBetAttackerId = -1; //< Id of the player who bet the most gold
+	declare CapitalAttacks = Integer[][]; //< Info about the capital attacks [AttackerId, CapitalId, AttackerBet, IsBlitz];
+	declare Integer[] BlitzPlayers;
+	if (!ServerShutdownRequested && !MatchEndRequested) {
+	
+		// FIXME EG HERE GetPlayer Null
+		// Castle donations.
+		declare Boolean DonationsDone;
+		foreach (PlayerId in Player::GetPlayerIds()) {
+			declare CPlayer Player = Player::GetPlayer(PlayerId);
+			if (!Player::HasDonatedACastle(Player)) continue;
+			
+			declare Integer ReceiverPlayerId	= Player::GetCastleDonationPlayerId(Player);
+			declare Integer DonatedCastleId		= Player::GetCastleDonationCastleId(Player);
+			
+			if (!Player::IsVassal(ReceiverPlayerId) || Player::GetMasterId(ReceiverPlayerId) != PlayerId || World::GetCastleOwner(DonatedCastleId) != PlayerId || !World::HasCastles(ReceiverPlayerId) || World::IsCastleCapital(DonatedCastleId)) continue;
+			
+			World::SetCastleOwner(DonatedCastleId, ReceiverPlayerId);
+			
+			DonationsDone = True;
+			WLUI::World_UpdateCastles([DonatedCastleId]);
+			
+			declare ReceiverPlayer <=> Player::GetPlayer(ReceiverPlayerId);
+			declare Text GiverName = "";
+			declare Text ReceiverName = "";
+			if (Player != Null) GiverName = Player.User.Name;
+			if (ReceiverPlayer != Null) ReceiverName = ReceiverPlayer.User.Name;
+			declare Text DonateStatusMessage = TL::Compose(_("$<%1$> gives $<$fa0%2$> to $<%3$>"), GiverName, World::GetCastleNameFromId(DonatedCastleId), ReceiverName);
+			Message::SendStatusMessage(DonateStatusMessage, C_PlayerActionSumUpDuration, 1);
+			
+			Sleep(C_PlayerActionSumUpDuration);
+		}
+		
+		
+		// FIXME EG HERE GetPlayer Null
+		foreach (DiscardedVassalId in DiscardedPlayerIds) {
+			declare Integer	MasterId	= Player::GetMasterId(DiscardedVassalId);
+			declare CPlayer	Master		= Player::GetPlayer(MasterId);
+			
+			declare Integer[] VassalCastles = World::GetPlayerCastleIds(DiscardedVassalId);
+			World::TransferCastles(DiscardedVassalId, MasterId);
+			
+			WLUI::Info_ResetDiscardVassalBtn(Master);
+			
+			declare CPlayer Vassal = Player::GetPlayer(DiscardedVassalId);
+			
+			WLUI::World_UpdateCastles(VassalCastles);
+			WLUI::World_UpdateLinks();
+			
+			declare Text GlobalBigMessage = TL::Compose(_("$<%1$> has taken $<%2$>'s planets!"), Master.User.Name, Vassal.User.Name);
+			declare Text SpecificBigMessage = TL::Compose(_("$<%1$> has taken your planets!"), Master.User.Name);
+			Utils::SendBigMessage(GlobalBigMessage, Vassal, SpecificBigMessage, 3000, CUIConfig::EUISound::Warning, 0, True);
+			
+			Action::DumpPlayerAction(Vassal);
+			Game::ComputePossibleCastles(MasterId, GS_AntiVassalRevolt, C_AntiMasterAgression, GS_BlitzGold);
+			WLUI::World_ClearPossibleCastlesForAction(Vassal);
+		}
+		
+		
+		// ---- DONATIONS
+		// FIXME EG HERE Donations annoncées en fin de tour.
+		declare Integer[Integer] Donations;
+		
+		foreach (GiverId in Player::GetPlayerIds()) {
+			declare CPlayer GiverPlayer = Player::GetPlayer(GiverId);
+			if(GiverPlayer == Null) continue;
+			declare Text GiverName = GiverPlayer.User.Name;
+			
+			declare Integer[Integer] PlayerDonations = Player::GetPlayerDonations(GiverPlayer);
+			foreach(ReceiverID => Donation in PlayerDonations) {
+				if (Donation <= 0) continue;
+				
+				declare CPlayer ReceiverPlayer = Player::GetPlayer(ReceiverID);
+				if(ReceiverPlayer == Null) continue;
+				
+				// Check donation amount
+				declare DonatorGoldAmount = Player::GetGold(GiverId);
+				declare ClampedDonation = Donation;
+				if (ClampedDonation > DonatorGoldAmount) {
+					ClampedDonation = DonatorGoldAmount;
+				}
+				if (ClampedDonation < 0) {
+					ClampedDonation = 0;
+				}
+				
+				// ACTUAL Donation
+				Player::SubGoldAmount(GiverId, ClampedDonation);
+				Player::AddGoldAmount(ReceiverID, ClampedDonation);
+							
+				declare Text ReceiverName = ReceiverPlayer.User.Name;
+	
+				WLUI::Info_HighlightPlayers([GiverId, ReceiverID]);
+				
+				// declare Text BigMessage = _("Donation");
+				// Message::SendBigMessage(BigMessage, C_PlayerActionSumUpDuration, 1);
+				declare Text DonateStatusMessage = TL::Compose(_("$<%1$> gives $<$fa0%2$> to $<%3$>"), GiverName, ""^ClampedDonation, ReceiverName);
+				Message::SendStatusMessage(DonateStatusMessage, C_PlayerActionSumUpDuration, 1);
+				
+				Sleep(C_PlayerActionSumUpDuration);
+				
+				WLUI::Info_StopPlayerHighlight();
+			}
+		}
+		
+		/*
+		foreach (PlayerId in Player::GetPlayerIds()) {
+			declare Integer TotalDonation = Player::GetReceivedGoldDonations(PlayerId);
+			
+			if(TotalDonation > 0) {
+				WLUI::Info_HighlightPlayers([PlayerId]);
+				// declare Text BigMessage = TextLib::Compose(_("Donation from %1 to %2."), GiverPlayer.Name, ReceiverPlayer.Name);
+				declare Text BigMessage = TL::Compose(_("Donation from %1 to %2."), ""^PlayerId, ""^PlayerId);
+				Player::AddGoldAmount(PlayerId, TotalDonation);
+				
+				Utils::SendBigMessage(BigMessage, 2000, True);
+				Message::SendStatusMessage(""^TotalDonation^" G.", 2000, 1);
+				Sleep(1000);
+				WLUI::Info_StopPlayerHighlight();
+			}
+		}
+		*/
+		
+		Player::ResetDonations();
+		
+		/*
+		foreach (ReceiverPlayerId => GoldAmount in Donations) {
+			if(GoldAmount > 0) {
+				// Player::AddGoldAmount(ReceiverPlayerId, GoldAmount);
+				
+			}
+			
+		}
+		*/
+		
+		declare Int3[] HandledActions;
+		declare Int3[] SortedActions = Action::GetSortedActions();
+		declare Integer[Integer] PlayersBets;
+		
+		// Looping over actions to remove invalid ones and to pick up used gold.
+		declare ActionsToValidate = SortedActions;
+		foreach (Action in ActionsToValidate) {
+			declare Integer	AimedCastleId	= Action::GetCastleId(Action);
+			
+			declare Integer AttackerId		= Action::GetPlayerId(Action);
+			declare Integer AttackerGold	= Player::GetGold(AttackerId);
+			declare Integer AttackerBet		= Player::GetBet(AttackerId);
+			
+			if (AttackerBet < 0) AttackerBet = 0;
+			if (AttackerBet > AttackerGold) AttackerBet = AttackerGold;
+			
+			if (!World::HasCastles(AttackerId) || World::IsCastleNeutral(AimedCastleId) || DiscardedPlayerIds.exists(AttackerId)) {
+				declare FooKey = SortedActions.remove(Action);
+				continue;
+			}
+			
+			// Prevent vassal from attacking master and vice-versa
+			declare CastleOwnerId = World::GetCastleOwner(AimedCastleId);
+			declare AttackerVassals = Player::GetMasterVassals(AttackerId);
+			declare OwnerVassals = Player::GetMasterVassals(CastleOwnerId);
+			if (AttackerVassals.exists(CastleOwnerId) || OwnerVassals.exists(AttackerId)) {
+				declare Removed = SortedActions.remove(Action);
+				Log::Log("""[Warlords] Players {{{AttackerId}}} and {{{CastleOwnerId}}} have a master/vassal relationship, they cannot attack each other""");
+				continue;
+			}
+			
+			// Check capital assault
+			declare Boolean IsAssaultOnLegitCapital = Player::GetOpponentsCapitals(AttackerId, GS_AntiVassalRevolt, C_AntiMasterAgression).exists(AimedCastleId);
+			if (IsAssaultOnLegitCapital) {
+				// Picks up the blitz gold.
+				if (!World::IsCastleAccessible(AimedCastleId, AttackerId)) {
+					if (Player::GetGold(AttackerId) >= GS_BlitzGold) {
+						Player::SubGoldAmount(AttackerId, GS_BlitzGold);
+						BlitzPlayers.add(AttackerId);
+					} else {
+						declare FooKey = SortedActions.remove(Action);
+					}
+				}
+			}
+			
+			PlayersBets[AttackerId] = AttackerBet;
+			Player::ResetBet(AttackerId);
+			Player::SubGoldAmount(AttackerId, AttackerBet);
+		}
+		
+		// Check if there are several players attacking a capital
+		// and find the one who bet the most
+		foreach (Action in SortedActions) {
+			declare AimedCastleId = Action::GetCastleId(Action);
+			if (World::IsCastleCapital(AimedCastleId)) {
+				declare AttackerId = Action::GetPlayerId(Action);
+				declare AttackerBet = PlayersBets[AttackerId];
+				declare IsBlitz = 0;
+				if (!World::IsCastleAccessible(AimedCastleId, AttackerId)) IsBlitz = 1;
+				CapitalAttacks.add([AttackerId, AimedCastleId, AttackerBet, IsBlitz]);
+				Log::Log("""[Warlords] Player {{{AttackerId}}} bets {{{AttackerBet}}} gold on capital {{{AimedCastleId}}}""");
+				if (AttackerBet >= 0) {
+					if (HighestCapitalBet < 0 || AttackerBet > HighestCapitalBet) {
+						HighestCapitalBet = AttackerBet;
+						HighestBetAttackerId = AttackerId;
+					} else if (AttackerBet == HighestCapitalBet) {
+						HighestBetAttackerId = -1;
+					}
+				}
+			}
+		}
+		if (HighestCapitalBet >= 0) {
+			Log::Log("""[Warlords] Highest bidder is player {{{HighestBetAttackerId}}} with a bet of {{{HighestCapitalBet}}} gold""");
+		}
+		
+		// Looping once more to reveal actions.
+		Log::Log("""[Warlords] Reveal actions""");
+		foreach (Action in SortedActions) {
+			Yield();
+			Log::Log("""[Warlords] Action : {{{Action}}}""");
+			
+			declare Integer	AimedCastleId			= Action::GetCastleId(Action);
+			
+			WLUI::AttackRecap_CleanBothSides();
+			
+			if (GoldToAddOnCastles.existskey(AimedCastleId)) {
+				declare Integer DefenseGoldAddition = GoldToAddOnCastles[AimedCastleId];
+				World::AddCastleDefenseGold(AimedCastleId, DefenseGoldAddition);
+				declare FooVal = GoldToAddOnCastles.removekey(AimedCastleId);
+			}
+		
+			declare Integer AttackerId				= Action::GetPlayerId(Action);
+			declare CPlayer	Attacker				= Player::GetPlayer(AttackerId);
+			declare Text	AttackerName			= Attacker.User.Name;
+			declare Integer AttackerBet				= PlayersBets[AttackerId];
+			
+			if (HandledActions.exists(Action)) continue;
+			
+			// Cancel capital attacks if not highest bet
+			if (World::IsCastleCapital(AimedCastleId) && HighestBetAttackerId != AttackerId) {
+				Log::Log("""[Warlords] Skip attack action because player {{{AttackerId}}} is not the highest bidder""");
+				continue;
+			}
+			
+			declare Int3[] SimilarActions = Action::GetSimilarActions(Action);
+			SimilarActions.add(Action);
+			
+			foreach (SimilarAction in SimilarActions) {
+				declare Integer SimilarActionPlayerId = Action::GetPlayerId(SimilarAction);
+				if (DiscardedPlayerIds.exists(SimilarActionPlayerId)) {
+					declare FooKey = SimilarActions.remove(SimilarAction);
+				}
+			}
+			
+			declare Text	AimedCastleName 		= World::GetCastleNameFromId(AimedCastleId);
+			declare Boolean IsAimedCastleCapital	= World::IsCastleCapital(AimedCastleId);
+			declare Integer AimedCastleDefenseGold	= World::GetCastleDefenseGold(AimedCastleId);
+			declare Integer LastOwnerId				= World::GetCastleOwner(AimedCastleId);
+			
+			declare Integer[] PlayerIds = Action::GetPlayersFromActions(SimilarActions);
+			declare Integer HistoryEventIconId;
+			if (PlayerIds.count == 1) {
+				HistoryEventIconId = 0;
+			} else {
+				HistoryEventIconId = 1;
+			}
+			
+			Game::HistoryAppend(HistoryEventIconId, PlayerIds, AimedCastleId, AttackerBet);
+			WLUI::Info_HighlightPlayers(PlayerIds);
+			WLUI::World_HighlightEmpires(PlayerIds);
+			
+			Sleep(1000);
+			// log(Now^"> LastOwnerId "^LastOwnerId);
+			// log(Now^"> SimilarActions "^SimilarActions);
+			
+			switch (LastOwnerId) {
+				case AttackerId: {} // Prevents attacks on possessed castles.
+				case -1: {
+					// ----- The castle isn't owned. ----- //
+					
+					if (SimilarActions.count == 1) {
+						// ----- Only one player wants this castle. ----- //
+		
+						// Reveals the action
+						WLUI::World_HighlightCastle(AimedCastleId);
+						
+						if(AttackerBet > 0) {
+							WLUI::AttackRecap_SetAttackers([<AttackerId, AttackerBet, 0>]);
+							WLUI::AttackRecap_Show();
+						}
+						
+						declare Integer[] LinksToHighlight = World::GetLinksToCastle(AttackerId, AimedCastleId);
+						WLUI::World_SetLinksToHighlight(LinksToHighlight, AttackerId);
+						
+						// Changes the castle owner.
+						World::SetCastleOwner(AimedCastleId, AttackerId);
+		
+					} else {
+						// ----- Other players want this castle. ----- //
+		
+						declare Integer BestBetPlayerId;
+						declare Integer	BestBet = -1;
+						declare Integer[] EqualityPlayers;
+						declare Int3[] AttackersWithTheirGold; // <PlayerId, Bet, Not used>
+						
+						foreach (SimilarAction in SimilarActions) {
+							declare Integer	SimilarActionPlayerId	= Action::GetPlayerId(SimilarAction);
+							declare Integer	SimilarActionPlayerBet	= PlayersBets[SimilarActionPlayerId];
+							
+							AttackersWithTheirGold.add(<SimilarActionPlayerId, SimilarActionPlayerBet, 0>);
+							
+							// Compares this player's bet to the current best one.
+							if (BestBet < SimilarActionPlayerBet) {
+								
+								BestBet			= SimilarActionPlayerBet;
+								BestBetPlayerId	= SimilarActionPlayerId;
+								EqualityPlayers.clear();
+								EqualityPlayers.add(SimilarActionPlayerId);
+								
+							} else if (BestBet == SimilarActionPlayerBet) {
+								EqualityPlayers.add(SimilarActionPlayerId);
+							}
+						}
+						
+						AttackersWithTheirGold = Utils::SortDescAttackersWithTheirGold(AttackersWithTheirGold);
+						
+						declare Integer AttackGoldSum;
+						foreach (SimilarAction in SimilarActions) {
+							declare Integer	SimilarActionPlayerId	= Action::GetPlayerId(SimilarAction);
+							if (SimilarActionPlayerId == BestBetPlayerId) continue;
+							
+							AttackGoldSum += PlayersBets[SimilarActionPlayerId];
+							
+						}
+		
+						// Reveals the action
+						declare Integer[] PlayerIds;
+						
+						foreach (SimilarAction in SimilarActions) {
+							declare Integer SimilarActionPlayerId	= Action::GetPlayerId(SimilarAction);
+							PlayerIds.add(SimilarActionPlayerId);
+							declare Integer[] LinksToHighlight = World::GetLinksToCastle(SimilarActionPlayerId, AimedCastleId);
+							WLUI::World_AddLinksToHighlight(LinksToHighlight, SimilarActionPlayerId);
+						}
+						
+						declare Text[] PlayerNames;
+						foreach (PlayerId in PlayerIds) {
+							PlayerNames.add(Player::GetName(PlayerId));
+						}
+						
+						declare Text Message = TL::Compose(_("Conflict on %1!"), AimedCastleName);
+						
+						declare Text Notice;
+						foreach (Id => PlayerName in PlayerNames) {
+							Notice ^= PlayerName;
+							if (Id < PlayerNames.count - 1) Notice ^= ", ";
+						}
+						
+						// WLUI::ShowHighlighter();
+						WLUI::World_HighlightCastle(AimedCastleId);
+						
+						WLUI::AttackRecap_SetAttackers(AttackersWithTheirGold);
+						WLUI::AttackRecap_Show();
+						
+						Utils::SendMessages(Message, Notice, C_PlayerActionSumUpDuration, CUIConfig::EUISound::TiePoint, 0, True);
+						
+						if (EqualityPlayers.count == 1) {
+							// No equality.
+							
+							// Changes the castle owner.
+							declare CPlayer Winner = Player::GetPlayer(BestBetPlayerId);
+							World::SetCastleOwner(AimedCastleId, BestBetPlayerId);
+							Game::HistoryAppend(0, [BestBetPlayerId], AimedCastleId, BestBet);
+						}
+						
+						
+					}
+				}
+				default: {
+					// ----- The castle is owned. ----- //
+					
+		
+					declare CPlayer LastOwner			= Player::GetPlayer(LastOwnerId);
+					declare Text	LastOwnerName		= LastOwner.User.Name;
+					
+					if (GS_AntiVassalRevolt) {
+						foreach (SimilarAction in SimilarActions) {
+							declare Integer SimilarActionPlayerId = Action::GetPlayerId(SimilarAction);
+							if (Player::IsVassal(SimilarActionPlayerId) && Player::GetMasterId(SimilarActionPlayerId) == LastOwnerId) {
+								declare FooKey = SimilarActions.remove(SimilarAction);
+								continue;
+							}
+						}
+					}
+					
+					if (IsAimedCastleCapital && AttackerId == HighestBetAttackerId) {
+						foreach (Attack in CapitalAttacks) {
+							declare AttackerId = Attack[0];
+							declare CastleId = Attack[1];
+							declare AttackerBet = Attack[2];
+							declare Attacker = Player::GetPlayer(AttackerId);
+							declare AttackerName = Attacker.User.Name;
+							declare AimedCastleName = World::GetCastleNameFromId(CastleId);
+							
+							// Reveals the action
+							WLUI::World_UpdateCastle(CastleId);
+							WLUI::World_HighlightCastle(CastleId);
+							WLUI::World_ZoomOnHighlightedCastle();
+							Yield();
+						
+							if(BlitzPlayers.exists(AttackerId)) {
+								//L16N [Warlords] Message displayed when a player attacks the capital of another player. %1 is the name of the attacking player, %2 is the name of the attacked planet and %3 is the amount of gold used to attack.
+								declare Text BigMessage = TL::Compose(_("$<%1$> storms $<%2$> with $<$fa0%3$> gold"), AttackerName, AimedCastleName, TL::ToText(AttackerBet));
+								Utils::SendBigMessage(BigMessage, 2000, True);
+							} else {
+								//L16N [Warlords] Message displayed when a player attacks the capital of another player. %1 is the name of the attacking player, %2 is the name of the attacked planet and %3 is the amount of gold used to attack.
+								declare Text BigMessage = TL::Compose(_("$<%1$> attacks $<%2$> with $<$fa0%3$> gold"), AttackerName, AimedCastleName, TL::ToText(AttackerBet));
+								Utils::SendBigMessage(BigMessage, 2000, True);
+							}
+							
+							WLUI::World_StopCastleHighlight();
+							WLUI::World_StopZoomOnHighlightedCastle();
+							Sleep(WLUI::GetZoomDuration());
+						}
+					}
+					
+					/*
+					foreach (SimilarAction in SimilarActions) {
+						declare Integer SimilarActionPlayerId = Action::GetPlayerId(SimilarAction);
+						declare Integer SimilarActionCastleId = Action::GetCastleId(SimilarAction);
+						
+						// Send a big message if this action is a blitz.
+						if (!World::IsCastleAccessible(SimilarActionCastleId, SimilarActionPlayerId)) {
+							if (Player::GetOpponentsCapitals(SimilarActionPlayerId, GS_AntiVassalRevolt).exists(AimedCastleId)) {
+								// EG FIXME HERE: il faudrait mieux discerner si on blitz ou si on attaque à partir d'un castle devenu innacessible ce tour.
+								// declare Text BigMessage = TL::Compose(_("$<%1$> used the blitz!"), Player::GetPlayer(SimilarActionPlayerId).User.Name);
+								// Utils::SendBigMessage(BigMessage, 2000, True);
+							} else {
+								// EG FIXME HERE: on le retire trop tôt des similar actions je crois
+								// ça interdit d'attaquer un castle qui n'est plus voisin à cause d'une action qui a eu lieu au même tour.
+								// declare FooValue = SimilarActions.remove(SimilarAction);
+							}
+						}
+					}
+					*/
+					// log(Now^"> SimilarActions.count is "^SimilarActions.count);
+		
+					if (SimilarActions.count > 1) {
+						// ----- Other players want this castle. ----- //
+		
+						declare Integer[] SimilarActionsPlayers = Action::GetPlayersFromActions(SimilarActions);
+		
+						if (IsAimedCastleCapital) {
+							// ----- The castle is a capital. ----- //
+							Sleep(C_PlayerActionSumUpDuration);
+							
+							/*WLUI::World_ZoomOnHighlightedCastle();
+							Yield();
+							Sleep(WLUI::GetZoomDuration());*/
+							
+							WLUI::Pause_Hide();
+							
+							if(CapitalAttacks.count >= 2 && (HighestBetAttackerId < 0 || HighestBetAttackerId != AttackerId)) {
+								// The player is not the highest bider, cancel his attack
+							} else {
+								// Give gold
+								Game::UpdateCastlesGold(GS_NewVassalSystem, GS_GoldPerYearForVassals, GS_GoldPerCastlePerYear, C_GoldVeinMultiplier);
+								SkipGoldDistribution = True;
+								
+								declare Ident[][] ClanChoices = Game::GetClanChoices(Attacker, LastOwner, C_AntiMasterAgression, GS_ClanChoiceWaitTime);
+								declare Ident[] Attackers = ClanChoices[0];
+								declare Ident[] Defenders = ClanChoices[1];
+								
+								declare Integer[] MainAttackerIds;
+								foreach (PlayerId in SimilarActionsPlayers) {
+									if (PlayerId == LastOwnerId) continue;
+									MainAttackerIds.add(PlayerId);
+								}
+								
+								// Battle launch
+								Battle::ApplySettings(C_Battle_BaseArmorDef, C_Battle_BaseArmorAtk, GS_Battle_MaxTime, C_Battle_TimeToCapture, GS_Battle_GoldToRespawn, GS_Battle_GoldToRestore, C_Battle_GoldForLvl2, C_Battle_GoldForLvl3);
+								
+								declare Text BattleBigMessage = TL::Compose(_("Battle on %1!"), AimedCastleName);
+								Message::SendBigMessage(BattleBigMessage, C_PlayerActionSumUpDuration, 1, CUIConfig::EUISound::TiePoint, 0);
+								
+								UIManager.UIAll.OverlayHideMapInfo = False;
+								Battle::PlayBattle(AimedCastleId, MainAttackerIds, LastOwnerId, Attackers, Defenders);
+								UIManager.UIAll.OverlayHideMapInfo = True;
+								+++ST2+++
+								
+								WLUI::Pause_Show();
+			
+								if (Battle::AttackSucceeded()) {
+									// ----- The capital attack succeeded. ----- //
+									declare Integer WinnerId	= Battle::GetPoleCapturerPlayerId(); // TODO: Change IG
+									declare CPlayer Winner		= Player::GetPlayer(MainAttackerIds[0]);
+			
+									// A capital was conquered -> vassal.
+									if (Player::IsVassal(AttackerId)) {
+										declare Integer MasterId = Player::GetMasterId(AttackerId);
+										if (LastOwnerId == MasterId) {
+											// Attack by a vassal on its master succeeded = reverted status.
+											Player::UnsetVassal(AttackerId);
+											Player::SetVassal(MasterId, AttackerId);
+										} else {
+											// The defender was not the master.
+											Player::SetVassal(LastOwnerId, MasterId);
+								
+											if (Player::HasVassals(LastOwnerId)) {
+												foreach (VassalId in Player::GetMasterVassals(LastOwnerId)) {
+													Player::SetVassal(VassalId, MasterId);
+												}
+											}
+										}
+									} else {
+										// The attacker is not a vassal.
+										Player::SetVassal(LastOwnerId, AttackerId);
+										
+										if (Player::HasVassals(LastOwnerId)) {
+											foreach (VassalId in Player::GetMasterVassals(LastOwnerId)) {
+												Player::SetVassal(VassalId, AttackerId);
+											}
+										}
+									}
+									
+									if (!GS_NewVassalSystem) World::RevokeAllCastlesOwnership(LastOwnerId);
+									if (C_LosePlanetsOnVassal) World::GiveUpTerritory(LastOwnerId);
+									
+									Game::HistoryAppend(0, [AttackerId], AimedCastleId, 0);
+			
+								} else {
+									// ----- The capital attack failed. ----- //
+								}
+							}
+						} else {
+							// ----- The castle is not a capital. ----- //
+							// log(Now^"> The castle is not a capital, part B");
+							
+							declare Integer BestBetPlayerId;
+							declare Integer	BestBet = -1;
+							declare Int3[] AttackersWithTheirGold; // <PlayerId, Bet, Not used>
+							
+							foreach (SimilarAction in SimilarActions) {
+								declare Integer	SimilarActionPlayerId	= Action::GetPlayerId(SimilarAction);
+								declare Integer	SimilarActionPlayerBet	= PlayersBets[SimilarActionPlayerId];
+								
+								AttackersWithTheirGold.add(<SimilarActionPlayerId, SimilarActionPlayerBet, 0>);
+								
+								// Compares this player's bet to the current best one.
+								if (BestBet < SimilarActionPlayerBet) {
+									BestBet			= SimilarActionPlayerBet;
+									BestBetPlayerId	= SimilarActionPlayerId;
+								}
+							}
+							
+							AttackersWithTheirGold = Utils::SortDescAttackersWithTheirGold(AttackersWithTheirGold);
+							
+							declare Integer AttackGoldSum;
+							foreach (SimilarAction in SimilarActions) {
+								declare Integer	SimilarActionPlayerId	= Action::GetPlayerId(SimilarAction);
+								//if (SimilarActionPlayerId == BestBetPlayerId) continue; //< Why? 
+								
+								AttackGoldSum += PlayersBets[SimilarActionPlayerId];
+							}
+							
+							WLUI::AttackRecap_SetAttackers(AttackersWithTheirGold);
+							WLUI::AttackRecap_SetDefenders([<LastOwnerId, AimedCastleDefenseGold, 0>]);
+							WLUI::AttackRecap_Show();
+		
+		
+							// Reveals the action
+							WLUI::World_HighlightCastle(AimedCastleId);
+		
+							declare Integer[] PlayerIds = Action::GetPlayersFromActions(SimilarActions);
+							
+							foreach (SimilarAction in SimilarActions) {
+								declare Integer SimilarActionPlayerId = Action::GetPlayerId(SimilarAction);
+								declare Integer[] LinksToHighlight = World::GetLinksToCastle(SimilarActionPlayerId, AimedCastleId);
+								WLUI::World_AddLinksToHighlight(LinksToHighlight, SimilarActionPlayerId);
+							}
+							
+							Sleep(C_PlayerActionSumUpDuration);
+							
+							if (AimedCastleDefenseGold < AttackGoldSum) {
+								// Win.
+								
+								World::ResetCastleOwner(AimedCastleId);
+								World::DumpCastleDefenseGold(AimedCastleId);
+								
+								foreach (AtkGold1 in AttackersWithTheirGold) {
+									
+									declare Integer CurrentPlayerId	= AtkGold1.X;
+									declare Integer CurrentGoldBet	= AtkGold1.Y;
+								
+									declare Boolean Next;
+									declare Integer NextPlayerId = -1;
+									declare Integer NextGoldBet = -1;
+									
+									foreach (AtkGold2 in AttackersWithTheirGold) {
+										declare Integer PlayerIdBis		= AtkGold2.X;
+										declare Integer GoldBetBis		= AtkGold2.Y;
+									
+										if (!Next && CurrentPlayerId == PlayerIdBis) {
+											Next = True;
+										} else if (Next) {
+											NextGoldBet = GoldBetBis;
+											NextPlayerId = PlayerIdBis;
+											break;
+										}
+									}
+									
+									if (NextGoldBet == CurrentGoldBet) {
+										// Equality.
+										
+										break;
+										
+									} else {
+										declare Boolean WantsTheCastle = Game::AskPlayerToTakeTheCastle(Player::GetPlayer(CurrentPlayerId), AimedCastleId, GS_CastleTakeChoiceWaitTime);
+										if (WantsTheCastle) {
+									
+											// Changes the castle owner
+											World::SetCastleOwner(AimedCastleId, CurrentPlayerId);
+											Game::HistoryAppend(0, [CurrentPlayerId], AimedCastleId, 0);
+											
+											break;
+											
+										}
+									}
+								}
+								
+							} else {
+								// Lose.
+								
+								World::SubCastleDefenseGold(AimedCastleId, AttackGoldSum);
+							}
+						}
+						
+					} else if (SimilarActions.count == 1) {
+						// ----- Only one player wants this castle. ----- //
+						// log(Now^"> Only one player wants this castle");
+						declare Integer[] LinksToHighlight = World::GetLinksToCastle(AttackerId, AimedCastleId);
+						WLUI::World_SetLinksToHighlight(LinksToHighlight, AttackerId);
+		
+						if (IsAimedCastleCapital) {
+							// ----- The castle is a capital. ----- //
+							
+							// Sleep(C_PlayerActionSumUpDuration);
+							
+							/*WLUI::World_ZoomOnHighlightedCastle();
+							Yield();
+							Sleep(WLUI::GetZoomDuration());*/
+							
+							WLUI::Pause_Hide();
+							if(CapitalAttacks.count >= 2 && (HighestBetAttackerId < 0 || HighestBetAttackerId != AttackerId)) {
+								// The player is not the highest bider, cancel his attack
+							} else {
+								// Give gold
+								Game::UpdateCastlesGold(GS_NewVassalSystem, GS_GoldPerYearForVassals, GS_GoldPerCastlePerYear, C_GoldVeinMultiplier);
+								SkipGoldDistribution = True;
+								
+								declare Ident[][] ClanChoices = Game::GetClanChoices(Attacker, LastOwner, C_AntiMasterAgression, GS_ClanChoiceWaitTime);
+								declare Ident[] Attackers = ClanChoices[0];
+								declare Ident[] Defenders = ClanChoices[1];
+								
+								// Battle launch
+								Battle::ApplySettings(C_Battle_BaseArmorDef, C_Battle_BaseArmorAtk, GS_Battle_MaxTime, C_Battle_TimeToCapture, GS_Battle_GoldToRespawn, GS_Battle_GoldToRestore, C_Battle_GoldForLvl2, C_Battle_GoldForLvl3);
+							
+								declare Text BattleBigMessage = TL::Compose(_("Battle on %1!"), AimedCastleName);
+								Message::SendBigMessage(BattleBigMessage, C_PlayerActionSumUpDuration, 1, CUIConfig::EUISound::TiePoint, 0);
+							
+								UIManager.UIAll.OverlayHideMapInfo = False;
+								Battle::PlayBattle(AimedCastleId, AttackerId, LastOwnerId, Attackers, Defenders);
+								UIManager.UIAll.OverlayHideMapInfo = True;
+								+++ST2+++
+								
+								WLUI::Pause_Show();
+			
+								if (Battle::AttackSucceeded()) {
+									// ----- The capital attack succeeded. ----- //
+									
+									Sleep(C_PlayerActionSumUpDuration);
+			
+									// A capital was conquered -> vassal.
+									if (Player::IsVassal(AttackerId)) {
+										declare Integer MasterId = Player::GetMasterId(AttackerId);
+										if (LastOwnerId == MasterId) {
+											// Attack by a vassal on its master succeeded = reverted status.
+											Player::UnsetVassal(AttackerId);
+											Player::SetVassal(MasterId, AttackerId);
+										} else {
+											// The defender was not the master.
+											Player::SetVassal(LastOwnerId, MasterId);
+								
+											if (Player::HasVassals(LastOwnerId)) {
+												foreach (VassalId in Player::GetMasterVassals(LastOwnerId)) {
+													Player::SetVassal(VassalId, MasterId);
+												}
+											}
+										}
+									} else {
+										// The attacker is not a vassal.
+										Player::SetVassal(LastOwnerId, AttackerId);
+										
+										if (Player::HasVassals(LastOwnerId)) {
+											foreach (VassalId in Player::GetMasterVassals(LastOwnerId)) {
+												Player::SetVassal(VassalId, AttackerId);
+											}
+										}
+									}
+									
+									if (!GS_NewVassalSystem) World::RevokeAllCastlesOwnership(LastOwnerId);
+									if (C_LosePlanetsOnVassal) World::GiveUpTerritory(LastOwnerId);
+									
+									Game::HistoryAppend(0, [AttackerId], AimedCastleId, 0);
+			
+								} else {
+									// ----- The capital attack failed. ----- //
+									log(Now^"> The capital attack failed");
+								}
+							}
+						} else {
+							// ----- The castle is not a capital. ----- //
+							// EG HERE
+							// log(Now^"> The castle is not a capital");
+							// log(<AttackerId, AttackerBet, 0>);
+							// log(<LastOwnerId, AimedCastleDefenseGold, 0>);
+							
+							WLUI::AttackRecap_SetAttackers([<AttackerId, AttackerBet, 0>]);
+							WLUI::AttackRecap_SetDefenders([<LastOwnerId, AimedCastleDefenseGold, 0>]);
+							
+							WLUI::AttackRecap_Show();
+							Sleep(C_PlayerActionSumUpDuration);
+							
+							if (AimedCastleDefenseGold < AttackerBet) {
+								// The attacker wins.
+								
+								// Changes the castle owner.
+								World::SetCastleOwner(AimedCastleId, AttackerId);
+								World::DumpCastleDefenseGold(AimedCastleId);
+								
+							} else if (AimedCastleDefenseGold == AttackerBet) {
+								// Draw.
+		
+								World::DumpCastleDefenseGold(AimedCastleId);
+								
+							} else {
+								// The attacker fails.
+								
+								World::SubCastleDefenseGold(AimedCastleId, AttackerBet);
+		
+							}
+		
+						}
+		
+					}
+		
+				}
+				
+			}
+			
+			WLUI::World_UpdateCastle(AimedCastleId);
+			WLUI::World_UpdateLinks();
+			
+			 Sleep(C_PlayerActionSumUpDuration / 2);
+			
+			WLUI::World_StopCastleHighlight();
+			WLUI::World_ResetLinksToHighlight();
+			WLUI::AttackRecap_Hide();
+			WLUI::Info_StopPlayerHighlight();
+			WLUI::World_StopEmpiresHighlight();
+			
+			// Sleep(C_PlayerActionSumUpDuration / 2);
+			
+			foreach (SimilarAction in SimilarActions) {
+				
+				HandledActions.add(SimilarAction);
+			}
+			
+			// END RESULTS COMPUTE
+			
+		}
+	}
+	
+	declare Integer UpdatedTurnEndDuration = C_TurnEndDuration;
+	
+	if(CapitalAttacks.count >= 2 && HighestBetAttackerId < 0) {
+		UpdatedTurnEndDuration += 6000;
+		
+		foreach (Attack in CapitalAttacks) {
+			declare AttackerId = Attack[0];
+			declare CastleId = Attack[1];
+			declare AttackerBet = Attack[2];
+			declare Attacker = Player::GetPlayer(AttackerId);
+			declare AttackerName = Attacker.User.Name;
+			declare AimedCastleName = World::GetCastleNameFromId(CastleId);
+			
+			// Reveals the action
+			WLUI::World_UpdateCastle(CastleId);
+			WLUI::World_HighlightCastle(CastleId);
+			WLUI::World_ZoomOnHighlightedCastle();
+			Yield();
+		
+			if(BlitzPlayers.exists(AttackerId)) {
+				//L16N [Warlords] Message displayed when a player attacks the capital of another player. %1 is the name of the attacking player, %2 is the name of the attacked planet and %3 is the amount of gold used to attack.
+				declare Text BigMessage = TL::Compose(_("$<%1$> storms $<%2$> with $<$fa0%3$> gold"), AttackerName, AimedCastleName, TL::ToText(AttackerBet));
+				Utils::SendBigMessage(BigMessage, 2000, True);
+			} else {
+				//L16N [Warlords] Message displayed when a player attacks the capital of another player. %1 is the name of the attacking player, %2 is the name of the attacked planet and %3 is the amount of gold used to attack.
+				declare Text BigMessage = TL::Compose(_("$<%1$> attacks $<%2$> with $<$fa0%3$> gold"), AttackerName, AimedCastleName, TL::ToText(AttackerBet));
+				Utils::SendBigMessage(BigMessage, 2000, True);
+			}
+			
+			WLUI::World_StopCastleHighlight();
+			WLUI::World_StopZoomOnHighlightedCastle();
+			Sleep(WLUI::GetZoomDuration());
+		}
+		
+		foreach (Attack in CapitalAttacks) {
+			// Refund attack gold
+			Player::AddGoldAmount(Attack[0], Attack[2]);
+			// Refund blitz gold
+			if (Attack[3] == 1) {
+				Player::AddGoldAmount(Attack[0], GS_BlitzGold);
+			}
+		}
+		
+		//L16N [Warlords] Message displayed at the end of the turn when several Warlords tried to attack a capital but used the same amount of gold.
+		declare Text BattleBigMessage = _("All battles are canceled!");
+		//L16N [Warlords] Message displayed at the end of the turn when several Warlords tried to attack a capital but used the same amount of gold. The Warlords word must not be translated. %1 is the amount of gold eg: with 100 gold.
+		declare Text BattleStatusMessage = TL::Compose(_("Several Warlords tried to attack a capital with %1 gold"), TL::ToText(HighestCapitalBet));
+		Message::SendBigMessage(BattleBigMessage, UpdatedTurnEndDuration, 1, CUIConfig::EUISound::TiePoint, 0);
+		Message::SendStatusMessage(BattleStatusMessage, UpdatedTurnEndDuration, 1);
+	}
+	
+	// Adds the remaining defense gold on non-attacked castles.
+	foreach (CastleId => DefenseGoldAmount in GoldToAddOnCastles) {
+		World::AddCastleDefenseGold(CastleId, DefenseGoldAmount);
+	}
+	
+	GoldToAddOnCastles.clear();
+	
+	WLUI::World_UpdateCastles();
+	WLUI::World_UpdateLinks();
+	
+	Action::DumpAllPlayersActions();
+	Yield();
+	
+	Player::ComputeScores();
+	if (World::GetCurrentYear() - World::GetStartYear() > Game::GetMaxYearsCount()) {
+		Log::Log("""[Warlords] Sudden death phase active this year {{{World::GetCurrentYear()}}}""");
+		Game::SetPhase(Game::PHASE_SUDDEN_DEATH());
+	}
+	
+	// ---------------------------------- //
+	// VICTORY CHECK
+	
+	declare Integer WinnerId for This;
+	WinnerId = Game::GetWinnerId(MM_RestartMatchmaking || ServerShutdownRequested || MatchEndRequested);
+	if (WinnerId != -1) break;
+	if (MM_RestartMatchmaking || ServerShutdownRequested || MatchEndRequested) break;
+	
+
+	// -------- TURN END
+	Sleep(UpdatedTurnEndDuration);
+	
+	World::NextYear();
+	
+	// ---- DONATIONS
+	// EG : on les donne en début de phase de fin de tour (sinon on a pu dépenser du gold en bataille).
+	// foreach (ReceiverPlayerId => GoldAmount in Donations) {
+		// Player::AddGoldAmount(ReceiverPlayerId, GoldAmount);
+	// }
+	
+	// ---- CASTLES GOLD
+	if (!SkipGoldDistribution) {
+		Game::UpdateCastlesGold(GS_NewVassalSystem, GS_GoldPerYearForVassals, GS_GoldPerCastlePerYear, C_GoldVeinMultiplier);
+	}
+	
+	+++PauseCheck+++
+	
+	Sleep(2000);
+
+}
+
+Yield();
+
+WLUI::World_UpdateCastles();
+WLUI::World_UpdateLinks();
+
+Sleep(1000);
+
+// Compute ladder
+Scores::ComputeLadder(Scores::C_Sort_MapPoints, Scores::C_Order_Descending);
+// Channel progression: compute performances
+if (ChannelProgression::IsEnabled()) {
+	declare TargetPlanets = Game::GetRequiredCastlesNumberForVictory();
+	foreach (Score in Scores) {
+		declare Warlords_TotalPlanets for Score = 0;
+		Warlords_TotalPlanets = 0;
+	}
+	foreach (PlayerId in Player::GetPlayerIds()) {
+		declare Player <=> Player::GetPlayer(PlayerId);
+		if (Player == Null) continue;
+		declare Warlords_TotalPlanets for (Player as CSmPlayer).Score = 0;
+		
+		// Count master + vassals castles
+		if (Player::HasVassals(PlayerId)) {
+			Warlords_TotalPlanets = World::CountPlayerCastles(PlayerId);
+			declare VassalsIds = Player::GetMasterVassals(PlayerId);
+			foreach (VassalId in VassalsIds) {
+				Warlords_TotalPlanets += World::CountPlayerCastles(VassalId);
+			}
+		} 
+		// Count player castles
+		else {
+			Warlords_TotalPlanets = World::CountPlayerCastles(PlayerId);
+		}
+	}
+	foreach (Score in Scores) {
+		declare Warlords_TotalPlanets for Score = 0;
+		
+		declare PlanetsPerformance = Warlords_TotalPlanets / (TargetPlanets * 1.);
+		if (PlanetsPerformance > 1.) PlanetsPerformance = 1.;
+		
+		declare BattlesPerformance = 0.;
+		declare Warlords_BattlesPerformances for Score = Real[];
+		Warlords_BattlesPerformances = Warlords_BattlesPerformances.sort();
+		Log::Log("""[Warlords] {{{Score.User.Login}}} > Warlords_BattlesPerformances : {{{Warlords_BattlesPerformances}}}""");
+		
+		// Keep only best three scores
+		while (Warlords_BattlesPerformances.count > 3) {
+			declare Removed = Warlords_BattlesPerformances.removekey(0);
+			if (!Removed) break;
+		}
+		if (Warlords_BattlesPerformances.count > 0) {
+			foreach (BattlePerformance in Warlords_BattlesPerformances) {
+				BattlesPerformance += BattlePerformance;
+			}
+			BattlesPerformance /= ML::Max(3, Warlords_BattlesPerformances.count);
+		}
+		Log::Log("""[Warlords] BattlesPerformance > {{{Score.User.Login}}} > BattlesPerformances : {{{Warlords_BattlesPerformances}}} | ML::Max(3, Warlords_BattlesPerformances.count) : {{{ML::Max(3, Warlords_BattlesPerformances.count)}}} | BattlesPerformance : {{{BattlesPerformance}}}""");
+		
+		declare Performance = (PlanetsPerformance * 0.7) + (BattlesPerformance * 0.3);
+		
+		Log::Log("""[Warlords] Performance > {{{Score.User.Login}}} > TotalPlanets : {{{Warlords_TotalPlanets}}} | TargetPlanets : {{{TargetPlanets}}} | PlanetsPerformance: {{{PlanetsPerformance}}} | BattlesPerformance : {{{BattlesPerformance}}} | Performance: {{{Performance}}}""");
+		
+		ChannelProgression::SetPlayerPerformance(Score, Performance);
+	}
+}
+// Channel progression: requests info
+if (MB_Settings_UseDefaultChannelProgression && ChannelProgression::IsEnabled()) {
+	ChannelProgression::SetResultsVersion();
+	
+	declare Logins = Text[];
+	foreach (User in Users) {
+		Logins.add(User.Login);
+	}
+	ChannelProgression::RequestMapInfo(Logins);
+	ChannelProgression::RequestServerInfo();
+	ChannelProgression::PlayRevealAnimation();
+	
+	declare RankingNames = Text[];
+	declare RankingScores = Integer[];
+	foreach (Rank => Score in Scores) {
+		RankingNames.add(Score.User.Name);
+		RankingScores.add(Scores::GetPlayerMapPoints(Score));
+		ChannelProgression::SetRank(Score, Rank);
+	}
+	ChannelProgression::SetRankingIsTime(False);
+	ChannelProgression::SetRanking(RankingNames, RankingScores);
+}
+// Close ladder
+MB_Ladder_CloseMatch();
+// Channel progression: send scores to the api
+if (MB_Settings_UseDefaultChannelProgression && ChannelProgression::IsEnabled()) {
+	// Wait that all requests are completed
+	while (ChannelProgression::RequestInProgress() && !ServerShutdownRequested && !MatchEndRequested) {
+		MB_Yield();
+	}
+	ChannelProgression::SendScores();
+}
+
+declare Integer WinnerId for This;
+if (WinnerId >= 0) {
+	declare CPlayer Winner = Player::GetPlayer(WinnerId);
+	if (Winner != Null) {
+		//L16N [Warlords] Message displayed at the end of the game to announce the winner. %1 is the name of the player.
+		Message::SendBigMessage(TL::Compose(_("$<%1$>'s empire wins the game"), Winner.User.Name), C_EndTimeDuration, 1, CUIConfig::EUISound::EndMatch, 0);
+	} else {
+		Message::SendBigMessage(Winner, _("Winner!"), C_EndTimeDuration, 0, CUIConfig::EUISound::VictoryPoint, 0);
+	
+		foreach (PlayerId in Player::GetPlayerIds()) {
+			if (PlayerId == WinnerId) continue;
+			
+			declare CPlayer Loser = Player::GetPlayer(PlayerId);
+			Message::SendBigMessage(Loser, _("Lose"), C_EndTimeDuration, 1, CUIConfig::EUISound::EndMatch, 0);
+		}
+	}
+} else if (WinnerId == -2) {
+	Message::SendBigMessage(_("|Match|Draw"), C_EndTimeDuration, 1, CUIConfig::EUISound::EndMatch, 0);
+} else {
+	Message::SendBigMessage(_("Limit year reached!"), C_EndTimeDuration, 1, CUIConfig::EUISound::EndMatch, 0);
+}
+
+UIManager.UIAll.UISequence = CUIConfig::EUISequence::Podium;
+UIManager.UIAll.ScoreTableVisibility = CUIConfig::EVisibility::ForcedVisible;
+
+declare Integer EndStartTimestamp = Now;
+while (Now - EndStartTimestamp < C_EndTimeDuration) {
+	Yield();
+}
+
+MB_StopMatch = True;
+
+// ---------------------------------- //
+// GAME END
+
+***
+
+***EndMatch***
+***
+WLUI::IntroScreen_SetText("");
+WLUI::IntroScreen_Show();
+WLUI::World_Hide();
+WLUI::Info_Hide();
+
+WLUI::Unload();
+Player::Unload();
+World::Unload();
+Action::Unload();
+Pause::Unload();
+
+***
+
+***EndMap***
+***
+
+declare Text MasterLogin;
+
+if (Scores.count > 0) {
+	MasterLogin = Scores[0].User.Login;
+}
+
+// ---------------------------------- //
+// Send match result and transfert players back to the lobby
+MB_StopMatch = True;
+if (MM_IsMatchServer()) {
+
+	MM_SetLadderMatchId();
+
+	if (!MM_RestartMatchmaking) {
+		if (MB_StopMatch) {
+			if (RematchNb < S_MatchmakingRematchNbMax) {
+				IsRematch = MM_VoteForRematch();
+				RematchNb += 1;
+			}
+			
+			if (!IsRematch) {
+				RematchNb = 0;
+				MM_MatchEnd(MasterLogin);
+				MM_MatchToLobby();
+			}
+		}
+	} else {
+		RematchNb = 0;
+		MM_MatchEnd(MasterLogin);
+		MM_MatchToLobby();
+	}
+}
+
+***
+
+CSmPlayer[] GetPlayers() {
+	declare CSmPlayer[] CPlayers;
+	foreach (Player in Players) {
+		if ((MM_IsMatchServer() && MM_PlayerIsValid(Player)) || !MM_IsMatchServer()) {
+			CPlayers.add(Player);
+		}
+
+	}
+	return CPlayers;
+}

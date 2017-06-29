@@ -1,0 +1,346 @@
+#Include "Libs/Nadeo/Layers2.Script.txt"						as Layers
+#Include "Libs/Nadeo/ShootMania/Warlords/UISync.Script.txt"	as UISync
+#Include "Libs/Nadeo/Uized.Script.txt"						as Uized
+
+// ---------------------------------- //
+
+#Const C_LayerName	"BattleShop"
+#Const C_Address	"file://Media/Manialinks/ShootMania/Warlords/Layers/BattleShop.xml"
+
+#Const C_Uized_Vars	[
+	["BGImageUrl", "file://Media/Manialinks/ShootMania/Warlords/Textures/Battle/Popup.png"],
+	["ItemImageUrl", "file://Media/Manialinks/ShootMania/Warlords/Textures/Battle/ShopItem.png"],
+	["RocketImageUrl", "file://Media/Manialinks/Shootmania/Common/RocketWhite.dds"],
+	["NucleusImageUrl", "file://Media/Manialinks/Shootmania/Common/NucleusWhite.dds"],
+	["LaserImageUrl", "file://Media/Manialinks/Shootmania/Common/LaserWhite.dds"],
+	["WeaponChoiceTransText", _("Choose your weapon")],
+	["NotEnoughGoldTransText", _("Not enough gold.")],
+	["ReadyTransText", _("Ready")],
+	["AmmoTransText", _("Ammo:")],
+	["ReloadTransText", _("Reload:")],
+	["PriceTransText", _("Price:")]
+]
+					
+#Const WEAP_ROCKET		0
+#Const WEAP_NUCLEUS	1
+#Const WEAP_LASER	2
+
+#Const LVL_1	0
+#Const LVL_2	1
+#Const LVL_3	2
+
+// ---------------------------------- //
+/**
+ * Gets the price for a given weapon.
+ *
+ * @param _ShopWeapon	The selected weapon's Id.
+ * @param _ShopLevel	The selected weapon's level (low, normal, high).
+ * @return The weapon's price.
+ */
+Integer GetCost(Integer _ShopWeapon, Integer _ShopLevel) {
+	declare netwrite Integer[Integer][Integer] Srv_Battle_G_ShopCosts for Teams[0];
+	if(Srv_Battle_G_ShopCosts.existskey(_ShopWeapon)) {
+		declare Integer[Integer] WeaponCosts = Srv_Battle_G_ShopCosts[_ShopWeapon];
+		if(WeaponCosts.existskey(_ShopLevel)) {	
+			return WeaponCosts[_ShopLevel];
+		}
+	}
+	return -1;
+}
+
+// ---------------------------------- //
+/**
+ * Returns the shop labels, useful for the players to buy their weapons.
+ *
+ * @param _Ammo		The weapon's ammo count.
+ * @param _Reload	The weapon's reload.
+ * @param _Price	The weapon's price.
+ * @return The Manialink labels.
+ */
+Text CreateShopLabels(Integer _Ammo, Text _Reload, Integer _Price) {
+	return """
+		<label text="{{{ _Ammo }}}" posn="15 -4" style="TextTitle3" textsize="1" halign="right"/>
+		<label text="{{{ _Reload }}}" posn="15 -8" style="TextTitle3" textsize="1" halign="right"/>
+		<label text="{{{ _Price }}}" posn="10 -12" style="TextTitle3" textsize="1" halign="right" textcolor="fa0" />
+	""";
+}
+
+Text GetShopML() {
+	declare PopUpBg = "file://Media/Manialinks/ShootMania/Warlords/Textures/Battle/Popup.png";
+	declare WeaponBg = "file://Media/Manialinks/ShootMania/Warlords/Textures/Battle/ShopItem.png";
+	
+	//L16N [Warlords] Title of a pop-up asking the player to select a weapon between different options
+	declare Text_ChooseYourWeapon = _("Choose your weapon");
+	//L16N [Warlords] Button allowing the player to confirm that he's ready to start the game
+	declare Text_Ready = _("Ready");
+	
+	return """
+<manialink version="3" name="{{{C_LayerName}}}">
+<framemodel id="framemodel-weapon-card">
+	<quad pos="0 -20" z-index="0" size="40 40" halign="center" valign="center" colorize="111" image="{{{WeaponBg}}}" scriptevents="1" id="button-weapon-select" />
+	<frame pos="0 -5" z-index="1">
+		<label size="35 10" halign="center" textsize="3" id="label-weapon-name" />
+		<quad pos="0 -8" size="20 20" halign="center" id="quad-weapon-icon" />
+	</frame>
+</framemodel>
+<frame id="frame-global">
+	<frame pos="0 40" id="frame-shop">
+		<quad z-index="0" size="100 80" halign="center" image="{{{PopUpBg}}}" />
+		<frame pos="0 -8" z-index="1" id="frame-content">
+			<label size="90 10" halign="center" textsize="6" text="{{{Text_ChooseYourWeapon}}}" />
+			<frame pos="0 -10" id="frame-weapons">
+				<frameinstance pos="-22 0" modelid="framemodel-weapon-card" />
+				<frameinstance pos="22 0" modelid="framemodel-weapon-card" />
+			</frame>
+			<label pos="0 -55" halign="center" style="CardButtonMediumL" text="{{{Text_Ready}}}" scriptevents="1" id="button-ready" />
+		</frame>
+	</frame>
+</frame>
+<script><!--
+Integer GetPlayerId(Text _Login) {
+	declare netread Text[Integer] Srv_Player_G_Players for Teams[0];
+	if (Srv_Player_G_Players.exists(_Login)) {
+		return Srv_Player_G_Players.keyof(_Login);
+	}
+	
+	return -1;
+}
+
+Integer GetInputPlayerId() {
+	return GetPlayerId(InputPlayer.User.Login);
+}
+
+Boolean IsAttacker() {
+	declare netread Boolean Srv_Battle_P_Clan for InputPlayer;
+	return (Srv_Battle_P_Clan == True);
+}
+
+Void SetWeapons(CMlFrame _Frame, Text[Text] _Weapons) {
+	if (_Frame == Null) return;
+	
+	declare WeaponsNames = Text[];
+	declare WeaponsImages = Text[];
+	foreach (WeaponName => WeaponImage in _Weapons) {
+		WeaponsNames.add(WeaponName);
+		WeaponsImages.add(WeaponImage);
+	}
+	
+	foreach (Key => Control in _Frame.Controls) {
+		declare Frame_Weapon <=> (Control as CMlFrame);
+		declare Button_WeaponSelect <=> (Frame_Weapon.GetFirstChild("button-weapon-select") as CMlQuad);
+		
+		if (WeaponsNames.existskey(Key)) {
+			declare Label_WeaponName <=> (Frame_Weapon.GetFirstChild("label-weapon-name") as CMlLabel);
+			declare Quad_WeaponIcon <=> (Frame_Weapon.GetFirstChild("quad-weapon-icon") as CMlQuad);
+			
+			Button_WeaponSelect.DataAttributeSet("Weapon", WeaponsNames[Key]);
+			Label_WeaponName.Value = WeaponsNames[Key];
+			Quad_WeaponIcon.ImageUrl = WeaponsImages[Key];
+			
+			Frame_Weapon.Visible = True;
+		} else {
+			Button_WeaponSelect.DataAttributeSet("Weapon", "");
+			
+			Frame_Weapon.Visible = False;
+		}
+	}
+}
+
+Text Select(CMlControl _Weapons, Text _Weapon) {
+	declare Weapon = "";
+	declare CMlQuad ButtonSelected;
+	
+	if (_Weapons != Null) {
+		declare Frame_Weapons <=> (_Weapons as CMlFrame);
+		// Search weapon
+		foreach (Control in Frame_Weapons.Controls) {
+			declare Frame_Weapon <=> (Control as CMlFrame);
+			declare Button_WeaponSelect <=> (Frame_Weapon.GetFirstChild("button-weapon-select") as CMlQuad);
+			declare ButtonWeapon = Button_WeaponSelect.DataAttributeGet("Weapon");
+			
+			if (ButtonWeapon == _Weapon) {
+				Weapon = _Weapon;
+				ButtonSelected <=> Button_WeaponSelect;
+			} else if (Weapon == "") {
+				Weapon = ButtonWeapon;
+				ButtonSelected <=> Button_WeaponSelect;
+			}
+		}
+		// Select weapon
+		foreach (Control in Frame_Weapons.Controls) {
+			declare Frame_Weapon <=> (Control as CMlFrame);
+			declare Button_WeaponSelect <=> (Frame_Weapon.GetFirstChild("button-weapon-select") as CMlQuad);
+			
+			if (ButtonSelected == Button_WeaponSelect) {
+				Button_WeaponSelect.Colorize = <0.8, 1., 1.>;
+			} else {
+				Button_WeaponSelect.Colorize = <0.1, 0.1, 0.1>;
+			}
+		}
+	}
+	
+	return Weapon;
+}
+
+main() {
+	while(InputPlayer == Null) yield;
+	while(InputPlayer.User == Null) yield;
+	
+	declare Frame_Shop <=> (Page.GetFirstChild("frame-shop") as CMlFrame);
+	Frame_Shop.Visible = !IsSpectator;
+	
+	declare Frame_Weapons <=> (Page.GetFirstChild("frame-weapons") as CMlFrame);
+	
+	declare netwrite Cli_Battle_P_ShopFinished for UI = False;
+	Cli_Battle_P_ShopFinished = IsSpectator;
+	
+	declare netread Net_BattleShop_Weapons for Teams[0] = Text[Text][Integer];
+	declare netread Net_BattleShop_WeaponsUpdate for Teams[0] = -1;
+	
+	declare netwrite Net_BattleShop_WeaponSelection for UI = "";
+	Net_BattleShop_WeaponSelection = "";
+	
+	declare PrevWeaponsUpdate = -1;
+	declare PrevCurrentClan = -1;
+	
+	SetWeapons(Frame_Weapons, Text[Text]);
+	Net_BattleShop_WeaponSelection = Select(Frame_Weapons, Net_BattleShop_WeaponSelection);
+	
+	if (GetInputPlayerId() < 0) {
+		Frame_Shop.Visible = False;
+		Cli_Battle_P_ShopFinished = True;
+	}
+	
+	while (True) {
+		yield;
+		if (!PageIsVisible) continue;
+		
+		if (InputPlayer != Null) {
+			if (
+				PrevWeaponsUpdate != Net_BattleShop_WeaponsUpdate ||
+				PrevCurrentClan != InputPlayer.CurrentClan
+			) {
+				PrevWeaponsUpdate = Net_BattleShop_WeaponsUpdate;
+				PrevCurrentClan = InputPlayer.CurrentClan;
+				
+				if (IsAttacker()) {
+					if (Net_BattleShop_Weapons.existskey(1)) SetWeapons(Frame_Weapons, Net_BattleShop_Weapons[1]);
+					else SetWeapons(Frame_Weapons, Text[Text]);
+					Net_BattleShop_WeaponSelection = Select(Frame_Weapons, Net_BattleShop_WeaponSelection);
+				} else {
+					if (Net_BattleShop_Weapons.existskey(2)) SetWeapons(Frame_Weapons, Net_BattleShop_Weapons[2]);
+					else SetWeapons(Frame_Weapons, Text[Text]);
+					Net_BattleShop_WeaponSelection = Select(Frame_Weapons, Net_BattleShop_WeaponSelection);
+				}
+			}
+		}
+		
+		foreach (Event in PendingEvents) {
+			switch (Event.Type) {
+				case CMlEvent::Type::MouseClick: {
+					if (Event.ControlId == "button-weapon-select") {
+						Net_BattleShop_WeaponSelection = Select(Frame_Weapons, Event.Control.DataAttributeGet("Weapon"));
+					} else if (Event.ControlId == "button-ready") {
+						Cli_Battle_P_ShopFinished = True;
+						Frame_Shop.Visible = False;
+					}
+				}
+				case CMlEvent::Type::MouseOver: {
+					if (Event.ControlId == "button-weapon-select") {
+						Event.Control.RelativeScale = 1.05;
+					}
+				}
+				case CMlEvent::Type::MouseOut: {
+					if (Event.ControlId == "button-weapon-select") {
+						Event.Control.RelativeScale = 1.;
+					}
+				}
+			}
+		}
+	}
+}
+--></script>
+</manialink>""";
+}
+
+Void SetWeapons(Text[Text] _WeaponsAtk, Text[Text] _WeaponsDef) {
+	declare netwrite Net_BattleShop_Weapons for Teams[0] = Text[Text][Integer];
+	declare netwrite Net_BattleShop_WeaponsUpdate for Teams[0] = -1;
+	Net_BattleShop_Weapons = [1 => _WeaponsAtk, 2 => _WeaponsDef];
+	Net_BattleShop_WeaponsUpdate = Now;
+}
+
+Text GetSelectedWeapon(CUIConfig _UI) {
+	if (_UI == Null) return "";
+	
+	declare netread Net_BattleShop_WeaponSelection for _UI = "";
+	return Net_BattleShop_WeaponSelection;
+}
+
+// ---------------------------------- //
+/**
+ * Displays the UI layer.
+ */
+Void Show() {
+	Layers::Attach(C_LayerName);
+}
+
+// ---------------------------------- //
+/**
+ * Hides the UI layer.
+ */
+Void Hide() {
+	Layers::Detach(C_LayerName);
+}
+
+// ---------------------------------- //
+/**
+ * Destroys the UI layer.
+ */
+Void Unload() {
+	if (Layers::Exists(C_LayerName)) Layers::Destroy(C_LayerName);
+	SetWeapons(Text[Text], Text[Text]);
+}
+
+// ---------------------------------- //
+/**
+ * Builds the UI layer.
+ *
+ * @param _GatesCount The number of gates in the current map.
+ */
+Void Load() {
+	Unload();
+
+	/*
+	Uized::Prepare("LayerName", C_LayerName);
+
+	Uized::Prepare("RocketLvl1Labels", CreateShopLabels(2, "Slow", GetCost(WEAP_ROCKET, LVL_1)));
+	Uized::Prepare("RocketLvl2Labels", CreateShopLabels(4, "Average", GetCost(WEAP_ROCKET, LVL_2)));
+	Uized::Prepare("RocketLvl3Labels", CreateShopLabels(6, "Fast", GetCost(WEAP_ROCKET, LVL_3)));
+
+	Uized::Prepare("NucleusLvl1Labels", CreateShopLabels(1, "Slow", GetCost(WEAP_NUCLEUS, LVL_1)));
+	Uized::Prepare("NucleusLvl2Labels", CreateShopLabels(2, "Average", GetCost(WEAP_NUCLEUS, LVL_2)));
+	Uized::Prepare("NucleusLvl3Labels", CreateShopLabels(3, "Fast", GetCost(WEAP_NUCLEUS, LVL_3)));
+
+	Uized::Prepare("LaserLvl1Labels", CreateShopLabels(1, "Slow", GetCost(WEAP_LASER, LVL_1)));
+	Uized::Prepare("LaserLvl2Labels", CreateShopLabels(2, "Average", GetCost(WEAP_LASER, LVL_2)));
+	Uized::Prepare("LaserLvl3Labels", CreateShopLabels(3, "Fast", GetCost(WEAP_LASER, LVL_3)));
+
+	Uized::Prepare("WEAP_ROCKET", WEAP_ROCKET);
+	Uized::Prepare("WEAP_NUCLEUS", WEAP_NUCLEUS);
+	Uized::Prepare("WEAP_LASER", WEAP_LASER);
+
+	Uized::Prepare("LVL_1", LVL_1);
+	Uized::Prepare("LVL_2", LVL_2);
+	Uized::Prepare("LVL_3", LVL_3);
+
+	Uized::Prepare("Sync", UISync::ML_SyncUI());
+	Uized::Prepare(C_Uized_Vars);
+
+	declare Text TemplateRendered = Uized::Render(C_Address);
+	// log(TemplateRendered);
+	Layers::Create(C_LayerName, TemplateRendered);
+	*/
+	
+	Layers::Create(C_LayerName, GetShopML());
+}

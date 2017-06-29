@@ -1,0 +1,388 @@
+/** 
+ *	OnlineSave library
+ *
+ *	Contains functions related to the handling, sending, recovering of saves from the web.
+ */
+
+#Include "TextLib"					as TL
+
+#Const Version						"2016-04-21"
+#Const ScriptName					"OnlineSave.Script.txt"
+
+#Const C_MasterServerUrl			"http://localhost/WarlordsServer/"
+
+#Const C_RequestSucceed				"ok"
+#Const C_SeparatorChar				","
+#Const C_Action_SaveSending			"savesend"
+#Const C_Action_SaveSearching		"savesearch"
+#Const C_Action_SaveRecovering		"saverecover"
+#Const C_ActionSaveRemoval			"saveremoval"
+
+#Const C_SaveNullId					-2
+#Const C_SaveNewGame				-1
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+/**
+ * Returns the version number of the script.
+ *
+ * @return The version number of the script.
+ */
+Text GetScriptVersion() {
+	return Version;
+}
+
+// ---------------------------------- //
+/**
+ * Returns the name of the script.
+ *
+ * @return The name of the script.
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+// ---------------------------------- //
+/**
+ * Returns the URL that can be used to send a game save.
+ *
+ * @return An URL.
+ */
+Text Private_GetUrlForSaveSending() {
+	return C_MasterServerUrl ^ "?act=" ^ C_Action_SaveSending;
+}
+
+// ---------------------------------- //
+/**
+ * Returns the URL that can be used to search a game save.
+ *
+ * @param _PlayerLoginsList A player's logins list.
+ * @return An URL.
+ */
+Text Private_GetUrlForSaveSearching(Text[] _PlayerLoginsList) {
+	declare Text GetParam = "";
+	declare Text Url = C_MasterServerUrl ^ "?act=" ^ C_Action_SaveSearching ^ "&pl=";
+	for (Index, 0, _PlayerLoginsList.count - 1) {
+		declare Text PlayerLogin = _PlayerLoginsList[Index];
+		Url ^= TL::URLEncode(PlayerLogin);
+		if (Index < _PlayerLoginsList.count - 1) Url ^= C_SeparatorChar;
+	}
+	
+	return Url;
+}
+
+// ---------------------------------- //
+/**
+ * Returns the URL that can be used to recover a game save.
+ *
+ * @param _SaveId The game save's id.
+ * @return An URL.
+ */
+Text Private_GetUrlForSaveRecovering(Integer _SaveId) {
+	return C_MasterServerUrl ^ "?act=" ^ C_Action_SaveRecovering ^ "&si=" ^ _SaveId;
+}
+
+// ---------------------------------- //
+/**
+ * Returns the URL that can be used to remove a game save.
+ *
+ * @param _SaveId The game save's id.
+ * @return An URL.
+ */
+Text Private_GetUrlForSaveRemoval(Integer _SaveId) {
+	return C_MasterServerUrl ^ "?act=" ^ C_ActionSaveRemoval ^ "&si=" ^ _SaveId;
+}
+
+// ---------------------------------- //
+/**
+ * Returns a resquest's result.
+ *
+ * @param _Url The request's URL.
+ * @param _PostData The save to send through the POST method.
+ * @return The request's result.
+ */
+Text Private_GetRequestResult(Text _Url, Text _PostData) {
+	declare CHttpRequest Request = Http.CreatePost(_Url, _PostData);
+	wait(Request.IsCompleted);
+	declare Text Result = Request.Result;
+	Http.Destroy(Request);
+	return Result;
+}
+
+// ---------------------------------- //
+/**
+ * Sends a game save online.
+ *
+ * @param _Save The XML game save.
+ * @return The query's result.
+ */
+Text SendSaveOnline(Text _Save) {
+	declare Text Url = Private_GetUrlForSaveSending();
+	declare Text Result = Private_GetRequestResult(Url, _Save);
+	return Result;
+}
+
+// ---------------------------------- //
+/**
+ * Recovers matching game saves' Ids.
+ *
+ *	@param _PlayerLoginsList A player's logins list.
+ *	@return A game save id list.
+ */
+Integer[] RecoverMatchingSavesIdList(Text[] _PlayerLoginsList) {
+	declare Text Url = Private_GetUrlForSaveSearching(_PlayerLoginsList);
+	declare Text Result = Private_GetRequestResult(Url, "");
+	declare Integer[] SaveIds;
+	foreach (SaveTextId in TL::Split(C_SeparatorChar, Result)) {
+		SaveIds.add(TL::ToInteger(SaveTextId));
+	}
+	return SaveIds;
+}
+
+// ---------------------------------- //
+/**
+ * Recovers a game save.
+ *
+ * @param _SaveId The game save Id.
+ * @return The XML save.
+ */
+Text RecoverSave(Integer _SaveId) {
+	declare Text Url = Private_GetUrlForSaveRecovering(_SaveId);
+	return Private_GetRequestResult(Url, "");
+}
+
+// ---------------------------------- //
+/**
+ * Removes a save from its id.
+ *
+ * @param _SaveId The save's id to remove.
+ */
+Void RemoveSave(Integer _SaveId) {
+	declare RequestResult = Private_GetRequestResult(Private_GetUrlForSaveRemoval(_SaveId), "");
+}
+
+// ---------------------------------- //
+/**
+ * Updates the available save.
+ *
+ * @param _PlayerLoginsList An array containing all connected players' logins.
+ */
+Void UpdateAvailableSaves(Text[] _PlayerLoginsList) {
+	declare netwrite Integer[]						Srv_OnlineSave_G_SavesIds				for Teams[0];
+	declare netwrite Text[Integer][Integer]			Srv_OnlineSave_G_SavesPlayers			for Teams[0];
+	declare netwrite Integer[][Integer]				Srv_OnlineSave_G_SavesTimestamps		for Teams[0];
+	declare netwrite Integer[Integer]				Srv_OnlineSave_G_SavesTurnsCount		for Teams[0];
+	declare netwrite Vec3[Integer][Integer]			Srv_OnlineSave_G_SavesCastles			for Teams[0];
+	declare netwrite Boolean[Integer][Integer]		Srv_OnlineSave_G_SavesCastleIsCapital	for Teams[0];
+	declare netwrite Integer[Integer][Integer]		Srv_OnlineSave_G_SavesCastlesOwners		for Teams[0];
+	declare netwrite Integer[][Integer][Integer]	Srv_OnlineSave_G_SavesLinks				for Teams[0];
+	
+	Srv_OnlineSave_G_SavesIds.clear();
+	Srv_OnlineSave_G_SavesPlayers.clear();
+	Srv_OnlineSave_G_SavesTimestamps.clear();
+	Srv_OnlineSave_G_SavesTurnsCount.clear();
+	Srv_OnlineSave_G_SavesCastles.clear();
+	Srv_OnlineSave_G_SavesCastleIsCapital.clear();
+	Srv_OnlineSave_G_SavesCastlesOwners.clear();
+	Srv_OnlineSave_G_SavesLinks.clear();
+	
+	declare Integer[] MatchingSaves = RecoverMatchingSavesIdList(_PlayerLoginsList);
+	Srv_OnlineSave_G_SavesIds = MatchingSaves;
+	
+	foreach (SaveId in MatchingSaves) {
+		declare CXmlDocument XmlSave = Xml.Create(RecoverSave(SaveId));
+		if (XmlSave == Null) return;
+		
+		declare Text[Integer] MyPlayers;
+		
+		declare CXmlNode PlayersNode = XmlSave.GetFirstChild("players");
+		
+		Srv_OnlineSave_G_SavesCastlesOwners[SaveId]		= Integer[Integer];
+		Srv_OnlineSave_G_SavesCastleIsCapital[SaveId]	= Boolean[Integer];
+
+		foreach (DefaultPlayerId => PlayerNode in PlayersNode.Children) {
+		
+			declare Integer PlayerId = PlayerNode.GetAttributeInteger("id", DefaultPlayerId);
+		
+			MyPlayers[PlayerId] = PlayerNode.GetAttributeText("login", "?");
+			
+			foreach (CastleNode in PlayerNode.Children) {
+				declare Integer CastleId	= CastleNode.GetAttributeInteger("id", -1);
+				declare Boolean IsCapital	= CastleNode.GetAttributeBoolean("capital", False);
+				Srv_OnlineSave_G_SavesCastlesOwners[SaveId][CastleId] = PlayerId;
+				Srv_OnlineSave_G_SavesCastleIsCapital[SaveId][CastleId] = IsCapital;
+			}
+			
+		}
+		
+		Srv_OnlineSave_G_SavesPlayers[SaveId] = MyPlayers;
+		
+		declare CXmlNode	RootNode	= XmlSave.Root;
+		declare Text		Timestamp	= RootNode.GetAttributeText("timestamp", "1970-01-01 12:00:00");
+		
+		declare Text[]		DateAndTime	= TL::Split(" ", Timestamp);
+		declare Text[]		Date		= TL::Split("-", DateAndTime[0]);
+		declare Text[]		Time		= TL::Split(":", DateAndTime[1]);
+		
+		declare Integer		Day			= TL::ToInteger(Date[2]);
+		declare Integer		Month		= TL::ToInteger(Date[1]);
+		declare Integer		Year		= TL::ToInteger(Date[0]);
+		
+		declare Integer		Hour		= TL::ToInteger(Time[0]);
+		declare Integer		Minutes		= TL::ToInteger(Time[1]);
+		
+		Srv_OnlineSave_G_SavesTimestamps[SaveId] = [Day, Month, Year, Hour, Minutes];
+		
+		declare CXmlNode StateNode	= XmlSave.GetFirstChild("state");
+		declare CXmlNode TurnNode	= StateNode.GetFirstChild("turn");
+		declare CXmlNode WorldNode	= StateNode.GetFirstChild("world");
+		
+		declare Integer TurnsCount = TurnNode.GetAttributeInteger("year", 0) - WorldNode.GetAttributeInteger("startyear", 0) + 1;
+		Srv_OnlineSave_G_SavesTurnsCount[SaveId] = TurnsCount;
+		
+		declare Vec3[Integer]		Castles;	// <CastlePosX, CastlePosY, CastleSize>[CastleId]
+		declare Integer[][Integer]	Links;		// LinkedCastleId[][CastleId]
+		
+		declare CXmlNode CastlesNode = WorldNode.GetFirstChild("castles");
+		
+		// Fetch Castles.
+		foreach (CastleId => CastleNode in CastlesNode.Children) {
+			declare Text[]	CastlePos	= TL::Split(" ", CastleNode.GetAttributeText("pos", "0 0"));
+			declare Real	CastlePosX	= TL::ToReal(CastlePos[0]);
+			declare Real	CastlePosY	= TL::ToReal(CastlePos[1]);
+			declare Real	CastleSize	= CastleNode.GetAttributeReal("size", 1.);
+			
+			Castles[CastleId]	= (<CastlePosX, CastlePosY, CastleSize>);
+			Links[CastleId]		= Integer[];
+			
+			// Fetches links on this castle.
+			foreach (LinkNode in CastleNode.Children) {
+			
+				declare Integer LinkedCastleId;
+				declare Text LinkedCastleName = LinkNode.GetAttributeText("castlename", "");
+				
+				// Looks up for the link castle's id.
+				foreach (CastleIdBis => CastleNodeBis in CastlesNode.Children) {
+				
+					declare Text CastleName = CastleNodeBis.GetAttributeText("name", "");
+					
+					if (LinkedCastleName == CastleName) {
+						LinkedCastleId = CastleIdBis;
+						break;
+					}
+				}
+				
+				Links[CastleId].add(LinkedCastleId);
+				
+			}
+		}
+		
+		// Updates castles and links
+		Srv_OnlineSave_G_SavesCastles[SaveId]	= Castles;
+		Srv_OnlineSave_G_SavesLinks[SaveId]		= Links;
+
+		Xml.Destroy(XmlSave);
+	}
+}
+
+// ---------------------------------- //
+/**
+ * Picks up saves chosen by each players and broadcast these choices to inform other players.
+ */
+Void UpdatePlayersChosenSaves() {
+
+	declare netwrite Integer[Text] Srv_OnlineSave_G_ChosenSavesId for Teams[0];
+	Srv_OnlineSave_G_ChosenSavesId.clear();
+
+	foreach (Player in Players) {
+		declare CUIConfig UI = UIManager.GetUI(Player);
+		if (UI == Null) continue;
+		
+		declare netread Integer Cli_OnlineSave_P_ChosenSaveId for UI;
+		Srv_OnlineSave_G_ChosenSavesId[Player.User.Login] = Cli_OnlineSave_P_ChosenSaveId;
+	}
+}
+
+// ---------------------------------- //
+/**
+ * Checks if a save exists.
+ *
+ * @param _SaveId the save id to check.
+ * @return True if the save exists, False otherwise.
+ */
+Boolean IsSaveAvailable(Integer _SaveId) {
+	declare netwrite Integer[]			Srv_OnlineSave_G_SavesIds			for Teams[0];
+	return Srv_OnlineSave_G_SavesIds.exists(_SaveId);
+}
+
+// ---------------------------------- //
+/**
+ * Checks if the given player is connected.
+ *
+ * @param _PlayerLogin The player's login to check.
+ * @return True if the player is connected, False otherwise.
+ */
+Boolean Private_IsOnline(Text _PlayerLogin) {
+	foreach (Player in Players) {
+		if (Player.User.Login == _PlayerLogin) return True;
+	}
+	return False;
+}
+
+// ---------------------------------- //
+/**
+ * Gets the first chosen save that have all players connected and ready to start.
+ *
+ * @return The save's id.
+ */
+Integer GetChosenSave() {
+	declare netwrite Integer[]				Srv_OnlineSave_G_SavesIds			for Teams[0];
+	declare netwrite Text[Integer][Integer]	Srv_OnlineSave_G_SavesPlayers		for Teams[0];
+	declare netwrite Integer[Text]			Srv_OnlineSave_G_ChosenSavesId		for Teams[0];
+	
+	declare Integer[] ValidSaveIds = Srv_OnlineSave_G_SavesIds;
+	ValidSaveIds.add(-1);
+	
+	foreach (SaveId in ValidSaveIds) {
+		if (SaveId != -1 && !Srv_OnlineSave_G_SavesPlayers.existskey(SaveId)) continue;
+		
+		declare Text[Integer] RequiredPlayers;
+		if (SaveId == -1) {
+			foreach (FakePlayerId => Player in Players) {
+				RequiredPlayers[FakePlayerId] = Player.User.Login;
+			}
+		} else {
+			RequiredPlayers = Srv_OnlineSave_G_SavesPlayers[SaveId];
+		}
+		
+		declare Boolean ReadyToGo = True;
+		if (RequiredPlayers.count < 2) {
+			ReadyToGo = False;
+		} else {		
+			foreach (PlayerLogin in RequiredPlayers) {
+				if (!Private_IsOnline(PlayerLogin) || !Srv_OnlineSave_G_ChosenSavesId.existskey(PlayerLogin) || Srv_OnlineSave_G_ChosenSavesId[PlayerLogin] != SaveId) {
+					ReadyToGo = False;
+					break;
+				}
+			}
+		}
+		
+		if (ReadyToGo) {
+			return SaveId;
+		}
+	}
+	
+	return -2;
+	
+}
+
+Integer SAVE_NULL_ID() {
+	return C_SaveNullId;
+}
+
+Integer SAVE_NEW_GAME() {
+	return C_SaveNewGame;
+}

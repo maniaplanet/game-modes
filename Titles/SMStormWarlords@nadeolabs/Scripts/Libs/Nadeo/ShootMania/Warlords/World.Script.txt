@@ -1,0 +1,799 @@
+/** 
+ *	World library
+ *
+ *	Contains functions related to the world, its castles and links.
+ */
+
+#Include "TextLib"												as TL
+#Include "MathLib"												as ML
+
+#Const	C_WorldDirectory					"file://Media/Data/Warlords/"
+#Const	C_CastleNeutral						-1
+#Const	C_CastleNotOwned					-1
+#Const	ErrorMessage_FileNotValid			"The world file is not valid."
+#Const	ErrorMessage_CastleNotOwned			"The castle is not owned."
+
+declare CXmlDocument G_XmlWorld;
+declare Integer[Integer] G_CastlesOriginalMembership; // PlayerId[CastleId]
+
+// ---------------------------------- //
+/**
+ * Gets all ids of the loaded map's castles.
+ *
+ * @return An array with all castle ids in the loaded map.
+ */
+Integer[] GetCastleIds() {
+	declare netwrite Text[] Srv_World_G_Castles for Teams[0];
+	declare Integer[] Ids;
+	foreach (Id => Name in Srv_World_G_Castles) {
+		Ids.add(Id);
+	}
+	return Ids;
+}
+
+// ---------------------------------- //
+/**
+ * Counts the map's castles.
+ *
+ * @return The number of castles in the loaded map.
+ */
+Integer CountCastles() {
+	return GetCastleIds().count;
+}
+
+// ---------------------------------- //
+/**
+ * Gets a castle name from its id.
+ *
+ * @param _CastleId The castle's id to get the name from.
+ * @return The castle name.
+ */
+Text GetCastleNameFromId(Integer _CastleId) {
+	declare netwrite Text[] Srv_World_G_Castles for Teams[0];
+	return Srv_World_G_Castles[_CastleId];
+}
+
+// ---------------------------------- //
+/**
+ * Gets a castle id from its name.
+ *
+ * @param _CastleName The castle's name to get the id from.
+ * @return The castle id.
+ */
+Integer GetCastleIdFromName(Text _CastleName) {
+	declare netwrite Text[] Srv_World_G_Castles for Teams[0];
+	return Srv_World_G_Castles.keyof(_CastleName);
+}
+
+// ---------------------------------- //
+/**
+ * Checks if the castle associated to the given id is a start point.
+ *
+ * @param _CastleId The castle's id to check.
+ * @return True if the castle associated to the given id is a start point, False otherwise.
+ */
+Boolean IsCastleStartPoint(Integer _CastleId) {
+	declare netwrite Int3[Integer] Srv_World_G_CastlePropertiesBis for Teams[0];
+	return (Srv_World_G_CastlePropertiesBis[_CastleId].X == 1);
+}
+
+// ---------------------------------- //
+/**
+ * Checks if a castle is neutral
+ *
+ * @deprecated This function is pointless.
+ * @param _CastleId The castle's id to check.
+ * @return True if the castle associated to the given id is neutral, False otherwise.
+ */
+Boolean IsCastleNeutral(Integer _CastleId) {
+	return (_CastleId == C_CastleNeutral);
+}
+
+// ---------------------------------- //
+/**
+ * Gets all castles that can be used as start points.
+ *
+ * @return An array containing all start point castle' ids.
+ */
+Integer[] GetStartPointCastles() {
+	declare Integer[] StartPointCastles;
+	declare netwrite Text[] Srv_World_G_Castles for Teams[0];
+	
+	foreach (CastleId => Castle in Srv_World_G_Castles) {
+		if (IsCastleStartPoint(CastleId)) StartPointCastles.add(CastleId);
+	}
+	return StartPointCastles;
+}
+
+Integer CountStartPointCastles() {
+	return GetStartPointCastles().count;
+}
+
+// ---------------------------------- //
+/**
+ * Gets a player's castles.
+ *
+ * @param _PlayerId The player's id to get the castles from.
+ * @return An array containing the player's castles.
+ */
+Integer[] GetPlayerCastleIds(Integer _PlayerId) {
+	declare Integer[] PlayerCastleIds;
+	declare netwrite Int3[Integer] Srv_World_G_CastleAttributes for Teams[0];
+	
+	foreach (Id => CastleAttr in Srv_World_G_CastleAttributes) {
+		if (CastleAttr.X == _PlayerId) PlayerCastleIds.add(Id);
+	}
+	return PlayerCastleIds;
+}
+
+// ---------------------------------- //
+/**
+ * Counts a player's castles.
+ *
+ * @param _PlayerId The player's id to count the castles from.
+ * @return The number of the given player's castles.
+ */
+Integer CountPlayerCastles(Integer _PlayerId) {
+	return GetPlayerCastleIds(_PlayerId).count;
+}
+
+// ---------------------------------- //
+/**
+ * Checks if a player has castles.
+ *
+ * @param _PlayerId The player to check.
+ * @return True if the player has at least one planet, False oterwise.
+ */
+Boolean HasCastles(Integer _PlayerId) {
+	return (CountPlayerCastles(_PlayerId) > 0);
+}
+
+// ---------------------------------- //
+/**
+ * Counts a player's vassals' castles.
+ *
+ * @param _PlayerId The player's id to count the castles from.
+ * @return The number of the given player's castles.
+ */
+Integer CountVassalsCastles(Integer _PlayerId) {
+	return GetPlayerCastleIds(_PlayerId).count;
+}
+
+// ---------------------------------- //
+/**
+ * Gets a castle's type.
+ *
+ * @param _CastleId The castle's id to get the type from.
+ * @return The given castle's type (0, 1, 2 or 3).
+ */
+Integer GetCastleTypeId(Integer _CastleId) {
+	declare netwrite Int3[Integer] Srv_World_G_CastlePropertiesBis for Teams[0];
+	return Srv_World_G_CastlePropertiesBis[_CastleId].Y;
+}
+
+// ---------------------------------- //
+/**
+ * Adds defense gold to a castle.
+ *
+ * @param _CastleId The castle's id that will receive gold.
+ * @param _GoldAmount The amount of gold to store in the castle.
+ */
+Void AddCastleDefenseGold(Integer _CastleId, Integer _GoldAmount) {
+	declare netwrite Integer[Integer] Srv_World_G_CastleDefenseGoldAmounts for Teams[0];
+	Srv_World_G_CastleDefenseGoldAmounts[_CastleId] += _GoldAmount;
+}
+
+// ---------------------------------- //
+/**
+ * Substracts defense gold to a castle.
+ *
+ * @param _CastleId The castle's id that will lose gold.
+ * @param _GoldAmount The amount of gold to take from the castle.
+ */
+Void SubCastleDefenseGold(Integer _CastleId, Integer _GoldAmount) {
+	declare netwrite Integer[Integer] Srv_World_G_CastleDefenseGoldAmounts for Teams[0];
+	Srv_World_G_CastleDefenseGoldAmounts[_CastleId] -= _GoldAmount;
+}
+
+// ---------------------------------- //
+/**
+ * Sets the amount of gold on a castle.
+ *
+ * @param _CastleId The castle's id to change the defense gold.
+ * @param  _GoldAmount The new amount of gold.
+ */
+Void SetCastleDefenseGold(Integer _CastleId, Integer _GoldAmount) {
+	declare netwrite Integer[Integer] Srv_World_G_CastleDefenseGoldAmounts for Teams[0];
+	Srv_World_G_CastleDefenseGoldAmounts[_CastleId] = _GoldAmount;
+}
+
+// ---------------------------------- //
+/**
+ * Dumps the amount of gold on a castle.
+ *
+ * @param _CastleId The castle's id to dump.
+ */
+Void DumpCastleDefenseGold(Integer _CastleId) {
+	declare netwrite Integer[Integer] Srv_World_G_CastleDefenseGoldAmounts for Teams[0];
+	Srv_World_G_CastleDefenseGoldAmounts[_CastleId] = 0;
+}
+
+// ---------------------------------- //
+/**
+ * Gets the defense gold amount on the given castle.
+ *
+ * @param _CastleId The castle's id to get the amount of defense gold from.
+ * @return The castle's amount of defense gold.
+ */
+Integer GetCastleDefenseGold(Integer _CastleId) {
+	declare netwrite Integer[Integer] Srv_World_G_CastleDefenseGoldAmounts for Teams[0];
+	return Srv_World_G_CastleDefenseGoldAmounts[_CastleId];
+}
+
+// ---------------------------------- //
+/**
+ * Checks if the given castle is owned by a player.
+ *
+ * @param _CastleId The castle's id to check.
+ * @return True if a player has the given castle, False otherwise.
+ */
+Boolean IsCastleOwned(Integer _CastleId) {
+	declare netwrite Int3[Integer] Srv_World_G_CastleAttributes for Teams[0];
+	return (Srv_World_G_CastleAttributes[_CastleId].X != C_CastleNotOwned);
+}
+
+// ---------------------------------- //
+/**
+ * Gets a castle's owner.
+ *
+ * @param _CastleId The castle's id to get the owner from.
+ * @return The castle's owner's id.
+ */
+Integer GetCastleOwner(Integer _CastleId) {
+	declare netwrite Int3[Integer] Srv_World_G_CastleAttributes for Teams[0];
+	return Srv_World_G_CastleAttributes[_CastleId].X;
+}
+
+// ---------------------------------- //
+/**
+ * Resets a castle's owner.
+ *
+ * @param _CastleId The castle's id to reset.
+ */
+Void ResetCastleOwner(Integer _CastleId) {
+	declare netwrite Int3[Integer] Srv_World_G_CastleAttributes for Teams[0];
+	Srv_World_G_CastleAttributes[_CastleId].X = C_CastleNotOwned;
+}
+
+// ---------------------------------- //
+/**
+ * Gives a player a castle.
+ *
+ * @param _CastleId The castle to set the owner.
+ * @param _OwnerId The castle's new owner.
+ */
+Void SetCastleOwner(Integer _CastleId, Integer _OwnerId) {
+	declare netwrite Int3[Integer] Srv_World_G_CastleAttributes for Teams[0];
+	Srv_World_G_CastleAttributes[_CastleId].X = _OwnerId;
+}
+
+// ---------------------------------- //
+/**
+ * Sets a warlord on a castle.
+ *
+ * @param _CastleId The castle's id that will have a warlord.
+ */
+Void SetCastleWarlorld(Integer _CastleId) {
+	assert(IsCastleOwned(_CastleId), ErrorMessage_CastleNotOwned);
+	declare netwrite Int3[Integer] Srv_World_G_CastleAttributes for Teams[0];
+	Srv_World_G_CastleAttributes[_CastleId].Y = 1;
+}
+
+// ---------------------------------- //
+/**
+ * Checks if a castle has a warlord.
+ *
+ * @param _CastleId The castle's id to check.
+ * @return True if the given castle has a warlord, False otherwise.
+ */
+Boolean CastleHasWarlord(Integer _CastleId) {
+	declare netwrite Int3[Integer] Srv_World_G_CastleAttributes for Teams[0];
+	return (Srv_World_G_CastleAttributes[_CastleId].Y == 1);
+}
+
+// ---------------------------------- //
+/**
+ * Checks if the given castle is a capital.
+ *
+ * @param _CastleId The castle's id to check.
+ * @return True if the given castle is a capital, False otherwise.
+ */
+Boolean IsCastleCapital(Integer _CastleId) {
+	declare netwrite Int3[Integer] Srv_World_G_CastleAttributes for Teams[0];
+	return (Srv_World_G_CastleAttributes[_CastleId].Z == 1);
+}
+
+// ---------------------------------- //
+/**
+ * Sets a castle as capital.
+ *
+ * @param _CastleId The castle's id to set as capital.
+ */
+Void SetCastleCapital(Integer _CastleId) {
+	assert(IsCastleOwned(_CastleId), ErrorMessage_CastleNotOwned);
+	declare netwrite Int3[Integer] Srv_World_G_CastleAttributes for Teams[0];
+	Srv_World_G_CastleAttributes[_CastleId].Z = 1;
+}
+
+// ---------------------------------- //
+/**
+ * Unsets the capital on a castle.
+ *
+ * @param _CastleId The castle's id to unset.
+ */
+Void UnsetCastleCapital(Integer _CastleId) {
+	assert(IsCastleOwned(_CastleId), ErrorMessage_CastleNotOwned);
+	declare netwrite Int3[Integer] Srv_World_G_CastleAttributes for Teams[0];
+	Srv_World_G_CastleAttributes[_CastleId].Z = 0;
+}
+
+// ---------------------------------- //
+/**
+ * Gets a player's castles.
+ *
+ * @param _PlayerId The player to get the capital from.
+ * @return The capital's castle id if found, -1 otherwise.
+ */
+Integer GetPlayerCapital(Integer _PlayerId) {
+	foreach (CastleId in GetCastleIds()) {
+		if (!IsCastleCapital(CastleId)) continue;
+		if (GetCastleOwner(CastleId) != _PlayerId) continue;
+		return CastleId;
+	}
+	return C_CastleNeutral; //< No capital found.
+}
+
+// ---------------------------------- //
+/**	Give up all castles but keep capital
+ *
+ * @param _PlayerId The player's id to get the castles from.
+ */
+Void GiveUpTerritory(Integer _PlayerId) {
+	declare CastlesIds = GetPlayerCastleIds(_PlayerId);
+	foreach (CastleId in CastlesIds) {
+		if (!IsCastleCapital(CastleId)) {
+			DumpCastleDefenseGold(CastleId);
+			ResetCastleOwner(CastleId);
+		}
+	}
+}
+
+// ---------------------------------- //
+/**
+ * Resets all castles owned by the given player.
+ *
+ * @param _PlayerId The player's id to get the castles from.
+ */
+Void RevokeAllCastlesOwnership(Integer _PlayerId) {
+	foreach (CastleId in GetPlayerCastleIds(_PlayerId)) {
+		if (IsCastleCapital(CastleId)) UnsetCastleCapital(CastleId);
+		DumpCastleDefenseGold(CastleId);
+		ResetCastleOwner(CastleId);
+	}
+}
+
+// ---------------------------------- //
+/**
+ * Gets a random castle.
+ *
+ * @return A random castle id.
+ */
+Integer GetRandomCastleId() {
+	return ML::Rand(0, CountCastles() - 1);
+}
+
+// ---------------------------------- //
+/**
+ * Gets a random start point castle that is not owned.
+ *
+ * @return A random castle id.
+ */
+Integer GetRandomUnownedStartPointCastle() {
+	declare Integer RandomIndex = C_CastleNeutral;
+	
+	while (True) {
+		RandomIndex = ML::Rand(0, CountCastles() - 1);
+		if (!IsCastleOwned(RandomIndex) && IsCastleStartPoint(RandomIndex)) break;
+	}
+	
+	return RandomIndex;
+}
+
+// ---------------------------------- //
+/**
+ * Gets the start year determined by the world file.
+ *
+ * @return The start year.
+ */
+Integer GetStartYear() {
+	declare netwrite Integer Srv_World_G_StartYear for Teams[0];
+	return Srv_World_G_StartYear;
+}
+
+// ---------------------------------- //
+/**
+ * Gets the current year.
+ *
+ * @return The current year.
+ * @see World#GetPassedYears() This other function will returns the number of years passed since the game start.
+ */
+Integer GetCurrentYear() {
+	declare netwrite Integer Srv_World_G_CurrentYear for Teams[0];
+	return Srv_World_G_CurrentYear;
+}
+
+// ---------------------------------- //
+/**
+ * Gets the number of years passed since the game start.
+ *
+ * @return The number of years passed since the game start.
+ */
+Integer GetPassedYears() {
+	return GetCurrentYear() - GetStartYear();
+}
+
+// ---------------------------------- //
+/**
+ * Increments the current year.
+ */
+Void NextYear() {
+	declare netwrite Integer Srv_World_G_CurrentYear for Teams[0];
+	Srv_World_G_CurrentYear += 1;
+}
+
+// ---------------------------------- //
+/**
+ * Sets the current year.
+ *
+ * @param _Year The current year.
+ */
+Void SetCurrentYear(Integer _Year) {
+	declare netwrite Integer Srv_World_G_CurrentYear for Teams[0];
+	Srv_World_G_CurrentYear = _Year;
+}
+
+// ---------------------------------- //
+/**
+ * Sets a castle bonus id. This castle will make more money to its owner.
+ *
+ * @param _CastleId The new bonus castle id.
+ */
+Void SetBonusCastle(Integer _CastleId) {
+	declare netwrite Integer Srv_World_G_BonusCastle for Teams[0];
+	Srv_World_G_BonusCastle = _CastleId;
+}
+
+// ---------------------------------- //
+/**
+ * Gets the bonus castle's id. This castle will make more money to its owner.
+ *
+ * @return The bonus castle's id.
+ */
+Integer GetBonusCastle() {
+	declare netwrite Integer Srv_World_G_BonusCastle for Teams[0];
+	return Srv_World_G_BonusCastle;
+}
+
+/**
+ * Gets the castle on a link extremity.
+ *
+ * @param _Link The link to get the castle from.
+ * @return The castle's id.
+ */
+Integer GetLinkCastleId1(Int3 _Link) {
+	return _Link.X;
+}
+
+/**
+ * Gets the castle on the other link extremity.
+ *
+ * @param _Link The link to get the castle from.
+ * @return  The castle's id.
+ */
+Integer GetLinkCastleId2(Int3 _Link) {
+	return _Link.Y;
+}
+
+/**
+ * Gets all links.
+ *
+ * @return An array containing all links.
+ */
+Int3[] GetLinks() {
+	declare netwrite Int3[] Srv_World_G_Links for Teams[0];
+	return Srv_World_G_Links;
+}
+
+/**
+ * Gets all links related with the given castle.
+ *
+ * @param _CastleId The castle's id to get the links from
+ * @return An array containing all links connected with the given castle.
+ */
+Int3[] GetLinks(Integer _CastleId) {
+	declare Int3[] CastleLinks;
+	
+	foreach (Link in GetLinks()) {
+		if (GetLinkCastleId1(Link) == _CastleId || GetLinkCastleId2(Link) == _CastleId) CastleLinks.add(Link);
+	}
+	
+	return CastleLinks;
+}
+
+// ---------------------------------- //
+/**
+ * Count links.
+ *
+ * @return The number of links.
+ */
+Integer CountLinks() {
+	return GetLinks().count;
+}
+
+/**
+ * Gets a player's accessible castles.
+ *
+ * @param _PlayerId The accessible castles' player.
+ * @return An array containing all accessible castle ids.
+ */
+Integer[] GetAccessibleCastles(Integer _PlayerId) {
+	declare Integer[] AccessibleCastles;
+	declare Integer[] PlayerCastleIds = GetPlayerCastleIds(_PlayerId);
+	
+	foreach (CastleId in PlayerCastleIds) {
+		declare Int3[] Links = GetLinks(CastleId);
+		
+		foreach (Link in Links) {
+			declare Integer LinkedCastleId;
+			
+			if (GetLinkCastleId1(Link) == CastleId) {
+				LinkedCastleId = GetLinkCastleId2(Link);
+			} else {
+				LinkedCastleId = GetLinkCastleId1(Link);
+			}
+			
+			if (GetCastleOwner(LinkedCastleId) != _PlayerId) AccessibleCastles.add(LinkedCastleId);
+		}
+	}
+	
+	return AccessibleCastles;
+}
+
+
+/**
+ * TODO: COMMENT
+ */
+Integer[] GetLinksToCastle(Integer _PlayerId, Integer _CastleId) {
+	declare netwrite Int3[] Srv_World_G_Links for Teams[0];
+	
+	declare Integer[] LinkIds;
+	
+	foreach (LinkId => Link in Srv_World_G_Links) {
+		
+		declare Integer Castle1 = GetLinkCastleId1(Link);
+		declare Integer Castle2 = GetLinkCastleId2(Link);
+		
+		if (Castle1 == _CastleId) {
+			if (GetCastleOwner(Castle2) == _PlayerId) LinkIds.add(LinkId);
+		} else if (Castle2 == _CastleId) {
+			if (GetCastleOwner(Castle1) == _PlayerId) LinkIds.add(LinkId);
+		}
+		
+	}
+	
+	return LinkIds;
+}
+
+Boolean AreCastlesLinked(Integer _Castle1Id, Integer _Castle2Id) {
+	declare netwrite Int3[] Srv_World_G_Links for Teams[0];
+
+	foreach (Link in Srv_World_G_Links) {
+		
+		if ((Link.X == _Castle1Id && Link.Y == _Castle2Id) || (Link.X == _Castle2Id && Link.Y == _Castle1Id)) {
+			return True;
+		}
+
+	}
+
+	return False;
+}
+
+Boolean IsCastleAccessible(Integer _AimedCastleId, Integer _PlayerId) {
+	foreach (CastleId in GetPlayerCastleIds(_PlayerId)) {
+		if (AreCastlesLinked(_AimedCastleId, CastleId)) return True;
+	}
+	return False;
+}
+
+/**
+ * Changes the property of all of a player's castles to another one. The giver's capital will be unset.
+ *
+ * @param _GiverId The giver's id.
+ * @param _ReceiverId The receiver's id.
+ */
+Void TransferCastles(Integer _GiverId, Integer _ReceiverId) {
+	foreach (CastleId in GetPlayerCastleIds(_GiverId)) {
+		if (IsCastleCapital(CastleId)) UnsetCastleCapital(CastleId);
+		SetCastleOwner(CastleId, _ReceiverId);
+	}
+}
+
+Integer GetCastleGoldAddition(CPlayer _Player, Integer _CastleId) {
+	declare CUIConfig UI = UIManager.GetUI(_Player);
+	declare netread Integer[Integer] Cli_World_P_CastleDefenseGoldAddition for UI;
+	
+	if (Cli_World_P_CastleDefenseGoldAddition.existskey(_CastleId)) return Cli_World_P_CastleDefenseGoldAddition[_CastleId];
+	
+	return 0;
+}
+
+Void ClearCastlesGoldAddition(CPlayer _Player) {
+	declare netwrite Integer Srv_World_P_DefenseGoldAdditionClearTimestamp for _Player;
+	Srv_World_P_DefenseGoldAdditionClearTimestamp = Now;
+}
+
+// ---------------------------------- //
+
+Text Private_XmlGetCastleName(CXmlNode _XmlNode) {
+	declare Text CastleName = _XmlNode.GetAttributeText("name", "");
+	assert(CastleName != "", ErrorMessage_FileNotValid^" (CastleName)");
+	return CastleName;
+}
+
+Vec2 Private_XmlGetCastlePos(CXmlNode _XmlNode) {
+	declare Text CastlePos = _XmlNode.GetAttributeText("pos", "");
+	assert(CastlePos != "", ErrorMessage_FileNotValid^" (CastlePos)");
+
+	declare Text[] SplittedCastlePos = TL::Split(" ", CastlePos);
+	return <TL::ToReal(SplittedCastlePos[0]), TL::ToReal(SplittedCastlePos[1])>;
+}
+
+Integer Private_XmlIsCastleStartPoint(CXmlNode _XmlNode) {
+	declare Integer IsCapital = _XmlNode.GetAttributeInteger("initial", -1);
+	assert(IsCapital != -1, ErrorMessage_FileNotValid^" (IsCapital)");
+	return IsCapital;
+}
+
+Integer Private_XmlGetCastleType(CXmlNode _XmlNode) {
+	declare Integer CastleType = _XmlNode.GetAttributeInteger("type", -1);
+	assert(CastleType != -1, ErrorMessage_FileNotValid^" (CastleType)");
+	return CastleType;
+}
+
+Real Private_XmlGetCastleSize(CXmlNode _XmlNode) {
+	declare Real CastleSize = _XmlNode.GetAttributeReal("size", -1.);
+	assert(CastleSize > 0, ErrorMessage_FileNotValid^" (CastleSize)");
+	return CastleSize;
+}
+
+Integer Private_XmlGetCastleOwnerId(CXmlNode _XmlNode) {
+	declare Integer OriginalOwnerId = _XmlNode.GetAttributeInteger("testplayerid", -1);
+	return OriginalOwnerId;
+}
+
+Text[] Private_XmlGetLinkedCastles(CXmlNode _XmlNode) {
+	declare Text[] LinkedCastles;
+	foreach (Child in _XmlNode.Children) {
+		assert(Child.Name == "link", ErrorMessage_FileNotValid);
+		declare Text LinkedCastleName = Child.GetAttributeText("castlename", "");
+		assert(LinkedCastleName != "", ErrorMessage_FileNotValid^" (LinkedCastleName)");
+		LinkedCastles.add(LinkedCastleName);
+	}
+	return LinkedCastles;
+}
+
+Integer[] Private_GetCastlesIds(Text[] _Castles) {
+	declare Integer[] CastlesIds;
+	foreach (Castle in _Castles) {
+		CastlesIds.add(GetCastleIdFromName(Castle));
+	}
+	return CastlesIds;
+}
+
+Void Private_LoadFile(CXmlDocument _XmlDoc) {
+	declare netwrite Integer			Srv_World_G_StartYear					for Teams[0];
+	declare netwrite Integer			Srv_World_G_CurrentYear					for Teams[0];
+	declare netwrite Text[]				Srv_World_G_Castles						for Teams[0];
+	declare netwrite Vec3[Integer]		Srv_World_G_CastleProperties			for Teams[0];
+	declare netwrite Int3[Integer]		Srv_World_G_CastlePropertiesBis			for Teams[0];
+	declare netwrite Int3[Integer]		Srv_World_G_CastleAttributes			for Teams[0];
+	declare netwrite Integer[Integer]	Srv_World_G_CastleDefenseGoldAmounts	for Teams[0];
+	declare netwrite Int3[]				Srv_World_G_Links						for Teams[0];
+
+	declare CXmlNode Root = _XmlDoc.Root;
+
+	Srv_World_G_StartYear = Root.GetAttributeInteger("startyear", -1);
+	Srv_World_G_CurrentYear = Srv_World_G_StartYear;
+	assert(Srv_World_G_StartYear > -1, ErrorMessage_FileNotValid^" (startyear)");
+
+	declare CXmlNode CastlesNode = Root.GetFirstChild("castles");
+	assert(CastlesNode != Null, ErrorMessage_FileNotValid^" (CastlesNode)");
+
+	// First pass for castles
+	foreach (Child in CastlesNode.Children) {
+		assert(Child.Name == "castle", ErrorMessage_FileNotValid^" (Child.Name)");
+
+		declare Text	CastleName			= Private_XmlGetCastleName(Child);
+		declare Vec2	CastlePos			= Private_XmlGetCastlePos(Child);
+		declare Integer	IsCastleStartPoint	= Private_XmlIsCastleStartPoint(Child);
+		declare Real	CastleSize			= Private_XmlGetCastleSize(Child);
+		declare Integer	CastleType			= Private_XmlGetCastleType(Child);
+
+		Srv_World_G_Castles.add(CastleName);
+		declare Integer Key = GetCastleIdFromName(CastleName);
+
+		Srv_World_G_CastleProperties[Key]			= <CastlePos.X, CastlePos.Y, CastleSize>;
+		Srv_World_G_CastlePropertiesBis[Key]		= <IsCastleStartPoint, CastleType, 0>;
+		Srv_World_G_CastleAttributes[Key]			= <C_CastleNotOwned, 0, 0>;
+		Srv_World_G_CastleDefenseGoldAmounts[Key]	= 0;
+	}
+
+	// Second pass for links
+	foreach (Child in CastlesNode.Children) {
+		declare Text		CastleName			= Private_XmlGetCastleName(Child);
+		declare Integer		CastleId			= GetCastleIdFromName(CastleName);
+		declare Integer		CastleOwnerId		= Private_XmlGetCastleOwnerId(Child);
+		declare Text[]		LinkedCastles		= Private_XmlGetLinkedCastles(Child);
+		declare Integer[]	LinkedCastlesIds	= Private_GetCastlesIds(LinkedCastles);
+		
+		if (CastleOwnerId > -1) SetCastleOwner(CastleId, CastleOwnerId);
+
+		foreach (LinkedCastleId in LinkedCastlesIds) {
+			Srv_World_G_Links.add(<CastleId, LinkedCastleId, 0>);
+		}
+	}
+}
+
+CXmlDocument GetXmlWorld() {
+	return G_XmlWorld;
+}
+
+// ---------------------------------- //
+
+Void Unload() {
+	declare netwrite Integer			Srv_World_G_CurrentYear					for Teams[0];
+	declare netwrite Text[]				Srv_World_G_Castles						for Teams[0];
+	declare netwrite Vec3[Integer]		Srv_World_G_CastleProperties			for Teams[0];
+	declare netwrite Int3[Integer]		Srv_World_G_CastlePropertiesBis			for Teams[0];
+	declare netwrite Int3[Integer]		Srv_World_G_CastleAttributes			for Teams[0];
+	declare netwrite Integer[Integer]	Srv_World_G_CastleDefenseGoldAmounts	for Teams[0];
+	declare netwrite Int3[]				Srv_World_G_Links						for Teams[0];
+	
+	Srv_World_G_CurrentYear = 0;
+	Srv_World_G_Castles.clear();
+	Srv_World_G_CastleProperties.clear();
+	Srv_World_G_CastlePropertiesBis.clear();
+	Srv_World_G_CastleAttributes.clear();
+	Srv_World_G_CastleDefenseGoldAmounts.clear();
+	Srv_World_G_Links.clear();
+	
+	if (G_XmlWorld != Null) {
+		Xml.Destroy(G_XmlWorld);
+		G_XmlWorld = Null;
+	}
+}
+
+Void LoadFromText(Text _XmlText) {
+	Unload();
+	declare CXmlDocument XmlDoc = Xml.Create(_XmlText, True, True, True);
+	G_XmlWorld = XmlDoc;
+	
+	SetBonusCastle(C_CastleNeutral);
+
+	assert(XmlDoc != Null, ErrorMessage_FileNotValid^" (XmlDoc)");
+	Private_LoadFile(XmlDoc);
+}
+
+Text GetWorldDirectory() {
+	return C_WorldDirectory;
+}

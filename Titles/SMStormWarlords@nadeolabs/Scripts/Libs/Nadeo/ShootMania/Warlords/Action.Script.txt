@@ -1,0 +1,358 @@
+/** 
+ *	Action library
+ *
+ *	Contains functions related to players' actions.
+ */
+
+#Include "Libs/Nadeo/ShootMania/Warlords/Player.Script.txt"	as Player
+#Include "Libs/Nadeo/ShootMania/Warlords/World.Script.txt"	as World
+
+// ---------------------------------- //
+/**
+ * Gets the player id from an action.
+ *
+ * @param _Action The action to get the player id from.
+ * @return The action's player id.
+ */
+Integer GetPlayerId(Int3 _Action) {
+	return _Action.X;
+}
+
+// ---------------------------------- //
+/**
+ * Gets the type of action.
+ *
+ * @param _Action The action to get the type from.
+ * @return The action's type.
+ */
+Integer GetType(Int3 _Action) {
+	return _Action.Y;
+}
+
+// ---------------------------------- //
+/**
+ * Gets the aimed castle id of the action.
+ *
+ * @param _Action The action to get the castle from.
+ * @return The action's aimed castle id.
+ */
+Integer GetCastleId(Int3 _Action) {
+	return _Action.Z;
+}
+
+// ---------------------------------- //
+/**
+ * Asks a player's UI to dump its action.
+ *
+ * @param _Player The player to get the UI from.
+ */
+Void DumpPlayerAction(CPlayer _Player) {
+	declare netwrite Integer Srv_Action_P_ClearActionTimestamp for _Player;
+	Srv_Action_P_ClearActionTimestamp = Now;
+}
+
+// ---------------------------------- //
+/**
+ * Asks a player's UI to dump its action.
+ *
+ * @param _PlayerId The player's id to get the UI from.
+ */
+Void DumpPlayerAction(Integer _PlayerId) {
+	declare CPlayer Player = Player::GetPlayer(_PlayerId);
+	DumpPlayerAction(Player);
+}
+
+// ---------------------------------- //
+/**
+ * Ask all players' UI to dump their actions.
+ */
+Void DumpAllPlayersActions() {
+	foreach (PlayerId in Player::GetPlayerIds()) {
+		DumpPlayerAction(PlayerId);
+	}
+}
+
+// ---------------------------------- //
+/**
+ * Allows a player to send actions.
+ *
+ * @param _PlayerId The player's id to allow.
+ */
+Void Allow(Integer _PlayerId) {
+	declare CPlayer Player = Player::GetPlayer(_PlayerId);
+	declare netwrite Boolean Srv_Action_P_CanSendActions for Player;
+	Srv_Action_P_CanSendActions = True;
+}
+
+// ---------------------------------- //
+/**
+ * Allows all players to send actions.
+ */
+Void AllowAll() {
+	foreach (PlayerId in Player::GetPlayerIds()) {
+		Allow(PlayerId);
+	}
+}
+
+// ---------------------------------- //
+/**
+ * Prevents a player to send actions.
+ *
+ * @param _Player The player to prevent.
+ */
+Void Deny(CPlayer _Player) {
+	declare netwrite Boolean Srv_Action_P_CanSendActions for _Player;
+	Srv_Action_P_CanSendActions = False;
+}
+
+// ---------------------------------- //
+/**
+ * Prevents all players to send actions.
+ */
+Void DenyAll() {
+	foreach (PlayerIdent in Player::GetPlayers()) {
+		Deny(Player::GetPlayer(PlayerIdent));
+	}
+}
+
+// ---------------------------------- //
+/**
+ * Gets a player's action. Will return <-1., -1., -1.> if no action was done.
+ *
+ * @param _PlayerId the player's id to get the action from.
+ * @return The player's action.
+ */
+Int3 GetPlayerAction(Integer _PlayerId) {
+	declare CPlayer Player = Player::GetPlayer(_PlayerId);
+	declare CUIConfig UI <=> UIManager.GetUI(Player);
+	if (UI == Null) return <-1, -1, -1>;
+	declare netread Int3 Cli_Action_P_Action for UI;
+	return Cli_Action_P_Action;
+}
+
+// ---------------------------------- //
+/**
+ * Checks if a player has done an action.
+ *
+ * @param _PlayerId The player's id to check.
+ * @return True if the action's player id is different from -1., False otherwise.
+ */
+Boolean IsActionDone(Integer _PlayerId) {
+	return (GetPlayerAction(_PlayerId).X > -1);
+}
+
+// ---------------------------------- //
+/**
+ * Checks if all players sent an action.
+ *
+ * @return True if all players sent an action, False if at least one player haven't.
+ */
+Boolean AreActionsDoneForAllPlayers() {
+	foreach (PlayerId in Player::GetPlayerIds()) {
+		if (!IsActionDone(PlayerId)) return False;
+	}
+	return True;
+}
+
+// ---------------------------------- //
+/**
+ * Checks if all players haven't sent an action.
+ *
+ * @return True if all players did not send any action, False if at least one have.
+ */
+Boolean IsAllPlayersActionsNeutral() {
+	foreach (PlayerId in Player::GetPlayerIds()) {
+		if (IsActionDone(PlayerId)) return False;
+	}
+	
+	return True;
+}
+
+// ---------------------------------- //
+/**
+ * Compares two actions.
+ *
+ * @param _Action1 The first action to be compared.
+ * @param _Action2  The second action to be compared.
+ * @return 
+ * Return value < 0 -> _Action1 is less important than _Action2.
+ * Return value > 0 -> _Action1 is more important than _Action2.
+ * Return value = 0 -> _Action1 is equally important than _Action2.
+ */
+Integer CompareActions(Int3 _Action1, Int3 _Action2) {
+	declare Integer Action1CastleId = GetCastleId(_Action1);
+	declare Integer Action2CastleId = GetCastleId(_Action2);
+	
+	if (World::IsCastleOwned(Action1CastleId)) {
+		// The 1st castle is owned.
+		if (World::IsCastleOwned(Action2CastleId)) {
+			// The 2nd castle is owned.
+			if (World::IsCastleCapital(Action1CastleId)) {
+				// The 1st castle is a capital.
+				if (World::IsCastleCapital(Action2CastleId)) {
+					// The 2nd castle is a capital.
+					return 0;
+				}
+				// else
+				// The 2nd castle is not a capital.
+				return 1;
+				
+			}
+			// else
+			// The 1st castle is not a capital.
+			if (World::IsCastleCapital(Action2CastleId)) {
+				// The 2nd castle is a capital.
+				return -1;
+			}
+			// else
+			// The 2nd castle is not a capital.
+			return 0;
+		}
+		// else
+		// The 2nd castle is not owned.
+		return 1;
+	}
+	// else
+	// The 1st castle is not owned.
+	if (World::IsCastleOwned(Action2CastleId)) {
+		// The 2nd castle is owned.
+		return -1;
+	}
+	// else
+	// The 2nd castle is not owned.
+	return 0;
+	
+}
+
+// ---------------------------------- //
+/**
+ * Gets all players' actions.
+ *
+ * @return An array containing all players' actions.
+ */
+Int3[] GetActions() {
+	declare Int3[] Actions;
+	foreach (PlayerId in Player::GetPlayerIds()) {
+		if (!IsActionDone(PlayerId)) continue;
+		Actions.add(GetPlayerAction(PlayerId));
+	}
+	return Actions;
+}
+
+// ---------------------------------- //
+/**
+ * Gets all players' actions after being sorted.
+ *
+ * @see Action#CompareActions(Int3, Int3)
+ * @return All sorted actions.
+ */
+Int3[] GetSortedActions() {
+	declare Int3[] Actions = GetActions();
+	
+	for (I, 1, Actions.count - 1) {
+		declare Integer FakeI = Actions.count - I;
+		declare Boolean Sorted = True;
+		
+		for (J, 0, FakeI - 1) {
+			if (CompareActions(Actions[J + 1], Actions[J]) < 0) {
+				
+				declare Int3 Temp = Actions[J];
+				Actions[J] = Actions[J + 1];
+				Actions[J + 1] = Temp;
+				
+				Sorted = False;
+			}
+		}
+
+		if (Sorted) break;
+	}
+	
+	return Actions;
+}
+
+// ---------------------------------- //
+/**
+ * Gets all actions that have the same type and castle.
+ *
+ * @param _Action The action that will be used to get similar ones.
+ * @return An array with all similar actions.
+ */
+Int3[] GetSimilarActions(Int3 _Action) {
+	declare Int3[] SimilarActions;
+	
+	foreach (PlayerId in Player::GetPlayerIds()) {
+		if (PlayerId == GetPlayerId(_Action)) continue; // Avoids to deal with the same action as the given one.
+		if (!IsActionDone(PlayerId)) continue;
+		
+		declare Int3 OtherPlayerAction = GetPlayerAction(PlayerId);
+		
+		if (GetCastleId(OtherPlayerAction) == GetCastleId(_Action)
+			&& GetType(OtherPlayerAction) == GetType(_Action)) {
+			SimilarActions.add(OtherPlayerAction);
+		}
+		
+	}
+	return SimilarActions;
+}
+
+// ---------------------------------- //
+/**
+ * Checks if players have done actions.
+ *
+ * @return An array with player ids as keys and booleans as values (True if an action were done, False if not).
+ */
+Boolean[Integer] GetPlayersActionStates() {
+	declare Boolean[Integer] PlayersActionStates;
+	foreach (PlayerId in Player::GetPlayerIds()) {
+		PlayersActionStates[PlayerId] = IsActionDone(PlayerId);
+	}
+	return PlayersActionStates;
+}
+
+// ---------------------------------- //
+/**
+ * Gets players that haven't done action yet.
+ *
+ * @param _WithVassals True to include vassals in the list.
+ * @return An array containing player ids.
+ */
+Integer[] GetPlayersWithoutActionDone(Boolean _WithVassals) {
+	declare Integer[] PlayerIds;
+	foreach (PlayerId in Player::GetPlayerIds()) {
+		if (!_WithVassals && Player::IsVassal(PlayerId)) continue;
+		if (IsActionDone(PlayerId)) continue;
+		PlayerIds.add(PlayerId);
+	}
+	return PlayerIds;
+}
+
+// ---------------------------------- //
+/**
+ * Gets players from an action array.
+ *
+ * @param _Actions The actions to get the player ids from.
+ * @return An array with all player ids.
+ */
+Integer[] GetPlayersFromActions(Int3[] _Actions) {
+	declare Integer[] PlayerIds;
+	foreach (Action in _Actions) {
+		PlayerIds.add(GetPlayerId(Action));
+	}
+	return PlayerIds;
+}
+
+// ---------------------------------- //
+/**
+ * Unloads the lib.
+ */
+Void Unload() {
+	DenyAll();
+}
+
+// ---------------------------------- //
+/**
+ * Loads the lib.
+ */
+Void Load() {
+	Unload();
+}

@@ -1,0 +1,532 @@
+/** 
+ *	Game library
+ *
+ *	Contains functions related to the game flow.
+ */
+
+#Include "MathLib"												as ML
+#Include "TextLib"												as TL
+#Include "Libs/Nadeo/ShootMania/Warlords/Player.Script.txt" as Player
+#Include "Libs/Nadeo/ShootMania/Warlords/World.Script.txt" as World
+#Include "Libs/Nadeo/ShootMania/Warlords/Action.Script.txt" as Action
+#Include "Libs/Nadeo/ShootMania/Warlords/Battle.Script.txt" as Battle
+#Include "Libs/Nadeo/ShootMania/Warlords/UI.Script.txt" as WLUI
+#Include "Libs/Nadeo/ShootMania/Warlords/Utils.Script.txt" as Utils
+#Include "Libs/Nadeo/Message.Script.txt"						as Message
+#Include "Libs/Nadeo/Log.Script.txt" as Log
+
+#Const	C_PhaseSetup		-1
+#Const	C_PhaseDomination	0
+#Const	C_PhaseSuddenDeath	1
+
+declare Integer G_blitzGold;
+
+// ---------------------------------- //
+/**
+ * Gets the number of castles required to win a game.
+ *
+ * @return The number of castles.
+ */
+Integer GetRequiredCastlesNumberForVictory() {
+	declare netwrite Integer Srv_Game_G_CastleNumberRequiredToWin for Teams[0];
+	return Srv_Game_G_CastleNumberRequiredToWin;
+}
+
+// ---------------------------------- //
+/**
+ * Gets an integer representing the setup phase.
+ *
+ * @return The setup phase integer.
+ */
+Integer PHASE_SETUP() {
+	return C_PhaseSetup;
+}
+
+// ---------------------------------- //
+/**
+ * Gets an integer representing the domination phase.
+ *
+ * @return The domination phase integer.
+ */
+Integer PHASE_DOMINATION() {
+	return C_PhaseDomination;
+}
+
+// ---------------------------------- //
+/**
+ * Gets an integer representing the sudden death phase.
+ *
+ * @return The sudden death phase integer.
+ */
+Integer PHASE_SUDDEN_DEATH() {
+	return C_PhaseSuddenDeath;
+}
+
+// ---------------------------------- //
+/**
+ * Changes the current phase.
+ *
+ * @see Game#PHASE_SETUP()
+ * @see Game#PHASE_DOMINATION()
+ * @see Game#PHASE_SUDDEN_DEATH()
+ * @param _Phase the integer representing the current phase.
+ */
+Void SetPhase(Integer _Phase) {
+	declare netwrite Integer Srv_Game_G_Phase for Teams[0];
+	Srv_Game_G_Phase = _Phase;
+}
+
+// ---------------------------------- //
+/**
+ * Gets the current phase.
+ *
+ * @return The ubteger representing the current phase.
+ */
+Integer GetPhase() {
+	declare netwrite Integer Srv_Game_G_Phase for Teams[0];
+	return Srv_Game_G_Phase;
+}
+
+// ---------------------------------- //
+/**
+ * Checks if a winner exists.
+ *
+ *	@param	_ForceEnd				Force the game to end, find a winner
+ *
+ * @return The winner id if existing, -1 otherwise.
+ */
+Integer GetWinnerId(Boolean _ForceEnd) {
+	declare Integer WinnerId = -1;
+	
+	// Check that there is enough players left
+	declare ConnectedPlayers = 0;
+	declare LastConnectedId = -1;
+	declare PlayersIdents = Player::GetPlayers();
+	foreach (PlayerIdent in PlayersIdents) {
+		if (Player::IsConnected(PlayerIdent)) {
+			ConnectedPlayers += 1;
+			LastConnectedId = Player::GetPlayerId(PlayerIdent);
+		}
+	}
+	// Only one player remaining, they win
+	if (ConnectedPlayers == 1) {
+		return LastConnectedId;
+	}
+	// Nobody is connected, draw
+	else if (ConnectedPlayers <= 0) {
+		return -2;
+	}
+	
+	// Find the last non-vassal player
+	declare Integer[] NonVassalPlayerIds = Player::GetNonVassalPlayerIds();
+	if (NonVassalPlayerIds.count == 1) {
+		WinnerId = NonVassalPlayerIds[0];
+	}
+	
+	if (WinnerId > -1) return WinnerId;
+	
+	// Searches a player who got enough castles to win.
+	declare MaxCastles = -1;
+	foreach (PlayerId in Player::GetPlayerIds()) {
+		if (Player::IsVassal(PlayerId)) continue;
+		// Count master + vassals castles
+		if (Player::HasVassals(PlayerId)) {
+			declare CastlesCount = World::CountPlayerCastles(PlayerId);
+			declare VassalsIds = Player::GetMasterVassals(PlayerId);
+			foreach (VassalId in VassalsIds) {
+				CastlesCount += World::CountPlayerCastles(VassalId);
+			}
+			Log::Log("""[Game] Player {{{PlayerId}}} and their vassals have {{{CastlesCount}}} planets""");
+			if (CastlesCount >= GetRequiredCastlesNumberForVictory() || GetPhase() == C_PhaseSuddenDeath || _ForceEnd) {
+				if (CastlesCount > MaxCastles) { //< More castles, then winner
+					MaxCastles = CastlesCount;
+					WinnerId = PlayerId;
+				} else if (CastlesCount == MaxCastles) { //< Draw, remove winner
+					WinnerId = -1;
+				}
+			}
+		} 
+		// Count player castles
+		else {
+			Log::Log("""[Game] Player {{{PlayerId}}} has {{{World::CountPlayerCastles(PlayerId)}}} planets""");
+			declare CastlesCount = World::CountPlayerCastles(PlayerId);
+			if (CastlesCount >= GetRequiredCastlesNumberForVictory() || GetPhase() == C_PhaseSuddenDeath || _ForceEnd) {
+				if (CastlesCount > MaxCastles) { //< More castles then winner
+					MaxCastles = CastlesCount;
+					WinnerId = PlayerId;
+				} else if (CastlesCount == MaxCastles) { //< Draw, remove winner
+					WinnerId = -1;
+				}
+			}
+		}
+	}
+	
+	// If the game must end and there is no winner, declare a draw
+	if (_ForceEnd && WinnerId == -1) {
+		WinnerId = -2;
+	}
+	
+	return WinnerId;
+}
+
+// ---------------------------------- //
+/**
+ * Appends an event to the history.
+ *
+ * @param _Type The type of event.
+ * @param _PlayerIds _PlayerIds The concerned players.
+ * @param _CastleId The concerned castle.
+ * @param _GoldAmount The gold amount put in.
+ */
+Void HistoryAppend(Integer _Type, Integer[] _PlayerIds, Integer _CastleId, Integer _GoldAmount) {
+	declare netwrite Integer	Srv_Game_G_HistoryEventTimestamp	for Teams[0];
+	declare netwrite Integer	Srv_Game_G_HistoryEventYear			for Teams[0];
+	declare netwrite Integer	Srv_Game_G_HistoryEventType			for Teams[0];
+	declare netwrite Integer[]	Srv_Game_G_HistoryEventPlayerIds	for Teams[0];
+	declare netwrite Integer	Srv_Game_G_HistoryEventCastleId		for Teams[0];
+	declare netwrite Integer	Srv_Game_G_HistoryEventGoldAmount	for Teams[0];
+	
+	Srv_Game_G_HistoryEventYear			= World::GetCurrentYear();
+	Srv_Game_G_HistoryEventType			= _Type;
+	Srv_Game_G_HistoryEventPlayerIds	= _PlayerIds;
+	Srv_Game_G_HistoryEventCastleId		= _CastleId;
+	Srv_Game_G_HistoryEventGoldAmount	= _GoldAmount;
+	Srv_Game_G_HistoryEventTimestamp	= Now;
+
+}
+
+/**
+ * Asks to all players the clan that they will join to fight.
+ *
+ * @param _Attacker The main attacker.
+ * @param _Defender The main defender.
+ * @param _WaitTime The time to wait in seconds.
+ * @param _PreventMasterAttack Prevent a master from attacking its vassal
+ * @return An array: [0] : Defenders, [1] : Attackers
+ */
+Ident[][] GetClanChoices(CPlayer _Attacker, CPlayer _Defender, Boolean _PreventMasterAttack, Integer _WaitTime) {
+	
+	declare Ident[] MyPlayers = Player::GetPlayers();
+	if (MyPlayers.count <= 2) return [Ident[], Ident[]];
+	
+	declare netwrite Text Srv_UI_G_DefenderName for Teams[0];
+	declare netwrite Text Srv_UI_G_AttackerName for Teams[0];
+	
+	Srv_UI_G_DefenderName = _Defender.User.Name;
+	Srv_UI_G_AttackerName = _Attacker.User.Name;
+
+	declare CPlayer[] PlayersToIgnore = [_Attacker, _Defender];
+	declare Ident[] Defenders;
+	declare Ident[] Attackers;
+	
+	// A master will always take the side of its vassal
+	if (_PreventMasterAttack) {
+		declare AttackerId = Player::GetPlayerId(_Attacker);
+		declare DefenderId = Player::GetPlayerId(_Defender);
+		if (Player::IsVassal(AttackerId)) {
+			declare Master = Player::GetPlayer(Player::GetMasterId(AttackerId));
+			if (Master != Null) {
+				Attackers.add(Master.Id);
+				PlayersToIgnore.add(Master);
+			}
+		}
+		if (Player::IsVassal(DefenderId)) {
+			declare Master = Player::GetPlayer(Player::GetMasterId(DefenderId));
+			if (Master != Null) {
+				Defenders.add(Master.Id);
+				PlayersToIgnore.add(Master);
+			}
+		}
+	}
+	
+	foreach (PlayerIdent in MyPlayers) {
+		declare CPlayer Player		= Player::GetPlayer(PlayerIdent);
+		declare Integer PlayerId	= Player::GetPlayerId(PlayerIdent);
+		
+		if (Player::IsVassal(PlayerId)) continue;
+		if (PlayersToIgnore.exists(Player)) continue;
+		
+		WLUI::Cursor_SetCountdownEndTime(Player, Now + _WaitTime * 1000);
+		WLUI::ClanChoice_Show(Player);
+	}
+	
+	sleep(_WaitTime * 1000);
+	
+	declare Ident[] Vassals;
+	
+	foreach (PlayerIdent in Player::GetPlayers()) {
+		declare CPlayer Player		= Player::GetPlayer(PlayerIdent);
+		declare Integer PlayerId	= Player::GetPlayerId(PlayerIdent);
+		
+		if (PlayersToIgnore.exists(Player)) continue;
+		
+		WLUI::Cursor_ResetCountdownEndTime(Player);
+		WLUI::ClanChoice_MarkIsToHide(Player);
+		
+		if (Player::IsVassal(PlayerId)) {
+			Vassals.add(PlayerIdent);
+		} else {
+			declare CUIConfig UI = UIManager.GetUI(Player);
+			declare netread Text Cli_UI_P_Choice for UI;
+			if (Cli_UI_P_Choice == "Attackers") {
+				Attackers.add(PlayerIdent);
+			} else {
+				// Defenders
+				Defenders.add(PlayerIdent);
+			}
+		}
+	}
+	
+	foreach (VassalIdent in Vassals) {
+		
+		declare Integer	VassalId	= Player::GetPlayerId(VassalIdent);
+		declare Integer	MasterId	= Player::GetMasterId(VassalId);
+		declare Ident	MasterIdent	= Player::GetPlayerIdent(MasterId);
+		
+		if (_Attacker.Id == MasterIdent || Attackers.exists(MasterIdent)) {
+			Attackers.add(VassalIdent);
+		} else if (_Defender.Id == MasterIdent || Defenders.exists(MasterIdent)) {
+			Defenders.add(VassalIdent);
+		}
+	}
+	
+	WLUI::ClanChoice_ExecHide();
+	
+	return [Attackers, Defenders];
+	
+}
+
+// ---------------------------------- //
+/**
+ * Displays a UI asking a player if he desires to take a castle.
+ *
+ * @param _Player The player that will be asked.
+ * @param _CastleId The concerned castle.
+ * @param _WaitTime The time to wait in seconds.
+ * @return True if he wants it, False otherwise.
+ */
+Boolean AskPlayerToTakeTheCastle(CPlayer _Player, Integer _CastleId, Integer _WaitTime) {
+	
+	declare netwrite Integer Srv_UI_G_TakeChoiceCastleId for Teams[0];
+	Srv_UI_G_TakeChoiceCastleId = _CastleId;
+	
+	WLUI::Cursor_SetCountdownEndTime(_Player, Now + _WaitTime * 1000);
+	WLUI::CastleTakeChoice_Show(_Player);
+	
+	sleep(_WaitTime * 1000);
+	
+	WLUI::CastleTakeChoice_Show(_Player);
+	WLUI::CastleTakeChoice_MarkIsToHide(_Player);
+	WLUI::CastleTakeChoice_ExecHide();
+	
+	declare CUIConfig UI = UIManager.GetUI(_Player);
+	declare netread Text Cli_UI_P_Choice for UI;
+	
+	if (Cli_UI_P_Choice == "take") return True;
+	
+	return False;
+	
+}
+
+// ---------------------------------- //
+/**
+ * Updates the gold vein's position if needed.
+ *
+ * @param _GoldVeinDuration The number of years that stays gold veins (-1 = no gold vein).
+ * @return 
+ */
+Void UpdateGoldVein(Integer _GoldVeinDuration) {
+	// Changes the gold vein position when the lifetime is finished.
+	declare Integer LastGoldVeinSpawnYear for This = -1;
+	
+	if (_GoldVeinDuration > -1) {
+		if (World::GetCurrentYear() - LastGoldVeinSpawnYear >= _GoldVeinDuration) {
+			declare Integer LastBonusCastle = World::GetBonusCastle();
+			declare Integer NewBonusCastleId = -1;
+			while (True) {
+				NewBonusCastleId = World::GetRandomCastleId();
+				if (NewBonusCastleId != -1 && NewBonusCastleId != LastBonusCastle) break;
+			}
+			World::SetBonusCastle(NewBonusCastleId);
+			LastGoldVeinSpawnYear = World::GetCurrentYear();
+		}
+	}
+}
+
+Boolean BlitzAllowed() {
+	return G_blitzGold >= 0;
+}
+
+// ---------------------------------- //
+/**
+ * Computes for a player possible castles for actions.
+ *
+ * @param _PlayerId The concerned player's id.
+ * @param _MasterNotIncluded True to not include a vassal's master's castles.
+ * @param	_VassalNotIncluded True to not include a master's vassal's castles.
+ * @param _RequiredGoldToBlitz The amount of gold needed to blitz a capital.
+ */
+Void ComputePossibleCastles(Integer _PlayerId, Boolean _MasterNotIncluded, Boolean _VassalNotIncluded, Integer _RequiredGoldToBlitz) {
+	
+	declare CPlayer Player = Player::GetPlayer(_PlayerId);
+	declare Integer[] PossibleCastles = World::GetAccessibleCastles(_PlayerId);
+	
+	if (_MasterNotIncluded && Player::IsVassal(_PlayerId)) {
+		declare Integer MasterId = Player::GetMasterId(_PlayerId);
+		foreach (CastleId in PossibleCastles) {
+			if (MasterId == World::GetCastleOwner(CastleId)) {
+				declare Removed = PossibleCastles.remove(CastleId);
+			}
+		}
+	}
+	
+	if (_VassalNotIncluded) {
+		declare MasterVassals = Player::GetMasterVassals(_PlayerId);
+		if (MasterVassals.count > 0) {
+			foreach (CastleId in PossibleCastles) {
+				if (MasterVassals.exists(World::GetCastleOwner(CastleId))) {
+					declare Removed = PossibleCastles.remove(CastleId);
+				}
+			}
+		}
+	}
+	
+	if (BlitzAllowed() && Player::GetGold(_PlayerId) >= _RequiredGoldToBlitz) {
+		foreach (CastleId in Player::GetOpponentsCapitals(_PlayerId, _MasterNotIncluded, _VassalNotIncluded)) {
+			if (!PossibleCastles.exists(CastleId)) PossibleCastles.add(CastleId);
+		}
+	}
+	
+	WLUI::World_SetPossibleCastlesForAction(PossibleCastles, Player);
+}
+
+// ---------------------------------- //
+/**
+ * Computes for all players possible castles for actions.
+ *
+ * @param _MasterNotIncluded True to not include a vassal's master's castles.
+ * @param	_VassalNotIncluded True to not include a master's vassal's castles.
+ * @param _RequiredGoldToBlitz The amount of gold needed to blitz a capital.
+ */
+Void ComputePossibleCastles(Boolean _MasterNotIncluded, Boolean _VassalNotIncluded, Integer _RequiredGoldToBlitz) {
+	foreach (PlayerId in Player::GetPlayerIds()) {
+		ComputePossibleCastles(PlayerId, _MasterNotIncluded, _VassalNotIncluded, _RequiredGoldToBlitz);
+	}
+}
+
+// ---------------------------------- //
+/**
+ * Gets gold from donators and give it to receivers.
+ */
+Void Donations() {
+	declare Integer[Integer] InDonations;
+	declare Integer[Integer] OutDonations;
+	
+	foreach (PlayerId in Player::GetPlayerIds()) {
+		InDonations[PlayerId]	= Player::GetReceivedGoldDonations(PlayerId);
+		OutDonations[PlayerId]	= Player::SumDonations(PlayerId);
+	}
+	
+	Player::ResetDonations();
+	
+	foreach (PlayerId in Player::GetPlayerIds()) {
+		Player::AddGoldAmount(PlayerId, InDonations[PlayerId]); // Adds what he receives.
+		Player::SubGoldAmount(PlayerId, OutDonations[PlayerId]); // Substracts what he sends.
+	}
+}
+
+// ---------------------------------- //
+/**
+ * Sets the maximum number of years.
+ *
+ * @param _MaxYearsCount The maximum number of years.
+ */
+Void SetMaxYearsCount(Integer _MaxYearsCount) {
+	declare netwrite Integer Srv_Game_G_MaxYearsCount for Teams[0];
+	Srv_Game_G_MaxYearsCount = _MaxYearsCount;
+}
+
+// ---------------------------------- //
+/**
+ * Gets the maximum number of years.
+ *
+ * @return The maximum number of years.
+ */
+Integer GetMaxYearsCount() {
+	declare netwrite Integer Srv_Game_G_MaxYearsCount for Teams[0];
+	return Srv_Game_G_MaxYearsCount;
+}
+
+// ---------------------------------- //
+/**
+ * Gives gold won with players' castles.
+ *
+ * @param _NewVassalSystem False to make everyone win the same gold amount per castle, True to make vassals win _GoldPerYearForVassals per year.
+ * @param _GoldPerYearForVassals The amount of gold that vassals win if _NewVassalSystem is False.
+ * @param _GoldPerCastlePerYear The amount of gold that players win per castle and per year.
+ * @param _GoldVeinMultiplier Multiplies the amount of gold if a castle is a gold vein.
+ */
+Void UpdateCastlesGold(Boolean _NewVassalSystem, Integer _GoldPerYearForVassals, Integer _GoldPerCastlePerYear, Integer _GoldVeinMultiplier) {
+	declare Integer BonusCastleId = World::GetBonusCastle();
+	
+	foreach (PlayerId in Player::GetPlayerIds()) {
+		declare CPlayer	Player				= Player::GetPlayer(PlayerId);
+		declare Integer	CastleCount			= World::CountPlayerCastles(PlayerId);
+		declare Integer	GoldAmountToAdd;
+		
+		if (!_NewVassalSystem) {
+			// Old vassal system.
+			if (Player::IsVassal(PlayerId)) {
+				GoldAmountToAdd = _GoldPerYearForVassals;
+			} else {
+				GoldAmountToAdd = CastleCount * _GoldPerCastlePerYear;
+			}
+		} else {
+			// New vassal system.
+			GoldAmountToAdd = CastleCount * _GoldPerCastlePerYear;
+		}
+		
+		// If the player owns the gold vein castle, he is rewarded with more gold
+		if (BonusCastleId != -1 && World::GetCastleOwner(BonusCastleId) == PlayerId) GoldAmountToAdd += _GoldPerCastlePerYear * (_GoldVeinMultiplier - 1);
+		
+		Player::AddGoldAmount(PlayerId, GoldAmountToAdd);
+	}
+	
+	Message::SendStatusMessage("", 0, 1, CUIConfig::EUISound::PhaseChange, 0); // Plays a sound without the text.
+}
+
+// ---------------------------------- //
+/**
+ * Computes the required number of castles to win a game.
+ * @see Action#GetRequiredCastlesNumberForVictory()
+ */
+Void ComputeRequiredCastlesNumberForVictory() {
+	declare netwrite Integer Srv_Game_G_CastleNumberRequiredToWin for Teams[0];
+	declare Integer CastlesCount = World::CountCastles();
+	
+	Srv_Game_G_CastleNumberRequiredToWin = ML::CeilingInteger(CastlesCount * 0.5);
+	Log::Log("""[Game] Total castles : {{{CastlesCount}}}, number of castles to win : {{{Srv_Game_G_CastleNumberRequiredToWin}}}""");
+	return;
+	
+	// Bellow the old calculation.
+	declare Integer PlayersCount = Player::CountPlayers();
+	declare Real CastleProportion = 0.7 - (0.08 * PlayersCount);
+	declare Integer CastleNumberRequiredToWin = ML::NearestInteger(CastlesCount * CastleProportion);
+	if (CastleNumberRequiredToWin > CastlesCount) CastleNumberRequiredToWin = CastlesCount;
+	if (CastleNumberRequiredToWin < 3) CastleNumberRequiredToWin = 3;
+
+	Srv_Game_G_CastleNumberRequiredToWin = CastleNumberRequiredToWin;
+}
+
+// ---------------------------------- //
+/**
+ * Loads the lib.
+ */
+Void Load() {
+	declare netwrite Integer Srv_Game_G_NewGameTimestamp for Teams[0];
+	Srv_Game_G_NewGameTimestamp = Now;
+}
+
+Void SetBlitzGold(Integer _BlitzGold) {
+	G_blitzGold = _BlitzGold;
+}

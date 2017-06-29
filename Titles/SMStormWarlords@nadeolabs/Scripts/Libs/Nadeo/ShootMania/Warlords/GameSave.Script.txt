@@ -1,0 +1,390 @@
+/** 
+ *	Game save library
+ *
+ *	Contains functions related to the creation of game saves.
+ */
+
+#Include "TextLib"												as TL
+#Include "Libs/Nadeo/Layers2.Script.txt"						as Layers
+
+#Const Version						"2016-08-25"
+#Const ScriptName					"GameSave.Script.txt"
+
+declare Text			G_LastSerializedState;
+
+declare Text[Text]		G_Save_Settings;			// Value[Setting name]
+declare Text[Integer]	G_Save_Players;				// Player Login[Player Id]
+declare Text[Text]		G_Save_GoldAmount;			// Gold amount[Login]
+declare Text[Text]		G_Save_Vassals;				// Master login[Vassal login]
+declare Text[Text]		G_Save_CastlesMembership;	// Login[Castle name]
+declare Text[Text]		G_Save_DGAmount;			// DG amount[Castle name]
+declare Text[Text]		G_Save_CapitalCastles;		// Castle name[Login]
+declare Text			G_CurrentYear;
+declare Text			G_Map;
+
+declare Boolean		G_Notified;
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Returns the version number of the script.
+ *
+ *	@return		The version number of the script.
+ */
+Text GetScriptVersion() {
+	return Version;
+}
+
+// ---------------------------------- //
+/** Returns the name of the script.
+ *
+ *	@return		The name of the script.
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+// ---------------------------------- //
+/**
+ * Notifies that a save must be done.
+ */
+Void NotifySave() {
+	G_Notified = True;
+}
+
+// ---------------------------------- //
+/**
+ * Checks if a save must be done.
+ *
+ *	@return		A boolean.
+ */
+Boolean HasToSave() {
+	if (G_Notified) {
+		G_Notified = False;
+		return True;
+	}
+	
+	return False;
+}
+
+// ---------------------------------- //
+/**
+ * Dumps all saved data.
+ */
+Void Dump() {
+	G_Save_Settings.clear();
+	G_Save_Players.clear();
+	G_Save_GoldAmount.clear();
+	G_Save_Vassals.clear();
+	G_Save_CastlesMembership.clear();
+	G_Save_DGAmount.clear();
+	G_Save_CapitalCastles.clear();
+	G_CurrentYear = "";
+	G_Map = "";
+}
+
+// ---------------------------------- //
+/**
+ * Clears the last serialized state.
+ */
+Void Private_Clear() {
+	G_LastSerializedState = "";
+}
+
+// ---------------------------------- //
+/**
+ * Stores the last serialized state.
+ *
+ * @param _Data The XML save.
+ */
+Void Private_Store(Text _Data) {
+	G_LastSerializedState = _Data;
+}
+
+// ---------------------------------- //
+/**
+ * Returns the last serialized state.
+ *
+ * @return The XML save.
+ */
+Text GetSave() {
+	return G_LastSerializedState;
+}
+
+// ---------------------------------- //
+/**
+ * Saves a setting and its value.
+ *
+ * @param _SettingName The name of the setting.
+ * @param _Value The setting's textual value.
+ */
+Void SaveSetting(Text _SettingName, Text _Value) {
+	G_Save_Settings[_SettingName] = _Value;
+}
+
+// ---------------------------------- //
+/**
+ * Saves a setting and its value.
+ *
+ * @param _SettingName The name of the setting.
+ * @param _Value The setting's boolean value.
+ */
+Void SaveSetting(Text _SettingName, Boolean _Value) {
+	SaveSetting(_SettingName, TL::ToText(_Value));
+}
+
+// ---------------------------------- //
+/**
+ * Saves a setting and its value.
+ *
+ * @param _SettingName The name of the setting.
+ * @param _Value The setting's integer value.
+ */
+Void SaveSetting(Text _SettingName, Integer _Value) {
+	SaveSetting(_SettingName, TL::ToText(_Value));
+}
+
+
+// ---------------------------------- //
+/**
+ * Saves a setting and its value.
+ *
+ * @param _SettingName The name of the setting.
+ * @param _Value The setting's real value.
+ */
+Void SaveSetting(Text _SettingName, Real _Value) {
+	SaveSetting(_SettingName, TL::ToText(_Value));
+}
+
+// ---------------------------------- //
+/**
+ * Saves a setting and its value.
+ *
+ * @param _SettingName The name of the setting.
+ * @param _Value The setting's int3 value.
+ */
+Void SaveSetting(Text _SettingName, Int3 _Value) {
+	SaveSetting(_SettingName, TL::ToText(_Value));
+}
+
+
+// ---------------------------------- //
+/**
+ * Saves a setting and its value.
+ *
+ * @param _SettingName The name of the setting.
+ * @param _Value The setting's vec2 value.
+ */
+Void SaveSetting(Text _SettingName, Vec2 _Value) {
+	SaveSetting(_SettingName, "<" ^ _Value.X ^ "," ^ _Value.Y ^ ">");
+}
+
+
+// ---------------------------------- //
+/**
+ * Saves a setting and its value.
+ *
+ * @param _SettingName The name of the setting.
+ * @param _Value The setting's vec3 value.
+ */
+Void SaveSetting(Text _SettingName, Vec3 _Value) {
+	SaveSetting(_SettingName, TL::ToText(_Value));
+}
+
+// ---------------------------------- //
+/**
+ * Saves the map.
+ *
+ * @param _XmlDoc The XML document of the map.
+ */
+Void SaveMap(CXmlDocument _XmlDoc) {
+	declare Text RawXml = _XmlDoc.TextContents;
+	RawXml = TL::Replace(RawXml, """<?xml version="1.0" encoding="UTF-8"?>""", "");
+	RawXml = TL::Replace(RawXml, """<?xml version="1.0" encoding="utf-8"?>""", "");
+	RawXml = TL::Replace(RawXml, "\n", "");
+	RawXml = TL::Replace(RawXml, "\t", "");
+	G_Map = RawXml;
+}
+
+// ---------------------------------- //
+/**
+ * Saves a player.
+ *
+ * @param _PlayerId The player's id.
+ * @param _Player The player instance.
+ */
+Void SavePlayer(Integer _PlayerId, CPlayer _Player) {
+	declare Text Login = _Player.User.Login;
+	assert(!G_Save_Players.exists(Login), "Player '" ^ Login ^ "'' already saved!");
+	G_Save_Players[_PlayerId] = Login;
+}
+
+// ---------------------------------- //
+/**
+ * Saves a player.
+ *
+ * @param _PlayerId The player's id.
+ * @param _PlayerLogin The player's login.
+ * @param _GoldAmount The player's gold amount.
+ */
+Void SavePlayer(Integer _PlayerId, Text _PlayerLogin, Integer _GoldAmount) {
+	assert(!G_Save_Players.exists(_PlayerLogin), "Player '" ^ _PlayerLogin ^ "'' already saved!");
+	assert(!G_Save_GoldAmount.existskey(_PlayerLogin), "Player '" ^ _PlayerLogin ^ "''s gold amount already saved!");
+	G_Save_Players[_PlayerId] = _PlayerLogin;
+	G_Save_GoldAmount[_PlayerLogin] = TL::ToText(_GoldAmount);
+}
+
+// ---------------------------------- //
+/**
+ * Saves a vassal with its master.
+ *
+ * @param _VassalPlayer The vassal player instance.
+ * @param _MasterPlayer The vassal's master player instance.
+ */
+Void SaveVassal(CPlayer _VassalPlayer, CPlayer _MasterPlayer) {
+	declare Text VassalLogin = _VassalPlayer.User.Login;
+	declare Text MasterLogin = _MasterPlayer.User.Login;
+	assert(!G_Save_Vassals.existskey(VassalLogin), "Player '" ^ VassalLogin ^ "' already saved as vassal!");
+	G_Save_Vassals[VassalLogin] = MasterLogin;
+}
+
+// ---------------------------------- //
+/**
+ * Saves a vassal with its master.
+ *
+ * @param _VassalLogin The vassal player's login.
+ * @param _MasterLogin The vassal's master player's login.
+ */
+Void SaveVassal(Text _VassalLogin, Text _MasterLogin) {
+	assert(!G_Save_Vassals.existskey(_VassalLogin), "Player '" ^ _VassalLogin ^ "' already saved as vassal!");
+	G_Save_Vassals[_VassalLogin] = _MasterLogin;
+}
+
+// ---------------------------------- //
+/**
+ * Saves a castle and its owner.
+ *
+ * @param _PlayerOwner The castle's owner player's login.
+ * @param _CastleId The castle's id.
+ * @param _DefenseGold The amount of defense gold on the castle.
+ * @param _IsCapital True if the castle is a player's capital.
+ */
+Void SaveCastleMembership(Text _PlayerOwner, Integer _CastleId, Integer _DefenseGold, Boolean _IsCapital) {
+	declare Text CastleId = TL::ToText(_CastleId);
+	assert(!G_Save_CastlesMembership.existskey(CastleId), "Castle " ^ _CastleId ^ " already saved!");
+	G_Save_CastlesMembership[CastleId] = _PlayerOwner;
+	G_Save_DGAmount[CastleId] = TL::ToText(_DefenseGold);
+	if (_IsCapital) G_Save_CapitalCastles[_PlayerOwner] = CastleId;
+}
+
+// ---------------------------------- //
+/**
+ * Saves the state.
+ *
+ * @param _CurrentYear The current year.
+ */
+Void SaveState(Integer _CurrentYear) {
+	G_CurrentYear = TL::ToText(_CurrentYear);
+}
+
+// ---------------------------------- //
+/**
+ * Returns the default XML header.
+ *
+ *	@return A text with the XML header markup.
+ */
+Text Private_GetXMLHeader() {
+	return """<?xml version="1.0" encoding="UTF-8"?>""";
+}
+
+// ---------------------------------- //
+/**
+ * Checks if a castle is the given player's capital.
+ *
+ *	@return True if the castle is owned by the given player, False otherwise.
+ */
+Boolean Private_IsPlayerCapital(Text _CastleName, Text _PlayerLogin) {
+	return (G_Save_CapitalCastles.existskey(_PlayerLogin) && G_Save_CapitalCastles[_PlayerLogin] == _CastleName);
+}
+
+// ---------------------------------- //
+/**
+ * Checks if a player is a vassal.
+ *
+ *	@return True if the player is a vassal, False otherwise.
+ */
+Boolean Private_IsPlayerVassal(Text _PlayerLogin) {
+	return G_Save_Vassals.existskey(_PlayerLogin);
+}
+
+// ---------------------------------- //
+/**
+ * Checks if the given player's gold amount is set.
+ *
+ *	@return True if the given player has his gold amount set.
+ */
+Boolean Private_IsGoldAmountSet(Text _PlayerLogin) {
+	return G_Save_GoldAmount.existskey(_PlayerLogin);
+}
+
+// ---------------------------------- //
+/**
+ * Serializes the set state.
+ */
+Void SerializeState() {
+	log(Now ^ "> Now serializing...");
+	Private_Clear();
+
+	declare Text XmlSave = Private_GetXMLHeader();
+	
+	XmlSave ^= "<gamesave>";
+	
+	XmlSave ^= "<settings>";
+	foreach (Setting => Value in G_Save_Settings) {
+		XmlSave ^= """<setting name="{{{ Setting }}}" value="{{{ Value }}}" />""";
+	}
+	XmlSave ^= "</settings>";
+	
+	XmlSave ^= "<players>";
+	foreach (PlayerId => PlayerLogin in G_Save_Players) {
+	
+		declare Text Vassal;
+		if (Private_IsPlayerVassal(PlayerLogin)) Vassal = " vassalof=\"" ^ G_Save_Vassals[PlayerLogin] ^ "\"";
+		
+		assert(Private_IsGoldAmountSet(PlayerLogin), "Player '" ^ PlayerLogin ^ "' does not have his gold amount set!");
+		
+		XmlSave ^= """<player id="{{{ PlayerId }}}" login="{{{ PlayerLogin }}}" gold="{{{ G_Save_GoldAmount[PlayerLogin] }}}"{{{ Vassal }}}>""";
+		foreach (CastleName => OwnerLogin in G_Save_CastlesMembership) {
+			if (OwnerLogin != PlayerLogin) continue;
+			
+			declare Text Capital;
+			if (Private_IsPlayerCapital(CastleName, PlayerLogin)) Capital = " capital=\"1\"";
+			
+			declare Text DG = G_Save_DGAmount[CastleName];
+			
+			XmlSave ^= """<castle id="{{{ CastleName }}}"{{{ Capital }}} dg="{{{ DG }}}" />""";
+		}
+		XmlSave ^= "</player>";
+	}
+	XmlSave ^= "</players>";
+	
+	XmlSave ^= "<state>";
+	XmlSave ^= """<turn year="{{{ G_CurrentYear }}}" />""";
+	XmlSave ^= G_Map;
+	XmlSave ^= "</state>";
+	
+	XmlSave ^= "</gamesave>";
+
+	Private_Store(XmlSave);
+	log(Now ^ "> Finished.");
+}
+
+// ---------------------------------- //
+/**
+ * Loads the library.
+ */
+Void Load() {
+	Dump();
+}

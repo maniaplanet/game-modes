@@ -1,0 +1,135 @@
+#Include "TextLib" as TL
+
+// ---------------------------------- //
+// Constants
+
+#Const C_PrintStartDelimiter		"{( "
+#Const C_PrintEndDelimiter			" )}"
+
+
+// ---------------------------------- //
+// Globals
+
+declare Text[Text] G_PreparedVars;
+
+
+// ---------------------------------- //
+// Private functions
+
+Text Private_GetVariableFormat(Text _VariableName) {
+	return C_PrintStartDelimiter ^ _VariableName ^ C_PrintEndDelimiter;
+}
+
+Text Private_CharAt(Text _String, Integer _Index) {
+	return TL::SubText(_String, _Index, 1);
+}
+
+
+// ---------------------------------- //
+// Public functions
+
+/**
+ * Returns the content of a file.
+ *
+ * @param _Address The file address.
+ * @return The file's content.
+ */
+Text GetFileContents(Text _Address) {
+	declare CHttpRequest Request = Http.CreateGet(_Address);
+	wait(Request.IsCompleted);
+	declare Text Result = Request.Result;
+	Http.Destroy(Request);
+	return Result;
+}
+
+/**
+ * Prepares a variable with its value.
+ *
+ * @param _VariableName The variable name.
+ * @param _Value The variable value.
+ */
+Void Prepare(Text _VariableName, Text _Value) {
+	G_PreparedVars[_VariableName] = _Value;
+}
+
+/**
+ * Prepares a variable with its value.
+ *
+ * @param _VariableName The variable name.
+ * @param _Value The variable value.
+ */
+Void Prepare(Text _VariableName, Boolean _Value) {
+	Prepare(_VariableName, TL::ToText(_Value));
+}
+
+/**
+ * Prepares a variable with its value.
+ *
+ * @param _VariableName The variable name.
+ * @param _Value The variable value.
+ */
+Void Prepare(Text _VariableName, Integer _Value) {
+	Prepare(_VariableName, TL::ToText(_Value));
+}
+
+/**
+ * Prepares a variable with its value.
+ *
+ * @param _VariableName The variable name.
+ * @param _Value The variable value.
+ */
+Void Prepare(Text _VariableName, Real _Value) {
+	Prepare(_VariableName, TL::ToText(_Value));
+}
+
+/**
+ * Prepares multiple variables with their values.
+ *
+ * @param _VariableNames The variables name.
+ * @param _Values The variables value.
+ */
+Void Prepare(Text[] _VariableNames, Text[] _Values) {
+	assert(_VariableNames.count == _Values.count, "Both arrays must have the same dimension.");
+	foreach (Index => VarName in _VariableNames) {
+		declare Text VarValue = _Values[Index];
+		Prepare(VarName, VarValue);
+	}
+}
+
+/**
+ * Prepares multiple variables with their values.
+ *
+ * @param _Variables The variables in a double array [... ["VarName", "Content"], ...].
+ */
+Void Prepare(Text[][] _Variables) {
+	foreach (Var in _Variables) {
+		declare Text VarName = Var[0];
+		declare Text VarValue = Var[1];
+		Prepare(VarName, VarValue);
+	}
+}
+
+/**
+ * Clears the prepared variables.
+ */
+Void Reset() {
+	G_PreparedVars.clear();
+}
+
+/**
+ * Renders the template with the prepared variables.
+ *
+ * @param _TemplateAddress The template address.
+ * @return The rendered template
+ */
+Text Render(Text _TemplateAddress) {
+	declare Text Template			= GetFileContents(_TemplateAddress);
+	declare Text TemplateCompleted	= Template;
+
+	foreach (VariableName => VariableValue in G_PreparedVars) {
+		TemplateCompleted = TL::Replace(TemplateCompleted, Private_GetVariableFormat(VariableName), VariableValue);
+	}
+
+	Reset();
+	return TemplateCompleted;
+}

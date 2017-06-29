@@ -1,0 +1,182 @@
+<manialink version="2" name="{( LayerName )}">
+	<framemodel id="presence">
+		<label id="name" posn="-2 0 0" sizen="50 5" text="" halign="right" textsize="1" valign="center2" style="TextTitle3" />
+		<quad id="check" posn="0 0 0" sizen="5 5" bgcolor="FFFA" style="Icons64x64_1" substyle="Check" valign="center" halign="left" />
+	</framemodel>
+
+	<frame id="main" posn="0 0 35">
+
+		<frame id="presences" posn="152 80 1">
+			<frameinstance modelid="presence" posn="0 0" hidden="1" />
+			<frameinstance modelid="presence" posn="0 -5" hidden="1" />
+			<frameinstance modelid="presence" posn="0 -10" hidden="1" />
+			<frameinstance modelid="presence" posn="0 -15" hidden="1" />
+			<frameinstance modelid="presence" posn="0 -20" hidden="1" />
+			<frameinstance modelid="presence" posn="0 -25" hidden="1" />
+		</frame>
+
+		<quad posn="97 85 0" sizen="67 35" style="EnergyBar" substyle="EnergyBar"/>
+
+		<frame posn="106 48">
+			<label id="btn-ready" posn="0 0 0" sizen="20 5" style="CardButtonSmallL" scriptevents="1"/>
+			<quad posn="-9 2 0" sizen="67 10" style="EnergyBar" substyle="EnergyBar"/>
+		</frame>
+
+	</frame>
+
+	<script><!--
+
+		#Include "AnimLib" as AL
+
+		#Const C_OpeningClosingAnimationDuration {( OpeningClosingAnimationDuration )}
+
+		CMlFrame GetMainFrame() {
+			return (Page.GetFirstChild("main") as CMlFrame);
+		}
+
+		CMlFrame GetPresenceFrameInstancesParentFrame() {
+			return (Page.GetFirstChild("presences") as CMlFrame);
+		}
+
+		CMlFrame[] GetPresenceFrameInstances() {
+			declare CMlFrame[] PresenceFrameInstances;
+			foreach (Control in GetPresenceFrameInstancesParentFrame().Controls) {
+				if (!(Control is CMlFrame)) continue;
+				PresenceFrameInstances.add((Control as CMlFrame));
+			}
+			return PresenceFrameInstances;
+		}
+
+		CMlFrame GetPresenceFrameInstance(Integer _Index) {
+			return GetPresenceFrameInstances()[_Index];
+		}
+
+		CMlLabel PFI_GetNameLabel(CMlFrame _PresenceFrameInstance) {
+			return (_PresenceFrameInstance.GetFirstChild("name") as CMlLabel);
+		}
+
+		CMlQuad PFI_GetCheckQuad(CMlFrame _PresenceFrameInstance) {
+			return (_PresenceFrameInstance.GetFirstChild("check") as CMlQuad);
+		}
+		
+		CMlLabel GetBtnReady() {
+			return (Page.GetFirstChild("btn-ready") as CMlLabel);
+		}
+		
+		Void SwitchState() {
+			declare netwrite Boolean Cli_UI_P_ReadyState for UI;
+			Cli_UI_P_ReadyState = !Cli_UI_P_ReadyState;
+		}
+
+		Text GetPlayerName(Text _Login) {
+			foreach (Player in Players) {
+				if (Player.User.Login == _Login) return Player.User.Name;
+			}
+			return _Login;
+		}
+
+		Void Init() {
+			while (InputPlayer == Null) { yield; }
+			while (InputPlayer.User == Null) { yield; }
+
+			declare netwrite Boolean	Cli_UI_P_ReadyState				for UI;
+			declare Boolean				Cli_UI_L_LastReadyShow			for UI;
+			declare Integer				Cli_UI_L_LastReadyShowTimestamp	for UI;
+			Cli_UI_P_ReadyState = False;
+			Cli_UI_L_LastReadyShow = True;
+			Cli_UI_L_LastReadyShowTimestamp = Now;
+
+			declare Integer ScriptStart for This;
+			ScriptStart = Now;
+		}
+
+		Void LoopStart() {
+
+			declare netread Boolean	Srv_UI_G_ReadyShow				for Teams[0];
+			declare Boolean			Cli_UI_L_LastReadyShow			for UI;
+			declare Integer			Cli_UI_L_LastReadyShowTimestamp	for UI;
+
+			if (Cli_UI_L_LastReadyShow != Srv_UI_G_ReadyShow) {
+				Cli_UI_L_LastReadyShow = Srv_UI_G_ReadyShow;
+				Cli_UI_L_LastReadyShowTimestamp = Now;
+			}
+
+			declare netread Boolean[Text] Srv_UI_G_ReadyPlayers for Teams[0];
+			declare CMlFrame[] PresenceFrameInstances = GetPresenceFrameInstances();
+			declare Integer Index;
+			foreach (Login => ReadyState in Srv_UI_G_ReadyPlayers) {
+				declare CMlFrame	PresenceFrameInstance	= PresenceFrameInstances[Index];
+				declare CMlLabel	NameLabel				= PFI_GetNameLabel(PresenceFrameInstance);
+				declare CMlQuad		CheckQuad				= PFI_GetCheckQuad(PresenceFrameInstance);
+
+				PresenceFrameInstance.Show();
+
+				NameLabel.SetText(GetPlayerName(Login));
+				CheckQuad.StyleSelected = ReadyState;
+
+				Index += 1;
+			}
+
+			while (Index < PresenceFrameInstances.count) {
+				declare CMlFrame PresenceFrameInstance = PresenceFrameInstances[Index];
+				PresenceFrameInstance.Hide();
+				Index += 1;
+			}
+		}
+
+		Void Animate() {
+			declare Integer	ScriptStart						for This;
+			declare Boolean	Cli_UI_L_LastReadyShow			for UI;
+			declare Integer	Cli_UI_L_LastReadyShowTimestamp	for UI;
+
+			declare CMlFrame MainFrame = GetMainFrame();
+
+			if (Cli_UI_L_LastReadyShow) {
+				// Showing.
+				MainFrame.RelativePosition.X = AL::EaseOutSine(Now - ScriptStart, 80., -80., C_OpeningClosingAnimationDuration);
+			} else {
+				// Hiding.
+				MainFrame.RelativePosition.X = AL::EaseOutSine(Now - Cli_UI_L_LastReadyShowTimestamp, 0., 80., C_OpeningClosingAnimationDuration);
+			}
+
+			declare netwrite Boolean Cli_UI_P_ReadyState for UI;
+			declare CMlLabel BtnReady = GetBtnReady();
+
+			declare Text Value;
+			if (Cli_UI_P_ReadyState) {
+				Value = _("Waiting for the other players");
+			} else {
+				Value = _("Start without waiting (F6)");
+			}
+			BtnReady.SetText(Value);
+		}
+		
+		main() {
+		
+			Init();
+
+			while (True) {
+			
+				LoopStart();
+
+				foreach (Event in PendingEvents) {
+					switch (Event.Type) {
+						case CMlEvent::Type::KeyPress: {
+							if (Event.KeyName == "F6") SwitchState();
+						}
+						case CMlEvent::Type::MouseClick: {
+							if (Event.ControlId == "btn-ready") {
+								SwitchState();
+							}
+						}
+					}
+				}
+				
+				Animate();
+				yield;
+			}
+		
+		}
+		
+	--></script>
+</manialink>

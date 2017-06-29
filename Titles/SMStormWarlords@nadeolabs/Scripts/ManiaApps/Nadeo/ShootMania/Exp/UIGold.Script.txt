@@ -1,0 +1,238 @@
+/**
+ *	Display gold amount
+ */
+#Const Version		"2016-12-09"
+#Const ScriptName	"ManiaApps/Nadeo/ShootMania/Exp/UIGold.Script.txt"
+
+// ---------------------------------- //
+// Libraries
+// ---------------------------------- //
+#Include "ManiaApps/Nadeo/Layers.Script.txt" as Layers
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_LayerName "EXP_GoldUI"
+#Const C_Image_Path "file://Media/Manialinks/Nadeo/ShootMania/Exp/"
+#Const C_Sound_Path "file://Media/Sounds/Nadeo/ShootMania/Exp/"
+
+#Const C_Gold "exp_goldnugget.dds"
+#Const C_Jackpot "SFX_UI_Jackpot.wav"
+
+// ---------------------------------- //
+// Globales
+// ---------------------------------- //
+declare Boolean G_CanDisplayGoldUI;
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+// ---------------------------------- //
+/** Return the version number of the script
+ *
+ *  @return   The version number of the script
+ */
+Text GetScriptVersion() {
+  return Version;
+}
+
+// ---------------------------------- //
+/** Return the name of the script
+ *
+ *  @return   The name of the script
+ */
+Text GetScriptName() {
+  return ScriptName;
+}
+
+// ---------------------------------- //
+/** Get the gold manialink
+ *
+ *  @return                           The manialink
+ */
+Text GetUILayerGold() {
+	//L16N. The gold maximum is reached for the current round
+	declare Text FullForRound = _("MAX FOR THIS ROUND");
+	
+	return """
+<manialink name="{{{C_LayerName}}}" version="3">
+<frame pos="0 -60" id="frame-global">
+	<frame id="frame-goldcurrent">
+		<label pos="-9 10" halign="right" valign="center" textsize="8" style="TextRaceMessage" textcolor="0000" text="0" id="label-diff" />
+		<label pos="-9 0" halign="right" valign="center" textsize="7" style="TextRaceMessageBig" text="0" id="label-gold" />
+		<quad pos="-3 0" size="6 13" rot="45" halign="center" valign="center" colorize="f70" image="{{{C_Image_Path^C_Gold}}}" id="quad-gold" />
+	</frame>
+	<frame pos="0 -9">
+		<label halign="center" valign="center" textsize="3" textemboss="1" id="label-goldcumul" />
+	</frame>
+</frame>
+<script><!--
+#Include "TextLib" as TL
+#Include "MathLib" as ML
+
+#Const C_ShowDiffDuration 750
+#Const C_ShowFullDuration	750
+#Const C_GrindMoney_TickDuration 		40
+#Const C_GrindMoney_TotalTick				10
+
+Void CenterGold(CMlFrame _Frame, CMlLabel _Label, CMlQuad _Icon, Text _Value) {
+	_Frame.RelativePosition_V3.X = (_Label.ComputeWidth(_Value) + _Icon.Size.X + 1.) * 0.5;
+}
+
+main() {
+	declare Frame_GoldCurrent 		<=> (Page.GetFirstChild("frame-goldcurrent") as CMlFrame);
+	declare Quad_Gold 						<=> (Page.GetFirstChild("quad-gold") as CMlQuad);
+	declare Label_Gold 						<=> (Frame_GoldCurrent.GetFirstChild("label-gold") as CMlLabel);
+	declare Label_Diff 						<=> (Frame_GoldCurrent.GetFirstChild("label-diff") as CMlLabel);
+	declare Label_GoldCumul 			<=> (Page.GetFirstChild("label-goldcumul") as CMlLabel);
+	
+	Label_Gold.TextColor = <0.99, 0.83, 0.17>;
+	
+	declare netread Net_LibExpUI_GoldAmount 										for UI = 0;
+	declare netread Net_LibExpUI_MaxRoundGold 									for Teams[0] = 0;
+	declare netread Integer Net_LibExpUI_RoundGoldWonAmount 		for UI;
+	declare netread Integer Net_LibExpUI_UpdateUIGold 					for UI;
+
+	declare PrevRoundGoldWonAmount 		= -1;
+	declare PrevGoldAmount 						= -1;
+	declare PrevGoldMax								= -1;
+	declare PrevGoldCumul 						= -1;
+	declare PrevUpdateUIGold 					= -1;
+
+	declare ShowDiff = -1;
+	declare Diff = 0;
+	
+	declare ShowGrindMoney 						= -1;
+	
+	declare GrindMoney_TickCur 				= 0;
+	declare GrindMoney_NextTick				= -1;
+	declare GrindMoney_QuantityToAdd 	= 0;
+	declare GrindMoney_LastDiff				= 0;
+	declare GrindMoney_LastFinal			= 0;
+	declare M_SoundJackpot 						= Audio.CreateSound("{{{C_Sound_Path^C_Jackpot}}}", 0.25, False, False, False);
+	
+	declare PrevStoreIsVisible = False;
+
+	while (True) {
+		yield;
+		if (!PageIsVisible) continue;
+
+		declare Player <=> GUIPlayer;
+		if (Player == Null) Player <=> InputPlayer;
+		if (Player != Null) {
+			declare netread Net_LibExpStore_StoreIsVisible for Player = False;
+			if (PrevStoreIsVisible != Net_LibExpStore_StoreIsVisible) {
+				PrevStoreIsVisible = Net_LibExpStore_StoreIsVisible;
+				Frame_GoldCurrent.Visible = !Net_LibExpStore_StoreIsVisible;
+			}
+		}
+		
+		if (PrevGoldAmount != Net_LibExpUI_GoldAmount) {
+			declare DiffText = "";
+			declare NewDiff = Net_LibExpUI_GoldAmount - PrevGoldAmount;
+			
+			if (ShowDiff < 0) {
+				Diff = NewDiff;
+			} else {
+				Diff += NewDiff;
+			}
+			
+			GrindMoney_LastDiff = Diff;
+			
+			if (Diff >= 0) {
+				DiffText = "+"^Diff;
+				Label_Diff.TextColor = <0., 1., 0.>;
+			} else {
+				DiffText = "-"^ML::Abs(Diff);
+				Label_Diff.TextColor = <1., 0., 0.>;
+			}
+			
+			ShowDiff = Now + C_ShowDiffDuration;
+			Label_Diff.RelativeScale = 1.5;
+			Label_Diff.Value = DiffText;
+			Label_Diff.Visible = True;
+			
+			if(GrindMoney_NextTick > -1) {
+				GrindMoney_NextTick		= -1;
+				declare GoldText 			= TL::ToText(GrindMoney_LastFinal);
+				Label_Gold.Value 			= GoldText;
+				CenterGold(Frame_GoldCurrent, Label_Gold, Quad_Gold, GoldText);
+			}
+			
+			GrindMoney_NextTick 			= Now +	C_GrindMoney_TickDuration;
+			GrindMoney_TickCur 				= 0;			
+			GrindMoney_QuantityToAdd 	= GrindMoney_LastDiff/C_GrindMoney_TotalTick;
+			GrindMoney_LastFinal			= Net_LibExpUI_GoldAmount;
+			if(GrindMoney_QuantityToAdd < 1) GrindMoney_QuantityToAdd = 1;
+			
+			AnimMgr.Add(Label_Diff, "<label scale=\"1\" />", C_ShowDiffDuration, CAnimManager::EAnimManagerEasing::QuartOut);
+			if (Frame_GoldCurrent.Visible) {
+				PlayUiSound(CMlScriptIngame::EUISound::Notice, 0, 2.);
+			}
+			PrevGoldAmount = Net_LibExpUI_GoldAmount;
+		}
+
+		if(ShowDiff >= 0 && Now >= ShowDiff) {
+			ShowDiff = -1;
+			Label_Diff.Visible = False;
+		}
+		
+		if(GrindMoney_NextTick != -1 && Now >= GrindMoney_NextTick) {
+			GrindMoney_TickCur 		+= 1;
+			declare CurrentGold 	= TL::ToInteger(Label_Gold.Value);
+			if(GrindMoney_TickCur >= C_GrindMoney_TotalTick || CurrentGold+GrindMoney_QuantityToAdd >= Net_LibExpUI_GoldAmount) {
+				GrindMoney_NextTick 	= -1;
+				declare GoldText 			= TL::ToText(Net_LibExpUI_GoldAmount);
+				Label_Gold.Value 			= GoldText;
+				CenterGold(Frame_GoldCurrent, Label_Gold, Quad_Gold, GoldText);
+				if (Frame_GoldCurrent.Visible) {
+					M_SoundJackpot.Stop();
+					M_SoundJackpot.Play();
+				}
+				
+			} else {
+				
+				if (Frame_GoldCurrent.Visible) {
+					Audio.PlaySoundEvent(CAudioManager::ELibSound::ScoreIncrease, 0, 1.0);
+				}
+				declare CurrentGold 	= TL::ToInteger(Label_Gold.Value);
+				Label_Gold.Value 			= TL::ToText(CurrentGold+GrindMoney_QuantityToAdd);
+				CenterGold(Frame_GoldCurrent, Label_Gold, Quad_Gold, TL::ToText(CurrentGold+GrindMoney_QuantityToAdd));
+				GrindMoney_NextTick 	= Now + C_GrindMoney_TickDuration;
+			}
+		}
+	}
+}
+--></script>
+</manialink>
+	""";
+}
+
+// ---------------------------------- //
+/// Update the library
+Void Yield() {
+	declare netread Net_LibExpUI_GoldVisibility for UI = False;
+	if (G_CanDisplayGoldUI != Net_LibExpUI_GoldVisibility) {
+		G_CanDisplayGoldUI = Net_LibExpUI_GoldVisibility;
+		Layers::SetVisibility(C_LayerName, G_CanDisplayGoldUI);
+	}
+}
+
+// ---------------------------------- //
+/// Unload the library
+Void Unload() {
+	Layers::Destroy(C_LayerName);
+	G_CanDisplayGoldUI = False;
+}
+
+// ---------------------------------- //
+/// Load the library
+Void Load() {
+	Unload();
+	Layers::Create(C_LayerName, GetUILayerGold());
+	Layers::SetAnimationType(C_LayerName, CUILayer::EUILayerAnimation::DownFast);
+	Layers::SetVisibility(C_LayerName, G_CanDisplayGoldUI);
+}

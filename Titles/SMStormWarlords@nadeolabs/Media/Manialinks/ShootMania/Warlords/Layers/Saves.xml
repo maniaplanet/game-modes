@@ -1,0 +1,209 @@
+<manialink version="2" name="{( LayerName )}">
+	<framemodel id="save">
+		<quad posn="0 0 3" sizen="60 10" style="Bgs1InRace" substyle="BgGradBottom"/>
+		<label id="save-title" posn="1 -0.75 2" sizen="60 5" halign="right" style="TextTitle3" rot="270" text="Save" textcolor="08F" textsize="1"/>
+		<frame clip="1" clipsizen="60 10" clipposn="30 -5">
+			<label id="save-id" posn="59 -5 0" sizen="60 20" halign="right" valign="center2" style="TextTitle3" text="$n12" textsize="15"/>
+		</frame>
+		<label id="save-timestamp" posn="5 -1 0" sizen="60 5" style="TextTitle3" text="12/12/12 12:12"/>
+		<label id="save-players" posn="5 -5 0" sizen="60 5" style="TextTitle3" text="12 players" textsize="1"/>
+		<quad id="save-titlebg" posn="0 0 1" sizen="4 10" bgcolor="FFF" opacity="0.75"/>
+		<quad posn="0 0 0" sizen="60 10" bgcolor="08F" opacity="0.75" id="save-bg" scriptevents="1"/>
+	</framemodel>
+
+	<frame id="main" posn="0 0 8">
+		<label posn="100 26 0" sizen="60 5" valign="center" style="TextTitle3" text="Choose a save" textsize="3"/>
+
+		<frame id="saves" posn="100 22 1">
+			<frameinstance modelid="save" posn="0 0"/>
+			<frameinstance modelid="save" posn="0 -10"/>
+			<frameinstance modelid="save" posn="0 -20"/>
+			<frameinstance modelid="save" posn="0 -30"/>
+			<frameinstance modelid="save" posn="0 -40"/>
+			<frameinstance modelid="save" posn="0 -50"/>
+			<frameinstance modelid="save" posn="0 -60"/>
+			<frameinstance modelid="save" posn="0 -70"/>
+			<frameinstance modelid="save" posn="0 -80"/>
+			<frameinstance modelid="save" posn="0 -90"/>
+		</frame>
+
+		<quad posn="97 30 0" sizen="67 110" style="EnergyBar" substyle="EnergyBar" bgcolor="FFFA"/>
+	</frame>
+
+	<script><!--
+
+		#Include "AnimLib" as AL
+
+		#Const C_AnimDuration	100
+
+		CMlFrame GetSaveFrameInstancesParentFrame() {
+			return (Page.GetFirstChild("saves") as CMlFrame);
+		}
+
+		CMlFrame[] GetSaveFrameInstances() {
+			declare CMlFrame[] SaveFrameInstances;
+			foreach (Control in GetSaveFrameInstancesParentFrame().Controls) {
+				if (!(Control is CMlFrame)) continue;
+				SaveFrameInstances.add((Control as CMlFrame));
+			}
+			return SaveFrameInstances;
+		}
+
+		CMlLabel SFI_GetTitleLabel(CMlFrame _SaveFrameInstance) {
+			return (_SaveFrameInstance.GetFirstChild("save-title") as CMlLabel);
+		}
+
+		CMlLabel SFI_GetIdLabel(CMlFrame _SaveFrameInstance) {
+			return (_SaveFrameInstance.GetFirstChild("save-id") as CMlLabel);
+		}
+
+		CMlQuad SFI_GetBgQuad(CMlFrame _SaveFrameInstance) {
+			return (_SaveFrameInstance.GetFirstChild("save-bg") as CMlQuad);
+		}
+
+		CMlQuad SFI_GetTitleBgQuad(CMlFrame _SaveFrameInstance) {
+			return (_SaveFrameInstance.GetFirstChild("save-titlebg") as CMlQuad);
+		}
+
+		Void SFI_SetId(CMlFrame _SaveFrameInstance, Integer _SaveId) {
+			SFI_GetIdLabel(_SaveFrameInstance).SetText("$n" ^ _SaveId);
+			declare Integer SaveId for SFI_GetBgQuad(_SaveFrameInstance);
+			SaveId = _SaveId;
+		}
+
+		Void SFI_SetTimestamp(CMlFrame _SaveFrameInstance, Integer _Month, Integer _Days, Integer _Years, Integer _Minutes, Integer _Hours) {
+			(_SaveFrameInstance.GetFirstChild("save-timestamp") as CMlLabel).SetText(_Month ^ "/" ^ _Days ^ "/" ^ _Years ^ " " ^ _Hours ^ ":" ^ _Minutes);
+		}
+
+		Void SFI_SetPlayersCount(CMlFrame _SaveFrameInstance, Integer _PlayersCount) {
+			(_SaveFrameInstance.GetFirstChild("save-players") as CMlLabel).SetText(_PlayersCount ^ " players");
+		}
+
+		Integer SFI_GetId(CMlControl _SFIBgQuad) {
+			declare Integer SaveId for _SFIBgQuad;
+			return SaveId;
+		}
+
+		Boolean IsSaveLoadable(Integer _SaveId) {
+			declare netread Integer[][Integer] Srv_OnlineSave_G_Saves for Teams[0];
+			if (!Srv_OnlineSave_G_Saves.existskey(_SaveId)) return False;
+
+			// TODO: Really check online players.
+			return (Players.count >= Srv_OnlineSave_G_Saves[_SaveId][5]);
+		}
+
+		Void SetChosenSave(Integer _SaveId) {
+			declare netwrite Integer Cli_OnlineSave_P_SaveId	for UI;
+			Cli_OnlineSave_P_SaveId = _SaveId;
+		}
+
+		Integer GetChosenSave() {
+			declare netwrite Integer Cli_OnlineSave_P_SaveId	for UI;
+			return Cli_OnlineSave_P_SaveId;
+		}
+
+		Void Init() {
+			SetChosenSave(-1);
+		}
+
+		Void LoopStart() {
+			declare netread Integer[][Integer] Srv_OnlineSave_G_Saves for Teams[0];
+			
+			declare CMlFrame[] SaveFrameInstances = GetSaveFrameInstances();
+			declare Integer CurrentSFIIndex;
+			foreach (SaveId => Save in Srv_OnlineSave_G_Saves) {
+				declare CMlFrame CurrentSFI = SaveFrameInstances[CurrentSFIIndex];
+				CurrentSFI.Show();
+
+				declare Integer Minute			= Save[0];
+				declare Integer Hour			= Save[1];
+				declare Integer Day				= Save[2];
+				declare Integer Month			= Save[3];
+				declare Integer Year			= Save[4];
+				declare Integer PlayersCount	= Save[5];
+
+				SFI_SetId(CurrentSFI, SaveId);
+				SFI_SetTimestamp(CurrentSFI, Month, Day, Year, Hour, Minute);
+				SFI_SetPlayersCount(CurrentSFI, PlayersCount);
+
+				CurrentSFIIndex += 1;
+			}
+			
+			while (CurrentSFIIndex < SaveFrameInstances.count) {
+				declare CMlFrame CurrentSFI = SaveFrameInstances[CurrentSFIIndex];
+				CurrentSFI.Hide();
+				CurrentSFIIndex += 1;
+			}
+		}
+
+		Void Animate() {
+			foreach (SaveFrameInstance in GetSaveFrameInstances()) {
+				declare CMlLabel	TitleLabel	= SFI_GetTitleLabel(SaveFrameInstance);
+				declare CMlLabel	IdLabel		= SFI_GetIdLabel(SaveFrameInstance);
+				declare CMlQuad		TitleBgQuad	= SFI_GetTitleBgQuad(SaveFrameInstance);
+				declare CMlQuad		BgQuad		= SFI_GetBgQuad(SaveFrameInstance);
+
+				declare Integer	MouseOverTimestamp	for BgQuad;
+				declare Integer	MouseOutTimestamp	for BgQuad;
+
+				declare Vec3 Color;
+
+				if (IsSaveLoadable(SFI_GetId(BgQuad))) {
+					if (GetChosenSave() == SFI_GetId(BgQuad)) {
+						Color = <0., 1., 0.5>;
+					} else {
+						Color = <0., 0.5, 1.>;
+					}
+				} else {
+					Color = <1., 0., 0.5>;
+				}
+
+				BgQuad.BgColor = Color;
+				TitleLabel.TextColor = Color;
+
+				declare Real Opacity;
+
+				if (MouseOverTimestamp > MouseOutTimestamp) {
+					Opacity = AL::EaseInOutSine(Now - MouseOverTimestamp, 0.5, 0.5, C_AnimDuration);
+				} else {
+					Opacity = AL::EaseInOutSine(Now - MouseOutTimestamp, 1., -0.5, C_AnimDuration);
+				}
+
+				TitleLabel.Opacity	= Opacity;
+				TitleBgQuad.Opacity	= Opacity;
+				IdLabel.Opacity		= Opacity;
+				BgQuad.Opacity		= Opacity;
+			}
+		}
+
+		main() {
+		
+			Init();
+	
+			while (True) {
+				LoopStart();
+
+				foreach (Event in PendingEvents) {
+					switch (Event.Type) {
+						case CMlEvent::Type::MouseOver: {
+							declare Integer MouseOverTimestamp for Event.Control;
+							MouseOverTimestamp = Now;
+						}
+						case CMlEvent::Type::MouseOut: {
+							declare Integer MouseOutTimestamp for Event.Control;
+							MouseOutTimestamp = Now;
+						}
+						case CMlEvent::Type::MouseClick: {
+							SetChosenSave(SFI_GetId(Event.Control));
+						}
+					}
+				}
+
+				Animate();
+				yield;
+			}
+
+		}
+
+	--></script>
+</manialink>

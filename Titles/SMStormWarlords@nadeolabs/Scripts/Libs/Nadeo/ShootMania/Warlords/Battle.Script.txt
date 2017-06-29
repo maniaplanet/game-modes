@@ -1,0 +1,2192 @@
+/** 
+ *	Battle library
+ *
+ *	Contains functions related to in game battles.
+ */
+
+#Include "TextLib" as TL
+#Include "Libs/Nadeo/ShootMania/Warlords/Player.Script.txt" as Player
+#Include "Libs/Nadeo/ShootMania/Warlords/World.Script.txt" as World
+#Include "Libs/Nadeo/ShootMania/Warlords/UI.Script.txt" as WLUI
+#Include "Libs/Nadeo/ShootMania/Warlords/Utils.Script.txt" as Utils
+#Include "Libs/Nadeo/Mode2.Script.txt" as Mode
+#Include "Libs/Nadeo/Message.Script.txt" as Message
+#Include "Libs/Nadeo/Layers2.Script.txt" as Layers
+#Include "Libs/Nadeo/ShootMania/SM3.Script.txt" as SM
+#Include "Libs/Nadeo/ShootMania/Map.Script.txt" as Map
+#Include "Libs/Nadeo/ShootMania/Warlords/UISync.Script.txt" as UISync
+#Include "Libs/Nadeo/ShootMania/Warlords/Sound.Script.txt" as Sound
+#Include "Libs/Nadeo/ShootMania/Warlords/WLSound.Script.txt" as WLSound
+#Include "Libs/Nadeo/ScoresTable3.Script.txt" as ST2
+#Include "Libs/Nadeo/Log.Script.txt" as Log
+#Include "Libs/Nadeo/ShootMania/Attributes.Script.txt" as Attributes
+#Include "Libs/Nadeo/ShootMania/Exp/Manager.Script.txt" as XpMgr
+#Include "Libs/Nadeo/ShootMania/Exp/Store.Script.txt" as Store
+#Include "Libs/Nadeo/ShootMania/Exp/Upgrades.Script.txt" as Upgrades
+#Include "Libs/Nadeo/ShootMania/Exp/Utils.Script.txt" as XpUtils
+#Include "Libs/Nadeo/ShootMania/Warlords/TurretsSound.Script.txt" as TurretsSound
+
+#Const Version "2017-06-07"
+#Const ScriptName "SWBattles.Script.txt"
+
+#Const C_HudModulePath "Nadeo/ShootMania/Warlords/Hud.Module.Gbx"
+#Const C_ManiaAppUrl "file://Media/ManiaApps/Nadeo/ShootMania/Warlords.Script.txt"
+
+#Const C_ImgBaseDir "file://Media/Manialinks/"
+#Const C_EmblemBaseUrl "file://Media/Manialinks/ShootMania/Warlords/Textures/World/Emblems/Emblem"
+
+#Const SIDE_ATTACKER True
+#Const SIDE_DEFENDER False
+
+#Const C_ProtagonistArmorBonus 1
+
+#Const C_CountdownTime 10//20000
+#Const C_ShopTime 15000
+#Const C_BuildTime 30000
+
+#Const C_AllowSwitchWeapon True
+#Const C_AllowSwitchWeaponForWarlords False
+
+#Const C_SpawnGold False //< You havez to force closed the store once the gold is spawned, or remove gold from player as soon as it is spawned
+#Const C_Item_Gold """Nadeo\ShootMania\Collectibles\Gold.Item.gbx"""
+#Const C_GoldValue 200 ///< Value of one Gold cristal on the map
+
+#Const C_ActionPath_ShieldHero "ShieldAlways.Action.Gbx"
+#Const C_ActionPath_ShieldRemover "Nadeo/ShootMania/Warlords/ShieldRemover.Action.Gbx"
+
+// SOUNDS
+#Const C_UseVoices False
+
+#Const SOUND_BASEDIR							"file://Media/Sounds/ShootMania/Warlords/"
+#Const SOUND_BATTLE_STARTATK			"battle_attacker_startbattle.wav"
+#Const SOUND_BATTLE_STARTDEF			"battle_defender_startbattle.wav"
+#Const SOUND_BATTLE_GATE1				"battle_gate_1st.wav"
+#Const SOUND_BATTLE_GATE2				"battle_gate_2nd.wav"
+#Const SOUND_BATTLE_GATE3				"battle_gate_3rd.wav"
+#Const SOUND_BATTLE_GATELASTATK	"battle_attacker_gate_last.wav"
+#Const SOUND_BATTLE_GATELASTDEF	"battle_defender_gate_last.wav"
+#Const SOUND_BATTLE_VICTORY			"battle_victory.wav"
+#Const SOUND_BATTLE_DEFEAT				"battle_defeat.wav"
+#Const SOUND_BATTLE_WINATK				"battle_planetconquered.wav"
+#Const SOUND_BATTLE_WINDEF				"battle_planetresisted.wav"
+#Const SOUND_BATTLE_WINATKWL			"battle_attacker_planetwon.wav"
+#Const SOUND_BATTLE_LOSEDEFWL		"battle_defender_planetlost.wav"
+
+// SHOP
+#Const WEAP_ROCKET		0
+#Const WEAP_NUCLEUS	1
+#Const WEAP_LASER			2
+#Const LVL_1	0
+#Const LVL_2	1
+#Const LVL_3	2
+
+declare Boolean G_AttackSucceeded;
+declare Ident[] G_MainAttackers;
+declare Ident G_MainDefender;
+declare CSmMapLandmark G_Pole;
+declare CSmObject[] G_GoldObjects;
+declare Integer G_GoldStolen;
+declare Ident[][Integer][Ident] G_MapsGateIdent;
+
+// SETTINGS
+declare Integer G_BaseArmorDef;
+declare Integer G_BaseArmorAtk;
+declare Integer G_BattleMaxTime;
+declare Integer G_TimeToCapture;
+declare Real G_AtkAmmoGainBonus;
+declare Real G_DefAmmoGainBonus;
+
+declare Integer G_MinArmorBonus;
+declare Integer G_MaxArmorBonus;
+declare Real G_BaseAmmoGain;
+
+declare Boolean G_Debug;
+
+declare Integer G_GoldToRespawn;
+declare Integer G_GoldToRestore;
+declare Integer G_GoldForLvl2;
+declare Integer G_GoldForLvl3;
+
+declare Integer G_GoldSpentAtk;
+declare Integer G_GoldSpentDef;
+
+declare Boolean G_ShowScoreAtStart;
+
+declare Ident G_ActionId_ShieldHero; ///< Action's id of the shield for the heroes
+declare Ident G_ActionId_ShieldRemover; ///< Action's id of the empty action
+
+declare Integer G_AtkArmorsNb; ///< Number of armors of the atk side
+declare Integer G_DefArmorsNb; ///< Number of armors of the def side
+declare Boolean G_PoleCaptured; ///< Last pole captured by the attackers
+
+// ---------------------------------- //
+/** Return the version number of the script
+ *
+ *	@return		The version number of the script
+ */
+Text GetScriptVersion() {
+	return Version;
+}
+
+// ---------------------------------- //
+/** Return the name of the script
+ *
+ *	@return		The name of the script
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+Void FlushMapsGateGameId() {
+	G_MapsGateIdent.clear();	
+}
+
+// ---------------------------------- //
+/** Hide/Show Exp UI
+ *
+ *	@param	_Player										The player to update
+ *	@param	_Visible									True to show, False to hide
+ */
+Void DisplayExpUI(CSmPlayer _Player, Boolean _Visible) {
+	XpMgr::SetUIGoldVisible(_Player, False);
+	XpMgr::SetUIItemSelectorVisible(_Player, _Visible);
+}
+
+// ---------------------------------- //
+/**
+ * Set default settings that will be used in the gamemode.
+ *
+ * @param _BaseArmorDef		The default armor count for the defense.
+ * @param _BattleMaxTime	The battle maximum time.
+ * @param _TimeToCapture	The required time to capture the pole.
+ * @param _GoldToRespawn	The gold amount required to respawn.
+ * @param _GoldToRestore	The gold amount required to regenerate an armor.
+ * @param _GoldForLvl2		The gold amount required to get a better weapon.
+ * @param _GoldForLvl3		The gold amount required to get the best weapon.
+ */
+Void ApplySettings(Integer _BaseArmorDef, Integer _BaseArmorAtk, Integer _BattleMaxTime, Integer _TimeToCapture, Integer _GoldToRespawn, Integer _GoldToRestore, Integer _GoldForLvl2, Integer _GoldForLvl3) {
+	G_BaseArmorDef 		= _BaseArmorDef;
+	G_BaseArmorAtk 		= _BaseArmorAtk;
+	G_BattleMaxTime 	= _BattleMaxTime;
+	G_TimeToCapture 	= _TimeToCapture;
+	G_MinArmorBonus		= 0;
+	G_MaxArmorBonus		= 9;
+	
+	G_BaseAmmoGain		= 1.;
+	
+	G_GoldToRespawn = _GoldToRespawn;
+	G_GoldToRestore = _GoldToRestore;
+	G_GoldForLvl2	= _GoldForLvl2;
+	G_GoldForLvl3	= _GoldForLvl3;
+	
+	G_ShowScoreAtStart = True;
+}
+
+// ---------------------------------- //
+/**
+ * Toggles the debug mode.
+ *
+ * @param _Debug	True to activate the debug mode.
+ */
+Void SetDebugMode(Boolean _Debug) {
+	G_Debug = _Debug;
+}
+
+// ---------------------------------- //
+/**
+ * Defines if the scores must be shown on a match start.
+ *
+ * @param _Show	True to show the scores.
+ */
+Void ShowScoreAtStart(Boolean _Show) {
+	G_ShowScoreAtStart = _Show;
+}
+
+// ---------------------------------- //
+/**
+ * Returns the gate Id that must be deactivated by the attack.
+ *
+ * @return The gate Id.
+ */
+Integer GetCurrentGate() {
+	declare netwrite Integer Srv_Battle_G_CurrentGate for Teams[0];
+	return Srv_Battle_G_CurrentGate;
+}
+
+// ---------------------------------- //
+/**
+ * Resets the gate that must be deactivated by the attack.
+ */
+Void ResetCurrentGate() {
+	declare netwrite Integer Srv_Battle_G_ModeUIUpdate	for Teams[0];
+	declare netwrite Integer Srv_Battle_G_CurrentGate 	for Teams[0];
+	
+	Srv_Battle_G_ModeUIUpdate = Now;
+	Srv_Battle_G_CurrentGate = 0;
+}
+
+// ---------------------------------- //
+/**
+ * Checks if there are players left in the specified clan.
+ *
+ * @param _Clan	The clan to check.
+ * @return True if there are players left in the specified clan.
+ */
+Boolean AreNoPlayerLeft(Integer _Clan) {
+	return ClansNbPlayersAlive[_Clan] <= 1;
+}
+
+// ---------------------------------- //
+/**
+ * Checks if the remaining gate has fallen.
+ *
+ * @return True if the remaining gate has fallen.
+ */
+Boolean IsLastGateFallen() {
+	return GetCurrentGate() >= MapLandmarks_Gate.count;
+}
+
+// ---------------------------------- //
+/**
+ * Checks if the given player is an attacker.
+ *
+ * @param _Player	The player to check.
+ * @return True if the given player is an attacker.
+ */
+Boolean IsPlayerAttacker(CPlayer _Player) {
+	if (Player::IsSpec(_Player)) return False;
+	
+	declare netwrite Boolean Srv_Battle_P_Clan for _Player;
+	return (Srv_Battle_P_Clan == True);
+}
+
+// ---------------------------------- //
+/**
+ * Checks if the given player is a defender.
+ *
+ * @param _Player	The player to check.
+ * @return True if the given player is a defender.
+ */
+Boolean IsPlayerDefender(CPlayer _Player) {
+	if (Player::IsSpec(_Player)) return False;
+	
+	declare netwrite Boolean Srv_Battle_P_Clan for _Player;
+	return (Srv_Battle_P_Clan == False);
+}
+
+// ---------------------------------- //
+/**
+ * Activates the next gate.
+ */
+Void NextGate() {
+	declare netwrite Integer Srv_Battle_G_ModeUIUpdate	for Teams[0];
+	declare netwrite Integer Srv_Battle_G_CurrentGate	for Teams[0];
+	
+	Srv_Battle_G_ModeUIUpdate = Now;
+	Srv_Battle_G_CurrentGate += 1;
+	
+	// Restart timer for next gate
+	EndTime = Now + (1000 * G_BattleMaxTime) + 2000;
+	
+	foreach (Player in Players) {
+		// Respawn defending players
+		if (IsPlayerDefender(Player)) {
+			UnspawnPlayer(Player);
+			declare Boolean Srv_Battle_L_RespawnToken for Player;
+			Srv_Battle_L_RespawnToken = True;
+		} 
+		// Fill main attackers armor
+		else if (IsPlayerAttacker(Player) && G_MainAttackers.exists(Player.Id)) {
+			if (Player.SpawnStatus != CSmPlayer::ESpawnStatus::NotSpawned) {
+				declare Diff = Player.ArmorMax - Player.Armor;
+				if (Diff > 0) G_AtkArmorsNb += (Diff / 100);
+				Player.Armor = Player.ArmorMax;
+			}
+		}
+	}
+	
+	if (IsLastGateFallen()) {
+		foreach(Player in Players) {
+			if (IsPlayerAttacker(Player)) WLSound::PlayVoice(SOUND_BATTLE_GATELASTATK, Player);
+			if (IsPlayerDefender(Player)) WLSound::PlayVoice(SOUND_BATTLE_GATELASTDEF, Player);
+		}
+	} else {
+		declare Integer CurrentGate = GetCurrentGate();
+		declare Text GateSound = "";
+		
+		switch(CurrentGate) {
+			case 1: GateSound = SOUND_BATTLE_GATE1;
+			case 2: GateSound = SOUND_BATTLE_GATE2;
+			case 3: GateSound = SOUND_BATTLE_GATE3;
+		}
+		
+		if (GateSound != "") {
+			WLSound::PlayVoice(GateSound);
+		}
+	}
+}
+
+// ---------------------------------- //
+/**
+ * Updates XML markers.
+ */
+Void UpdateXMLMarkers() {
+	declare Text Markers = "";
+	
+	declare Text CoreVisibilityText = "Never";
+	if (IsLastGateFallen()) CoreVisibilityText = "Always";
+	
+	Markers = """<marker manialinkframeid="Frame_CoreMarker" pos="{{{G_Pole.Position.X}}} {{{G_Pole.Position.Y + 20.}}} {{{G_Pole.Position.Z}}}" visibility="{{{CoreVisibilityText}}}"/>""";
+	
+	if (IsLastGateFallen()) {
+		Markers ^= """<marker manialinkframeid="Frame_GateMarker" pos="0 0 0" visibility="Never"/>""";
+	} else {
+		declare Vec3 GatePosition;
+		foreach(GateLM in MapLandmarks_Gate) {
+			if (GateLM.Order == GetCurrentGate() + 1) {
+				GatePosition = GateLM.Position;
+				break;
+			}
+		}
+		Markers ^= """<marker manialinkframeid="Frame_GateMarker" pos="{{{GatePosition.X}}} {{{GatePosition.Y + 10.}}} {{{GatePosition.Z}}}" />""";
+	}
+	
+	UIManager.UIAll.MarkersXML = Markers;
+}
+
+// ---------------------------------- //
+/**
+ * Updates the bots behaviour. 
+ */
+Void UpdateBotsBehaviour() {
+	declare Vec3 NextPosition;
+	if (IsLastGateFallen()) {
+		NextPosition = G_Pole.Position;
+	} else {
+		foreach(GateLM in MapLandmarks_Gate) {
+			if (GateLM.Order == GetCurrentGate() + 1) {
+				NextPosition = GateLM.Position;
+				break;
+			}
+		}
+	}
+	
+	foreach(Bot in BotPlayers) {
+		Bot.Driver.Behaviour = CSmPlayerDriver::ESmDriverBehaviour::Saunter;
+		Bot.Driver.Saunter_AnchorPoint = NextPosition;
+	}	
+}
+
+// ---------------------------------- //
+/**
+ * Resets the bots by removing and respawning them all.
+ */
+Void ReinitBots() {
+	DestroyAllBotPlayers();
+	
+	foreach (Player in Players) {
+		if (!Player.IsFakePlayer) continue;
+		
+		// Player is a fake player.
+		
+		declare Ident Srv_Battle_L_BotIdent for Player = NullId;
+		
+		if (Srv_Battle_L_BotIdent == NullId || ! BotPlayers.existskey(Srv_Battle_L_BotIdent)) {
+			declare CSmPlayer MyBot = CreateBotPlayer(NullId, 0);
+			
+			if (MyBot != Null) {
+				declare Ident Srv_Battle_L_BotOwnerIdent for MyBot = NullId;
+				
+				Srv_Battle_L_BotOwnerIdent = Player.Id;
+				Srv_Battle_L_BotIdent = MyBot.Id;
+			}
+		}
+	}
+}
+
+// ---------------------------------- //
+/**
+ * Resets the given layer.
+ *
+ * @param _LayerName	The layer to reset's name.
+ * @param _MLText		The new layer's content.
+ */
+Void ResetLayer(Text _LayerName, Text _MLText) {
+	if (!Layers::Exists(_LayerName)) {
+		Layers::Create(_LayerName, _MLText);
+	} else {
+		Layers::Update(_LayerName, _MLText);
+	}
+	
+	Layers::Detach(_LayerName, Null);
+	Layers::Attach(_LayerName, Null);
+}
+
+// ---------------------------------- //
+/**
+ * Clear variables.
+ */
+Void CleanSides() {
+	G_MainAttackers.clear();
+	G_MainDefender = NullId;
+}
+
+// ---------------------------------- //
+/**
+ * Gets the price for a given weapon.
+ *
+ * @param _ShopWeapon	The selected weapon's Id.
+ * @param _ShopLevel	The selected weapon's level (low, normal, high).
+ * @return The weapon's price.
+ */
+Integer GetCost(Integer _ShopWeapon, Integer _ShopLevel) {
+	declare netwrite Integer[Integer][Integer] Srv_Battle_G_ShopCosts for Teams[0];
+	if (Srv_Battle_G_ShopCosts.existskey(_ShopWeapon)) {
+		declare Integer[Integer] WeaponCosts = Srv_Battle_G_ShopCosts[_ShopWeapon];
+		if (WeaponCosts.existskey(_ShopLevel)) {	
+			return WeaponCosts[_ShopLevel];
+		}
+	}
+	return -1;
+}
+
+// ---------------------------------- //
+/**
+ * Sets a player's clan.
+ *
+ * @param _PlayerId 	The player to set the clan from.
+ * @param _IsAttacker	True to set the player as attacker, defender otherwise.
+ */
+Void SetSide(Ident _PlayerId, Boolean _IsAttacker) {
+	if (!Players.existskey(_PlayerId)) return;
+	
+	declare CSmPlayer Player <=> Players[_PlayerId];
+	declare netwrite Boolean Srv_Battle_P_Clan for Player;
+	if (_IsAttacker) {
+		Srv_Battle_P_Clan = SIDE_ATTACKER;
+	} else {
+		Srv_Battle_P_Clan = SIDE_DEFENDER;
+	}
+}
+
+// ---------------------------------- //
+/**
+ * Calculates the bonuses with the gates count.
+ */
+Void InitBonuses() {
+	/* TODO
+	declare Integer ArmorBonus = _AtkGold / 500; // TODO : SETTINGS
+	if (ArmorBonus < G_MinArmorBonus) ArmorBonus = G_MinArmorBonus;
+	if (ArmorBonus > G_MaxArmorBonus) ArmorBonus = G_MaxArmorBonus;
+	G_ArmorBonus = ArmorBonus;
+	
+	
+	declare Real AGRatio = 0.;
+	if (_AtkGold + _DefGold > 0) {
+		AGRatio = 1. / (_AtkGold + _DefGold);
+	}
+	
+	G_AtkAmmoGainBonus = _AtkGold * AGRatio;
+	G_DefAmmoGainBonus = _DefGold * AGRatio;
+	*/
+	
+	/*
+	declare Text AttackedCastle = Castles::GetAttackedCastle();
+	declare netwrite Integer[Text][Integer] Net_Sabotage 	for Teams[0];
+	declare Integer AttackerFamily = WGUtils::GetAttackerFamily();
+	declare Integer DefenderFamily = WGUtils::GetDefenderFamily();
+	
+	declare Integer AtkSabotage = 0;
+	declare Integer DefSabotage = 0;
+	
+	if (Net_Sabotage.existskey(AttackerFamily) && Net_Sabotage[AttackerFamily].existskey(AttackedCastle)) {
+		AtkSabotage = Net_Sabotage[AttackerFamily][AttackedCastle];
+	}
+	
+	if (Net_Sabotage.existskey(DefenderFamily) && Net_Sabotage[DefenderFamily].existskey(AttackedCastle)) {
+		DefSabotage = Net_Sabotage[DefenderFamily][AttackedCastle];
+	}
+	
+	G_TimeToCapture += (DefSabotage - AtkSabotage) * 10; // 10 ms per gold diff, i.e. +1 sec for +100 G.
+	if (G_TimeToCapture < 1000) G_TimeToCapture = 1000;
+	if (G_TimeToCapture > 15000) G_TimeToCapture = 15000;
+	*/
+}
+
+// ---------------------------------- //
+/**
+ * Returns the required gold amount to restore.
+ *
+ * @return The gold amount to restore.
+ */
+Integer GetGoldToRestore() {
+	return G_GoldToRestore * MapLandmarks_Gate.count;
+}
+
+// ---------------------------------- //
+/**
+ * Sets default values to net variables.
+ */
+Void InitShopCosts() {
+	declare netwrite Integer[Integer][Integer] Srv_Battle_G_ShopCosts for Teams[0];
+	Srv_Battle_G_ShopCosts.clear();
+	
+	Srv_Battle_G_ShopCosts[WEAP_ROCKET] = Integer[Integer];
+	Srv_Battle_G_ShopCosts[WEAP_ROCKET][LVL_1] = 0;
+	Srv_Battle_G_ShopCosts[WEAP_ROCKET][LVL_2] = G_GoldForLvl2;
+	Srv_Battle_G_ShopCosts[WEAP_ROCKET][LVL_3] = G_GoldForLvl3;
+	
+	Srv_Battle_G_ShopCosts[WEAP_NUCLEUS] = Integer[Integer];
+	Srv_Battle_G_ShopCosts[WEAP_NUCLEUS][LVL_1] = 0;
+	Srv_Battle_G_ShopCosts[WEAP_NUCLEUS][LVL_2] = G_GoldForLvl2;
+	Srv_Battle_G_ShopCosts[WEAP_NUCLEUS][LVL_3] = G_GoldForLvl3;
+	
+	Srv_Battle_G_ShopCosts[WEAP_LASER] = Integer[Integer];
+	Srv_Battle_G_ShopCosts[WEAP_LASER][LVL_1] = 0;
+	Srv_Battle_G_ShopCosts[WEAP_LASER][LVL_2] = G_GoldForLvl2;
+	Srv_Battle_G_ShopCosts[WEAP_LASER][LVL_3] = G_GoldForLvl3;
+}
+
+Void XpYield() {
+	XpMgr::Yield();
+	
+	// Manage UI events
+	foreach (Event in UIManager.PendingEvents) {
+		PassOn(Event);
+		XpMgr::OnEvent(Event);
+		
+		// Transfert gold from store to warlords
+		switch (Event.Type) {
+			case CUIConfigEvent::EType::OnModuleStorePurchase: {
+				foreach (Player in AllPlayers) {
+					declare UI <=> UIManager.GetUI(Player);
+					if (UI == Event.UIConfig) {
+						declare PlayerId = Player::GetPlayerId(Player);
+						declare LibBattle_PrevGold for Player = 0;
+						declare NewGold = Store::GetGold(Player);
+						declare GoldDiff = LibBattle_PrevGold - NewGold;
+						Log::Log("""[Battle] {{{Player.User.Login}}} buy {{{Event.ItemUrl}}} for {{{GoldDiff}}} Gold""");
+						LibBattle_PrevGold = NewGold;
+						if (GoldDiff > 0) {
+							Player::SubGoldAmount(PlayerId, GoldDiff);
+						}
+						
+						declare CleanUrl = XpUtils::CleanStoreUrl(Event.ItemUrl);
+						// Disable missile if upgrading another weapon
+						if (
+							CleanUrl == Upgrades::C_ActionPath^Upgrades::C_Action_RocketAmmo ||
+							CleanUrl == Upgrades::C_ActionPath^Upgrades::C_Action_RocketAmmoGain ||
+							CleanUrl == Upgrades::C_ActionPath^Upgrades::C_Action_LaserAmmo ||
+							CleanUrl == Upgrades::C_ActionPath^Upgrades::C_Action_NucleusAmmo
+						) {
+							Log::Log("""[Battle] {{{Player.User.Login}}} bought a classic weapon upgrade, dissable the missile""");
+							Store::SetCanBeBought(Player, Upgrades::GetItemStoreUrl(Upgrades::C_ItemPath^Upgrades::C_Item_Missile), False);
+						}
+						// Disable other weapons if upgrading the missile
+						else if (
+							CleanUrl == Upgrades::C_ItemPath^Upgrades::C_Item_Missile
+						) {
+							Log::Log("""[Battle] {{{Player.User.Login}}} bought a missile, dissable the classic weapon upgrades""");
+							Store::SetCanBeBought(Player, Upgrades::GetUpgradeStoreUrl(Upgrades::C_ActionPath^Upgrades::C_Action_RocketAmmo), False);
+							Store::SetCanBeBought(Player, Upgrades::GetUpgradeStoreUrl(Upgrades::C_ActionPath^Upgrades::C_Action_RocketAmmoGain), False);
+							Store::SetCanBeBought(Player, Upgrades::GetUpgradeStoreUrl(Upgrades::C_ActionPath^Upgrades::C_Action_LaserAmmo), False);
+							Store::SetCanBeBought(Player, Upgrades::GetUpgradeStoreUrl(Upgrades::C_ActionPath^Upgrades::C_Action_NucleusAmmo), False);
+						}
+						
+						break;
+					}
+				}
+			}
+		}
+	}
+}
+
+Void SetupStore(CSmPlayer _Player, Text _Weapon) {
+	if (_Player == Null) return;
+	
+	// Turrets
+	Store::SetCanBeBought(_Player, Upgrades::GetUpgradeStoreUrl(Upgrades::C_ActionPath^Upgrades::C_Action_Turrets), _Player.Id == G_MainDefender);
+	
+	// Missile
+	Store::SetCanBeBought(_Player, Upgrades::GetItemStoreUrl(Upgrades::C_ItemPath^Upgrades::C_Item_Missile), True);
+	
+	// Weapons
+	Store::SetCanBeBought(_Player, Upgrades::GetUpgradeStoreUrl(Upgrades::C_ActionPath^Upgrades::C_Action_RocketAmmo), False);
+	Store::SetCanBeBought(_Player, Upgrades::GetUpgradeStoreUrl(Upgrades::C_ActionPath^Upgrades::C_Action_RocketAmmoGain), False);
+	Store::SetCanBeBought(_Player, Upgrades::GetUpgradeStoreUrl(Upgrades::C_ActionPath^Upgrades::C_Action_LaserAmmo), False);
+	Store::SetCanBeBought(_Player, Upgrades::GetUpgradeStoreUrl(Upgrades::C_ActionPath^Upgrades::C_Action_NucleusAmmo), False);
+	
+	switch (_Weapon) {
+		case "Nucleus": {
+			Store::SetCanBeBought(_Player, Upgrades::GetUpgradeStoreUrl(Upgrades::C_ActionPath^Upgrades::C_Action_NucleusAmmo), True);
+		}
+		case "Laser": {
+			Store::SetCanBeBought(_Player, Upgrades::GetUpgradeStoreUrl(Upgrades::C_ActionPath^Upgrades::C_Action_LaserAmmo), True);
+		}
+		default: {
+			Store::SetCanBeBought(_Player, Upgrades::GetUpgradeStoreUrl(Upgrades::C_ActionPath^Upgrades::C_Action_RocketAmmo), True);
+			Store::SetCanBeBought(_Player, Upgrades::GetUpgradeStoreUrl(Upgrades::C_ActionPath^Upgrades::C_Action_RocketAmmoGain), True);
+		}
+	}
+}
+
+// ---------------------------------- //
+/** Check if a player can switch weapon
+ *
+ *	@param	_Player										The player to check
+ *
+ *	@return														True if the player can switch weapon,
+ *																		False otherwise
+ */
+Boolean CanSwitchWeapon(CSmPlayer _Player) {
+	if (_Player == Null) return False;
+	
+	if (_Player.Id == G_MainDefender || G_MainAttackers.exists(_Player.Id)) {
+		return C_AllowSwitchWeaponForWarlords;
+	}
+	
+	return C_AllowSwitchWeapon;
+}
+
+// ---------------------------------- //
+/**
+ * Starts the shop time. Displays the associated UI.
+ */
+Void Shop() {
+	declare Integer Margin = 500;
+	declare Integer ShopTime = C_ShopTime;
+	
+	StartTime = Now;
+	UIManager.UIAll.CountdownEndTime = Now + Margin + ShopTime;
+	
+	InitShopCosts();
+	sleep(Margin);
+	
+	/* Disable weapon selection
+	WLUI::BattleShop_Load();
+	WLUI::BattleShop_SetWeapons([
+		"Rocket" => "file://Media/Manialinks/Shootmania/Common/RocketWhite.dds",
+		"Laser" => "file://Media/Manialinks/Shootmania/Common/LaserWhite.dds"
+	], [
+		"Rocket" => "file://Media/Manialinks/Shootmania/Common/RocketWhite.dds",
+		"Nucleus" => "file://Media/Manialinks/Shootmania/Common/NucleusWhite.dds"
+	]);
+	WLUI::BattleShop_Show();
+	
+	UISync::SyncUIs();
+	declare Integer ShopEndTime = Now + ShopTime;
+	
+	while (Now < ShopEndTime && !ServerShutdownRequested && !MatchEndRequested) {
+		sleep(1000);
+		
+		// Check if players are done.
+		declare Boolean AllDone = True;
+		foreach(Player in Players) {
+			declare UI <=> UIManager.GetUI(Player);
+			if (UI == Null) continue;
+			declare netread Boolean Cli_Battle_P_ShopFinished for UI;
+			
+			if (!UISync::IsUISync(Player) || !Cli_Battle_P_ShopFinished) {
+				AllDone = False;
+				break;
+			}
+			// Else, the player is done with the shop.
+		}
+		
+		if (AllDone) break;
+	}
+
+	WLUI::BattleShop_Hide();
+	WLUI::BattleShop_Unload();
+	*/
+	foreach(PlayerIdent in Player::GetPlayers()) {
+		declare CPlayer Player = Player::GetPlayer(PlayerIdent);
+		if (Player == Null || Player::IsSpec(Player)) continue;
+		
+		declare Integer PlayerId = Player::GetPlayerId(Player);
+		
+		declare UI <=> UIManager.GetUI(Player);
+		if (UI == Null) continue;
+		
+		/*
+		declare netread Int3 Cli_Battle_P_ShopChoice for UI;
+		
+		declare Integer Cost = GetCost(Cli_Battle_P_ShopChoice.X, Cli_Battle_P_ShopChoice.Y);
+		// log(Now ^ "> Cost for " ^ Player.Login ^ " = " ^ Cost);
+		Player::SubGoldAmount(PlayerId, Cost);
+		
+		if (IsPlayerAttacker(Player)) {
+			G_GoldSpentAtk += Cost;
+		} else if (IsPlayerDefender(Player)) {
+			G_GoldSpentDef += Cost;
+		}
+		*/
+		// New shop
+		declare SmPlayer <=> (Player as CSmPlayer);
+		// Force weapons instead of using a shop
+		//declare Weapon = WLUI::BattleShop_GetSelectedWeapon(UI);
+		declare Weapon = "";
+		if (G_MainAttackers.exists(Player.Id)) {
+			Weapon = "Laser";
+		} else if (Player.Id == G_MainDefender) {
+			Weapon = "Nucleus";
+		}
+		if (IsPlayerAttacker(Player)) {
+			if (Weapon != "Rocket" && Weapon != "Laser") Weapon = "Rocket";
+		} else if (IsPlayerDefender(Player)) {
+			if (Weapon != "Rocket" && Weapon != "Nucleus") Weapon = "Rocket";
+		}
+		Attributes::RemoveBonus(SmPlayer, Attributes::C_Attribute_AmmoGain, "Battle_DefaultAmmoGain");
+		switch (Weapon) {
+			case "Nucleus": {
+				XpMgr::SetDefaultWeapon(SmPlayer, CSmMode::EWeapon::Nucleus);
+				if (XpMgr::C_Attribute_AmmoGain < 1.) {
+					Attributes::AddBonus(SmPlayer, Attributes::C_Attribute_AmmoGain, "Battle_DefaultAmmoGain", 0.5); //< Override default ammo gain for Nucleus
+				}
+			}
+			case "Laser": {
+				XpMgr::SetDefaultWeapon(SmPlayer, CSmMode::EWeapon::Laser);
+				if (XpMgr::C_Attribute_AmmoGain < 1.) {
+					Attributes::AddBonus(SmPlayer, Attributes::C_Attribute_AmmoGain, "Battle_DefaultAmmoGain", 0.5); //< Override default ammo gain for Laser
+				}
+			}
+			default: {
+				XpMgr::SetDefaultWeapon(SmPlayer, CSmMode::EWeapon::Rocket);
+			}
+		}
+		XpMgr::SetDefaultAutoSwitchWeapon(SmPlayer, CanSwitchWeapon(SmPlayer));
+		SetupStore(SmPlayer, Weapon);
+		Attributes::Apply(SmPlayer);
+		Store::SetGold(SmPlayer, Player::GetGold(PlayerId));
+		
+		declare LibBattle_PrevGold for SmPlayer = 0;
+		LibBattle_PrevGold = Store::GetGold(SmPlayer);
+		
+		XpMgr::UpdateUIGold(SmPlayer);
+	}
+	
+	// Build time
+	XpMgr::ResetPlayerBoughtTurrets();
+	
+	// Store::Open();
+	// Open store only for attackers and defenders
+	foreach(Player in Players) {
+		declare Ident MainAttackerId;
+		if(G_MainAttackers.existskey(0)) MainAttackerId = G_MainAttackers[0];
+		if(MainAttackerId == Player.Id || G_MainDefender == Player.Id) {
+			Store::Open(Player);
+		}
+	}
+	
+	UIManager.UIAll.CountdownEndTime = Now + C_BuildTime;
+	while (Now <= UIManager.UIAll.CountdownEndTime && !ServerShutdownRequested && !MatchEndRequested) {
+		yield;
+		XpYield();
+		
+		// Stop build time when every body closed his store
+		/*
+		declare AllClosed = True;
+		foreach(Player in Players) {
+			if (Store::IsOpen(Player)) {
+				AllClosed = False;
+				break;
+			}
+		}
+		if (AllClosed) break;
+		*/
+		//Stop build time when attackers and defenders chose their builds
+		declare AttackersAndDefendersClosed = True;
+		foreach(Player in Players) {
+			declare Ident MainAttackerId;
+			if(G_MainAttackers.existskey(0)) MainAttackerId = G_MainAttackers[0];
+			if(MainAttackerId == Player.Id || G_MainDefender == Player.Id) {
+				if(Store::IsOpen(Player)) {
+					AttackersAndDefendersClosed = False;
+					break;
+				}
+			}
+		}
+		if(AttackersAndDefendersClosed) break;
+	}
+	UIManager.UIAll.CountdownEndTime = -1;
+}
+
+// ---------------------------------- //
+/**
+ * Initializes the library.
+ */
+Void Initialize() {
+	Sound::Load();
+	sleep(2000); // TODO : corriger ça dans la lib Sound
+	
+	// Init channel progression
+	G_AtkArmorsNb = 0;
+	G_DefArmorsNb = 0;
+	G_PoleCaptured = False;
+	foreach (Score in Scores) {
+		declare Warlords_HitsNb for Score = 0.;
+		declare Warlords_ArmorsLost for Score = 0;
+		Warlords_HitsNb = 0.;
+		Warlords_ArmorsLost = 0;
+	}
+	
+	InitBonuses();
+	
+	WLUI::BattleInGame_Load(MapLandmarks_Gate.count + 1, GetGoldToRestore(), C_CountdownTime);
+	WLUI::BattleInGame_Show();
+	
+	WLUI::BattleSpawnScreen_Show();
+	WLUI::BattleMarkers_Show();
+	
+	foreach(Base in MapBases) {
+		Base.Clan = 2; // Def by default
+		Base.IsActive = True;
+	}
+	
+	declare SpawnAttack <=> Map::GetLandmarkPlayerSpawn("SpawnAttack", 0);
+	SpawnAttack.Base.Clan = 1;
+	
+	for(I, 0, 10) {
+		G_Pole <=> Map::GetLandmark("Goal", I);
+		if (G_Pole != Null) break;
+	}
+	
+	G_Pole.Gauge.Max = G_TimeToCapture;
+	G_Pole.Gauge.Value = 0;
+	G_Pole.Gauge.Clan = 1;
+	G_Pole.Base.Clan = 2;
+	
+	if(!G_MapsGateIdent.existskey(Map.Id)) {
+		G_MapsGateIdent[Map.Id] = Ident[][Integer];
+	}
+	
+	declare Integer PlayerGameId = Player::GetPlayerId(G_MainDefender);
+	if(!G_MapsGateIdent[Map.Id].existskey(PlayerGameId)) {
+		G_MapsGateIdent[Map.Id][PlayerGameId] = Ident[];
+	}
+	
+	declare Ident[] GateGameId = G_MapsGateIdent[Map.Id][PlayerGameId];
+	ResetCurrentGate();
+	
+	foreach(GateLM in MapLandmarks_Gate) {
+		if (GateLM.Gauge == Null) continue;
+		
+		GateLM.Gauge.Speed 		= 0;
+		GateLM.Gauge.Max 				= G_TimeToCapture;
+		GateLM.Gate.Automatic 	= False;
+		GateLM.Base.IsActive 	= True;
+		declare Boolean IsGateOpened = False;
+		if(GateGameId.exists(GateLM.Id)) {
+			GateLM.Base.IsActive 			= False;	
+			GateLM.Gate.ManualClosed 	= False;
+			GateLM.Gauge.Value 				= 0;
+			GateLM.Gate.Clan 						= 1;
+			GateLM.Gauge.Clan						= 1;
+			NextGate();
+			GateLM.Base.Clan 						= 1;
+		} else 	{
+			GateLM.Gate.ManualClosed 	= True;
+			GateLM.Gauge.Value 				= GateLM.Gauge.Max;	
+			GateLM.Gate.Clan 						= 2;
+			GateLM.Gauge.Clan						= 2;
+			GateLM.Base.Clan 						= 2;
+		}
+		
+		/*
+		GateLM.Gate.AutoIsActive = True;
+		GateLM.Gate.AutoOpenSpeed = 1;
+		GateLM.Gate.AutoCloseDelay = -1;
+		*/
+	}
+	
+	
+	G_GoldSpentAtk = 0;
+	G_GoldSpentDef = 0;
+	
+	UpdateXMLMarkers();
+	UIManager.UIAll.OverlayHideCountdown = False;
+	
+	foreach(Player in Players) {
+		declare Boolean Srv_Battle_L_FirstSpawn as FirstSpawn for Player;
+		FirstSpawn = True;
+		
+		if (IsPlayerAttacker(Player)) {
+			SetPlayerClan(Player, 1);
+			WLSound::PlayVoice(SOUND_BATTLE_STARTATK, Player);
+		}
+		else if (IsPlayerDefender(Player)) {
+			SetPlayerClan(Player, 2);
+			WLSound::PlayVoice(SOUND_BATTLE_STARTDEF, Player);
+		}
+		
+		declare Boolean Srv_Battle_L_RespawnToken for Player;
+		Srv_Battle_L_RespawnToken = True;
+		
+		declare netwrite Boolean Srv_Battle_P_IsPlayerProtagonist for Player;
+		Srv_Battle_P_IsPlayerProtagonist = G_MainAttackers.exists(Player.Id) || Player.Id == G_MainDefender;
+		
+		declare netwrite Integer Srv_Battle_P_RearmorCost for Player;
+		Srv_Battle_P_RearmorCost = G_GoldToRestore;
+		declare netwrite Integer Srv_Battle_P_RespawnCost for Player;
+		Srv_Battle_P_RespawnCost = G_GoldToRespawn;
+		
+		declare UI <=> UIManager.GetUI(Player);
+		if (UI == Null) continue;
+		
+		declare netread Integer Cli_Battle_P_UIActionUpdate		for UI;
+		declare Integer Srv_Battle_L_LastUIActionUpdate	for UI;
+		
+		Srv_Battle_L_LastUIActionUpdate = Cli_Battle_P_UIActionUpdate;
+	}
+	
+	UISync::SyncUIs();
+	
+	Teams[0].Name = _("Attackers");
+	Teams[1].Name = _("Defenders");
+	
+	Teams[0].EmblemUrl = "";
+	Teams[1].EmblemUrl = "";
+		
+	declare Integer AttackerId = Player::GetPlayerId(G_MainAttackers[0]);
+	
+	Teams[0].ColorPrimary = Player::GetColor(AttackerId);
+	Teams[0].EmblemUrl = C_EmblemBaseUrl ^ AttackerId + 1 ^ ".dds";
+
+	declare Integer DefenderId = Player::GetPlayerId(G_MainDefender);
+	
+	Teams[1].ColorPrimary = Player::GetColor(DefenderId);
+	Teams[1].EmblemUrl = C_EmblemBaseUrl ^ DefenderId + 1 ^ ".dds";
+	
+	ReinitBots();
+	
+	declare netwrite Integer		Srv_Battle_G_UpdateSpawnScreen	for Teams[0];
+	Srv_Battle_G_UpdateSpawnScreen = Now;
+	
+	UISync::SyncUIs();
+	
+	if (G_ShowScoreAtStart) {
+		UIManager.UIAll.ScoreTableVisibility = CUIConfig::EVisibility::ForcedVisible;
+		sleep(5000);
+		UIManager.UIAll.ScoreTableVisibility = CUIConfig::EVisibility::Normal;
+	}
+	Message::CleanAllMessages();
+	
+	// WAIT TILL THE SHOP IS FINISHED
+	Shop();
+	// END OF THE SHOP
+	
+	declare EnableTurrets = False;
+	foreach(Player in Players) {
+		if (IsPlayerAttacker(Player)) {
+			Message::SendBigMessage(Player, _("Attack the gates!"), 4000, 4);
+		} else if (IsPlayerDefender(Player)) {
+			Message::SendBigMessage(Player, _("Protect the gates!"), 4000, 4);
+		}
+		
+		if (XpMgr::PlayerHasTurrets(Player)) {
+			EnableTurrets = True;
+		}
+	}
+	
+	Log::Log("""[Battle] Can enable turrets : {{{EnableTurrets}}}""");
+	foreach (Base in MapBases) {
+		if (Base.Clan == 2) {
+			Base.IsActive = EnableTurrets;
+		}
+	}
+	TurretsManager.MapTurrets_Reset();
+		
+	StartTime 	= Now + 2000;
+	EndTime 	= Now + (1000 * G_BattleMaxTime) + 2000;
+	//UIManager.UIAll.CountdownEndTime = EndTime;
+}
+
+Void Uninitialize() {
+	WLUI::BattleInGame_Hide();
+	WLUI::BattleSpawnScreen_Hide();
+	WLUI::BattleMarkers_Hide();
+	
+	// Disable all turrets
+	foreach (MapBase in MapBases) {
+		MapBase.IsActive = False;
+	}
+}
+
+// ---------------------------------- //
+/**
+ * Returns the spawn.
+ *
+ * @param _IsAttacker
+ * @return The spawn associated to the clan.
+ */
+CSmMapLandmark GetSpawn(Boolean _IsAttacker) {
+	if (_IsAttacker) {
+		if (GetCurrentGate() <= 0) {
+			return Map::GetLandmarkPlayerSpawn("SpawnAttack", 0);
+		} else {
+			return Map::GetLandmarkPlayerSpawn("SpawnDefense", GetCurrentGate());
+		}
+	}
+	return Map::GetLandmarkPlayerSpawn("SpawnDefense", GetCurrentGate() + 1);
+}
+
+// ---------------------------------- //
+/**
+ * Unspawns all defenders.
+ */
+Void UnspawnDefenders() {
+	foreach(Player in Players) {
+		if (IsPlayerDefender(Player)) UnspawnPlayer(Player);
+	}
+}
+
+// ---------------------------------- //
+/**
+ * Gets the player's weapon choice and applies it.
+ *
+ * @param _Player	The player to use.
+ */
+Void SetShopWeapon(CSmPlayer _Player) {
+	declare UI <=> UIManager.GetUI(_Player);
+	if (UI == Null) { // BOT
+		SetPlayerWeapon(_Player, CSmMode::EWeapon::Rocket, CanSwitchWeapon(_Player));
+		return;
+	}
+	
+	declare netread Int3 Cli_Battle_P_ShopChoice for UI;
+	
+	declare CSmMode::EWeapon	ShopWeapon		= CSmMode::EWeapon::Rocket;
+	declare Real 				ShopAmmoGain	= 1.;
+	declare Integer				ShopAmmo		= 2;
+	
+	switch(Cli_Battle_P_ShopChoice.X) {
+		case WEAP_ROCKET	: {
+			ShopWeapon = CSmMode::EWeapon::Rocket;
+			switch(Cli_Battle_P_ShopChoice.Y) {
+				case LVL_1	: {
+					ShopAmmoGain = 0.8;
+					ShopAmmo = 2;
+				}
+				case LVL_2	: {
+					ShopAmmoGain = 1.2;
+					ShopAmmo = 4;
+				}
+				case LVL_3	: {
+					ShopAmmoGain = 2.0;
+					ShopAmmo = 6;
+				}
+				default		: {
+					ShopAmmoGain = 0.8;
+					ShopAmmo = 2;
+				}
+			}
+		}
+		case WEAP_NUCLEUS	: {
+			ShopWeapon = CSmMode::EWeapon::Nucleus;
+			switch(Cli_Battle_P_ShopChoice.Y) {
+				case LVL_1	: {
+					ShopAmmoGain = 1.;
+					ShopAmmo = 1;
+				}
+				case LVL_2	: {
+					ShopAmmoGain = 1.5;
+					ShopAmmo = 2;
+				}
+				case LVL_3	: {
+					ShopAmmoGain = 2.0;
+					ShopAmmo = 3;
+				}
+				default		: {
+					ShopAmmoGain = 1.;
+					ShopAmmo = 1;
+				}
+			}
+		}
+		case WEAP_LASER		: {
+			ShopWeapon = CSmMode::EWeapon::Laser;
+			switch(Cli_Battle_P_ShopChoice.Y) {
+				case LVL_1	: {
+					ShopAmmoGain = 0.6;
+					ShopAmmo = 1;
+				}
+				case LVL_2	: {
+					ShopAmmoGain = 1.1;
+					ShopAmmo = 2;
+				}
+				case LVL_3	: {
+					ShopAmmoGain = 1.6;
+					ShopAmmo = 3;
+				}
+				default		: {
+					ShopAmmoGain = 0.6;
+					ShopAmmo = 1;
+				}
+			}
+		}
+	}
+	
+	SetPlayerWeapon(_Player, ShopWeapon, CanSwitchWeapon(_Player));
+	SetPlayerAmmoMax(_Player, ShopWeapon, ShopAmmo);
+	_Player.AmmoGain = ShopAmmoGain;
+}
+
+// ---------------------------------- //
+/**
+ * Spawns a player.
+ *
+ * @param _Player	The player to spawn.
+ */
+Void Spawn(CSmPlayer _Player) {
+	declare Boolean Srv_Battle_L_RespawnToken for _Player;
+	if (!Srv_Battle_L_RespawnToken) return;
+	
+	// Attacking supporters always respawn
+	if (IsPlayerAttacker(_Player) && !G_MainAttackers.exists(_Player.Id)) {
+		Srv_Battle_L_RespawnToken = True;
+	} else {
+		Srv_Battle_L_RespawnToken = False; // consume token
+	}
+	
+	declare netwrite Integer Srv_Battle_G_ModeUIUpdate for Teams[0];
+	Srv_Battle_G_ModeUIUpdate = Now;
+	
+	declare Integer Clan  = 0;
+	declare Integer ArmorUnit = 1;
+	declare CSmMapLandmark Spawn = Null;
+	
+	if (IsPlayerAttacker(_Player)) {
+		Clan = 1;
+		Spawn <=> GetSpawn(True);
+		ArmorUnit = G_BaseArmorAtk;
+		if (G_MainAttackers.exists(_Player.Id)) {
+			ArmorUnit += C_ProtagonistArmorBonus;
+			
+			// Give shield
+			ActionLoad(_Player, CSmMode::EActionSlot::Slot_G, G_ActionId_ShieldHero);
+			//ActionBind(_Player, CSmMode::EActionSlot::Slot_G, CSmMode::EActionInput::None);
+			Log::Log("""[Battle] Load shield for {{{_Player.User.Login}}} > ShieldId : {{{G_ActionId_ShieldHero}}}""");
+		} else {
+			// Remove shield
+			ActionLoad(_Player, CSmMode::EActionSlot::Slot_G, G_ActionId_ShieldRemover);
+			Log::Log("""[Battle] Remove shield from {{{_Player.User.Login}}}""");
+		}
+		
+		_Player.AmmoGain = G_BaseAmmoGain + G_AtkAmmoGainBonus;
+	} else if (IsPlayerDefender(_Player)) {
+		ArmorUnit = G_BaseArmorDef;
+		if (_Player.Id == G_MainDefender) {
+			ArmorUnit += C_ProtagonistArmorBonus;
+			
+			// Give shield
+			ActionLoad(_Player, CSmMode::EActionSlot::Slot_G, G_ActionId_ShieldHero);
+			//ActionBind(_Player, CSmMode::EActionSlot::Slot_G, CSmMode::EActionInput::None);
+			Log::Log("""[Battle] Load shield for {{{_Player.User.Login}}} > ShieldId : {{{G_ActionId_ShieldHero}}}""");
+		} else {
+			// Remove shield
+			ActionLoad(_Player, CSmMode::EActionSlot::Slot_G, G_ActionId_ShieldRemover);
+			Log::Log("""[Battle] Remove shield from {{{_Player.User.Login}}}""");
+		}
+		
+		Clan = 2;
+		Spawn <=> GetSpawn(False);
+		
+		_Player.AmmoGain = G_BaseAmmoGain + G_DefAmmoGainBonus;
+	} else if (!_Player.IsFakePlayer) {
+		// Users_RequestSwitchToSpectator(_Player.User);
+		return; // do not spawn unwanted players.
+	}
+	
+	if (Spawn == Null) return;
+	
+	//SetShopWeapon(_Player);
+	SetPlayerClan(_Player, Clan);
+	
+	declare UI <=> UIManager.GetUI(_Player);
+	if (UI != Null) {
+		UI.SpectatorForcedClan = Clan;
+		UI.SpectatorForceCameraType = 1;
+	}
+	
+	if (_Player.IsFakePlayer) {
+		
+		declare CSmPlayer MyBot = Null;
+		declare Ident Srv_Battle_L_BotIdent for _Player = NullId;
+		
+		if (!BotPlayers.existskey(Srv_Battle_L_BotIdent)) return;
+		MyBot = BotPlayers[Srv_Battle_L_BotIdent];
+		MyBot.ArmorMax = ArmorUnit * 100;
+		
+		SpawnBotPlayer(MyBot, Clan, ArmorUnit * 100, Spawn.PlayerSpawn, Now);
+		
+		MyBot.Driver.Behaviour = CSmPlayerDriver::ESmDriverBehaviour::IA;
+		MyBot.Driver.Saunter_Radius = 2.;
+		
+	} else {
+		XpMgr::InitPlayer(_Player);
+		SM::Spawn(_Player, Clan, _Player.ArmorMax, Spawn.PlayerSpawn, Now);
+		DisplayExpUI(_Player, True);
+		
+		if (IsPlayerAttacker(_Player)) {
+			G_AtkArmorsNb += (_Player.ArmorMax / 100);
+		} else if (IsPlayerDefender(_Player)) {
+			G_DefArmorsNb += (_Player.ArmorMax / 100);
+		}
+	}
+	
+	//_Player.ArmorMax = ArmorUnit * 100;
+	
+	declare Boolean Srv_Battle_L_FirstSpawn for _Player;
+	/*if (Srv_Battle_L_FirstSpawn) {
+		_Player.Armor = _Player.ArmorMax;
+	} else {
+		_Player.Armor = 100;
+	}*/
+	Srv_Battle_L_FirstSpawn = False;
+	
+	if (G_MainAttackers.exists(_Player.Id) || _Player.Id == G_MainDefender) {
+		_Player.IsHighlighted = True;
+		_Player.EnergyLevel = 1.;
+	} else {
+		/*
+		_Player.IsHighlighted = False;
+		_Player.EnergyLevel = 0.2;
+		*/
+		_Player.IsHighlighted = True;
+		_Player.EnergyLevel = 1.;
+	}
+	
+	if (_Player.IsFakePlayer) {
+		declare Ident Srv_Battle_L_BotIdent for _Player;
+		if (BotPlayers.existskey(Srv_Battle_L_BotIdent)) {
+			declare BotPlayer = BotPlayers[Srv_Battle_L_BotIdent];
+			BotPlayer.IsHighlighted = _Player.IsHighlighted;
+			BotPlayer.EnergyLevel = _Player.EnergyLevel;
+		}
+	}
+	
+	declare netwrite Boolean Srv_Battle_P_ModeIsPlaying for _Player;
+	Srv_Battle_P_ModeIsPlaying = True;
+
+	// UpdateBotsBehaviour();
+}
+
+// ---------------------------------- //
+/**
+ * Checks if a player can respawn. If he can't, a notice is sent. Otherwise, the required gold amount is taken.
+ *
+ * @param _Player	The player that wants to respawn.
+ */
+Void AskRespawn(CSmPlayer _Player) {
+	if (!UISync::IsUISync(_Player)) return;
+	declare Boolean Srv_Battle_L_RespawnToken for _Player;
+	if (Srv_Battle_L_RespawnToken) return;
+	
+	if (_Player.SpawnStatus != CSmPlayer::ESpawnStatus::NotSpawned) return;
+	
+	if (!G_MainAttackers.exists(_Player.Id) && G_MainDefender != _Player.Id) return;
+	
+	declare netwrite Integer Srv_Battle_P_RespawnCost for _Player;
+
+	declare Integer PlayerId	= Player::GetPlayerId(_Player);
+	declare Integer PlayerGold	= Player::GetGold(PlayerId);
+
+	if (PlayerGold >= Srv_Battle_P_RespawnCost) {
+		Player::SubGoldAmount(PlayerId, Srv_Battle_P_RespawnCost);
+		G_GoldSpentDef += Srv_Battle_P_RespawnCost;
+		Srv_Battle_L_RespawnToken = True;
+		Srv_Battle_P_RespawnCost *= 2;
+	} else {
+		Message::SendStatusMessage(_Player, TL::Compose("$f00%1", _("Not enough gold.")), 3000, 3);
+	}
+
+}
+
+// ---------------------------------- //
+/**
+ * Checks if a player can restores an armor. If he can't, a notice is sent. Otherwise, the required gold amount is taken.
+ *
+ * @param _Player	The player that wants to restore an armor.
+ */
+Void AskRestore(CSmPlayer _Player) {
+	if (! UISync::IsUISync(_Player)) return;
+	if (_Player.Armor >= _Player.ArmorMax) return;
+	
+	declare netwrite Integer Srv_Battle_P_RearmorCost for _Player;
+
+	declare Integer PlayerId = Player::GetPlayerId(_Player);
+	declare Integer PlayerGold = Player::GetGold(PlayerId);
+	
+	if (PlayerGold >= Srv_Battle_P_RearmorCost) {
+		Player::SubGoldAmount(PlayerId, Srv_Battle_P_RearmorCost);
+		G_GoldSpentAtk += Srv_Battle_P_RearmorCost;
+		if (IsPlayerAttacker(_Player)) {
+			declare Diff = _Player.ArmorMax - _Player.Armor;
+			if (Diff > 0) G_AtkArmorsNb += (Diff / 100);
+		} else if (IsPlayerDefender(_Player)) {
+			declare Diff = _Player.ArmorMax - _Player.Armor;
+			if (Diff > 0) G_DefArmorsNb += (Diff / 100);
+		}
+		_Player.Armor = _Player.ArmorMax;
+		Srv_Battle_P_RearmorCost *= 2;
+	} else {
+		Message::SendStatusMessage(_Player, TL::Compose("$f00%1", _("Not enough gold.")), 3000, 3);
+	}
+
+}
+
+// ---------------------------------- //
+/**
+ * Toggles the auto surrender countdown for the given player.
+ *
+ * @param _PlayerId	The concerned player.
+ * @param _Start	True to activate the auto surrender, false to deactivate it.
+ */
+Void ToggleAutoSurrender(Ident _PlayerIdent, Boolean _Start) {
+	if (!Players.existskey(_PlayerIdent)) return;
+			
+	declare CSmPlayer Player <=> Players[_PlayerIdent];
+	declare netwrite Integer Srv_Battle_P_ModeCountDownStart for Player;
+	
+	if (_Start) {
+		if (Srv_Battle_P_ModeCountDownStart < 0) {			
+			Srv_Battle_P_ModeCountDownStart = Now;
+		}
+	} else {
+		if (Srv_Battle_P_ModeCountDownStart >= 0) {
+			Srv_Battle_P_ModeCountDownStart = -1;
+		}
+	}
+}
+
+// ---------------------------------- //
+/**
+ * Checks the auto surrender countdown.
+ *
+ * @param _PlayerId	The player that will surrender.
+ * @return True if the countdown is active.
+ */
+Boolean AutoSurrender(Ident _PlayerIdent) {
+	if (!Players.existskey(_PlayerIdent)) return True; // auto surrender if the player does not exist
+			
+	declare CSmPlayer Player <=> Players[_PlayerIdent];
+	declare netwrite Integer Srv_Battle_P_ModeCountDownStart for Player;
+	
+	return (Srv_Battle_P_ModeCountDownStart > 0) && (Now >= Srv_Battle_P_ModeCountDownStart + C_CountdownTime); // TODO : setting ?
+}
+
+// ---------------------------------- //
+/**
+ * Calculates the allies count.
+ */
+Void RecomputeAlliesCount() {
+	declare Integer[Integer] PlayersSpawned;
+	PlayersSpawned[1] = 0;
+	PlayersSpawned[2] = 0;
+	
+	foreach(Player in AllPlayers) {
+		declare Integer CurrentClan = Player.CurrentClan;
+		if (CurrentClan <= 0 || CurrentClan > 2) continue;
+		
+		if (Player.SpawnStatus != CSmPlayer::ESpawnStatus::NotSpawned) {
+			PlayersSpawned[CurrentClan] += 1;
+		}
+	}
+
+	foreach(Player in Players) {
+		declare Integer CurrentClan = Player.CurrentClan;
+		if (CurrentClan <= 0 || CurrentClan > 2) continue;
+		
+		declare Integer NbPlayerAlive = PlayersSpawned[CurrentClan];
+		declare netwrite 	Integer Srv_Battle_P_AlliesFighting for Player;
+		
+		if (Player.SpawnStatus != CSmPlayer::ESpawnStatus::NotSpawned) {
+			Srv_Battle_P_AlliesFighting = NbPlayerAlive - 1;
+		} else {
+			Srv_Battle_P_AlliesFighting = NbPlayerAlive;
+		}
+	}
+}
+
+// ---------------------------------- //
+/**
+ * The battle's play loop
+ *
+ * @return False when the game is over, True otherwise.
+ */
+Boolean PlayLoop() {
+	Message::Loop();
+	declare Boolean EndOfBattle = False;
+	declare Boolean CheckVictory = True;
+	declare Boolean RecomputeAlliesCount = False;
+	
+	foreach (Event in PendingEvents) {
+		declare Validated = False;
+		
+		switch (Event.Type) {
+			case CSmModeEvent::EType::OnHit: {
+				if (G_Debug) {
+					Event.Damage = 100;
+					Validated = True;
+					PassOn(Event);
+				} else {
+					if (Event.Victim == Null) { //< Hit shield
+						Event.Damage = 100;
+						Validated = True;
+						PassOn(Event);
+					} else if (Event.Shooter == Null && Event.Victim.CurrentClan != Event.ShooterClan) { //< Turret shot
+						Event.Damage = 100;
+						Validated = True;
+						PassOn(Event);
+					} else if (Event.Shooter == Null || Event.Victim == Null || Event.Shooter.CurrentClan == Event.Victim.CurrentClan) {
+						Validated = False;
+						Discard(Event);
+					} else {
+						Event.Damage = 100;
+						Validated = True;
+						PassOn(Event);
+						
+						declare Warlords_HitsNb for Event.Shooter.Score = 0.;
+						declare Warlords_ArmorsLost for Event.Victim.Score = 0;
+						if (Event.VictimTurret != Null) {
+							Warlords_HitsNb += 0.5;
+						} else {
+							Warlords_HitsNb += 1.;
+							Warlords_ArmorsLost += Event.Damage;
+						}
+					}
+				}
+			}
+			case CSmModeEvent::EType::OnArmorEmpty: {
+				RecomputeAlliesCount = True;
+				if (Event.Victim != Null) DisplayExpUI(Event.Victim, False);
+				Validated = True;
+				PassOn(Event);
+			}
+			case CSmModeEvent::EType::OnPlayerRequestRespawn: {
+				RecomputeAlliesCount = True;
+				if (Event.Player != Null) DisplayExpUI(Event.Player, False);
+				
+				declare Warlords_ArmorsLost for Event.Player.Score = 0;
+				Warlords_ArmorsLost += Event.Player.Armor;
+				
+				Validated = True;
+				PassOn(Event);
+			} 
+			case CSmModeEvent::EType::OnCapture: {
+				if (Event.Landmark == G_Pole) {
+					G_AttackSucceeded = True;
+					G_PoleCaptured = True;
+					declare Integer PlayerGameId = Player::GetPlayerId(G_MainDefender);
+					G_MapsGateIdent[Map.Id][PlayerGameId].clear();
+					
+					EndOfBattle = True;
+				}
+			}
+			case CSmModeEvent::EType::OnCommand: {
+				if (Event.CommandName == "Debug") {
+					SetDebugMode(Event.CommandValueBoolean);
+				}
+			}
+			case CSmModeEvent::EType::OnPlayerRemoved: {
+				RecomputeAlliesCount = True;
+				/* Deprecated
+				if (G_MainAttackers.exists(Event.PlayerId)) {
+					G_AttackSucceeded = False;
+					EndOfBattle = True;
+				} else if (Event.PlayerId == G_MainDefender) {
+					G_AttackSucceeded = True;
+					EndOfBattle = True;
+				}
+				*/
+				declare MainAttackerRemoved = False;
+				foreach (PlayerId in G_MainAttackers) {
+					if (!Players.existskey(PlayerId)) {
+						MainAttackerRemoved = True;
+						break;
+					}
+				}
+				declare MainDefenderRemoved = !Players.existskey(G_MainDefender);
+				
+				if (MainAttackerRemoved) {
+					G_AttackSucceeded = False;
+					EndOfBattle = True;
+				} else if (MainDefenderRemoved) {
+					G_AttackSucceeded = True;
+					EndOfBattle = True;
+				}
+			}
+			/* Disable armor restore
+			case CSmModeEvent::EType::OnActionEvent: {
+				if (Event.ActionInput == CSmMode::EActionInput::Activable1) {
+					if (Event.Player != Null && (G_MainAttackers.exists(Event.Player.Id) || (Event.Player.Id == G_MainDefender)) ) {
+						AskRestore(Event.Player);
+					}
+				}
+			}
+			*/
+			case CSmModeEvent::EType::OnPlayerTouchesObject: {
+				if (G_GoldObjects.exists(Event.Object)) {
+					if (
+						IsPlayerAttacker(Event.Player) && //< Is an attacking player
+						AllPlayers.existskey(G_MainDefender) //< and the main defender exists
+					) {
+						declare Removed = G_GoldObjects.remove(Event.Object);
+						ObjectDestroy(Event.Object);
+						Player::SubGoldAmount(Player::GetPlayerId(AllPlayers[G_MainDefender]), C_GoldValue);
+						G_GoldStolen += C_GoldValue;
+						PassOn(Event);
+					} else {
+						Discard(Event);
+					}
+				} else {
+					Discard(Event);
+				}
+			}
+			default: {
+				Validated = True;
+				PassOn(Event);
+			}
+		}
+		if (Validated) XpMgr::OnEvent(Event);
+	}
+	
+	foreach (Player in Players) {
+		// Spawn player
+		if (Player.SpawnStatus == CSmPlayer::ESpawnStatus::NotSpawned && !Player.RequestsSpectate) {
+			declare Boolean Srv_Battle_L_RespawnToken for Player;
+			
+			if (Srv_Battle_L_RespawnToken) {
+				Spawn(Player);
+				CheckVictory = False;
+				RecomputeAlliesCount = True;
+			}
+		}
+		
+		// Enable turrets
+		if (XpMgr::PlayerBoughtTurrets(Player)) {
+			Log::Log("""[Battle] {{{Player.User.Login}}} enabled turrets""");
+			foreach (Base in MapBases) {
+				if (Base.Clan == 2) {
+					Base.IsActive = True;
+				}
+			}
+		}
+	}
+	
+	// G_Pole.Gauge.Speed = -1;
+	G_Pole.Gauge.Speed = 0;
+	if (IsLastGateFallen()) {
+		foreach (PlayerIdent in G_Pole.Sector.PlayersIds) {
+			declare Boolean OpenGate = False;
+			
+			if (BotPlayers.existskey(PlayerIdent)) {
+				declare CSmPlayer Bot <=> BotPlayers[PlayerIdent];
+				declare Ident Srv_Battle_L_BotOwnerIdent for Bot = NullId;
+				
+				if (Players.existskey(Srv_Battle_L_BotOwnerIdent)) {
+					// OpenGate = IsPlayerAttacker(Players[Srv_Battle_L_BotOwnerIdent]);
+					// Only a Hero can capture the pole
+					OpenGate = G_MainAttackers.exists(Srv_Battle_L_BotOwnerIdent);
+				}
+			} else {
+				if (Players.existskey(PlayerIdent)) {
+					// OpenGate = IsPlayerAttacker(Players[PlayerIdent]);
+					// Only a Hero can capture the pole
+					OpenGate = G_MainAttackers.exists(PlayerIdent);
+				}
+			}
+				
+			if (OpenGate) {
+				G_Pole.Gauge.Speed = 1;
+			}
+		}
+	}
+	
+	foreach (GateLM in MapLandmarks_Gate) {
+		if (GateLM.Order != GetCurrentGate() + 1) continue;
+		
+		if (GateLM.Gate.ManualClosed) {
+			GateLM.Gauge.Speed = 0;
+			
+			foreach (PlayerId in GateLM.Sector.PlayersIds) {
+				declare Boolean OpenGate = False;
+				
+				if (BotPlayers.existskey(PlayerId)) {
+					declare CSmPlayer Bot <=> BotPlayers[PlayerId];
+					declare Ident Srv_Battle_L_BotOwnerIdent for Bot = NullId;
+					if (Players.existskey(Srv_Battle_L_BotOwnerIdent)) {
+						// OpenGate = IsPlayerAttacker(Players[Srv_Battle_L_BotOwnerIdent]);
+						// Only a Hero can open the gate
+						OpenGate = G_MainAttackers.exists(Srv_Battle_L_BotOwnerIdent);
+					}
+				} else {
+					if (Players.existskey(PlayerId)) {
+						// OpenGate = IsPlayerAttacker(Players[PlayerId]);
+						// Only a Hero can open the gate
+						OpenGate = G_MainAttackers.exists(PlayerId);
+					}
+				}
+				
+				if (OpenGate) {
+					GateLM.Gauge.Speed = -1;
+				}
+			}
+			
+			if (GateLM.Gauge.Value <= 0.) {
+				GateLM.Gate.ManualClosed = False;
+				GateLM.Gauge.Clan = 1;
+				
+				if (GateLM.Base != Null) {
+					GateLM.Base.Clan = 1;
+					GateLM.Base.IsActive = False;
+				}
+				
+				//declare Ident[][Integer] GateIdent for Map;
+				declare Integer PlayerGameId = Player::GetPlayerId(G_MainDefender);
+				
+				if(!G_MapsGateIdent.existskey(Map.Id)) {
+					G_MapsGateIdent[Map.Id] = Ident[][Integer];
+				}
+				
+				if(!G_MapsGateIdent[Map.Id].existskey(PlayerGameId)) {
+					G_MapsGateIdent[Map.Id][PlayerGameId] = Ident[];
+				}
+				G_MapsGateIdent[Map.Id][PlayerGameId].add(GateLM.Id);
+				
+				NextGate();
+				
+				declare CSmMapLandmark NewAttackSpawn <=> GetSpawn(True);
+				if (NewAttackSpawn != Null) {
+					NewAttackSpawn.Base.Clan = 1;
+					NewAttackSpawn.Base.IsActive = False;
+				}
+
+				/*
+				UnspawnDefenders();
+				if (Players.existskey(G_MainDefenderPlayer)) {
+					declare CSmPlayer MainDefender <=> Players[G_MainDefenderPlayer];
+					declare Boolean RespawnToken for MainDefender;
+					RespawnToken = True;
+				}
+				*/
+				
+				UpdateXMLMarkers();
+				// UpdateBotsBehaviour();
+				Message::SendBigMessage(Null, TL::Compose(_("Gate %1 open!"), TL::ToText(GetCurrentGate())), 4000, 4);
+				CheckVictory = False;
+			}
+		}
+	}
+	
+	if (CheckVictory) {
+		declare Boolean[Integer] ClanIsAlive;
+		
+		ClanIsAlive[1] = False;
+		ClanIsAlive[2] = False;
+		
+		foreach (Player in Players) {
+			declare CSmPlayer PlayingPlayer <=> Player;
+			
+			if (Player.IsFakePlayer) {
+				declare Ident Srv_Battle_L_BotIdent for Player = NullId;
+				if (!BotPlayers.existskey(Srv_Battle_L_BotIdent)) continue;
+				
+				declare CSmPlayer MyBot = BotPlayers[Srv_Battle_L_BotIdent];
+				if (MyBot != Null) {
+					PlayingPlayer <=> MyBot;
+				} else {
+					continue;
+				}
+			}
+			
+			if (PlayingPlayer.SpawnStatus != CSmPlayer::ESpawnStatus::NotSpawned) {
+				if (IsPlayerAttacker(PlayingPlayer)) { //< Only attacking hero matters, if he is eliminated the battle is lost. Supporters always respawn.
+					if (G_MainAttackers.exists(PlayingPlayer.Id)) ClanIsAlive[Player.CurrentClan] = True;
+				} else {
+					ClanIsAlive[Player.CurrentClan] = True;
+				}
+			}
+		}
+		
+		foreach (AttackerIdent in G_MainAttackers) {
+			ToggleAutoSurrender(AttackerIdent, !ClanIsAlive[1]);
+		}
+		// ToggleAutoSurrender(G_MainDefender, !ClanIsAlive[2]); //< Do not stop, defenders are respawned when a gate is captured
+		ToggleAutoSurrender(G_MainDefender, ClansNbPlayers[2] <= 0); //< Stop only if there is no defender left on the server
+
+		if (AutoSurrender(G_MainDefender)) {
+			EndOfBattle = True;
+			G_AttackSucceeded = True;
+			declare CPlayer PlayMainDefender = Player::GetPlayer(G_MainDefender);
+			declare Text PlayMainDefenderName;
+			if(PlayMainDefender != Null) {
+				PlayMainDefenderName = PlayMainDefender.User.Name;
+			} else {
+				PlayMainDefenderName = _("The Defender");
+			}
+			
+			Message::SendStatusMessage(TL::Compose(_("$<%1$> has surrendered!"), PlayMainDefenderName), 3000, 1);
+		}
+		foreach (AttackerIdent in G_MainAttackers) { // TODO // EG : TODO WHAT ?
+			if (AutoSurrender(AttackerIdent)) {
+				EndOfBattle = True;
+				G_AttackSucceeded = False;
+				
+				declare CPlayer PlayMainAttacker = Player::GetPlayer(AttackerIdent);
+				declare Text PlayMainAttackerName;
+				if(PlayMainAttacker != Null) {
+					PlayMainAttackerName = PlayMainAttacker.User.Name;
+				} else {
+					PlayMainAttackerName = _("The Attacker");
+				}
+				
+				Message::SendStatusMessage(TL::Compose(_("$<%1$> has surrendered!"), PlayMainAttackerName), 3000, 1);
+			}
+		}
+	}
+	
+	// TODO TEST : check the sequence
+	foreach (Player in Players) {
+		if (Player.IsFakePlayer) continue;
+		
+		if ((Player.SpawnStatus == CSmPlayer::ESpawnStatus::Spawning) && (UIManager.UIAll.UISequence != CUIConfig::EUISequence::Playing)) {
+			UIManager.UIAll.UISequence = CUIConfig::EUISequence::Playing;
+		}
+	}
+	
+	foreach (PlayerIdent in Player::GetPlayers()) {
+		declare CSmPlayer Player = (Player::GetPlayer(PlayerIdent) as CSmPlayer);
+		if (Player == Null) continue;
+		if (Player::IsSpec(Player)) continue;
+		if (!UISync::IsUISync(Player)) continue;
+		
+		declare UI <=> UIManager.GetUI(Player);
+		if (UI == Null) continue;
+		
+		// Input de l'UI
+		declare netread Integer 	Cli_Battle_P_UIActionUpdate		for UI;
+		declare 		Integer		Srv_Battle_L_LastUIActionUpdate	for UI;
+		declare netread Text 		Cli_Battle_P_UIAction			for UI;
+		
+		if (Srv_Battle_L_LastUIActionUpdate != Cli_Battle_P_UIActionUpdate) {
+			Srv_Battle_L_LastUIActionUpdate = Cli_Battle_P_UIActionUpdate;
+			
+			if (Cli_Battle_P_UIAction == "Surrender") {
+				if (G_MainAttackers.exists(Player.Id)) {
+					G_AttackSucceeded = False;
+					EndOfBattle = True;
+					Message::SendStatusMessage(TL::Compose(_("$<%1$> has surrendered!"), Player.User.Name), 3000, 1);
+				} else if (Player.Id == G_MainDefender) {
+					G_AttackSucceeded = True;
+					EndOfBattle = True;
+					Message::SendStatusMessage(TL::Compose(_("$<%1$> has surrendered!"), Player.User.Name), 3000, 1);
+				}
+			} 
+			/* Disable respawn for gold
+			else if (Cli_Battle_P_UIAction == "Respawn") {
+				AskRespawn(Player);
+			}*/
+		}
+		
+		// Input clavier
+		declare netread Integer		Cli_Battle_P_UIKeyboardActionUpdate		for UI;
+		declare 		Integer		Srv_Battle_L_LastUIKeyboardActionUpdate	for Player;
+		declare netread Text		Cli_Battle_P_UIKeyboardAction			for UI;
+		
+		if (Srv_Battle_L_LastUIKeyboardActionUpdate != Cli_Battle_P_UIKeyboardActionUpdate) {
+			Srv_Battle_L_LastUIKeyboardActionUpdate = Cli_Battle_P_UIKeyboardActionUpdate;
+			if (Cli_Battle_P_UIKeyboardAction == "Restore") {
+				// Disable restore
+				// AskRestore(Player);
+			} else if (Cli_Battle_P_UIKeyboardAction == "BotGo") {
+				UpdateBotsBehaviour();
+			}
+		}
+	}
+	
+	RecomputeAlliesCount();
+	
+	if (Now > EndTime) {
+		G_AttackSucceeded = False;
+		EndOfBattle = True;
+	}
+	
+	// End of the battle.
+	if (EndOfBattle) {
+		foreach(Player in Players) {
+			declare netwrite Boolean Srv_Battle_P_ModeIsPlaying for Player;
+			Srv_Battle_P_ModeIsPlaying = False;
+		}
+		
+		return False;
+	}
+	
+	return True;
+}
+
+// ---------------------------------- //
+/**
+ * Ends a battle, display all useful UIs.
+ *
+ *	@param	_GoldStolen								The amount of gold stole by the attackers
+ */
+Void EndBattle(Integer _GoldStolen) {
+
+	G_Pole.Gauge.Speed = 0;
+	SM::UnspawnAllPlayers();
+	UIManager.UIAll.UISequence = CUIConfig::EUISequence::None;
+	EndTime = -1;
+	UIManager.UIAll.CountdownEndTime = -1;
+	Message::CleanAllMessages();
+	
+	declare Text Message;
+	
+	declare CPlayer AttkPlayer = Player::GetPlayer(G_MainAttackers[0]);
+	
+	// Channel progression
+	declare AtkPlayersNb = 0;
+	declare DefPlayersNb = 0;
+	foreach (Player in AllPlayers) {
+		if (IsPlayerAttacker(Player)) {
+			AtkPlayersNb += 1;
+		} else if (IsPlayerDefender(Player)) {
+			DefPlayersNb += 1;
+		}
+	}
+	
+	declare CurrentGate = GetCurrentGate();
+	if (IsLastGateFallen() && G_PoleCaptured) {
+		CurrentGate += 1;
+	}
+	if (CurrentGate > MapLandmarks_Gate.count + 1) CurrentGate = MapLandmarks_Gate.count + 1;
+	
+	Log::Log("""[Warlords] GetCurrentGate() : {{{GetCurrentGate()}}} | IsLastGateFallen() : {{{IsLastGateFallen()}}} | G_PoleCaptured : {{{G_PoleCaptured}}} | MapLandmarks_Gate.count : {{{MapLandmarks_Gate.count}}} | CurrentGate : {{{CurrentGate}}}""");
+	
+	declare AtkRef = G_DefArmorsNb * (1. / AtkPlayersNb);
+	declare DefRef = G_AtkArmorsNb * (1. / DefPlayersNb);
+	
+	Log::Log("""[Warlords] AtkRef : {{{G_DefArmorsNb}}} * (1. / {{{AtkPlayersNb}}}) = {{{AtkRef}}} | DefRef : {{{G_AtkArmorsNb}}} * (1. / {{{DefPlayersNb}}}) = {{{DefRef}}}""");
+	
+	foreach (Score in Scores) {
+		declare Warlords_BattleScore for Score = 0.;
+		declare Warlords_Side for Score = 0;
+		Warlords_BattleScore = 0.;
+		Warlords_Side = 0;
+	}
+	foreach (Player in Players) {
+		declare Warlords_HitsNb for Player.Score = 0.;
+		declare Warlords_ArmorsLost for Player.Score = 0;
+		declare Warlords_BattleScore for Player.Score = 0.;
+		declare Warlords_Side for Player.Score = 0;
+		
+		Warlords_BattleScore = Warlords_HitsNb - (Warlords_ArmorsLost / 200.);
+		if (Warlords_BattleScore < 0.) Warlords_BattleScore = 0.;
+		
+		declare Side = "NEUTRAL";
+		if (IsPlayerAttacker(Player)) {
+			if (Warlords_BattleScore > AtkRef) AtkRef = Warlords_BattleScore;
+			Side = "ATK";
+			Warlords_Side = 1;
+		} else if (IsPlayerDefender(Player)) {
+			if (Warlords_BattleScore > DefRef) DefRef = Warlords_BattleScore;
+			Side = "DEF";
+			Warlords_Side = -1;
+		}
+		
+		Log::Log("""[Warlords] BattleScore > {{{Player.User.Login}}} > {{{Side}}} > HitsNb : {{{Warlords_HitsNb}}} | ArmorsLost : {{{Warlords_ArmorsLost}}} | RealArmorsLost : {{{(Warlords_ArmorsLost / 200.)}}} | BattleScore : {{{Warlords_BattleScore}}}""");
+	}
+	foreach (Score in Scores) {
+		declare Warlords_BattlesPerformances for Score = Real[];
+		declare Warlords_BattleScore for Score = 0.;
+		declare Warlords_Side for Score = 0;
+		declare Performance = 0.;
+		
+		if (Warlords_Side > 0) {
+			if (AtkRef > 0.) Performance = Warlords_BattleScore / AtkRef;
+			if (Performance > 1.) Performance = 1.;
+			Log::Log("""[Siege] Performance > {{{Score.User.Login}}} > BattleScore : {{{Warlords_BattleScore}}} | AtkRef : {{{AtkRef}}} | Performance : {{{Performance}}}""");
+		} else if (Warlords_Side < 0) {
+			if (DefRef > 0.) Performance = Warlords_BattleScore / DefRef;
+			if (Performance > 1.) Performance = 1.;
+			Log::Log("""[Siege] Performance > {{{Score.User.Login}}} > BattleScore : {{{Warlords_BattleScore}}} | DefRef : {{{DefRef}}} | Performance : {{{Performance}}}""");
+		}
+		
+		Warlords_BattlesPerformances.add(Performance);
+	}
+	
+	// Draw
+	if (ServerShutdownRequested || MatchEndRequested) {
+		UIManager.UIAll.BigMessage = _("|Match|Draw");
+	} 
+	// Find winner
+	else {	
+		// Share stolen gold
+		if (C_SpawnGold) {
+			Log::Log("""[Battle] {{{_GoldStolen}}} Gold were stolen from the defender""");
+			declare AttackersNb = 0;
+			foreach (Player in Players) {
+				if (IsPlayerAttacker(Player)) AttackersNb += 1;
+			}
+			foreach (Player in Players) {
+				if (IsPlayerAttacker(Player)) {
+					if (Player == AttkPlayer) {
+						Player::AddGoldAmount(Player::GetPlayerId(Player), (_GoldStolen / AttackersNb) + (_GoldStolen % AttackersNb));
+						Log::Log("""[Battle] {{{Player.User.Login}}} get {{{(_GoldStolen / AttackersNb) + (_GoldStolen % AttackersNb)}}} Gold""");
+					} else {
+						Player::AddGoldAmount(Player::GetPlayerId(Player), _GoldStolen / AttackersNb);
+						Log::Log("""[Battle] {{{Player.User.Login}}} get {{{_GoldStolen / AttackersNb}}} Gold""");
+					}
+				}
+			}
+		}
+		
+		if (G_AttackSucceeded && G_MainAttackers.count > 0) {
+			if (AttkPlayer == Null || G_MainAttackers.count > 1) {
+				Message = _("The attack succeeded!");
+			} else {
+				Message = TL::Compose(_("$<%1$>'s attack team succeeded!"), AttkPlayer.User.Name);
+			}
+			
+			foreach(Player in Players) {
+				if (IsPlayerAttacker(Player)) {
+					WLSound::PlayVoice(SOUND_BATTLE_VICTORY, Player);
+					if (G_MainAttackers.exists(Player.Id)) {
+						WLSound::PlayVoice(SOUND_BATTLE_WINATKWL, 0., 3000, Player);
+					} else {
+						WLSound::PlayVoice(SOUND_BATTLE_WINATK, 0., 3000, Player);
+					}
+				} else if (IsPlayerDefender(Player)) {
+					WLSound::PlayVoice(SOUND_BATTLE_DEFEAT, Player);
+					if (Player.Id == G_MainDefender) {
+						WLSound::PlayVoice(SOUND_BATTLE_LOSEDEFWL, 0., 3000, Player);
+					}
+				}
+			}
+		} else {
+			Message = _("The attack was contained");
+			
+			foreach(Player in Players) {
+				if (IsPlayerAttacker(Player)) {
+					WLSound::PlayVoice(SOUND_BATTLE_DEFEAT, Player);
+				} else if (IsPlayerDefender(Player)) {
+					WLSound::PlayVoice(SOUND_BATTLE_VICTORY, Player);
+					WLSound::PlayVoice(SOUND_BATTLE_WINDEF, 0., 3000, Player);
+				}
+			}
+		}
+		UIManager.UIAll.BigMessage = Message;
+		if (C_SpawnGold) {
+			//L16N [Warlords] Display the amount of gold stolen from the defenders. %1 is the amount of gold. eg: 500 or 1500 or ...
+			UIManager.UIAll.StatusMessage = TL::Compose(_("%1 Gold were stolen from the defender"), TL::ToText(_GoldStolen));
+		}
+	}
+	
+	sleep(8000);
+	
+	UIManager.UIAll.BigMessage = "";
+	UIManager.UIAll.StatusMessage = "";
+	UIManager.UIAll.MarkersXML = "";
+	UIManager.UIAll.OverlayHideCountdown = True;
+}
+
+Void PreloadBattle() {
+	Hud_Load(C_HudModulePath);
+	ClientManiaAppUrl = C_ManiaAppUrl;
+	
+	foreach (Player in AllPlayers)  {
+		DisplayExpUI(Player, False);
+	}
+	
+	// Load items
+	ItemList_Begin();
+	XpMgr::LoadItems();
+	ItemList_End();
+	
+	// Load actions
+	ActionList_Begin();
+	XpMgr::LoadActions();
+	G_ActionId_ShieldHero = ActionList_Add(C_ActionPath_ShieldHero);
+	G_ActionId_ShieldRemover = ActionList_Add(C_ActionPath_ShieldRemover);
+	ActionList_End();
+}
+
+// ---------------------------------- //
+/**
+ * Inits and starts a battle.
+ *
+ * @param _CastleId				The map index to play on.
+ * @param _MainAttackerPlayerId	The player that wanted to attack.
+ * @param _MainDefenderPlayerId	The player that is attacked.
+ * @param _Attackers			All attackers.
+ * @param _Defenders			All defenders.
+ */
+Void PlayBattle(Integer _CastleId, Integer[] _MainAttackersPlayerIds, Integer _MainDefenderPlayerId, Ident[] _Attackers, Ident[] _Defenders) {
+	Attributes::Load();
+	XpMgr::Load();
+	XpMgr::ResetProgression();
+	XpMgr::NewSession();
+	// Override default XpMgr values
+	Attributes::SetBase(Attributes::C_Attribute_LaserAmmoMax, 1.);
+	Attributes::SetBase(Attributes::C_Attribute_NucleusAmmoMax, 2.);
+	
+	WLUI::IntroScreen_SetText(_("Entering battle..."));
+	WLUI::IntroScreen_Show();
+	WLUI::Gauge_Hide();
+	WLUI::World_Hide();
+	WLUI::Info_Hide();
+	
+	WLUI::BattlePlayerInfo_Show();
+	
+	declare Integer MapIndex = World::GetCastleTypeId(_CastleId);
+	
+	UseClans = True;
+	if (MapList.existskey(MapIndex) && MapName != MapList[MapIndex].Name) {
+		Mode::UnloadMap();
+		NextMapIndex = MapIndex;
+		PreloadBattle();
+		Mode::LoadMap();
+	}
+	TurretsSound::Mute(False);
+	
+	WLUI::Sync();
+	WLUI::IntroScreen_Hide();
+
+	declare CPlayer[] MainAttackers = Utils::GetPlayers(_MainAttackersPlayerIds);
+	declare CPlayer MainDefender = Player::GetPlayer(_MainDefenderPlayerId);
+	
+	declare netwrite Integer	Srv_Battle_G_AttackedCastleId	for Teams[0];
+	declare netwrite Integer[]	Srv_Battle_G_AttackerIds		for Teams[0];
+	Srv_Battle_G_AttackedCastleId = _CastleId;
+	Srv_Battle_G_AttackerIds = _MainAttackersPlayerIds;
+	
+	CleanSides();
+	foreach (Attacker in MainAttackers) {
+		G_MainAttackers.add(Attacker.Id);
+	}
+	
+	if (MainDefender != Null) {
+		G_MainDefender = MainDefender.Id;
+	}
+	
+	foreach (Attacker in G_MainAttackers) {
+		SetSide(Attacker, True);
+	}
+	foreach (AttkId in _Attackers) {
+		SetSide(AttkId, True);
+	}
+	
+	SetSide(G_MainDefender, False);
+	foreach (DefId in _Defenders) {
+		SetSide(DefId, False);
+	}
+	
+	foreach (Player in AllPlayers)  {
+		declare netwrite Boolean Srv_Battle_P_ModeIsPlaying for Player;
+		Srv_Battle_P_ModeIsPlaying = False;
+		DisplayExpUI(Player, False);
+	}
+
+	ST2::SetStyle("LibST_SMBaseTeams");
+	ST2::Build("SM", True);
+	
+	Initialize();
+	
+	// Spawn remaining defender gold on the map
+	if (C_SpawnGold) {
+		declare DefenderGold = Player::GetGold(_MainDefenderPlayerId);
+		Log::Log("""[Battle] Defender has {{{DefenderGold}}} Gold""");
+		declare Integer[CSmMapLandmark] GoldAnchors;
+		foreach (MapLandmark in MapLandmarks_ObjectAnchor) {
+			if (MapLandmark.ObjectAnchor.ItemName == C_Item_Gold) {
+				GoldAnchors[MapLandmark] = -MapLandmark.Order;
+			}
+		}
+		GoldAnchors = GoldAnchors.sort();
+		foreach (GoldAnchor => GateNb in GoldAnchors) {
+			if (DefenderGold < C_GoldValue) break;
+			declare GoldObject <=> ObjectCreate(GoldAnchor.ObjectAnchor.ItemModelId);
+			if (GoldObject != Null) {
+				DefenderGold -= C_GoldValue;
+				G_GoldObjects.add(GoldObject);
+				GoldObject.SetAnchor(GoldAnchor.ObjectAnchor);
+			}
+		}
+		Log::Log("""[Battle] Spawned {{{G_GoldObjects.count * C_GoldValue}}} Gold on the map""");
+	}
+	
+	G_GoldStolen = 0;
+	
+	declare Boolean DoLoop = True;
+	while (DoLoop && !ServerShutdownRequested && !MatchEndRequested) {
+		yield;
+		DoLoop = PlayLoop();
+		XpYield();
+	}
+	
+	foreach (GoldObject in G_GoldObjects) {
+		ObjectDestroy(GoldObject);
+	}
+	G_GoldObjects.clear();
+	
+	Store::Close();
+	foreach (Player in AllPlayers)  {
+		DisplayExpUI(Player, False);
+	}
+	
+	EndBattle(G_GoldStolen);
+	
+	Uninitialize();
+	
+	WLUI::IntroScreen_Show();
+	WLUI::BattlePlayerInfo_Hide();
+	WLUI::World_UpdateCastles(World::GetCastleIds());
+	yield;
+	TurretsSound::Mute(True);
+	WLUI::World_Show();
+	WLUI::Gauge_Show();
+	WLUI::Info_Show();
+	WLUI::IntroScreen_Hide();
+	
+	
+	XpMgr::Unload();
+	Attributes::Unload();
+	UseClans = False;
+}
+
+Void PlayBattle(Integer _CastleId, Integer _MainAttackerPlayerId, Integer _MainDefenderPlayerId, Ident[] _Attackers, Ident[] _Defenders) {
+	PlayBattle(_CastleId, [_MainAttackerPlayerId], _MainDefenderPlayerId, _Attackers, _Defenders);
+}
+
+// ---------------------------------- //
+/**
+ * Checks if the attack succeeded.
+ *
+ * @return True if the attackers won, False otherwise.
+ */
+Boolean AttackSucceeded() {
+	return G_AttackSucceeded;
+}
+
+Integer GetPoleCapturerPlayerId() {
+	return -1;
+}
+
+// ---------------------------------- //
+/**
+ * Returns the gold amount spent by the attackers during the battle.
+ *
+ * @return The gold amount spent by the attackers.
+ */
+Integer GetGoldSpentAtk() {
+	return G_GoldSpentAtk;
+}
+
+// ---------------------------------- //
+/**
+ * Returns the gold amount spent by the defenders during the battle.
+ *
+ * @return The gold amount spent by the defenders.
+ */
+Integer GetGoldSpentDef() {
+	return G_GoldSpentDef;
+}

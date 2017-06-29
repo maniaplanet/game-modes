@@ -1,0 +1,485 @@
+/**
+ * Exp Manager
+ *
+ *	Link all the Exp libraries
+ */
+#Const Version    "2017-03-03"
+#Const ScriptName "Libs/Nadeo/ShootMania/Exp/Manager.Script.txt"
+
+// ---------------------------------- //
+// Libraries
+// ---------------------------------- //
+#Include "MathLib" as ML
+#Include "Libs/Nadeo/Log.Script.txt" as Log
+#Include "Libs/Nadeo/ShootMania/SM3.Script.txt" as SM
+#Include "Libs/Nadeo/ShootMania/Attributes.Script.txt" as Attributes
+#Include "Libs/Nadeo/ShootMania/Exp/Utils.Script.txt" as Utils
+#Include "Libs/Nadeo/ShootMania/Exp/ExpUI_Server.Script.txt" as ExpUI
+#Include "Libs/Nadeo/ShootMania/Exp/Inventory.Script.txt" as Inventory
+#Include "Libs/Nadeo/ShootMania/Exp/Store.Script.txt" as Store
+#Include "Libs/Nadeo/ShootMania/Exp/Upgrades.Script.txt" as Upgrades
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_DefaultWeapon CSmMode::EWeapon::Rocket ///< Default weapon
+#Const C_DefaultAutoSwitchWeapon True ///< Use map's weapon pads
+// Base players' attribute
+#Const C_Attribute_ArmorMax 200.
+#Const C_Attribute_StaminaMax 0.25
+#Const C_Attribute_CaptureSpeed 1.
+#Const C_Attribute_AmmoGain 0.5
+#Const C_Attribute_RocketAmmoMax 2.
+#Const C_Attribute_ArrowAmmoMax 0.
+#Const C_Attribute_LaserAmmoMax 0.
+#Const C_Attribute_NucleusAmmoMax 0.
+#Const C_Attribute_MissileAmmoMax 4.
+#Const C_Attribute_ShieldArmorMax 300.
+// Inventory categories
+#Const C_Inventory_Upgrades	0
+#Const C_Inventory_Items			1
+#Const C_Inventory_Skills		2
+
+// ---------------------------------- //
+// Globales
+// ---------------------------------- //
+declare CSmMode::EWeapon G_DefaultWeapon;
+declare Boolean G_DefaultAutoSwitchWeapon;
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+// ---------------------------------- //
+/** Return the version number of the script
+ *
+ *  @return   The version number of the script
+ */
+Text GetScriptVersion() {
+  return Version;
+}
+
+// ---------------------------------- //
+/** Return the name of the script
+ *
+ *  @return   The name of the script
+ */
+Text GetScriptName() {
+  return ScriptName;
+}
+
+// ---------------------------------- //
+/// Load the Exp actions
+Void LoadActions() {
+	Upgrades::LoadActions();
+}
+
+// ---------------------------------- //
+/// Load the Exp items
+Void LoadItems() {
+	
+}
+
+// ---------------------------------- //
+/** Save the Exp progression of a player
+ *
+ *	@param	_Player										The player to save
+ */
+Void SaveProgression(CSmPlayer _Player) {
+	Store::SaveState(_Player);
+	Inventory::SaveState(_Player);
+}
+
+// ---------------------------------- //
+/** Reset the Exp progression of a player
+ *
+ *	@param	_Player										The player to reset
+ */
+Void ResetProgression(CSmPlayer _Player) {
+	Store::ResetState(_Player);
+	Inventory::ResetState(_Player);
+}
+
+// ---------------------------------- //
+/// Reset the Exp progression of all players
+Void ResetProgression() {
+	Store::ResetState();
+	Inventory::ResetState();
+}
+
+// ---------------------------------- //
+/** Start a new session
+ *
+ *	Reset store upgrades, items and gold
+ *	but keep skills and XP
+ */
+Void NewSession() {
+	Store::ResetMoney(Store::C_Money_Gold);
+	Store::ResetCategory(Store::C_Category_Items);
+	Store::ResetCategory(Store::C_Category_Upgrades);
+	Inventory::ResetCategory(C_Inventory_Items);
+	Inventory::ResetCategory(C_Inventory_Upgrades);
+}
+
+// ---------------------------------- //
+/// Reset items of all players
+Void ResetItems() {
+	Store::ResetCategory(Store::C_Category_Items);
+	Inventory::ResetCategory(C_Inventory_Items);
+}
+
+// ---------------------------------- //
+/**	Reset items of one player
+ *
+ *	@param	_Player											The player to reset
+ */
+Void ResetItems(CSmPlayer _Player) {
+	Store::ResetCategory(_Player, Store::C_Category_Items);
+	Store::EnableItems(_Player);
+	Inventory::ResetCategory(_Player, C_Inventory_Items);
+}
+
+// ---------------------------------- //
+/** Remove the skills of all players
+ *	and allow them to redistribute their xp
+ */
+Void RebuildSkills() {
+	Store::RefundCategory(Store::C_Category_Skills);
+	Store::ResetCategory(Store::C_Category_Skills);
+	Inventory::ResetCategory(C_Inventory_Skills);
+}
+
+// ---------------------------------- //
+/** Update player's UI gold
+ *
+ *	@param	_Player										The player to update
+ */
+Void UpdateUIGold(CSmPlayer _Player) {
+	declare Integer CurrentGold = Store::GetGold(_Player);
+	declare Integer LibExpManager_RoundGoldWonAmount for _Player = 0;
+	ExpUI::UpdateUIGold(_Player, CurrentGold, LibExpManager_RoundGoldWonAmount);
+}
+
+// ---------------------------------- //
+/** Hide/Show player's gold UI
+ *
+ *	@param	_Player										The player to update
+ *	@param	_Visible									True to show, False to hide
+ */
+Void SetUIGoldVisible(CSmPlayer _Player, Boolean _Visible) {
+	ExpUI::SetGoldUIVisibility(_Player, _Visible);
+}
+
+// ---------------------------------- //
+/** Hide/Show player's item selector UI
+ *
+ *	@param	_Player										The player to update
+ *	@param	_Visible									True to show, False to hide
+ */
+Void SetUIItemSelectorVisible(CSmPlayer _Player, Boolean _Visible) {
+	ExpUI::SetUIItemSelectorVisibility(_Player, _Visible);
+}
+
+// ---------------------------------- //
+/** Manage the mode events
+ *
+ *	@param	_Event										The event to manage
+ */
+Void OnEvent(CSmModeEvent _Event) {
+	if (_Event == Null) return;
+}
+
+// ---------------------------------- //
+/** Manage the UI events
+ *
+ *	@param	_Event										The event to manage
+ */
+Void OnEvent(CUIConfigEvent _Event) {
+	if (_Event == Null) return;
+	
+	Store::OnEvent(_Event);
+	
+	switch (_Event.Type) {
+		case CUIConfigEvent::EType::OnModuleStorePurchase: {
+			declare EventPlayer <=> SM::GetPlayer(_Event.UIConfig);
+			if (EventPlayer != Null) {
+				if (Utils::IsUpgrade(_Event.ItemUrl)) {
+					// Player can only have one copy of an action
+					if (!Inventory::Has(EventPlayer, C_Inventory_Upgrades, _Event.ItemUrl)) {
+						Inventory::Add(EventPlayer, C_Inventory_Upgrades, _Event.ItemUrl);
+					}
+					
+					Upgrades::Set(EventPlayer, Inventory::List(EventPlayer, [C_Inventory_Upgrades, C_Inventory_Skills, C_Inventory_Items]));
+					
+					// Refill attributes
+					declare CleanUrl = Utils::CleanStoreUrl(_Event.ItemUrl);
+					switch (CleanUrl) {
+						case Upgrades::C_ActionPath^Upgrades::C_Action_ArmorMax: {
+							EventPlayer.Armor = EventPlayer.ArmorMax;
+						}
+						case Upgrades::C_ActionPath^Upgrades::C_Action_Stamina: {
+							EventPlayer.Stamina = ML::NearestInteger(EventPlayer.StaminaMax*3600);
+						}
+						case Upgrades::C_ActionPath^Upgrades::C_Action_Turrets: {
+							declare LibExpMgr_BoughtTurrets for EventPlayer = False;
+							LibExpMgr_BoughtTurrets = True;
+						}
+					}
+				} else if (Utils::IsSkill(_Event.ItemUrl)) {
+					// Player can only have one copy of a skills
+					if (!Inventory::Has(EventPlayer, C_Inventory_Skills, _Event.ItemUrl)) {
+						Inventory::Add(EventPlayer, C_Inventory_Skills, _Event.ItemUrl);
+					}
+					
+					Upgrades::Set(EventPlayer, Inventory::List(EventPlayer, [C_Inventory_Upgrades, C_Inventory_Skills, C_Inventory_Items]));
+				} else if (Utils::IsItem(_Event.ItemUrl)) {
+					// The player can only have one item
+					if (Inventory::Count(EventPlayer, C_Inventory_Items) > 0) {
+						Inventory::Empty(EventPlayer, C_Inventory_Items);
+					}
+					Store::DisableItems(EventPlayer);
+					// Give the new item to the player
+					Inventory::Add(EventPlayer, C_Inventory_Items, _Event.ItemUrl);
+					Upgrades::Set(EventPlayer, Inventory::List(EventPlayer, [C_Inventory_Upgrades, C_Inventory_Skills, C_Inventory_Items]));
+				}
+				// Save player progression
+				SaveProgression(EventPlayer);
+				
+				//Update player's UIGold
+				UpdateUIGold(EventPlayer);
+			}
+		}
+	}
+}
+
+// ---------------------------------- //
+/** Set the default weapon for all player
+ *
+ *	@param	_Weapon										The default weapon
+ */
+Void SetDefaultWeapon(CSmMode::EWeapon _Weapon) {
+	G_DefaultWeapon = _Weapon;
+}
+
+// ---------------------------------- //
+/** Set the default weapon of a player
+ *	it will override the general default
+ *	weapon
+ *
+ *	@param	_Player										The player to update
+ *	@param	_Weapon										The new default weapon
+ */
+Void SetDefaultWeapon(CSmPlayer _Player, CSmMode::EWeapon _Weapon) {
+	if (_Player == Null) return;
+	
+	declare LibExpMgr_DefaultWeapon for _Player = C_DefaultWeapon;
+	declare LibExpMgr_HasDefaultWeapon for _Player = False;
+	LibExpMgr_DefaultWeapon = _Weapon;
+	LibExpMgr_HasDefaultWeapon = True;
+}
+
+// ---------------------------------- //
+/** Unset the default weapon of a player
+ *	and use the general default weapon
+ *	instead
+ *
+ *	@param	_Player										The player to update
+ */
+Void UnsetDefaultWeapon(CSmPlayer _Player) {
+	if (_Player == Null) return;
+	
+	declare LibExpMgr_HasDefaultWeapon for _Player = False;
+	LibExpMgr_HasDefaultWeapon = False;
+}
+
+// ---------------------------------- //
+/** Get the default weapon of a player
+ *
+ *	@param	_Player										The player to check
+ *
+ *	@return														The default weapon of the given player
+ */
+CSmMode::EWeapon GetDefaultWeapon(CSmPlayer _Player) {
+	if (_Player == Null) return G_DefaultWeapon;
+	
+	declare LibExpMgr_HasDefaultWeapon for _Player = False;
+	if (!LibExpMgr_HasDefaultWeapon) return G_DefaultWeapon;
+	
+	declare LibExpMgr_DefaultWeapon for _Player = C_DefaultWeapon;
+	return LibExpMgr_DefaultWeapon;
+}
+
+// ---------------------------------- //
+/** Set the default auto switch weapon for all player
+ *
+ *	@param	_AutoSwitchWeapon					The default auto switch weapon
+ */
+Void SetDefaultAutoSwitchWeapon(Boolean _AutoSwitchWeapon) {
+	G_DefaultAutoSwitchWeapon = _AutoSwitchWeapon;
+}
+
+// ---------------------------------- //
+/** Set the default auto switch weapon of a player
+ *	it will override the general default
+ *	auto switch weapon
+ *
+ *	@param	_Player										The player to update
+ *	@param	_AutoSwitchWeapon					The new default auto switch weapon
+ */
+Void SetDefaultAutoSwitchWeapon(CSmPlayer _Player, Boolean _AutoSwitchWeapon) {
+	if (_Player == Null) return;
+	
+	declare LibExpMgr_DefaultAutoSwitchWeapon for _Player = C_DefaultAutoSwitchWeapon;
+	declare LibExpMgr_HasDefaultAutoSwitchWeapon for _Player = False;
+	LibExpMgr_DefaultAutoSwitchWeapon = _AutoSwitchWeapon;
+	LibExpMgr_HasDefaultAutoSwitchWeapon = True;
+}
+
+// ---------------------------------- //
+/** Unset the default auto switch weapon of a player
+ *	and use the general default auto switch weapon
+ *	instead
+ *
+ *	@param	_Player										The player to update
+ */
+Void UnsetDefaultAutoSwitchWeapon(CSmPlayer _Player) {
+	if (_Player == Null) return;
+	
+	declare LibExpMgr_HasDefaultAutoSwitchWeapon for _Player = False;
+	LibExpMgr_HasDefaultAutoSwitchWeapon = False;
+}
+
+// ---------------------------------- //
+/** Get the default auto switch weapon of a player
+ *
+ *	@param	_Player										The player to check
+ *
+ *	@return														The default auto switch weapon of the given player
+ */
+Boolean GetDefaultAutoSwitchWeapon(CSmPlayer _Player) {
+	if (_Player == Null) return G_DefaultAutoSwitchWeapon;
+	
+	declare LibExpMgr_HasDefaultAutoSwitchWeapon for _Player = False;
+	if (!LibExpMgr_HasDefaultAutoSwitchWeapon) return G_DefaultAutoSwitchWeapon;
+	
+	declare LibExpMgr_DefaultAutoSwitchWeapon for _Player = C_DefaultAutoSwitchWeapon;
+	return LibExpMgr_DefaultAutoSwitchWeapon;
+}
+
+// ---------------------------------- //
+/** Check if a player bought the turrets
+ *	upgrade
+ *
+ *	@return														True if the player has the turrets
+ *																		False otherwise
+ */
+Boolean PlayerHasTurrets(CSmPlayer _Player) {
+	return Inventory::Has(_Player, C_Inventory_Upgrades, Upgrades::GetUpgradeStoreUrl(Upgrades::C_ActionPath^Upgrades::C_Action_Turrets));
+}
+
+// ---------------------------------- //
+/** Check if a player just bought the
+ *	turrets in the store
+ *
+ *	@param	_Player										The player to check
+ *
+ *	@return														True if the player bought the shield
+ *																		False otherwise
+ */
+Boolean PlayerBoughtTurrets(CSmPlayer _Player) {
+	if (_Player == Null) return False;
+	
+	declare LibExpMgr_BoughtTurrets for _Player = False;
+	if (LibExpMgr_BoughtTurrets) {
+		LibExpMgr_BoughtTurrets = False;
+		return True;
+	}
+	return False;
+}
+
+// ---------------------------------- //
+/// Reset the bought turrets event of all players
+Void ResetPlayerBoughtTurrets() {
+	foreach (Player in AllPlayers) {
+		declare LibExpMgr_BoughtTurrets for Player = False;
+		LibExpMgr_BoughtTurrets = False;
+	}
+}
+
+// ---------------------------------- //
+/** Initialize a player
+ *	Bind action and apply items
+ *
+ *	@param	_Player										The player to prepare
+ */
+Void InitPlayer(CSmPlayer _Player) {
+	if (_Player == Null) return;
+	
+	UpdateUIGold(_Player);
+	
+	SetPlayerWeapon(_Player, GetDefaultWeapon(_Player), GetDefaultAutoSwitchWeapon(_Player));
+	
+	Upgrades::SetDefaultWeapon(_Player, GetDefaultWeapon(_Player), GetDefaultAutoSwitchWeapon(_Player));
+	Upgrades::Set(_Player, Inventory::List(_Player, [C_Inventory_Upgrades, C_Inventory_Skills, C_Inventory_Items]));
+}
+
+// ---------------------------------- //
+/// Update the library
+Void Yield() {
+	Upgrades::Yield();
+	
+	foreach (Player in Players) {
+		declare LibExpMgr_PrevIsOnTechArmor for Player = False;
+		if (LibExpMgr_PrevIsOnTechArmor != Player.IsOnTechArmor) {
+			LibExpMgr_PrevIsOnTechArmor = Player.IsOnTechArmor;
+			if (Player.IsOnTechArmor) {
+				declare ArmorExpertValue = Upgrades::GetArmorExpertValue(Player);
+				Attributes::AddBonus(Player, Attributes::C_Attribute_ArmorReplenishGain, "LibExpMgr_ArmorExpert", ArmorExpertValue);
+				Attributes::AddBonus(Player, Attributes::C_Attribute_ArmorGain, "LibExpMgr_ArmorExpert", ArmorExpertValue);
+			} else {
+				Attributes::RemoveBonus(Player, Attributes::C_Attribute_ArmorReplenishGain, "LibExpMgr_ArmorExpert");
+				Attributes::RemoveBonus(Player, Attributes::C_Attribute_ArmorGain, "LibExpMgr_ArmorExpert");
+			}
+			Attributes::Apply(Player);
+		}
+	}
+}
+
+// ---------------------------------- //
+/// Unload the library
+Void Unload() {
+	Inventory::Unload();
+	Upgrades::Unload();
+	Store::Unload();
+	
+	G_DefaultWeapon = C_DefaultWeapon;
+	G_DefaultAutoSwitchWeapon = C_DefaultAutoSwitchWeapon;
+}
+
+// ---------------------------------- //
+/// Load the library
+Void Load() {
+  Unload();
+	
+	Store::Load();
+	Upgrades::Load();
+	Inventory::Load();
+	
+	Attributes::SetBase(Attributes::C_Attribute_ArmorMax, C_Attribute_ArmorMax);
+	Attributes::SetBase(Attributes::C_Attribute_StaminaMax, C_Attribute_StaminaMax);
+	Attributes::SetBase(Attributes::C_Attribute_CaptureSpeed, C_Attribute_CaptureSpeed);
+	Attributes::SetBase(Attributes::C_Attribute_RocketAmmoMax, C_Attribute_RocketAmmoMax);
+	Attributes::SetBase(Attributes::C_Attribute_AmmoGain, C_Attribute_AmmoGain);
+	Attributes::SetBase(Attributes::C_Attribute_ArrowAmmoMax, C_Attribute_ArrowAmmoMax);
+	Attributes::SetBase(Attributes::C_Attribute_LaserAmmoMax, C_Attribute_LaserAmmoMax);
+	Attributes::SetBase(Attributes::C_Attribute_NucleusAmmoMax, C_Attribute_NucleusAmmoMax);
+	Attributes::SetBase(Attributes::C_Attribute_MissileAmmoMax, C_Attribute_MissileAmmoMax);
+	Attributes::SetBase(Attributes::C_Attribute_ShieldArmorMax, C_Attribute_ShieldArmorMax);
+	
+	foreach (Player in AllPlayers) {
+		SetUIItemSelectorVisible(Player, False);
+		SetUIGoldVisible(Player, False);
+	}
+}

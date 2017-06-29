@@ -1,0 +1,371 @@
+<manialink version="2" name="{( LayerName )}">
+
+	<framemodel id="ModelGate" class="FrameGate">
+		<quad id="Quad_Emblem" sizen="3 3" bgcolor="000f" valign="center"/>
+		<label id="Label_GateName" posn="5 0 0" sizen="26 4" text="the gate" valign="center" textsize="2" scale="0.8"/>
+		<frame id="Frame_Respawn" hidden="1">
+			<label id="Label_RespawnCost" posn="32 0" textcolor="fa0" style="TextTitle3" textsize="1" valign="center" halign="right" />
+			<label posn="33 0" id="Button_Respawn" class="RespawnButton" style="CardButtonSmallS" text="{( RespawnTextTranslated )}" scriptevents="1" valign="center" textsize="1" scale="0.7" />
+		</frame>
+	</framemodel>
+
+	<frame id="Frame_Main" posn="100 82 0" >
+		<quad posn="60 8 -1" sizen="75 75" bgcolor="00f6" halign="right" valign="top" image="{( RightPanelBGImageUrl )}" colorize="048"/>
+		<frame posn="0 0 0">
+			<frame id="Frame_Planet" posn="0 5 0">
+				<quad id="Quad_IsMine" 			posn="50  0  0" sizen="6.5 6.5" image="{( BaseCastleImageUrl )}" hidden="1"/>
+				<label id="Label_PlanetName" 	posn="0   0  0" text="Planet" textsize="4" />
+				<quad sizen="55 0.5" 			posn="0   -6  0" bgcolor="fff" />
+				<frame id="Frame_Owner" 		posn="0  -8 0" >
+					<quad id="Quad_OwnerEmblem" 	posn="0 0 0" sizen="5 5" bgcolor="f0f"/>
+					<label id="Label_OwnerName" 	posn="6 0 0" sizen="40 5" textsize="2" text="Owner"/>
+				</frame>
+			</frame>
+			<frame id="Frame_Gates" posn="5 -10 0">
+				{( GateFrameInstancesText )}
+			</frame>
+			<frame posn="0 -30.5 1" id="Frame_Shop" hidden="1">
+				<label text="{( RearmorTextTranslated )}" sizen="55 10" textsize="1" />
+				<label posn="52 0" text="{( RearmorCost )} G." textcolor="fa0" halign="right" textsize="1" id="Label_RearmorCost" />
+			</frame>
+			<frame id="Frame_Surrender" posn="0 -35 0" hidden="1">
+				<label id="Label_AlliesFighting" 		posn="12 -3 1" style="TextTitle3" textsize="1" valign="center" textcolor="bbb" sizen="40 10"/>
+				<label id="Label_Surrender" text="{( SurrenderTextTranslated )}" posn="12 -6 1" style="TextTitle3" textsize="1" valign="center" textcolor="888"/>
+				<gauge id="Gauge_Surrender" 			posn="10  -5 1" sizen="45 10" drawbg="0" ratio="1." color="888"/>
+				<quad id="Button_Surrender" 			posn="-4  0 2" image="{( SurrenderButtonImageUrl )}" sizen="15 15" scriptevents="1" />
+			</frame>
+		</frame>
+	</frame>
+	<script><!--
+		#Include "TextLib" as TextLib
+		#Include "MathLib" as MathLib
+		
+		CMlFrame GetGateFrameInstancesParentFrame() {
+			return (Page.GetFirstChild("Frame_Gates") as CMlFrame);
+		}
+		
+		CMlFrame[] GetGateFrameInstances() {
+			declare CMlFrame[] GateFrameInstances;
+			foreach (Control in GetGateFrameInstancesParentFrame().Controls) {
+				if (!(Control is CMlFrame)) continue;
+				GateFrameInstances.add((Control as CMlFrame));
+			}
+			return GateFrameInstances;
+		}
+		
+		CMlLabel GFI_GetGateNameLabel(CMlFrame _GateFrameInstance) {
+			return (_GateFrameInstance.GetFirstChild("Label_GateName") as CMlLabel);
+		}
+		
+		CMlLabel GFI_GetRespawnCostLabel(CMlFrame _GateFrameInstance) {
+			return (_GateFrameInstance.GetFirstChild("Label_RespawnCost") as CMlLabel);
+		}
+		
+		CMlFrame GetGateFrameInstance(Integer _Index) {
+			return GetGateFrameInstances()[_Index];
+		}
+	
+		Boolean World_CastleIdExists(Integer _CastleId) {
+			declare netread Text[] Srv_World_G_Castles for Teams[0];
+			return Srv_World_G_Castles.existskey(_CastleId);
+		}
+		
+		Integer World_GetCastleOwnerId(Integer _CastleId) {
+			declare netread Int3[Integer] Srv_World_G_CastleAttributes for Teams[0];
+			return Srv_World_G_CastleAttributes[_CastleId].X;
+		}
+	
+		Boolean World_IsCastleCapital(Integer _CastleId) {
+			declare netread Int3[Integer] Srv_World_G_CastlePropertiesBis for Teams[0];
+			return (Srv_World_G_CastlePropertiesBis[_CastleId].X == 1);
+		}
+		
+		Text World_GetCastleName(Integer _CastleId) {
+			declare netread Text[] Srv_World_G_Castles for Teams[0];
+			return Srv_World_G_Castles[_CastleId];
+		}
+		
+		Text Player_GetPlayerName(Integer _PlayerId) {
+			declare netread Text[Integer] Srv_Player_G_Players for Teams[0];
+			if (!Srv_Player_G_Players.existskey(_PlayerId)) return "";
+			return Srv_Player_G_Players[_PlayerId];
+		}
+		
+		Text Player_GetPlayerEmblemUrl(Integer _PlayerId) {
+			return "file://Media/Manialinks/ShootMania/Warlords/Textures/World/Emblems/Emblem" ^ _PlayerId + 1 ^ ".dds";
+		}
+		
+		
+		main() {
+			while(InputPlayer == Null) yield;
+						
+			declare netread Integer 		Srv_Battle_G_ModeUIUpdate			for Teams[0];
+			declare netread Integer 		Srv_Battle_G_CurrentGate 			for Teams[0];
+			declare netread Integer[] 		Srv_Battle_G_AttackerIds			for Teams[0];
+			declare netread Integer			Srv_Battle_G_AttackedCastleId		for Teams[0];
+			
+			declare netread Boolean 		Srv_Battle_P_Clan					for InputPlayer;
+			declare netread Integer 		Srv_Battle_P_ModeCountDownStart		for InputPlayer;
+			declare netread Boolean 		Srv_Battle_P_IsPlayerProtagonist	for InputPlayer;
+			declare netread Boolean 		Srv_Battle_P_ModeIsPlaying			for InputPlayer; // True if the battle has began
+			declare netread Integer 		Srv_Battle_P_AlliesFighting			for InputPlayer; // Nb of allies still fighting
+						
+			declare netwrite Integer 		Cli_Battle_P_UIActionUpdate 		for UI;
+			declare netwrite Text 			Cli_Battle_P_UIAction	 			for UI;
+			
+			declare netwrite Integer		Cli_Battle_P_UIKeyboardActionUpdate	for UI;
+			declare netwrite Text			Cli_Battle_P_UIKeyboardAction		for UI;
+			
+			// no action
+			Cli_Battle_P_UIActionUpdate = -1;
+			Cli_Battle_P_UIAction = "";
+			
+			Cli_Battle_P_UIKeyboardActionUpdate = -1;
+			
+			declare CMlFrame	Frame_Shop 			<=> (Page.GetFirstChild("Frame_Shop") as CMlFrame);
+			
+			declare CMlFrame	Frame_Surrender 	<=> (Page.GetFirstChild("Frame_Surrender") as CMlFrame);
+			declare CMlLabel	Label_AlliesFighting <=> (Frame_Surrender.GetFirstChild("Label_AlliesFighting") as CMlLabel);
+			declare CMlLabel	Label_Surrender 	<=> (Frame_Surrender.GetFirstChild("Label_Surrender") as CMlLabel);
+			declare CMlGauge	Gauge_Surrender 	<=> (Frame_Surrender.GetFirstChild("Gauge_Surrender") as CMlGauge);
+			declare CMlQuad		Button_Surrender 	<=> (Frame_Surrender.GetFirstChild("Button_Surrender") as CMlQuad);
+
+			declare CMlLabel	Label_RearmorCost 	<=> (Page.GetFirstChild("Label_RearmorCost") as CMlLabel);
+			
+			declare CMlLabel[]	Labels_RespawnCost;
+			foreach (GateFrameInstance in GetGateFrameInstances()) {
+				Labels_RespawnCost.add(GFI_GetRespawnCostLabel(GateFrameInstance));
+			}
+
+			
+			declare Integer ButtonIndex = 0;
+			Page.GetClassChildren("RespawnButton", Page.MainFrame, True);
+			foreach (RespawnButton in Page.GetClassChildren_Result) {
+				declare Integer RSButtonIndex for RespawnButton;
+				RSButtonIndex = ButtonIndex;
+				
+				ButtonIndex += 1;
+			}
+			
+			declare Boolean LastModeIsPlaying		= Srv_Battle_P_ModeIsPlaying;
+			declare Integer LastModeUIUpdate		= -1;
+			declare Integer LastModeCountdownStart	= Srv_Battle_P_ModeCountDownStart;
+			declare Integer LastAlliesFighting = -2;
+			
+			declare Integer ModeCountdownStop = -1;
+			declare Integer ModeCountdownTime = {( CountdownTime )};
+			
+			declare Boolean ForceUpdate = True;
+			declare CSmPlayer::ESpawnStatus PrevSpawnStatus = InputPlayer.SpawnStatus;
+			
+			while(True) {
+				yield;
+				
+				declare netread Integer Srv_Battle_P_RearmorCost for InputPlayer;
+				Label_RearmorCost.SetText(Srv_Battle_P_RearmorCost ^ " G.");
+
+				declare netread Integer Srv_Battle_P_RespawnCost for InputPlayer;
+				foreach (Label in Labels_RespawnCost) {
+					Label.SetText(Srv_Battle_P_RespawnCost ^ " G.");
+				}
+				
+				{( Sync )}
+				
+				if (LastModeCountdownStart != Srv_Battle_P_ModeCountDownStart) {
+					LastModeCountdownStart = Srv_Battle_P_ModeCountDownStart;
+					if (Srv_Battle_P_ModeCountDownStart > 0) {
+						ModeCountdownStop = Now + ModeCountdownTime;
+						Gauge_Surrender.Color = <1., 1., 1.>;
+					} else {
+						ModeCountdownStop = 0;
+						Gauge_Surrender.Ratio = 1.;
+						Gauge_Surrender.Color = <0.5, 0.5, 0.5>;
+					}
+					ForceUpdate = True;
+				}
+				
+				if (InputPlayer.SpawnStatus != PrevSpawnStatus) {
+					PrevSpawnStatus = InputPlayer.SpawnStatus;
+					ForceUpdate = True;
+				}
+				
+				if (ModeCountdownStop > 0) {
+					declare Real Ratio = (ModeCountdownStop - Now) / (1. * ModeCountdownTime);
+					if(Ratio < 0.) Ratio = 0.;
+					if(Ratio > 1.) Ratio = 1.;
+					
+					Gauge_Surrender.Ratio = Ratio;
+				}
+				
+        /* Disable rearmor
+				if (Srv_Battle_P_IsPlayerProtagonist && InputPlayer.Armor > 0 && InputPlayer.Armor < InputPlayer.ArmorMax) {
+					Frame_Shop.Show();
+				} else {
+					Frame_Shop.Hide();
+				}
+        */
+				
+				if (LastAlliesFighting != Srv_Battle_P_AlliesFighting) {
+					LastAlliesFighting = Srv_Battle_P_AlliesFighting;
+					if(Srv_Battle_P_AlliesFighting > 0) {
+						Label_AlliesFighting.SetText(TextLib::Compose(_("Allies still fighting: %1"), "" ^ Srv_Battle_P_AlliesFighting));
+					} else {
+						Label_AlliesFighting.SetText(_("No ally is fighting."));
+					}
+				}
+				
+				if (LastModeUIUpdate != Srv_Battle_G_ModeUIUpdate || LastModeIsPlaying != Srv_Battle_P_ModeIsPlaying || ForceUpdate) {
+					LastModeUIUpdate = Srv_Battle_G_ModeUIUpdate;
+					LastModeIsPlaying = Srv_Battle_P_ModeIsPlaying;
+					ForceUpdate = False;
+					
+					if(Srv_Battle_P_IsPlayerProtagonist && Srv_Battle_P_ModeIsPlaying) {
+						Frame_Surrender.Show();
+					} else {
+						Frame_Surrender.Hide();
+					}
+					
+					declare Integer DefenderId;
+					
+					if (World_CastleIdExists(Srv_Battle_G_AttackedCastleId)) {
+						DefenderId = World_GetCastleOwnerId(Srv_Battle_G_AttackedCastleId);
+					} else {
+						log("cannot find owner for attacked castle : " ^ Srv_Battle_G_AttackedCastleId);
+						continue;
+					}
+					
+					declare Text DefenderLogin	= Player_GetPlayerName(DefenderId);
+					declare Text DefenderName	= DefenderLogin;
+					declare Text DefenderEmblem	= Player_GetPlayerEmblemUrl(DefenderId);
+					declare Text AttackerEmblem	= Player_GetPlayerEmblemUrl(Srv_Battle_G_AttackerIds[0]);
+					
+					foreach (Player in Players) {
+						if (Player.Login != DefenderLogin) continue;
+						DefenderName = Player.Name;
+						break;
+					}
+					
+					declare CMlLabel 	Label_PlanetName 	<=> (Page.GetFirstChild("Label_PlanetName") as CMlLabel);
+					declare CMlQuad 	Quad_IsMine 		<=> (Page.GetFirstChild("Quad_IsMine") as CMlQuad);
+					declare CMlFrame	Frame_Owner			<=> (Page.GetFirstChild("Frame_Owner") as CMlFrame);
+					declare CMlLabel 	Label_OwnerName 	<=> (Frame_Owner.GetFirstChild("Label_OwnerName") as CMlLabel);
+					declare CMlQuad 	Quad_OwnerEmblem 	<=> (Frame_Owner.GetFirstChild("Quad_OwnerEmblem") as CMlQuad);
+					
+					declare Text CastleName = World_GetCastleName(Srv_Battle_G_AttackedCastleId);
+					Label_PlanetName.SetText(CastleName);
+					
+					if (World_IsCastleCapital(Srv_Battle_G_AttackedCastleId)) {
+						Quad_IsMine.Show();
+					} else {
+						Quad_IsMine.Hide();
+					}
+					
+					Label_OwnerName.SetText(DefenderName);
+					Quad_OwnerEmblem.ImageUrl = DefenderEmblem;
+					
+					Page.GetClassChildren("FrameGate", Page.MainFrame, True);
+					declare NbFrames = Page.GetClassChildren_Result.count;
+					
+					for (IGate, 0, {( GatesCount )}) {
+					
+						if (IGate >= NbFrames) {
+							// log("IGate^" / "^NbFrames);
+							break; // should not happen
+						}
+						declare CMlFrame FrameGate <=> (Page.GetClassChildren_Result[IGate] as CMlFrame); // TODO: refactor
+						
+						declare CMlQuad 	Quad_Emblem			<=> (FrameGate.GetFirstChild("Quad_Emblem") as CMlQuad);
+						declare CMlLabel 	Label_GateName		<=> (FrameGate.GetFirstChild("Label_GateName") as CMlLabel);
+						declare CMlFrame 	Frame_Respawn		<=> (FrameGate.GetFirstChild("Frame_Respawn") as CMlFrame);
+						
+						if (Quad_Emblem == Null || Label_GateName == Null || Frame_Respawn == Null) continue;
+						
+						declare Text GateText;
+						if (IGate == 0) {
+							GateText = _("Attack");
+						} else if(IGate == {( GatesCount )}) {
+							GateText = _("Core");
+						} else {
+							GateText = TextLib::Compose("%1 %2", _("Gate"), TextLib::ToText(IGate));
+						}
+						Label_GateName.SetText(GateText);
+						
+						declare Text EmblemImage;
+						if (IGate <= Srv_Battle_G_CurrentGate) {
+							EmblemImage = AttackerEmblem;
+						} else {
+							EmblemImage = DefenderEmblem;
+						}
+						Quad_Emblem.ImageUrl = EmblemImage;
+						
+						/* Disable respawn
+						if (!Srv_Battle_P_ModeIsPlaying || InputPlayer.SpawnStatus != CSmPlayer::ESpawnStatus::NotSpawned || IsSpectatorMode || Cli_Battle_P_UIAction == "Surrender") {
+							Frame_Respawn.Hide();
+						} else {
+							if (IGate <= Srv_Battle_G_CurrentGate) {
+								if (Srv_Battle_P_Clan == False && IGate == Srv_Battle_G_CurrentGate) {
+									Frame_Respawn.Show();
+								} else {
+									Frame_Respawn.Hide();
+								}
+							} else {
+								if (Srv_Battle_P_Clan == True && IGate == (Srv_Battle_G_CurrentGate + 1)) {
+									Frame_Respawn.Show();
+								} else {
+									Frame_Respawn.Hide();
+								}
+							}
+						}
+            */
+					}
+				}
+				
+				foreach (Event in PendingEvents) {
+					if (Event.Type == CMlEvent::Type::MouseOver) {
+						if (Event.ControlId == "Button_Surrender") {
+							PlayUiSound(CMlScriptIngame::EUISound::Warning, 0, 1.0);
+							
+							Button_Surrender.ImageUrl = "{( SurrenderButtonOverImageUrl )}";
+							Label_Surrender.TextColor = <1., 1., 1.>;
+							if(Srv_Battle_P_AlliesFighting > 0) {
+								Label_AlliesFighting.TextColor = <1.0, 0.0, 0.0>;
+							} else {
+								Label_AlliesFighting.TextColor = <0.0, 1.0, 0.0>;
+							}
+						}
+					} 
+					else if (Event.Type == CMlEvent::Type::MouseOut) {
+						if (Event.ControlId == "Button_Surrender") {
+							Button_Surrender.ImageUrl = "{( SurrenderButtonImageUrl )}";
+							Label_Surrender.TextColor = <0.5, 0.5, 0.5>;
+							if(Srv_Battle_P_AlliesFighting > 0) {
+								Label_AlliesFighting.TextColor = <1.0, 1.0, 1.0>;
+							} else {
+								Label_AlliesFighting.TextColor = <0.5, 0.5, 0.5>;
+							}
+						}
+					} 
+					else if (Event.Type == CMlEvent::Type::MouseClick) {
+						Cli_Battle_P_UIActionUpdate = Now;
+						if (Event.ControlId == "Button_Respawn") {
+							Cli_Battle_P_UIAction = "Respawn";
+						} else if (Event.ControlId == "Button_Surrender") {
+							PlayUiSound(CMlScriptIngame::EUISound::TimeOut, 1, 1.0);
+							
+							Cli_Battle_P_UIAction = "Surrender";
+							Button_Surrender.Hide();
+							Gauge_Surrender.Hide();
+						}
+					}
+					else if (Event.Type == CMlEvent::Type::KeyPress) {
+						if (Event.KeyName == "G") {
+							Cli_Battle_P_UIKeyboardAction = "BotGo";
+							Cli_Battle_P_UIKeyboardActionUpdate = Now;
+							sleep(500); // evite un peu le spam
+						}
+					}
+				}
+			}
+		}
+	--></script>
+</manialink>

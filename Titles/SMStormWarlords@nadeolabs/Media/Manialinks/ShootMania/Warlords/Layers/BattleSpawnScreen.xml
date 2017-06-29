@@ -1,0 +1,343 @@
+<manialink version="2" name="{( LayerName )}">
+
+	<framemodel id="circlewave">
+		<quad id="image" posn="0 0 0" sizen="16 16" halign="center" valign="center" image="{( CircleWaveImageUrl )}" colorize="5af" />
+	</framemodel>
+
+	<frame id="situation" posn="0 0 11">
+		<label id="owner" posn="-150 80 1" style="TextTitle3" textsize="10" sizen="200 10"/>
+		<label id="instructions" posn="-150 70 1" style="TextTitle3" textsize="3" sizen="200 5" />
+		<quad id="ownerbg" posn="-170 94 0" sizen="256 40" style="UiSMSpectatorScoreBig" substyle="UIRange1Bg"/>
+	</frame>
+
+	<frame id="castle" posn="0 -10 1" scale="8">
+
+		<label id="name" posn="0 7 12" scale="1" text="?" textemboss="1" halign="center" valign="center" style="TextRaceMessageBig" textsize="1" textcolor="ddff" />
+		
+		<quad id="capital" posn="0 0 7" sizen="6 6" halign="right" valign="top" image="{( CapitalImageUrl )}" hidden="1" />
+		<quad id="owneremblem" posn="0 0 6" sizen="10 10" halign="right" valign="top" hidden="1" />
+
+			<frame id="circlewaves" posn="0 0 1" hidden="1">
+				<frameinstance id="circlewave1" modelid="circlewave" scale="0.75" />
+				<frameinstance id="circlewave2" modelid="circlewave" scale="1.5" />
+			</frame>
+
+		<frame id="scale">
+
+			<quad id="goldvein" class="rotable" posn="0 0 5" sizen="24 24" halign="center" valign="center" image="{( GoldVeinImageUrl )}" opacity="0.9" hidden="1" data-rotvar="-0.1" />
+
+			<quad id="startpoint" class="rotable" posn="0 0 4" sizen="20 20" scale="0.75" halign="center" valign="center" image="{( StartPointImageUrl )}" colorize="0af" hidden="1" data-rotvar="-0.2" />
+
+			<quad id="lightproj" rot="-45" posn="0 0 3" scale="0.75" sizen="20.5 20.5" halign="center" valign="center" image="{( LightProjImageUrl )}" />
+			
+			<quad posn="0 0 2" id="typeimage" class="rotable" sizen="20 20" scale="0.75" halign="center" valign="center" image="{( TypeImageUrl )}" opacity="0.98" data-rotvar="0.1" />
+
+			<quad id="halo" posn="0 0 0" sizen="40 40" halign="center" valign="center" style="Bgs1" substyle="Glow" opacity="0.75" />
+			
+		</frame>
+		
+	</frame>
+	
+	<quad id="world_bg" posn="0 0 0" sizen="320 180" halign="center" valign="center" image="{( WorldBackgroundImageUrl )}" />
+	
+	<script><!--
+		#Include "TextLib" as TL
+		#Include "MathLib" as ML
+		#Include "AnimLib" as AL
+
+		#Const C_RotationDegreesPerSecond	2
+
+		#Const C_PlanetTypeUrl [
+			0 => "file://Media/Manialinks/ShootMania/Warlords/Textures/World/Castles/Castle60.png",
+			1 => "file://Media/Manialinks/ShootMania/Warlords/Textures/World/Castles/Castle61.png",
+			2 => "file://Media/Manialinks/ShootMania/Warlords/Textures/World/Castles/Castle62.png",
+			3 => "file://Media/Manialinks/ShootMania/Warlords/Textures/World/Castles/Castle63.png",
+			4 => "file://Media/Manialinks/ShootMania/Warlords/Textures/World/Castles/Castle64.png",
+			5 => "file://Media/Manialinks/ShootMania/Warlords/Textures/World/Castles/Castle65.png"
+		]
+		
+		// -------- Data
+		
+		Text World_GetCastleName(Integer _CastleId) {
+			declare netread Text[] Srv_World_G_Castles for Teams[0];
+			return Srv_World_G_Castles[_CastleId];
+		}
+		
+		Boolean World_IsCastleCapital(Integer _CastleId) {
+			declare netread Int3[Integer] Srv_World_G_CastlePropertiesBis for Teams[0];
+			return (Srv_World_G_CastlePropertiesBis[_CastleId].X == 1);
+		}
+		
+		Real World_GetCastleScale(Integer _CastleId) {
+			declare netread Vec3[Integer] Srv_World_G_CastleProperties for Teams[0];
+			return Srv_World_G_CastleProperties[_CastleId].Z;
+		}
+		
+		Boolean CastleIdExists(Integer _CastleId) {
+			declare netread Text[] Srv_World_G_Castles for Teams[0];
+			return Srv_World_G_Castles.existskey(_CastleId);
+		}
+		
+		Boolean IsCastleOwned(Integer _CastleId) {
+			declare netread Int3[Integer] Srv_World_G_CastleAttributes for Teams[0];
+			return (Srv_World_G_CastleAttributes[_CastleId].X > -1);
+		}
+		
+		Integer GetCastleOwnerId(Integer _CastleId) {
+			declare netread Int3[Integer] Srv_World_G_CastleAttributes for Teams[0];
+			return Srv_World_G_CastleAttributes[_CastleId].X;
+		}
+		
+		Text GetPlayerName(Integer _PlayerId) {
+			declare netread Text[Integer] Srv_Player_G_Players for Teams[0];
+			return Srv_Player_G_Players[_PlayerId];
+		}
+		
+		Vec3 GetColorization(Integer _CastleId) {
+			declare Vec3 Colorization = <0., 0., 0.>;
+
+			declare netread Int3[Integer] Srv_World_G_CastlePropertiesBis for Teams[0];
+			declare Integer CastleType = Srv_World_G_CastlePropertiesBis[_CastleId].Y;
+
+			switch (CastleType) {
+				case 0: { // Fire
+					Colorization = <1., 0.1, 0.>;
+				}
+				case 1: { // Forest
+					Colorization = <0. , 0.4, 0.>;
+				}
+				case 2: { // Ice
+					Colorization = <0.4 , 0.75, 1.>;
+				}
+				case 3: { // Sand
+					Colorization = <1. , 0.75, 0.4>;
+				}
+			}
+			return Colorization;
+		}
+		
+		Text GetPlayerEmblemUrl(Integer _PlayerId) {
+			return "{( EmblemBaseUrl )}" ^ _PlayerId + 1 ^ ".dds";
+		}
+		
+		Text GetCastleImageUrl() {
+			return "{( TypeImageUrl )}";
+		}
+		Text GetPlanetPicture(Integer _CastleId) {
+			declare Picture = C_PlanetTypeUrl[0];
+
+			declare netread Int3[Integer] Srv_World_G_CastlePropertiesBis for Teams[0];
+			declare Integer CastleType = Srv_World_G_CastlePropertiesBis[_CastleId].Y;
+
+			switch (CastleType) {
+				case 1: Picture = C_PlanetTypeUrl[1];
+				case 2: Picture = C_PlanetTypeUrl[2];
+				case 3: Picture = C_PlanetTypeUrl[3];
+				case 4: Picture = C_PlanetTypeUrl[4];
+				case 5: Picture = C_PlanetTypeUrl[5];
+				default: Picture = C_PlanetTypeUrl[0];
+			}
+			return Picture;
+		}
+		
+		// -------- UI
+		
+		CMlFrame GetSituationFrame() {
+			return (Page.GetFirstChild("image") as CMlFrame);
+		}
+		
+		CMlLabel GetOwnerNameLabel() {
+			return (Page.GetFirstChild("owner") as CMlLabel);
+		}
+		
+		Void SetCastleOwnerName(Text _OwnerName) {
+			GetOwnerNameLabel().SetText(_OwnerName);
+		}
+		
+		CMlLabel GetCastleNameLabel() {
+			return (Page.GetFirstChild("name") as CMlLabel);
+		}
+		
+		Void SetCastleName(Text _CastleName) {
+			GetCastleNameLabel().SetText(_CastleName);
+		}
+		
+		CMlQuad GetOwnerEmblem() {
+			return (Page.GetFirstChild("owneremblem") as CMlQuad);
+		}
+		
+		Void SetOwnerEmblemUrl(Text _Url) {
+			GetOwnerEmblem().ImageUrl = _Url;
+		}
+		
+		Void ShowOwnerNameAndEmblem() {
+			GetOwnerEmblem().Show();
+			GetOwnerNameLabel().Show();
+		}
+		
+		Void HideOwnerNameAndEmblem() {
+			GetOwnerEmblem().Hide();
+			GetOwnerNameLabel().Hide();
+		}
+		
+		CMlLabel GetInstructionsLabel() {
+			return (Page.GetFirstChild("instructions") as CMlLabel);
+		}
+		
+		Void SetInstructions(Text _Instructions) {
+			GetInstructionsLabel().SetText(_Instructions);
+		}
+		
+		CMlQuad GetCastleImage() {
+			return (Page.GetFirstChild("typeimage") as CMlQuad);
+		}
+		
+		CMlFrame GetScalableFrame() {
+			return (Page.GetFirstChild("scale") as CMlFrame);
+		}
+		
+		Void SetCastleImageUrl(Text _Url) {
+			GetCastleImage().ImageUrl = _Url;
+		}
+		
+		Void SetCastleScale(Real _CastleScale) {
+			GetScalableFrame().RelativeScale = _CastleScale;
+		}
+		
+		Void ColorizeCastle(Vec3 _Color) {
+			GetCastleImage().Colorize = _Color;
+		}
+		
+		CMlQuad GetCapitalQuad() {
+			return (Page.GetFirstChild("capital") as CMlQuad);
+		}
+		
+		Void ShowCapitalQuad() {
+			GetCapitalQuad().Show();
+		}
+		
+		Void HideCapitalQuad() {
+			GetCapitalQuad().Hide();
+		}
+
+		CMlFrame GetCircleWavesFrame(CMlFrame _CastleFrameInstance) {
+			return (_CastleFrameInstance.GetFirstChild("circlewaves") as CMlFrame);
+		}
+
+		CMlFrame GetFirstCircleWave(CMlFrame _CastleFrameInstance) {
+			return (_CastleFrameInstance.GetFirstChild("circlewave1") as CMlFrame);
+		}
+
+		CMlFrame GetSecondCircleWave(CMlFrame _CastleFrameInstance) {
+			return (_CastleFrameInstance.GetFirstChild("circlewave2") as CMlFrame);
+		}
+
+		CMlQuad GetCircleWaveQuad(CMlFrame _CircleWaveFrameInstance) {
+			return (_CircleWaveFrameInstance.GetFirstChild("image") as CMlQuad);
+		}
+		
+		Void ShowPlanetIn3D(Integer CastleId) {
+		
+			declare Integer GatesCount = MapLandmarks_Gate.count;
+			declare netread Integer	Srv_Battle_G_AttackedCastleId	for Teams[0];
+			
+			if (CastleIdExists(CastleId) && IsCastleOwned(CastleId)) {
+				declare Integer	OwnerId			= GetCastleOwnerId(CastleId);
+				declare Text	OwnerLogin		= GetPlayerName(OwnerId);
+				declare Text	OwnerName		= OwnerLogin;
+				declare Text	OwnerEmblemUrl	= GetPlayerEmblemUrl(OwnerId);
+				
+				foreach (Player in Players) {
+					if (Player.Login != OwnerLogin) continue;
+					OwnerName = Player.Name;
+					break;
+				}
+				
+				SetCastleOwnerName(OwnerName);
+				SetOwnerEmblemUrl(OwnerEmblemUrl);
+				ShowOwnerNameAndEmblem();
+			} else {
+				HideOwnerNameAndEmblem();
+			}
+			
+			declare Text Instructions = TL::Compose("%1 %2", TL::ToText(GatesCount), _("Gates"));
+			SetInstructions(Instructions);
+			
+			declare Text CastleName		= World_GetCastleName(CastleId);
+			declare Text CastleImage	= GetPlanetPicture(CastleId);//GetCastleImageUrl();
+			declare Real CastleScale	= World_GetCastleScale(CastleId);
+						
+			SetCastleName(CastleName);
+			SetCastleImageUrl(CastleImage);
+			SetCastleScale(CastleScale);
+			ColorizeCastle(<0.4, 0.4, 0.4>);
+			
+			if (World_IsCastleCapital(CastleId)) {
+				ShowCapitalQuad();
+			} else {
+				HideCapitalQuad();
+			}
+		}
+		
+		main() {
+			declare netread Integer Srv_Battle_G_AttackedCastleId	for Teams[0];
+			declare netread Integer Srv_Battle_G_UpdateSpawnScreen	for Teams[0];
+			
+			declare Integer OwnerId = GetCastleOwnerId(Srv_Battle_G_AttackedCastleId);
+			
+			declare Integer LastUpdateSpawnScreen = -1;
+			
+			declare CMlFrame	Castle					= (Page.GetFirstChild("castle") as CMlFrame);
+			declare CMlFrame	CircleWavesFrame		= GetCircleWavesFrame(Castle);
+			declare CMlFrame	CircleWave1				= GetFirstCircleWave(Castle);
+			declare CMlQuad		CircleWaveQuad1			= GetCircleWaveQuad(CircleWave1);
+			declare CMlFrame	CircleWave2				= GetSecondCircleWave(Castle);
+			declare CMlQuad		CircleWaveQuad2			= GetCircleWaveQuad(CircleWave2);
+
+			declare Vec3 Colorization = <0.333, 0.667, 1.>;
+			if (OwnerId != -1) Colorization = <1., 0., 0.>;
+			
+			CircleWaveQuad1.Colorize = Colorization;
+			CircleWaveQuad2.Colorize = Colorization;
+			
+			CircleWavesFrame.Show();
+			
+			while(True) {
+				yield;
+				
+				if(LastUpdateSpawnScreen != Srv_Battle_G_UpdateSpawnScreen) {
+					LastUpdateSpawnScreen = Srv_Battle_G_UpdateSpawnScreen;
+					
+					ShowPlanetIn3D(Srv_Battle_G_AttackedCastleId);
+				}
+				
+				CircleWave1.RelativeScale = (Now % 2000) / 1000.;
+				CircleWaveQuad1.Opacity = AL::EaseInCubic(ML::NearestInteger(CircleWave1.RelativeScale * 1000), 1., -1., 2000);
+				CircleWave2.RelativeScale = ((Now + 500) % 2000) / 1000.;
+				CircleWaveQuad2.Opacity = AL::EaseInCubic(ML::NearestInteger(CircleWave2.RelativeScale * 1000), 1., -1., 2000);
+				
+				Page.GetClassChildren("rotable", Page.MainFrame, True);
+				foreach (Control in Page.GetClassChildren_Result) {
+					if (!Control.Visible) continue;
+	
+					declare Real RotationVariable = TL::ToReal(Control.DataAttributeGet("rotvar"));
+	
+					Control.RelativeRotation += RotationVariable * Period / 8.;
+				}
+	
+				// ---------------------------------- //
+	
+				Page.GetClassChildren("scalable", Page.MainFrame, True);
+				foreach (Control in Page.GetClassChildren_Result) {
+					if (!Control.Visible) continue;
+	
+					declare Real ScaleOrigin = TL::ToReal(Control.DataAttributeGet("scaleorig"));
+					declare Real ScaleVariable = TL::ToReal(Control.DataAttributeGet("scalevar"));
+	
+					Control.RelativeScale = ScaleOrigin + (ML::Sin(Now / 500.) + 1) * ScaleVariable;
+				}
+				
+			}
+		}
+	--></script>
+</manialink>

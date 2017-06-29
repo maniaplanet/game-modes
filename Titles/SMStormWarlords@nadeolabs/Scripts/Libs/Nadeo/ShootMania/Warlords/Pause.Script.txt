@@ -1,0 +1,246 @@
+/** 
+ *	Pause library
+ *
+ *	Contains functions related to the pause system and actions available from the pause menu.
+ */
+
+#Include "Libs/Nadeo/ShootMania/Warlords/Player.Script.txt"	as Player
+#Include "Libs/Nadeo/ShootMania/Warlords/File.Script.txt"		as File
+
+#Const C_Threshold					2
+#Const C_FadeTime					200
+#Const C_TimeMarginBetweenPauses	1000
+
+declare Integer G_LastPauseTimestamp;
+declare Boolean G_ServerMustEnd;
+
+
+// ---------------------------------- //
+/**
+ * Returns True if the game is paused.
+ *
+ * @return True if the game is paused, False otherwise.
+ */
+Boolean IsPaused() {
+	declare netwrite Boolean Srv_Pause_G_IsPaused for Teams[0];
+	return Srv_Pause_G_IsPaused;
+}
+
+// ---------------------------------- //
+/**
+ * Clears pause requests.
+ */
+Void Private_ClearPauseOpinions() {
+	declare netwrite Boolean[Text]	Srv_Pause_G_PauseOpinions		for Teams[0];
+	Srv_Pause_G_PauseOpinions.clear();
+}
+
+// ---------------------------------- //
+/**
+ * Clears pause actions choices.
+ */
+Void Private_ClearPauseActionOpinions() {
+	declare netwrite Text[Text] Srv_Pause_G_ActionOpinions	for Teams[0];
+	Srv_Pause_G_ActionOpinions.clear();
+}
+
+// ---------------------------------- //
+/**
+ * Changes the current pause status.
+ *
+ * @param _PauseStatus True to enable the pause, False to disable it.
+ */
+Void TogglePauseStatus(Boolean _PauseStatus) {
+	declare netwrite Boolean	Srv_Pause_G_IsPaused			for Teams[0];
+	Srv_Pause_G_IsPaused = _PauseStatus;
+	G_LastPauseTimestamp = Now;
+	Private_ClearPauseActionOpinions();
+}
+
+// ---------------------------------- //
+/**
+ * Assigns the given pause action choice to a login.
+ *
+ * @param _Login The player's login.
+ * @param _Login The player's choice.
+ */
+Void Private_AssignPauseActionChoice(Text _Login, Text _Choice) {
+	declare netwrite Text[Text] Srv_Pause_G_ActionOpinions	for Teams[0];
+	Srv_Pause_G_ActionOpinions[_Login] = _Choice;
+}
+
+// ---------------------------------- //
+/**
+ * Returns the majority pause action choice.
+ *
+ * @return The pause action that had the majority of voices.
+ */
+Text Private_GetMajorityPauseActionChoice() {
+	declare netwrite Text[Text] Srv_Pause_G_ActionOpinions	for Teams[0];
+	declare Real Majority = Player::CountPlayers() / 2.;
+	declare Integer[Text] Opinions;
+
+	foreach (Opinion in Srv_Pause_G_ActionOpinions) {
+		if (Opinion == "") continue;
+		
+		if (!Opinions.existskey(Opinion)) {
+			Opinions[Opinion] = 1;
+		} else {
+			Opinions[Opinion] += 1;
+		}
+	}
+
+	foreach (Opinion => VoteNumber in Opinions) {
+		if (VoteNumber > Majority) return Opinion;
+	}
+	
+	return "";
+}
+
+// ---------------------------------- //
+/**
+ * Returns a player's UI.
+ *
+ * @param _Player The player to get the UI from.
+ * @return The player's UI.
+ */
+CUIConfig Private_GetUI(CPlayer _Player) {
+	return UIManager.GetUI(_Player);
+}
+
+// ---------------------------------- //
+/**
+ * Sets a player's opinion about a pause.
+ *
+ * @param _Login The player's login.
+ * @param _WantsToPause True if he wants to pause the game, False otherwise.
+ */
+Void Private_AskPause(Text _Login, Boolean _WantsToPause) {
+	declare netwrite Boolean[Text]	Srv_Pause_G_PauseOpinions		for Teams[0];
+	
+	Srv_Pause_G_PauseOpinions[_Login] = _WantsToPause;
+}
+
+// ---------------------------------- //
+/**
+ * Stores a value that will be checked later by the main script to know if players have chosen the quit button.
+ */
+Void NotifyServerEnd() {
+	G_ServerMustEnd = True;
+}
+
+// ---------------------------------- //
+/**
+ * Checks if the server has to end.
+ *
+ * @return True if the server has to end, False otherwise.
+ */
+Boolean HasToEnd() {
+	declare Boolean HasToEnd = G_ServerMustEnd;
+	G_ServerMustEnd = False;
+	return HasToEnd;
+}
+
+// ---------------------------------- //
+/**
+ * Checks if a pause is wanted by a majority.
+ *
+ * @return True if a pause as been asked, False otherwise.
+ */
+Boolean IsPauseWanted() {
+	declare netwrite Boolean[Text]	Srv_Pause_G_PauseOpinions		for Teams[0];
+
+	declare Integer PositiveOpinionsCount = 0;
+
+	foreach (Opinion in Srv_Pause_G_PauseOpinions) {
+		if (Opinion) PositiveOpinionsCount += 1;
+	}
+
+	return (PositiveOpinionsCount > Players.count / C_Threshold);
+}
+
+// ---------------------------------- //
+/**
+ * Checks if the majority of players want to resume the game.
+ *
+ * @return True if players want to resume, False otherwise.
+ */
+Boolean IsResumeWanted() {
+	return (Private_GetMajorityPauseActionChoice() == "btn-resume");
+}
+
+// ---------------------------------- //
+/**
+ * Checks if the majority of players want to save the game.
+ *
+ * @return True if players want to save, False otherwise.
+ */
+Boolean IsSaveWanted() {
+	return (Private_GetMajorityPauseActionChoice() == "btn-save");
+}
+
+// ---------------------------------- //
+/**
+ * Main loop, has to be executed at the beginning of each script's loop turn.
+ */
+Void Loop() {
+
+	
+	if (!IsPaused() && Now - G_LastPauseTimestamp > C_TimeMarginBetweenPauses) {
+
+		foreach (PlayerIdent in Player::GetPlayers()) {
+			if (!Player::IsConnected(PlayerIdent)) continue;
+			
+			declare CPlayer Player = Player::GetPlayer(PlayerIdent);
+			if (Player == Null) continue;
+			
+			declare CUIConfig UI = Private_GetUI(Player);
+
+			declare netread		Boolean	Cli_Pause_P_WantsToPause		for UI;
+
+			Private_AskPause(Player.User.Login, Cli_Pause_P_WantsToPause);
+
+		}
+
+	}
+}
+
+// ---------------------------------- //
+/**
+ * Pause loop, has to be executed at the beginning of each script's loop turn when paused.
+ */
+Void PauseLoop() {
+
+	foreach (PlayerIdent in Player::GetPlayers()) {
+		if (!Player::IsConnected(PlayerIdent)) continue;
+			
+		declare CPlayer Player = Player::GetPlayer(PlayerIdent);
+		if(Player == Null) continue;
+		
+		declare CUIConfig UI = Private_GetUI(Player);
+
+		declare netread Text		Cli_Pause_P_SelectedChoice	for UI;
+
+		Private_AssignPauseActionChoice(Player.User.Login, Cli_Pause_P_SelectedChoice);
+
+	}
+
+}
+
+// ---------------------------------- //
+/**
+ * Unloads the lib.
+ */
+Void Unload() {
+	TogglePauseStatus(False);
+	Private_ClearPauseOpinions();
+	Private_ClearPauseActionOpinions();
+}
+
+// ---------------------------------- //
+/**
+ * Loads the lib.
+ */
+Void Load() {
+	Unload();
+}

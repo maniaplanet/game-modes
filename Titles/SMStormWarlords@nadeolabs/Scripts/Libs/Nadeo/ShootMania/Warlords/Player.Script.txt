@@ -1,0 +1,874 @@
+/** 
+ *	Player library
+ *
+ *	Contains functions related to players and their attributes like gold, score, vassals, ...
+ */
+
+#Include "MathLib"												as ML
+#Include "Libs/Nadeo/Log.Script.txt" as Log
+#Include "Libs/Nadeo/ShootMania/Warlords/World.Script.txt"		as World
+#Include "Libs/Nadeo/ScoresTable3.Script.txt"					as ST2
+#Include "TextLib"												as TL
+
+#Const ErrorMessage_PlayersAlreadyInit		"Players are already set."
+#Const ErrorMessage_PlayerNotInitialized	"This player isn't initialized."
+#Const C_InitialPlayerGold					0
+
+// ---------------------------------- //
+
+declare Boolean				G_AntiVassalRevolt;
+declare Ident[Integer]		G_InitializedPlayers;
+
+// ---------------------------------- //
+/**
+ * Checks if a player is connected.
+ *
+ * @param _PlayerIdent The player to check.
+ * @return True if the player is connected, False otherwise.
+ */
+Boolean IsConnected(Ident _PlayerIdent) {
+	return Players.existskey(_PlayerIdent);
+}
+
+// ---------------------------------- //
+/**
+ * Gets the player associated to an id.
+ *
+ * @param _PlayerId The player's id.
+ * @return The player associated with the given id.
+ */
+Ident GetPlayerIdent(Integer _PlayerId) {
+	if(! G_InitializedPlayers.existskey(_PlayerId)) {
+		log(Now^"> "^ErrorMessage_PlayerNotInitialized);
+		return NullId;
+	}
+	
+	return G_InitializedPlayers[_PlayerId];
+}
+
+// ---------------------------------- //
+/**
+ * Gets a player from its id.
+ *
+ * @param _PlayerId The player's id.
+ * @return The player instance.
+ */
+CPlayer GetPlayer(Integer _PlayerId) {
+	declare Ident PlayerIdent = GetPlayerIdent(_PlayerId);
+	if (IsConnected(PlayerIdent)) return Players[PlayerIdent];
+	
+	return Null;
+}
+
+// ---------------------------------- //
+/**
+ * Gets a player from its ident.
+ *
+ * @param _PlayerIdent The player's ident.
+ * @return The player instance.
+ */
+CPlayer GetPlayer(Ident _PlayerIdent) {
+	if (IsConnected(_PlayerIdent)) return Players[_PlayerIdent];
+	
+	return Null;
+}
+
+// ---------------------------------- //
+/**
+ * Gets the ids of all initialized players.
+ *
+ * @return An array containing initialized player ids.
+ */
+Integer[] GetPlayerIds() {
+	declare Integer[] Ids;
+	declare netwrite Text[Integer] Srv_Player_G_Players for Teams[0];
+	foreach (Id => Player in Srv_Player_G_Players) {
+		Ids.add(Id);
+	}
+	return Ids;
+}
+
+// ---------------------------------- //
+/**
+ * Gets all initialized players.
+ *
+ * @return An array containing initialized players.
+ */
+Ident[] GetPlayers() {
+	declare Ident[] InitPlayers;
+	
+	foreach (Player in G_InitializedPlayers) {
+		InitPlayers.add(Player);
+	}
+	
+	return InitPlayers;
+}
+
+// ---------------------------------- //
+/**
+ * Counts the number of initialized players.
+ *
+ * @return The number of intialized players.
+ */
+Integer CountPlayers() {
+	return GetPlayerIds().count;
+}
+
+// ---------------------------------- //
+/**
+ * Checks if a player is a spectator. On a game's beginnning, all connected
+ * connected players are initialized. So if a player isn't initialized, he's a
+ * spectator.
+ *
+ * @param _Player The player to check.
+ * @return True if the player is a spectator, False otherwise.
+ */
+Boolean IsSpec(CPlayer _Player) {
+	return !G_InitializedPlayers.exists(_Player.Id);
+}
+
+// ---------------------------------- //
+/**
+ * Gets a player id.
+ *
+ * @param _Player The player to get the id from.
+ * @return The given player's id.
+ * @throws ErrorMessage_PlayerNotInitialized If the player isn't initialized.
+ */
+Integer GetPlayerId(CPlayer _Player) {
+	if(_Player == Null || ! G_InitializedPlayers.exists(_Player.Id)) {
+		log(Now^"> "^ErrorMessage_PlayerNotInitialized);
+		return -1;
+	}
+	return G_InitializedPlayers.keyof(_Player.Id);
+}
+
+// ---------------------------------- //
+/**
+ * Gets a player id.
+ *
+ * @param _PlayerIdent The player to get the id from.
+ * @return The given player's id.
+ * @throws ErrorMessage_PlayerNotInitialized If the player isn't initialized.
+ */
+Integer GetPlayerId(Ident _PlayerIdent) {
+	if(! G_InitializedPlayers.exists(_PlayerIdent)) {
+		log(Now^"> "^ErrorMessage_PlayerNotInitialized);
+		return -1;
+	}
+	return G_InitializedPlayers.keyof(_PlayerIdent);
+}
+
+
+// ---------------------------------- //
+/**
+ * Gets the name of a player.
+ *
+ * @param _PlayerId The player's id.
+ * @return The player's name.
+ */
+Text GetName(Integer _PlayerId) {
+	declare netwrite Text[Integer] Srv_Player_G_Players for Teams[0];
+	return Srv_Player_G_Players[_PlayerId];
+}
+
+// ---------------------------------- //
+/**
+ * Gets a player color.
+ *
+ * @param _PlayerId The player's id to get the color from.
+ * @return The player's color.
+ */
+Vec3 GetColor(Integer _PlayerId) {
+	declare Vec3 Color;
+	switch (_PlayerId + 1) {
+		case 1: Color = <0., 0., 1.>;
+		case 2:	Color = <1., 1., 0.>;
+		case 3:	Color = <1., 0., 0.>;
+		case 4:	Color = <1., 0., 1.>;
+		case 5:	Color = <0., 1., 0.>;
+		case 6:	Color = <0., 1., 1.>;
+	}
+	return Color;
+}
+
+// ---------------------------------- //
+/**
+ * Gets a player's gold amount.
+ *
+ * @param _PlayerId The player's id to gert the gold amount from.
+ * @return The player's gold amount.
+ */
+Integer GetGold(Integer _PlayerId) {
+	declare netwrite Integer[Integer] Srv_Player_G_PlayersGold for Teams[0];
+	return Srv_Player_G_PlayersGold[_PlayerId];
+}
+
+// ---------------------------------- //
+/**
+ * Sets a player's gold.
+ *
+ * @param _PlayerId The player's id that will receive gold.
+ * @param  _GoldAmount The amount of gold that the player will receive.
+ */
+Void SetGoldAmount(Integer _PlayerId, Integer _GoldAmount) {
+	declare netwrite Integer[Integer] Srv_Player_G_PlayersGold for Teams[0];
+	Srv_Player_G_PlayersGold[_PlayerId] = _GoldAmount;
+}
+
+// ---------------------------------- //
+/**
+ * Adds gold to a player.
+ *
+ * @param _PlayerId The player's id that will receive gold.
+ * @param _GoldAmount The amount of gold that the player will receive.
+ */
+Void AddGoldAmount(Integer _PlayerId, Integer _GoldAmount) {
+	declare netwrite Integer[Integer] Srv_Player_G_PlayersGold for Teams[0];
+	Srv_Player_G_PlayersGold[_PlayerId] += _GoldAmount;
+}
+
+// ---------------------------------- //
+/**
+ * Substracts gold to a player.
+ *
+ * @param _PlayerId The player's id that will lose gold.
+ * @param _GoldAmount The amount of gold that the player will lose.
+ */
+Void SubGoldAmount(Integer _PlayerId, Integer _GoldAmount) {
+	declare netwrite Integer[Integer] Srv_Player_G_PlayersGold for Teams[0];
+	Srv_Player_G_PlayersGold[_PlayerId] -= _GoldAmount;
+}
+
+// Void SetBlitzUsed(Integer _PlayerId, Boolean _BlitzUsed) {
+	// declare netwrite Integer[] Srv_Player_G_BlitzPlayers for Teams[0];
+	// Srv_Player_G_BlitzPlayers.add(_PlayerId);
+// }
+
+
+// ---------------------------------- //
+/**
+ * Gets a player's bet.
+ *
+ * @param _PlayerId The bet's player's id.
+ * @return The bet gold amount.
+ */
+Integer GetBet(Integer _PlayerId) {
+	declare CPlayer Player = GetPlayer(_PlayerId);
+	if (Player == Null) return 0;
+	
+	declare CUIConfig UI = UIManager.GetUI(Player);
+	declare netread Integer Cli_Player_P_Bet for UI;
+	return Cli_Player_P_Bet;
+}
+
+// ---------------------------------- //
+/**
+ * Resets a player's bet.
+ *
+ * @param _PlayerId The bet's player's id.
+ */
+Void ResetBet(Integer _PlayerId) {
+	declare CPlayer Player = GetPlayer(_PlayerId);
+	if (Player == Null) return;
+	
+	declare netwrite Integer Srv_Player_P_ClearBetTimestamp for Player;
+	Srv_Player_P_ClearBetTimestamp = Now;
+}
+
+// ---------------------------------- //
+/**
+ * Gets a vassal's master id.
+ *
+ * @param _VassalId The vassal to get the master id from.
+ * @return The master id.
+ */
+Integer GetMasterId(Integer _VassalId) {
+	declare netwrite Integer[Integer] Srv_Player_G_Vassals for Teams[0];
+	return Srv_Player_G_Vassals[_VassalId];
+}
+
+// ---------------------------------- //
+/**
+ * Stores a player and his new master's score just before becoming vassal.
+ *
+ * @param _PlayerId The new vassal player's id.
+ */
+Void SaveStartCombinedScore(Integer _PlayerId) {
+	declare netwrite Integer[Integer]  Srv_Player_G_StartSavedCombinedScore for Teams[0];
+	 Srv_Player_G_StartSavedCombinedScore[_PlayerId] = World::CountPlayerCastles(_PlayerId) + World::CountPlayerCastles(GetMasterId(_PlayerId));
+}
+
+// ---------------------------------- //
+/**
+ * Gets a player's score just before he became vassal.
+ *
+ * @param _PlayerId The vassal player's id.
+ * @return The saved score.
+ */
+Integer GetSavedStartCombinedScore(Integer _PlayerId) {
+	declare netwrite Integer[Integer]  Srv_Player_G_StartSavedCombinedScore for Teams[0];
+	return  Srv_Player_G_StartSavedCombinedScore[_PlayerId];
+}
+
+// ---------------------------------- //
+/**
+ * Stores a vassal and his new master's score when being discarded.
+ *
+ * @param _PlayerId The vassal player's id.
+ */
+Void SaveEndCombinedScore(Integer _PlayerId) {
+	declare netwrite Integer[Integer] Srv_Player_G_EndSavedCombinedScore for Teams[0];
+	Srv_Player_G_EndSavedCombinedScore[_PlayerId] = World::CountPlayerCastles(_PlayerId) + World::CountPlayerCastles(GetMasterId(_PlayerId));
+}
+
+// ---------------------------------- //
+/**
+ * Checks if a player has a saved end score.
+ *
+ * @param _PlayerId The player to check.
+ * @return True if the player has a saved end score, False otherwise.
+ */
+Boolean HasEndCombinedScoreSaved(Integer _PlayerId) {
+	declare netwrite Integer[Integer] Srv_Player_G_EndSavedCombinedScore for Teams[0];
+	return Srv_Player_G_EndSavedCombinedScore.existskey(_PlayerId);
+}
+
+// ---------------------------------- //
+/**
+ * Gets a player's score when he went discarded.
+ *
+ * @param _PlayerId The vassal player's id.
+ * @return The saved score.
+ */
+Integer GetSavedEndCombinedScore(Integer _PlayerId) {
+	declare netwrite Integer[Integer] Srv_Player_G_EndSavedCombinedScore for Teams[0];
+	return Srv_Player_G_EndSavedCombinedScore[_PlayerId];
+}
+
+// ---------------------------------- //
+/**
+ * Sets a player as a vassal of another one.
+ *
+ * @param _VassalId The player's id that will be vassal.
+ * @param _MasterId The player's id that will be master.
+ */
+Void SetVassal(Integer _VassalId, Integer _MasterId) {
+	declare netwrite Integer[Integer] Srv_Player_G_Vassals for Teams[0];
+	Srv_Player_G_Vassals[_VassalId] = _MasterId;
+	SaveStartCombinedScore(_VassalId);
+	if (!World::HasCastles(_VassalId)) SaveEndCombinedScore(_VassalId); // If the vassal's master has been conquired, the vassal wil have zero in vassal score.
+}
+
+// ---------------------------------- //
+/**
+ * Unsets the vassal state of a player.
+ *
+ * @param _VassalId The player's id.
+ */
+Void UnsetVassal(Integer _VassalId) {
+	declare netwrite Integer[Integer] Srv_Player_G_Vassals for Teams[0];
+	declare Removed = Srv_Player_G_Vassals.removekey(_VassalId);
+}
+
+// ---------------------------------- //
+/**
+ * Checks if a player is vassal.
+ *
+ * @param _PlayerId The player's id to check.
+ * @return True if the player is a vassal, False otherwise.
+ */
+Boolean IsVassal(Integer _PlayerId) {
+	declare netwrite Integer[Integer] Srv_Player_G_Vassals for Teams[0];
+	return Srv_Player_G_Vassals.existskey(_PlayerId);
+}
+
+// ---------------------------------- //
+/**
+ * Checks if a player is master.
+ *
+ * @param _PlayerId The player's id to check.
+ * @return True if the player is a master, False otherwise.
+ */
+Boolean HasVassals(Integer _PlayerId) {
+	declare netwrite Integer[Integer] Srv_Player_G_Vassals for Teams[0];
+	return Srv_Player_G_Vassals.exists(_PlayerId);
+}
+
+// ---------------------------------- //
+/**
+ * Gets all vassals from a master.
+ *
+ * @param _MasterId The master player's id.
+ * @return An array with all vassal ids.
+ */
+Integer[] GetMasterVassals(Integer _MasterId) {
+	declare netwrite Integer[Integer] Srv_Player_G_Vassals for Teams[0];
+	declare Integer[] Vassals;
+	foreach (VassalId => MasterId in Srv_Player_G_Vassals) {
+		if (MasterId != _MasterId) continue;
+		Vassals.add(VassalId);
+	}
+	return Vassals;
+}
+
+// ---------------------------------- //
+/**
+ * Gets the vassal id that have been discarded by a master.
+ *
+ * @param _Player The master's player instance.
+ * @return The discarded vassal's id.
+ */
+Integer GetDiscardedVassalId(CPlayer _Player) {
+	/* Disable vassal discarding
+	declare CUIConfig UI = UIManager.GetUI(_Player);
+	if (UI == Null) return -1;
+	declare netread Integer Cli_Player_P_Discard for UI;
+	return Cli_Player_P_Discard;
+	*/
+	return -1;
+}
+
+// ---------------------------------- //
+/**
+ * Gets an array containing all donations made by the given player.
+ *
+ * @param _Player The donator player.
+ * @return The donations array.
+ */
+Integer[Integer] GetPlayerDonations(CPlayer _Player) {
+	declare CUIConfig UI = UIManager.GetUI(_Player);
+	if (UI == Null) return Integer[Integer];
+	
+	declare Integer PlayerId = GetPlayerId(_Player);
+	
+	declare netread Integer[Integer] Cli_Player_P_GoldDonations for UI;
+	declare Integer[Integer] GoldAdditionCpy;
+	
+	foreach (DestPlayerId => Donation in Cli_Player_P_GoldDonations) {
+		if (!G_AntiVassalRevolt || (G_AntiVassalRevolt && (!IsVassal(PlayerId) || (IsVassal(PlayerId) && GetMasterId(PlayerId) == DestPlayerId)))) {
+			GoldAdditionCpy[DestPlayerId] = Donation;
+		}
+	}
+	return GoldAdditionCpy;
+}
+
+// ---------------------------------- //
+/**
+ * Sums all donations made by a player.
+ *
+ * @param _Player The donator player.
+ * @return The gold amount given.
+ */
+Integer SumDonations(CPlayer _Player) {
+	declare Integer GoldSum;
+	foreach (GoldAmount in GetPlayerDonations(_Player)) {
+		GoldSum += GoldAmount;
+	}
+	return GoldSum;
+}
+
+// ---------------------------------- //
+/**
+ * Sums all donations made by a player.
+ *
+ * @param _Player The donator player's id.
+ * @return The gold amount given.
+ */
+Integer SumDonations(Integer _PlayerId) {
+	return SumDonations(GetPlayer(_PlayerId));
+}
+
+// ---------------------------------- //
+/**
+ * Gets the donations made by a player for another one.
+ *
+ * @param _Sender The player that sends the donation.
+ * @param _ReceiverId The player that receives the donation.
+ * @return The amount of donated gold.
+ */
+Integer GetPlayerSpecificDonation(CPlayer _Sender, Integer _ReceiverId) {
+	foreach (ReceiverId => GoldAmount in GetPlayerDonations(_Sender)) {
+		if (ReceiverId == _ReceiverId) return GoldAmount;
+	}
+	return 0;
+}
+
+// ---------------------------------- //
+/**
+ * Gets the donations made by a player for another one.
+ *
+ * @param _SenderId The player that sends the donation.
+ * @param _ReceiverId The player that receives the donation.
+ * @return The amount of donated gold.
+ */
+Integer GetPlayerSpecificDonation(Integer _SenderId, Integer _ReceiverId) {
+	declare CPlayer Sender = GetPlayer(_SenderId);
+	return GetPlayerSpecificDonation(Sender, _ReceiverId);
+}
+
+// ---------------------------------- //
+/**
+ * Gets the donations amount received by a player.
+ *
+ * @param _ReceiverId The player that receives the donations.
+ * @return The donations amount.
+ */
+Integer GetReceivedGoldDonations(Integer _ReceiverId) {
+	declare Integer DonatedGoldSum;
+	foreach (PlayerId in GetPlayerIds()) {
+		declare CPlayer Player = GetPlayer(PlayerId);
+		DonatedGoldSum += GetPlayerSpecificDonation(Player, _ReceiverId);
+	}
+	return DonatedGoldSum;
+}
+
+// ---------------------------------- //
+/**
+ * Sends an event to all players to reset their donations.
+ */
+Void ResetDonations() {
+	declare netwrite Integer Srv_Player_G_DonationsResetTimestamp for Teams[0];
+	Srv_Player_G_DonationsResetTimestamp = Now;
+}
+
+// ---------------------------------- //
+/**
+ * Gets the castle donation receiver's id.
+ *
+ * @param _Player The donator player instance.
+ * @return The receiver player's id.
+ */
+Integer GetCastleDonationPlayerId(CPlayer _Player) {
+	declare CUIConfig UI = UIManager.GetUI(_Player);
+	if (UI == Null) return -1;
+	declare netread Int3 Cli_Player_P_CastleDonation for UI;
+	return Cli_Player_P_CastleDonation.Y;
+}
+
+// ---------------------------------- //
+/**
+ * Checks if a castle donation has been done.
+ *
+ * @param _Player The donator player instance.
+ * @return True if the player has done a castle donation.
+ */
+Boolean HasDonatedACastle(CPlayer _Player) {
+	if (_Player == Null) return False;
+	declare CUIConfig UI = UIManager.GetUI(_Player);
+	if (UI == Null) return False;
+	declare netread Int3 Cli_Player_P_CastleDonation for UI;
+	return (Cli_Player_P_CastleDonation.Y != -1 && Cli_Player_P_CastleDonation.Z != -1);
+}
+
+// ---------------------------------- //
+/**
+ * Gets the castle id donation.
+ *
+ * @param _Player The donator player instance.
+ * @return The castle id that will be donated.
+ */
+Integer GetCastleDonationCastleId(CPlayer _Player) {
+	declare CUIConfig UI = UIManager.GetUI(_Player);
+	if (UI == Null) return -1;
+	declare netread Int3 Cli_Player_P_CastleDonation for UI;
+	return Cli_Player_P_CastleDonation.Z;
+}
+
+// ---------------------------------- //
+/**
+ * Checks a player's ready state.
+ *
+ * @param _Player The concerned player.
+ * @return True if the player is ready, False otherwise.
+ */
+Boolean IsReady(CPlayer _Player) {
+	declare CUIConfig UI = UIManager.GetUI(_Player);
+	if (UI == Null) return False;
+	declare netread Boolean Cli_Player_P_Ready for UI;
+	return Cli_Player_P_Ready;
+}
+
+// ---------------------------------- //
+/**
+ * Gets ready states of all players.
+ *
+ * @return An array with player ids as keys and ready states as values.
+ */
+Boolean[Integer] GetReadyStates() {
+	declare Boolean[Integer] ReadyStates;
+	foreach (PlayerId in GetPlayerIds()) {
+		declare CPlayer Player = GetPlayer(PlayerId);
+		ReadyStates[PlayerId] = IsReady(Player);
+	}
+	return ReadyStates;
+}
+
+// ---------------------------------- //
+/**
+ * Checks if all players are ready.
+ *
+ * @param _NewVassalSystem Setting False to ignore vassals and concider them as ready.
+ * @return True if all players are ready, False if at least one is not.
+ */
+Boolean AreAllPlayersReady(Boolean _NewVassalSystem) {
+	foreach (PlayerId in GetPlayerIds()) {
+		declare CPlayer Player = GetPlayer(PlayerId);
+		if (!_NewVassalSystem && IsVassal(PlayerId)) continue; //< In the old vassal system, if a player is vassal, he is ready by default.
+		if (!IsReady(Player)) return False;
+	}
+	return True;
+}
+
+// ---------------------------------- //
+/**
+ * Initializes one player (useful to load saves).
+ *
+ * @param _PlayerId The player's id.
+ * @param _Player The player instance.
+ * @param _PlayerGold The player's gold amount.
+ */
+Void InitPlayer(Integer _PlayerId, CSmPlayer _Player, Integer _PlayerGold) {
+	declare netwrite Text[Integer]		Srv_Player_G_Players		for Teams[0];
+	declare netwrite Integer[Integer]	Srv_Player_G_PlayersGold	for Teams[0];
+
+	declare Text Login = _Player.User.Login;
+	
+	Srv_Player_G_Players[_PlayerId]		= Login;
+	G_InitializedPlayers[_PlayerId]		= _Player.Id;
+	Srv_Player_G_PlayersGold[_PlayerId]	= _PlayerGold;
+}
+
+// ---------------------------------- //
+/**
+ * Initialized players on a game start. All other players that are not initialized will be concidered as spectators.
+ *
+ * @param _Players An array containing all players that will be initialized.
+ * @throws ErrorMessage_PlayersAlreadyInit If some players were already initialized.
+ */
+Void InitPlayers(CSmPlayer[] _Players) {
+	declare netwrite Text[Integer]		Srv_Player_G_Players		for Teams[0];
+	declare netwrite Integer[Integer]	Srv_Player_G_PlayersGold	for Teams[0];
+
+	assert(Srv_Player_G_Players.count == 0, ErrorMessage_PlayersAlreadyInit);
+
+	foreach (Id => Player in _Players) {
+		if (Id + 1 > World::CountStartPointCastles()) break;
+		declare Text Login = Player.User.Login;
+		
+		Srv_Player_G_Players[Id]		= Login;
+		G_InitializedPlayers[Id]		= Player.Id;
+		Srv_Player_G_PlayersGold[Id]	= C_InitialPlayerGold;
+	}
+}
+
+// ---------------------------------- //
+/**
+ * Completly removes a player and what he owns.
+ *
+ * @param _PlayerIdent The player that left.
+ */
+Void RemovePlayer(Ident _PlayerIdent) {
+	
+	declare Integer PlayerId = GetPlayerId(_PlayerIdent);
+	
+	if (!IsVassal(PlayerId)) {
+		declare Integer CapitalCastle = World::GetPlayerCapital(PlayerId);
+		World::UnsetCastleCapital(CapitalCastle);
+	}
+	
+	World::RevokeAllCastlesOwnership(PlayerId);
+	
+	declare netwrite Text[Integer]		Srv_Player_G_Players				for Teams[0];
+	declare netwrite Integer[Integer]	Srv_Player_G_PlayersGold			for Teams[0];
+	declare netwrite Integer[Integer]	 Srv_Player_G_StartSavedCombinedScore	for Teams[0];
+	declare netwrite Integer[Integer]	Srv_World_G_StartEndCombinedScore	for Teams[0];
+	declare netwrite Integer[Integer]	Srv_Player_G_Vassals				for Teams[0];
+	
+	declare Removed = Srv_Player_G_Players.removekey(PlayerId);
+	Removed = Srv_Player_G_PlayersGold.removekey(PlayerId);
+	Removed = Srv_Player_G_StartSavedCombinedScore.removekey(PlayerId);
+	Removed = Srv_World_G_StartEndCombinedScore.removekey(PlayerId);
+	Removed = Srv_Player_G_Vassals.remove(PlayerId);
+	Removed = Srv_Player_G_Vassals.removekey(PlayerId);
+	Removed = G_InitializedPlayers.removekey(PlayerId);
+	
+}
+
+// ---------------------------------- //
+/**
+ * Gets all players that are not vassals.
+ *
+ * @return An array containing the ids of all non-vassal players.
+ */
+Integer[] GetNonVassalPlayerIds() {
+	declare Integer[] NonVassalIds;
+	declare netwrite Text[Integer]		Srv_Player_G_Players for Teams[0];
+	declare netwrite Integer[Integer]	Srv_Player_G_Vassals for Teams[0];
+	
+	foreach (PlayerId => PlayerName in Srv_Player_G_Players) {
+		if (Srv_Player_G_Vassals.existskey(PlayerId) && Srv_Player_G_Vassals[PlayerId] > -1) continue;
+		NonVassalIds.add(PlayerId);
+	}
+	return NonVassalIds;
+}
+
+// ---------------------------------- //
+/**
+ * Gets all capitals that are not owned by the specified player.
+ *
+ * @param _PlayerId The concerned player.
+ * @param _MasterNotIncluded True to prevent vassals to have their masters' capitals in.
+ * @param _VasalNotIncluded True to prevent masters to have their vassals' capitals in.
+ * @return All opponents' capitals.
+ */
+Integer[] GetOpponentsCapitals(Integer _PlayerId, Boolean _MasterNotIncluded, Boolean _VasalNotIncluded) {
+	declare Integer[] OpponentsCapitals;
+	declare Boolean IsVassal = IsVassal(_PlayerId);
+	foreach (CastleId in World::GetCastleIds()) {
+		declare Integer OwnerId = World::GetCastleOwner(CastleId);
+		
+		if (!World::IsCastleCapital(CastleId) || OwnerId == _PlayerId) continue;
+		if (_MasterNotIncluded && IsVassal && OwnerId == GetMasterId(_PlayerId)) continue;
+		if (_VasalNotIncluded && GetMasterVassals(_PlayerId).exists(OwnerId)) continue;
+		
+		OpponentsCapitals.add(CastleId);
+	}
+	return OpponentsCapitals;
+}
+
+// ---------------------------------- //
+/**
+ * Computes the scores.
+ */
+Void ComputeScores() {
+	declare Masters = Integer[Integer];
+	declare Vassals = Integer[Integer][Integer];
+	declare CastlesTotal = World::CountCastles();
+		
+	foreach (PlayerIdent in G_InitializedPlayers) {
+		if (!IsConnected(PlayerIdent)) continue;
+		
+		declare CPlayer Player = GetPlayer(PlayerIdent);
+		if(Player == Null) continue; // FIXME EG : si le joueur déco avant la fin, on ne lui donne pas ses LP.
+		
+		declare CSmScore Score <=> (Player as CSmPlayer).Score;
+		declare Integer PlayerId = GetPlayerId(Player);
+		declare Integer CastlesCount = World::CountPlayerCastles(PlayerId);
+		
+		if (IsVassal(PlayerId)) {
+			if (!World::HasCastles(PlayerId) && !HasEndCombinedScoreSaved(PlayerId)) SaveEndCombinedScore(PlayerId);
+
+			declare Integer	MasterId			= GetMasterId(PlayerId);
+			declare CPlayer MasterPlayer = GetPlayer(MasterId);
+			
+			declare Text	MasterName;
+			if(MasterPlayer == Null) MasterName = _("Master");
+			else MasterName = GetPlayer(MasterId).User.Name; // FIXME EG : si le master déco avant la fin, on ne trouve plus son nom.
+			
+			declare Domination = ML::NearestInteger((CastlesCount / (CastlesTotal * 1.)) * 100.);
+			
+			ST2::SetColValue("Master", Score, MasterName);
+			ST2::SetColValue("Planets", Score, TL::ToText(CastlesCount));
+			ST2::SetColValue("Domination", Score, Domination^"%");
+			
+			if (!Vassals.existskey(MasterId)) Vassals[MasterId] = Integer[Integer];
+			Vassals[MasterId][PlayerId] = CastlesCount;
+		} else {
+			declare PlanetsCount = CastlesCount;
+			if (HasVassals(PlayerId)) {
+				declare VassalsIds = GetMasterVassals(PlayerId);
+				foreach (VassalId in VassalsIds) {
+					PlanetsCount += World::CountPlayerCastles(VassalId);
+				}
+			}
+			
+			declare Domination = ML::NearestInteger((PlanetsCount / (CastlesTotal * 1.)) * 100.);
+			
+			ST2::SetColValue("Master", Score, "-");
+			ST2::SetColValue("Planets", Score, TL::ToText(PlanetsCount));
+			ST2::SetColValue("Domination", Score, Domination^"%");
+			
+			Masters[PlayerId] = PlanetsCount;
+		}
+	}
+	
+	Log::Log("""[Warlords] Compute player scores""");
+	Masters = Masters.sort();
+	declare I = 1;
+	foreach (MasterId => Planets in Masters) {
+		declare MasterPoints = I * CastlesTotal;
+		I += 1;
+		
+		declare Master <=> GetPlayer(MasterId);
+		if (Master != Null) {
+			(Master as CSmPlayer).Score.Points = MasterPoints;
+		}
+		
+		Log::Log("""[Warlords] Master {{{MasterId}}} has {{{MasterPoints}}} points""");
+		
+		if (Vassals.existskey(MasterId)) {
+			declare SortedVassals = Vassals[MasterId].sort();
+			foreach (VassalId => VassalPlanets in SortedVassals) {
+				declare VassalPoints = MasterPoints - CastlesTotal + VassalPlanets;
+				
+				declare Vassal <=> GetPlayer(VassalId);
+				if (Vassal != Null) {
+					(Vassal as CSmPlayer).Score.Points = VassalPoints;
+				}
+				
+				Log::Log("""[Warlords] Vassal {{{VassalId}}} has {{{VassalPoints}}} points""");
+			}
+		}
+	}
+}
+
+// ---------------------------------- //
+/**
+ * Resets the scores
+ */
+Void ResetScores() {
+	foreach (PlayerIdent in G_InitializedPlayers) {
+		if (!IsConnected(PlayerIdent)) continue;
+		
+		declare CPlayer Player = GetPlayer(PlayerIdent);
+		declare Integer PlayerId = GetPlayerId(Player);
+		
+		declare CSmPlayer SmPlayer = (Player as CSmPlayer);
+		SmPlayer.Score.Clear();
+	}
+}
+
+// ---------------------------------- //
+/**
+ * Unloads the lib.
+ */
+Void Unload() {
+	declare netwrite Text[Integer]		Srv_Player_G_Players				for Teams[0];
+	declare netwrite Integer[Integer]	Srv_Player_G_Vassals				for Teams[0];
+	declare netwrite Integer[Integer]	Srv_Player_G_PlayersGold			for Teams[0];
+	declare netwrite Integer[Integer]	 Srv_Player_G_StartSavedCombinedScore	for Teams[0];
+	declare netwrite Integer[Integer]	Srv_Player_G_EndSavedCombinedScore	for Teams[0];
+
+	foreach (Player in Players) {
+		declare netwrite Integer Srv_Player_P_ClearBetTimestamp for Player;
+		
+		Srv_Player_P_ClearBetTimestamp = Now;
+	}
+	
+	Srv_Player_G_Players.clear();
+	Srv_Player_G_Vassals.clear();
+	Srv_Player_G_PlayersGold.clear();
+	G_InitializedPlayers.clear();
+	 Srv_Player_G_StartSavedCombinedScore.clear();
+	Srv_Player_G_EndSavedCombinedScore.clear();
+}
+
+// ---------------------------------- //
+/**
+ * Loads the lib.
+ */
+Void Load(Boolean _AntiVassalRevolt) {
+	Unload();
+	G_AntiVassalRevolt = _AntiVassalRevolt;
+}
