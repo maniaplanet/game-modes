@@ -3,6 +3,11 @@ Maniaplanet scripts and resources
 
 Scripts and resources used by the Maniaplanet game modes and libraries.
 
+Changelog
+---------
+
+The changelog is available [here](https://github.com/maniaplanet/game-modes/releases).
+
 Versions
 --------
 
