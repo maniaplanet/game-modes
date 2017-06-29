@@ -1,0 +1,397 @@
+/**
+ *	UI Events library
+ */
+#Const	Version			"2017-03-12"
+#Const	ScriptName	"Libs/Nadeo/Events_UI.Script.txt"
+
+// ---------------------------------- //
+// Libraries
+// ---------------------------------- //
+#Include "Libs/Nadeo/XmlRpc2.Script.txt" as XmlRpc
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+/// Callbacks
+#Const C_Callback_Event_Default								"UI.Event.Default"
+#Const C_Callback_Event_OnModuleCustomEvent 		"UI.Event.OnModuleCustomEvent"
+#Const C_Callback_Event_OnModuleShowRequest 		"UI.Event.OnModuleShowRequest"
+#Const C_Callback_Event_OnModuleHideRequest 		"UI.Event.OnModuleHideRequest"
+#Const C_Callback_Event_OnModuleStorePurchase 	"UI.Event.OnModuleStorePurchase"
+#Const C_Callback_Event_OnModuleInventoryDrop 	"UI.Event.OnModuleInventoryDrop"
+#Const C_Callback_Event_OnModuleInventoryEquip "UI.Event.OnModuleInventoryEquip"
+
+// ---------------------------------- //
+// Globales
+// ---------------------------------- //
+declare Ident[] G_PassedOnEvents; ///< Array of passed on events
+declare Ident[] G_DiscardedEvents; ///< Array of discarded events
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+// ---------------------------------- //
+// Private
+// ---------------------------------- //
+// ---------------------------------- //
+/** Get the login of a player if it exists
+ *	or an empty Text otherwise
+ *
+ *	@param	_UI												The UI of the player
+ *
+ *	@return														The player's login if it exists, an empty Text otherwise
+ */
+Text Private_GetLogin(CUIConfig _UI) {
+	foreach (Player in AllPlayers) {
+		if (_UI == UIManager.GetUI(Player)) {
+			return Player.User.Login;
+		}
+	}
+	
+	return "";
+}
+
+Void Private_XmlRpc_Event_Default(CUIConfigEvent _Event) {
+	if (_Event == Null) return;
+	
+	declare JSON = """{
+	"time": {{{dump(Now)}}},
+	"type": "{{{dump(_Event.Type)}}}"
+}""";
+	XmlRpc::SendCallback(C_Callback_Event_Default, [JSON]);
+}
+Void Private_XmlRpc_Event_OnModuleCustomEvent(CUIConfigEvent _Event) {
+	if (_Event == Null) return;
+	
+	declare Param2 = "";
+	foreach (Param in _Event.Param2) {
+		if (Param2 == "") Param2 ^= "["^XmlRpc::JsonGetText(Param);
+		else Param2 ^= ", "^XmlRpc::JsonGetText(Param);
+	}
+	if (Param2 == "") Param2 = "[]";
+	else Param2 ^= "]";
+	
+	declare JSON = """{
+	"time": {{{dump(Now)}}},
+	"login": {{{XmlRpc::JsonGetText(Private_GetLogin(_Event.UIConfig))}}},
+	"moduletype": "{{{dump(_Event.ModuleType)}}}",
+	"param1": {{{XmlRpc::JsonGetText(_Event.Param1)}}},
+	"param2": {{{Param2}}}
+}""";
+	XmlRpc::SendCallback(C_Callback_Event_OnModuleCustomEvent, [JSON]);
+}
+Void Private_XmlRpc_Event_OnModuleShowRequest(CUIConfigEvent _Event) {
+	if (_Event == Null) return;
+	
+	declare JSON = """{
+	"time": {{{dump(Now)}}},
+	"login": {{{XmlRpc::JsonGetText(Private_GetLogin(_Event.UIConfig))}}},
+	"moduletype": "{{{dump(_Event.ModuleType)}}}"
+}""";
+	XmlRpc::SendCallback(C_Callback_Event_OnModuleShowRequest, [JSON]);
+}
+Void Private_XmlRpc_Event_OnModuleHideRequest(CUIConfigEvent _Event) {
+	if (_Event == Null) return;
+	
+	declare JSON = """{
+	"time": {{{dump(Now)}}},
+	"login": {{{XmlRpc::JsonGetText(Private_GetLogin(_Event.UIConfig))}}},
+	"moduletype": "{{{dump(_Event.ModuleType)}}}"
+}""";
+	XmlRpc::SendCallback(C_Callback_Event_OnModuleHideRequest, [JSON]);
+}
+Void Private_XmlRpc_Event_OnModuleStorePurchase(CUIConfigEvent _Event) {
+	if (_Event == Null) return;
+	
+	declare JSON = """{
+	"time": {{{dump(Now)}}},
+	"login": {{{XmlRpc::JsonGetText(Private_GetLogin(_Event.UIConfig))}}},
+	"item": {{{XmlRpc::JsonGetText(_Event.ItemUrl)}}},
+	"quantity": {{{dump(_Event.Quantity)}}}
+}""";
+	XmlRpc::SendCallback(C_Callback_Event_OnModuleStorePurchase, [JSON]);
+}
+Void Private_XmlRpc_Event_OnModuleInventoryDrop(CUIConfigEvent _Event) {
+	if (_Event == Null) return;
+	
+	declare JSON = """{
+	"time": {{{dump(Now)}}},
+	"login": {{{XmlRpc::JsonGetText(Private_GetLogin(_Event.UIConfig))}}},
+	"item": {{{XmlRpc::JsonGetText(_Event.ItemUrl)}}}
+}""";
+	XmlRpc::SendCallback(C_Callback_Event_OnModuleInventoryDrop, [JSON]);
+}
+Void Private_XmlRpc_Event_OnModuleInventoryEquip(CUIConfigEvent _Event) {
+	if (_Event == Null) return;
+	
+	declare JSON = """{
+	"time": {{{dump(Now)}}},
+	"login": {{{XmlRpc::JsonGetText(Private_GetLogin(_Event.UIConfig))}}},
+	"item": {{{XmlRpc::JsonGetText(_Event.ItemUrl)}}}
+}""";
+	XmlRpc::SendCallback(C_Callback_Event_OnModuleInventoryEquip, [JSON]);
+}
+
+// ---------------------------------- //
+/** Pass on an event
+ *
+ *	@param	_Event										The event to pass on
+ */
+Void Private_PassOn(CUIConfigEvent _Event) {
+	This.PassOn(_Event);
+	
+	if (_Event != Null) {
+		declare Removed = G_DiscardedEvents.remove(_Event.Id);
+		if (!G_PassedOnEvents.exists(_Event.Id)) G_PassedOnEvents.add(_Event.Id);
+	
+		switch (_Event.Type) {
+			case CUIConfigEvent::EType::OnModuleCustomEvent			: Private_XmlRpc_Event_OnModuleCustomEvent(_Event);
+			case CUIConfigEvent::EType::OnModuleShowRequest			: Private_XmlRpc_Event_OnModuleShowRequest(_Event);
+			case CUIConfigEvent::EType::OnModuleHideRequest			: Private_XmlRpc_Event_OnModuleHideRequest(_Event);
+			case CUIConfigEvent::EType::OnModuleStorePurchase		: Private_XmlRpc_Event_OnModuleStorePurchase(_Event);
+			case CUIConfigEvent::EType::OnModuleInventoryDrop		: Private_XmlRpc_Event_OnModuleInventoryDrop(_Event);
+			case CUIConfigEvent::EType::OnModuleInventoryEquip	: Private_XmlRpc_Event_OnModuleInventoryEquip(_Event);
+			default: Private_XmlRpc_Event_Default(_Event);
+		}
+	}
+}
+
+// ---------------------------------- //
+/** Discard an event
+ *
+ *	@param	_Event										The event to discard
+ */
+Void Private_Discard(CUIConfigEvent _Event) {
+	This.Discard(_Event);
+	
+	if (_Event != Null) {
+		declare Removed = G_PassedOnEvents.remove(_Event.Id);
+		if (!G_DiscardedEvents.exists(_Event.Id)) G_DiscardedEvents.add(_Event.Id);
+	}
+}
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+// ---------------------------------- //
+/**	Return the version number of the script
+ *
+ *	@return														The version number of the script
+ */
+Text GetScriptVersion() {
+	return Version;
+}
+
+// ---------------------------------- //
+/**	Return the name of the script
+ *
+ *	@return														The name of the script
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+// ---------------------------------- //
+/** Pass on an event
+ *
+ *	@param	_Event										The event to pass on
+ */
+Void Valid(CUIConfigEvent _Event) {
+	if (_Event == Null) return;
+	
+	Private_PassOn(_Event);
+}
+
+// ---------------------------------- //
+/** Discard an event
+ *
+ *	@param	_Event										The event to discard
+ */
+Void Invalid(CUIConfigEvent _Event) {
+	if (_Event == Null) return;
+	
+	Private_Discard(_Event);
+}
+
+// ---------------------------------- //
+/** Check if the PassOn() function was
+ *	called on the given event
+ *
+ *	@param	_Event										The event to check
+ *
+ *	@return														True if the event was passed on,
+ *																		False otherwise
+ */
+Boolean Validated(CUIConfigEvent _Event) {
+	if (_Event == Null) return False;
+	return G_PassedOnEvents.exists(_Event.Id);
+}
+
+// ---------------------------------- //
+/** Check if the Discard() function was
+ *	called on the given event
+ *
+ *	@param	_Event										The event to check
+ *
+ *	@return														True if the event was discarded,
+ *																		False otherwise
+ */
+Boolean Invalidated(CUIConfigEvent _Event) {
+	if (_Event == Null) return False;
+	return G_DiscardedEvents.exists(_Event.Id);
+}
+
+// ---------------------------------- //
+/** Check if an event was processed
+ *
+ *	@param	_Event										The event to check
+ *
+ *	@return														True if the event was already processed, False otherwise
+ */
+Boolean Processed(CUIConfigEvent _Event) {
+	if (_Event == Null) return False;
+	return G_PassedOnEvents.exists(_Event.Id) || G_DiscardedEvents.exists(_Event.Id);
+}
+
+// ---------------------------------- //
+/// Function to call at each yield
+Void Yield() {
+	G_PassedOnEvents.clear();
+	G_DiscardedEvents.clear();
+}
+
+// ---------------------------------- //
+/// Unload the library
+Void Unload() {
+	G_PassedOnEvents.clear();
+	G_DiscardedEvents.clear();
+	
+	XmlRpc::UnregisterCallback(C_Callback_Event_OnModuleCustomEvent);
+	XmlRpc::UnregisterCallback(C_Callback_Event_OnModuleShowRequest);
+	XmlRpc::UnregisterCallback(C_Callback_Event_OnModuleHideRequest);
+	XmlRpc::UnregisterCallback(C_Callback_Event_OnModuleStorePurchase);
+	XmlRpc::UnregisterCallback(C_Callback_Event_OnModuleInventoryDrop);
+	XmlRpc::UnregisterCallback(C_Callback_Event_OnModuleInventoryEquip);
+}
+
+// ---------------------------------- //
+/// Load the library
+Void Load() {
+	Unload();
+	
+	// Register callbacks
+	XmlRpc::RegisterCallback(C_Callback_Event_Default, """
+* Name: {{{C_Callback_Event_Default}}}
+* Type: CallbackArray
+* Description: Callback sent when the event type is not yet supported by the XmlRpc library.
+* Data:
+	- Version >=2.0.0:
+	```
+	[
+		"{
+			"time": 123456, //< Server time when the event occured,
+			"type": "::EType::EventType" //< The type of event
+		}"
+	]
+	```
+	""");
+	XmlRpc::RegisterCallback(C_Callback_Event_OnModuleCustomEvent, """
+* Name: {{{C_Callback_Event_OnModuleCustomEvent}}}
+* Type: CallbackArray
+* Description: Callback sent when a module triggers a custom event.
+* Data:
+	- Version >=2.0.0:
+	```
+	[
+		"{
+			"time": 123456 //< Server time when the event occured,
+			"login": "PlayerLogin", //< Login of the player who requested a new action
+			"moduletype": "EModuleType::Store", //< The type of module that triggered the event
+			"param1": "SomeParam", //< First custom param of the event
+			"param2":["Some", "Other", "Params"] //< Second custom param of the event
+		}"
+	]
+	```
+	""");
+	XmlRpc::RegisterCallback(C_Callback_Event_OnModuleShowRequest, """
+* Name: {{{C_Callback_Event_OnModuleShowRequest}}}
+* Type: CallbackArray
+* Description: Callback sent when a module requests to be shown.
+* Data:
+	- Version >=2.0.0:
+	```
+	[
+		"{
+			"time": 123456 //< Server time when the event occured,
+			"login": "PlayerLogin", //< Login of the player who received the request
+			"moduletype": "EModuleType::Store" //< The type of module that sent the request
+		}"
+	]
+	```
+	""");
+	XmlRpc::RegisterCallback(C_Callback_Event_OnModuleHideRequest, """
+* Name: {{{C_Callback_Event_OnModuleHideRequest}}}
+* Type: CallbackArray
+* Description: Callback sent when a module requests to be hidden.
+* Data:
+	- Version >=2.0.0:
+	```
+	[
+		"{
+			"time": 123456 //< Server time when the event occured,
+			"login": "PlayerLogin", //< Login of the player who received the request
+			"moduletype": "EModuleType::Store" //< The type of module that sent the request
+		}"
+	]
+	```
+	""");
+	XmlRpc::RegisterCallback(C_Callback_Event_OnModuleStorePurchase, """
+* Name: {{{C_Callback_Event_OnModuleStorePurchase}}}
+* Type: CallbackArray
+* Description: Callback sent when a player buys something in the store.
+* Data:
+	- Version >=2.0.0:
+	```
+	[
+		"{
+			"time": 123456 //< Server time when the event occured,
+			"login": "PlayerLogin", //< Login of the player who bought something
+			"item": "ItemName", //< The name of the item
+			"quantity": "5" //< The amount of items bought
+		}"
+	]
+	```
+	""");
+	XmlRpc::RegisterCallback(C_Callback_Event_OnModuleInventoryDrop, """
+* Name: {{{C_Callback_Event_OnModuleInventoryDrop}}}
+* Type: CallbackArray
+* Description: Callback sent when a player drops an item from its inventory.
+* Data:
+	- Version >=2.0.0:
+	```
+	[
+		"{
+			"time": 123456 //< Server time when the event occured,
+			"login": "PlayerLogin", //< Login of the player who dropped the item
+			"item": "ItemName" //< The name of the item
+		}"
+	]
+	```
+	""");
+	XmlRpc::RegisterCallback(C_Callback_Event_OnModuleInventoryEquip, """
+* Name: {{{C_Callback_Event_OnModuleInventoryEquip}}}
+* Type: CallbackArray
+* Description: Callback sent when a player equips an item from its inventory.
+* Data:
+	- Version >=2.0.0:
+	```
+	[
+		"{
+			"time": 123456 //< Server time when the event occured,
+			"login": "PlayerLogin", //< Login of the player who equipped the item
+			"item": "ItemName" //< The name of the item
+		}"
+	]
+	```
+	""");
+}

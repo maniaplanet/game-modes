@@ -1,0 +1,250 @@
+/**
+ *	Rounds base mode
+ */
+#Extends "Modes/TrackMania/Base/ModeTrackmania.Script.txt"
+
+#Const	RoundsBaseVersion			"2017-05-12"
+#Const	RoundsBaseScriptName	"Modes/TrackMania/RoundsBase2.Script.txt"
+// ---------------------------------- //
+// Libraries
+// ---------------------------------- //
+#Include "TextLib" as RB_TL
+
+// ---------------------------------- //
+// Settings
+// ---------------------------------- //
+#Setting S_PointsLimit 			100		as _("Points limit : ")
+#Setting S_FinishTimeout			-1		as _("Finish timeout :")
+#Setting S_UseAlternateRules	False	as _("Use alternate rules :")
+#Setting S_ForceLapsNb				-1		as _("Force number of laps :")
+#Setting S_DisplayTimeDiff		False	as _("Display time difference at checkpoint :")
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_PointsRepartition [10, 6, 4, 3, 2, 1]	///< Default points repartition in rounds based modes
+#Const C_Method_ForceEndRound "Trackmania.ForceEndRound"
+
+// ---------------------------------- //
+// Globales
+// ---------------------------------- //
+declare Integer G_RoundStartTime; ///< Start time of the current round
+
+// ---------------------------------- //
+// Extends
+// ---------------------------------- //
+***Match_LogVersion***
+***
+MB_LogVersion(RoundsBaseScriptName, RoundsBaseVersion);
+***
+
+***Match_LoadLibraries***
+***
+XmlRpc::RegisterMethod(C_Method_ForceEndRound, """
+* Name: {{{C_Method_ForceEndRound}}}
+* Type: TriggerModeScriptEventArray
+* Description: Stop the current round. Only available in Cup, Rounds and Team modes.
+* Data:
+	- Version >=2.0.0:
+	```
+	[]
+	```
+	""");
+***
+
+***Match_UnloadLibraries***
+***
+XmlRpc::UnregisterMethod(C_Method_ForceEndRound);
+***
+
+***Match_StartServer***
+***
+// ---------------------------------- //
+// Force round/lap synchro of the cars
+// In time attack mode the synchro of the car is less strict, 
+// creating a small delay between the real position of the player 
+// and the position of his car on the screen
+UiRounds = True;
+UiLaps = True;
+
+declare Integer[] Rounds_PointsRepartitionBackUp for This;
+// Reload XmlRpc or load default values
+if (Rounds_PointsRepartitionBackUp.count > 0) {
+	Scores::SetPointsRepartition(Rounds_PointsRepartitionBackUp);
+} else {
+	Scores::SetPointsRepartition(C_PointsRepartition);
+}
+
+UI::LoadModules([
+	UIModules::C_Module_TimeGap,
+	UIModules::C_Module_SmallScoresTable,
+	UIModules::C_Module_Chrono,
+	UIModules::C_Module_CheckpointTime,
+	UIModules::C_Module_PrevBestTime,
+	UIModules::C_Module_SpeedAndDistance,
+	UIModules::C_Module_Countdown,
+	UIModules::C_Module_Laps,
+	UIModules::C_Module_MapInfo,
+	UIModules::C_Module_MapRanking,
+	UIModules::C_Module_LiveInfo,
+	UIModules::C_Module_SpectatorInfo
+]);
+UI::DisplayTimeDiff(S_DisplayTimeDiff);
+***
+
+***Match_InitMap***
+***
+SetLapsNb(S_ForceLapsNb);
+***
+
+***Match_StartMap***
+***
+SetLapsNb(S_ForceLapsNb);
+***
+
+***Rounds_CanSpawn***
+***
+foreach (Score in Scores) {
+	declare CanSpawn for Score = True;
+	if (MM_IsMatchServer()) {
+		declare Player <=> TM::GetPlayer(Score.User.Login);
+		CanSpawn = MM_PlayerIsAllowedToPlay(Player);
+	} else {
+		CanSpawn = True;
+	}
+}
+***
+
+***Match_InitRound***
+***
+declare ForceEndRound = False;
+***
+
+***Match_StartRound***
+***
+// ---------------------------------- //
+// Initialize round
+UIManager.UIAll.UISequence = CUIConfig::EUISequence::Playing;
+G_RoundStartTime = Now + 3000;
+if (S_UseAlternateRules) CutOffTimeLimit = GetFinishTimeout();
+else CutOffTimeLimit = -1;
+SetLapsNb(S_ForceLapsNb);
+ForceEndRound = False;
+
+// ---------------------------------- //
+// Initialize scores
+foreach (Score in Scores) {
+	Scores::SetPlayerPrevRace(Score, Null);
+	Scores::SetPlayerRoundPoints(Score, 0);
+}
+
+// ---------------------------------- //
+// Set the players who can spawn
+---Rounds_CanSpawn---
+
+// ---------------------------------- //
+// Spawn players for the race
+foreach (Player in Players) {
+	if (Player.Score == Null) continue;
+	
+	declare CanSpawn for Player.Score = True;
+	if (CanSpawn) {
+		if (UseClans) SetPlayerClan(Player, MM_GetRequestedClan(Player));
+		TM::StartRace(Player, G_RoundStartTime);
+		CanSpawn = False;
+	} else {
+		TM::WaitRace(Player);
+	}
+}
+***
+
+***Rounds_PlayLoopSpawnPlayers***
+***
+// ---------------------------------- //
+// Spawn allowed players
+foreach (Player in Players) {
+	if (Player.Score == Null) continue;
+	
+	declare CanSpawn for Player.Score = True;
+	if (TM::IsWaiting(Player) && CanSpawn) {
+		if (MM_IsMatchServer()) {
+			if (MM_PlayerIsAllowedToPlay(Player)) {
+				if (UseClans) SetPlayerClan(Player, MM_GetRequestedClan(Player));
+				TM::StartRace(Player, G_RoundStartTime);
+			}
+		} else {
+			if (UseClans) SetPlayerClan(Player, MM_GetRequestedClan(Player));
+			TM::StartRace(Player, G_RoundStartTime);
+		}
+		CanSpawn = False;
+	}
+}
+***
+
+***Match_Yield***
+***
+foreach (Event in XmlRpc.PendingEvents) {
+	if (Event.Type == CXmlRpcEvent::EType::CallbackArray) {
+		switch (Event.ParamArray1) {
+			case Scores::C_Method_SetPointsRepartition: {
+				declare Integer[] Rounds_PointsRepartitionBackUp for This;
+				Rounds_PointsRepartitionBackUp = Scores::GetPointsRepartition();
+			}
+		}
+	}
+}
+***
+
+***Match_PlayLoop***
+***
+// ---------------------------------- //
+// Spawn players joining during the round
+---Rounds_PlayLoopSpawnPlayers---
+
+// ---------------------------------- //
+// Manage XmlRpc events
+foreach (Event in XmlRpc.PendingEvents) {
+	if (Event.Type == CXmlRpcEvent::EType::CallbackArray) {
+		switch (Event.ParamArray1) {
+			case C_Method_ForceEndRound: {
+				ForceEndRound = True;
+			}
+		}
+	}
+}
+
+// ---------------------------------- //
+// End the round 
+// If All players finished
+if (Players.count > 0 && PlayersRacing.count <= 0) MB_StopRound();
+// If time limit is reached
+if (CutOffTimeLimit > 0 && Now >= CutOffTimeLimit) MB_StopRound();
+// If forced end round
+if (ForceEndRound) MB_StopRound();
+***
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+// ---------------------------------- //
+// Display a message if the round was skipped
+Void ForcedEndRoundSequence() {
+	UIManager.UIAll.UISequence = CUIConfig::EUISequence::EndRound;
+	UIManager.UIAll.BigMessage = _("Round skipped");
+	MB_Sleep(3000);
+	UIManager.UIAll.BigMessage = "";
+	UIManager.UIAll.UISequence = CUIConfig::EUISequence::Playing;
+}
+
+// ---------------------------------- //
+/** Set the number of laps to play on the track
+ *
+ *	@param	_LapsNb										The number of laps
+ */
+Void SetLapsNb(Integer _LapsNb) {
+	if (_LapsNb > 0) {
+		NbLaps = _LapsNb;
+	} else {
+		NbLaps = -1;
+	}
+}

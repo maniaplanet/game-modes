@@ -1,0 +1,216 @@
+/**
+ *	Library to manage Passive AFK players
+ */
+#Const Version		"2014-10-15"
+#Const ScriptName	"AFK.Script.txt"
+
+#Include "TextLib" as TL
+#Include "Libs/Nadeo/ShootMania/XmlRpc.Script.txt" as XmlRpc
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_LibAFK_IdleTimeLimit	90000 	///< after 1'30 of inactivity, a player is considered AFK
+#Const C_LibAFK_SpawnTimeLimit	15000 	///< A player cannot be considered AFK during 15 s. after spawning
+#Const C_LibAFK_CheckInterval	10000	///< Time interval between automatic AFK players check
+#Const C_LibAFK_ForceSpec		True	///< Force the player on spectator when AFK
+#Const C_LibAFK_IdleThreshold	1000	///< Minimum idle time to avoid false positive
+
+// ---------------------------------- //
+// Globales
+// ---------------------------------- //
+declare Integer G_LibAFK_IdleTimeLimit;
+declare Integer G_LibAFK_SpawnTimeLimit;
+declare Integer G_LibAFK_CheckInterval;
+declare Integer G_LibAFK_NextCheck;
+declare Boolean G_LibAFK_ForceSpec;
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+// ---------------------------------- //
+/** Return the version number of the script
+ *
+ *	@return		The version number of the script
+ */
+Text GetScriptVersion() {
+	return Version;
+}
+
+// ---------------------------------- //
+/** Return the name of the script
+ *
+ *	@return		The name of the script
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+// ---------------------------------- //
+/// Unload the library
+Void Unload() {
+	XmlRpc::UnregisterCallback("LibAFK_IsAFK");
+	XmlRpc::UnregisterCallback("LibAFK_Properties");
+}
+
+// ---------------------------------- //
+/// Load the library
+Void Load() {
+	Unload();
+	
+	G_LibAFK_IdleTimeLimit = C_LibAFK_IdleTimeLimit;
+	G_LibAFK_SpawnTimeLimit = C_LibAFK_SpawnTimeLimit;
+	G_LibAFK_CheckInterval = C_LibAFK_CheckInterval;
+	G_LibAFK_ForceSpec = C_LibAFK_ForceSpec;
+	G_LibAFK_NextCheck = Now;
+	
+XmlRpc::RegisterCallback("LibAFK_IsAFK", """
+* Data : An array with the login of the AFK player
+* Example : ["Login"]
+* Note : This callback is sent when the AFK library detects an AFK player, it will be sent until the player is forced into spectator mode
+""");
+
+XmlRpc::RegisterCallback("LibAFK_Properties", """
+* Data : An array with the properties of the AFK library
+* Example : ["90000", "15000", "10000", "True"]
+* Note :
+    * IdleTimeLimit -> Time after which a player is considered to be AFK
+    * SpawnTimeLimit -> Time after spawn before which a player can't be considered to be AFK
+    * CheckInterval -> Time between each AFK check
+    * ForceSpec -> Let the library force the AFK player into spectator mode
+""");
+}
+
+// ---------------------------------- //
+/** Check if a player is AFK
+ *	@param	_Player				The player to check
+ *	@param	_MaxIdleDuration	Time of inactivity to be considered AFK
+ *	@param	_SpawnTimeMercy		Time after spawning during which one can not be considered AFK
+ */
+Boolean IsAFK(CSmPlayer _Player, Integer _MaxIdleDuration, Integer _SpawnTimeMercy) {
+	if(_Player.SpawnStatus != CSmPlayer::ESpawnStatus::Spawned) return False;
+	declare UI <=> UIManager.GetUI(_Player);
+	// not for bots
+	if (UI == Null) return False;
+	if ((UI.UISequence != CUIConfig::EUISequence::Playing) && (UI.UISequence != CUIConfig::EUISequence::None)) return False;
+	if (UI.ForceSpectator) return False;
+	if ((Now - _Player.StartTime) < _SpawnTimeMercy) return False; 
+	return (_Player.IdleDuration > C_LibAFK_IdleThreshold && _Player.IdleDuration > _MaxIdleDuration);
+}
+
+// ---------------------------------- //
+/**	Try to force AFK players to spectators
+ * 
+ *	@param	_MaxIdleDuration	In milliSec., time of inactivity to be considered AFK
+ *	@param	_SpawnTimeMercy		In milliSec., time after spawning during which one can not be considered AFK
+ */
+Void ManageAFKPlayers(Integer _MaxIdleDuration, Integer _SpawnTimeMercy) {
+	foreach (Player in Players) {
+		declare Boolean PlayerIsAFK = IsAFK(Player, _MaxIdleDuration, _SpawnTimeMercy);
+		if (PlayerIsAFK) {
+			declare UI <=> UIManager.GetUI(Player);
+			if (UI != Null) { // not for bots
+				UIManager.UIAll.SendNotice(
+					TL::Compose(_("$<%1$> is inactive"), Player.User.Name),
+					CUIConfig::ENoticeLevel::PlayerInfo, Null, CUIConfig::EAvatarVariant::Default, 
+					CUIConfig::EUISound::Silence, 0
+				);
+				if (G_LibAFK_ForceSpec) Users_RequestSwitchToSpectator(Player.User);
+				if (XmlRpc::CallbackIsAllowed("LibAFK_IsAFK")) XmlRpc::SendCallbackArray("LibAFK_IsAFK", [Player.User.Login]);
+			}
+		}
+	}
+}
+
+// ---------------------------------- //
+/// Try to force AFK players to spectators
+Void ManageAFKPlayers() {
+	ManageAFKPlayers(C_LibAFK_IdleTimeLimit, C_LibAFK_SpawnTimeLimit);
+}
+
+// ---------------------------------- //
+/** Update the idle time limit
+ *
+ *	@param	_Time		The new idle time limit
+ */
+Void SetIdleTimeLimit(Integer _Time) {
+	G_LibAFK_IdleTimeLimit = _Time;
+	if (G_LibAFK_IdleTimeLimit < 0) G_LibAFK_IdleTimeLimit = 0;
+}
+
+// ---------------------------------- //
+/** Get the current idle time limit
+ *
+ *	@return		The idle time limit
+ */
+Integer GetIdleTimeLimit() {
+	return G_LibAFK_IdleTimeLimit;
+}
+
+// ---------------------------------- //
+/** Update the spawn mercy time
+ *
+ *	@param	_Time		The new spawn mercy time
+ */
+Void SetSpawnTimeLimit(Integer _Time) {
+	G_LibAFK_SpawnTimeLimit = _Time;
+	if (G_LibAFK_SpawnTimeLimit < 0) G_LibAFK_SpawnTimeLimit = 0;
+}
+
+// ---------------------------------- //
+/** Update the check time interval
+ *
+ *	@param	_Interval		The new time interval
+ */
+Void SetCheckInterval(Integer _Interval) {
+	G_LibAFK_CheckInterval = _Interval;
+	if (G_LibAFK_CheckInterval < 0) G_LibAFK_CheckInterval = 0;
+}
+
+// ---------------------------------- //
+/** Update the force spec value
+ *
+ *	@param	_Interval		The new force spec value
+ */
+Void SetForceSpec(Boolean _ForceSpec) {
+	G_LibAFK_ForceSpec = _ForceSpec;
+}
+
+// ---------------------------------- //
+/// Manage the XmlRpc events
+Void XmlRpcLoop() {
+	foreach (Event in XmlRpc.PendingEvents) {
+		if (Event.ParamArray1 == "LibAFK_SetProperties") {
+			if (Event.ParamArray2.count != 4) continue;
+			SetIdleTimeLimit(TL::ToInteger(Event.ParamArray2[0]));
+			SetSpawnTimeLimit(TL::ToInteger(Event.ParamArray2[1]));
+			SetCheckInterval(TL::ToInteger(Event.ParamArray2[2]));
+			declare ForceSpec = True;
+			if (Event.ParamArray2[3] == "False" || Event.ParamArray2[3] == "false") ForceSpec = False;
+			SetForceSpec(ForceSpec);
+		} else if (Event.Param1 == "LibAFK_GetProperties") {
+			if (XmlRpc::CallbackIsAllowed("LibAFK_Properties")) {
+				XmlRpc::SendCallbackArray("LibAFK_Properties", [
+					TL::ToText(G_LibAFK_IdleTimeLimit), 
+					TL::ToText(G_LibAFK_SpawnTimeLimit), 
+					TL::ToText(G_LibAFK_CheckInterval),
+					TL::ToText(G_LibAFK_ForceSpec)
+				]);
+			}
+		}
+	}
+}
+
+// ---------------------------------- //
+/** Try to force AFK players to spectators
+ *	This function can be piloted through XmlRpc
+ */
+Void AutoManageAFKPlayers() {
+	if (G_LibAFK_NextCheck <= Now) {
+		G_LibAFK_NextCheck = Now + G_LibAFK_CheckInterval;
+		ManageAFKPlayers(G_LibAFK_IdleTimeLimit, G_LibAFK_SpawnTimeLimit);
+	}
+}

@@ -1,0 +1,1258 @@
+/**
+ *	Vote Map library
+ */
+
+#Const Version		"2012-12-17"
+#Const ScriptName	"Draft.Script.txt"
+
+#Include "TextLib" as TextLib
+
+/* ------------------------------------- */
+// Settings
+/* ------------------------------------- */
+#Const C_VoteFormat				[1, 2, 2, 1]	///< Order of vote
+#Const C_ItemsByPage			9				///< Maximum number of items on one page (PlayerList and MapList)
+#Const C_MapSelectionDuration	30000			///< Time before automatically selecting a map to ban
+#Const C_MapDisplayDuration		7000			///< Duration of the display of the selected maps
+#Const C_UIColors[
+	0 => "ffff",	///< Text color
+	1 => "cccf",	///< Line color
+	2 => "fff3",	///< Background 1
+	3 => "0007",	///< Background 2
+	4 => "000f",	///< ButtonOut
+	5 => "ffff",	///< ButtonOver
+	6 => "000a",	///< OnMouseOver
+	7 => "0000"		///< OnMouseOut
+]
+
+/* ------------------------------------- */
+// Globales
+/* ------------------------------------- */
+declare Ident				G_LibDraft_LayerDraftId;	///< Id of the Draft layer
+declare Ident[][Integer]	G_LibDraft_PlayersSelected;	///< Ids of the selected players
+declare Boolean[Integer]	G_LibDraft_TeamReady;		///< Ready state of each team
+declare Integer[Integer]	G_LibDraft_MapsSelected;	///< List of selected maps indexes
+declare Ident[Integer]		G_LibDraft_MapsSelectedId;	///< List of selected maps ids
+
+/* ------------------------------------- */
+// Functions
+/* ------------------------------------- */
+/* ------------------------------------- */
+/** Return the version number of the script
+ *
+ *	@return		The version number of the script
+ */
+Text GetScriptVersion() {
+	return Version;
+}
+
+/* ------------------------------------- */
+/** Return the name of the script
+ *
+ *	@return		The name of the script
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+/* ------------------------------------- */
+/// Load the library
+Void StartServer() {
+	declare LayerDraft <=> UIManager.UILayerCreate();
+	G_LibDraft_LayerDraftId		= LayerDraft.Id;
+	G_LibDraft_PlayersSelected	= [1 => Ident[], 2 => Ident[]];
+	G_LibDraft_TeamReady			= [1 => False, 2 => False];
+	G_LibDraft_MapsSelected		= Integer[Integer];
+	G_LibDraft_MapsSelectedId	= Ident[Integer];
+}
+
+/* ------------------------------------- */
+/// Unload the library
+Void EndServer() {
+	if (UIManager.UILayers.existskey(G_LibDraft_LayerDraftId)) UIManager.UILayerDestroy(UIManager.UILayers[G_LibDraft_LayerDraftId]);
+}
+
+/* ------------------------------------- */
+/** Add the draft layer to a player UI
+ *
+ *	@param	_Player		The player who'll receive the layer
+ */
+Void AttachLayerDraft(CSmPlayer _Player) {
+	declare UI <=> UIManager.GetUI(_Player);
+	if (UI == Null) return;
+	
+	if (!UI.UILayers.existskey(G_LibDraft_LayerDraftId)) {
+		UI.UILayers.add(UIManager.UILayers[G_LibDraft_LayerDraftId]);
+	}
+}
+
+/* ------------------------------------- */
+/** Remove the draft layer from a player
+ *
+ *	@param	_Player		The player who'll loose the layer
+ */
+Void DetachLayerDraft(CSmPlayer _Player) {
+	declare UI <=> UIManager.GetUI(_Player);
+	if (UI == Null) return;
+	
+	if (UI.UILayers.existskey(G_LibDraft_LayerDraftId)) {
+		declare Removed = UI.UILayers.remove(UIManager.UILayers[G_LibDraft_LayerDraftId]);
+	}
+}
+
+/* ------------------------------------- */
+/**	Get the current playlist
+ *
+ *	@return		The current playlist
+ */
+Ident[Integer] GetPlaylist() {
+	return G_LibDraft_MapsSelectedId;
+}
+
+/* ------------------------------------- */
+/** Get the n map in the playlist
+ *
+ *	@param	_MapNb		The order of the map to find
+ *
+ *	@return		The index of the requested map, -1 if this map doesn't exist
+ */
+Integer GetMapIndex(Integer _MapNb) {
+	if (G_LibDraft_MapsSelectedId.count <= 0) return -1;
+	
+	// Loop on the maplist to find the requested map
+	// eg: G_LibDraft_MapsSelectedId = [1 => 0, 2 => 10, 3 => 21], 
+	// if _MapNb == 5, then this function return 10
+	declare MapNb = _MapNb % G_LibDraft_MapsSelectedId.count;
+	if (MapNb == 0) MapNb = G_LibDraft_MapsSelectedId.count;
+	if (G_LibDraft_MapsSelectedId.existskey(MapNb)) {
+		foreach (Order => Map in MapList) {
+			if (Map.Id == G_LibDraft_MapsSelectedId[MapNb]) return Order;
+		}
+	}
+	
+	return -1;
+}
+
+/* ------------------------------------- */
+/** Set the selected players for map selection
+ *
+ *	@param	_Players	The selected players
+ */
+Void SetPlayersSelected(Ident[][Integer] _Players) {
+	G_LibDraft_PlayersSelected = _Players;
+}
+
+/* ------------------------------------- */
+/**	Get the MapSelection interface
+ *
+ *	@param	_BanNb		Number of map to ban
+ *	@param	_PickNb		Number of map to pick
+ *
+ *	@return			The MapSelection manialink interface
+ */
+Text CreateLayerMapSelection(Integer _BanNb, Integer _PickNb) {
+	declare MapPoolString = "";
+	declare MapClanString = [1 => "", 2 => ""];
+	declare MapDisplayString = "";
+	
+	for (I, 1, C_ItemsByPage) {
+		declare PosY = (I - 1) * -10;
+		MapPoolString ^= 
+"""
+<frame posn="0 {{{PosY}}} 0" id="Frame_Map_{{{I}}}">
+	<label posn="-50 0 21" sizen="5 9" textcolor="{{{C_UIColors[0]}}}" halign="right" valign="center" id="Label_MapOrder" />
+	<label posn="0 0 25" sizen="90 9" halign="center" valign="center" text="Map {{{I}}}" id="Label_MapName" />
+	<label posn="0 0 20" sizen="110 9" focusareacolor1="{{{C_UIColors[7]}}}" focusareacolor2="{{{C_UIColors[6]}}}" halign="center" valign="center" id="Label_MapPool_{{{I}}}" ScriptEvents="1" />
+	<quad posn="0 250 7" sizen="110 9" halign="center" valign="center" bgcolor="080e" id="Quad_MapPoolOn" />
+	<quad posn="0 250 6" sizen="110 9" halign="center" valign="center" bgcolor="700e" id="Quad_MapPoolOff" />
+	<quad posn="0 250 11" sizen="90 9" halign="center" valign="center" bgcolor="0709" id="Quad_MapPoolMultiOn" />
+	<quad posn="0 250 10" sizen="90 9" halign="center" valign="center" bgcolor="5009" id="Quad_MapPoolMultiOff" />
+	<quad posn="0 250 15" sizen="90 9" halign="center" valign="center" bgcolor="080e" id="Quad_MapPoolValidOn" />
+	<quad posn="0 250 16" sizen="90 9" halign="center" valign="center" bgcolor="700e" id="Quad_MapPoolValidOff" />
+</frame>
+""";
+	}
+	
+	for (J, 1, _PickNb) {
+		declare SizeX = 60;
+		declare PosX = ((_PickNb * SizeX) / -2) + (SizeX / 2) + ((J - 1) * SizeX);
+		MapDisplayString ^= 
+"""
+<frame posn="{{{PosX}}} 0 10">
+	<label posn="0 19 5" sizen="{{{SizeX - 5}}} 6" halign="center" valign="top" textprefix="$s" text="Map {{{J}}}" />
+	<label posn="0 7 6" sizen="{{{SizeX - 5}}} 6" textsize="4" halign="center" valign="bottom" id="Label_MapName_{{{J}}}" />
+	<label posn="0 0 1" sizen="{{{SizeX}}} 26" halign="center" valign="bottom" ScriptEvents="1" />
+	<quad posn="{{{-SizeX/2}}} 0 2" sizen="0.5 26" bgcolor="{{{C_UIColors[1]}}}" halign="center" valign="bottom" />
+	<quad posn="{{{ SizeX/2}}} 0 2" sizen="0.5 26" bgcolor="{{{C_UIColors[1]}}}" halign="center" valign="bottom" />
+</frame>
+""";
+	}
+	
+	for (I, 1, 2) {
+		for (J, 1, 8) {
+			declare PosY = (J - 1) * -12;
+			declare PosX1 = 0.;
+			declare PosX2 = 0.;
+			declare PosX3 = 0.;
+			if (I == 1) {
+				PosX1 = 0.;
+				PosX2 = 20.;
+				PosX3 = PosX1 - 2.5;
+			} else {
+				PosX1 = 0.;
+				PosX2 = -25.;
+				PosX3 = PosX1 + 2.5;
+			}
+			MapClanString[I] ^= 
+"""
+<frame posn="0 {{{PosY}}} 10" id="Frame_Player_{{{J}}}">
+	<!--<quad posn="0 -11.5 0" sizen="50 0.5" bgcolor="{{{C_UIColors[1]}}}" halign="center" />-->
+	<label posn="{{{PosX3}}} -3 2" sizen="45 5" halign="center" style="TextStaticMedium" id="Label_PlayerName" />
+	<label posn="{{{PosX1}}} -5.75 1" sizen="50 11.5" focusareacolor1="{{{C_UIColors[7]}}}" focusareacolor2="{{{C_UIColors[6]}}}" halign="center" valign="center" ScriptEvents="1" />
+	<quad posn="{{{PosX2}}} -3 4" sizen="5 5" style="Icons64x64_1" substyle="LvlGreen" id="Quad_IconReady" />
+	<quad posn="{{{PosX2}}} -3 5" sizen="5 5" style="Icons64x64_1" substyle="LvlRed" id="Quad_IconNotReady" />
+</frame>
+""";
+		}
+	}
+	
+	declare Team1Name = TextLib::MLEncode(Teams[0].ColorizedName);
+	declare Team2Name = TextLib::MLEncode(Teams[1].ColorizedName);
+
+	return """
+<manialink version="1" name="Lib_Draft:MapSelection">
+<script><!--
+	#Include "TextLib" as TextLib
+	
+	#Const C_MapsByPage {{{C_ItemsByPage}}}	///< Number of maps on one page
+	
+	declare Integer G_CurrentPage;	///< Number of the current page
+	
+	/* ------------------------------------- */
+	/// Update the map list UI
+	Void UpdateMapList(
+		Integer[Integer] _MapsBanned, 
+		Integer[Integer] _MapsSelected, 
+		Integer _SelectionValid, 
+		Integer[Text] _SelectionMulti,
+		Text[Integer] _MapsName,
+		Integer[Integer] _MapsIndex,
+		Integer _VotingClan
+	) {	
+		declare Banning = True;
+		if (_MapsBanned.count >= {{{_BanNb}}}) Banning = False;
+		
+		declare VoteCount = Integer[Integer];
+		foreach (MapIndex in _SelectionMulti) {
+			if (!VoteCount.existskey(MapIndex)) VoteCount[MapIndex] = 0;
+			VoteCount[MapIndex] += 1;
+		}
+		
+		for (I, 0, C_MapsByPage - 1) {
+			declare MlIndex = I + 1;
+			declare Frame_Map <=> (Page.GetFirstChild("Frame_Map_"^MlIndex) as CMlFrame);
+			if (Frame_Map == Null) continue;
+			
+			declare Quad_Off		<=> (Frame_Map.GetFirstChild("Quad_MapPoolOff") as CMlQuad);
+			declare Quad_On			<=> (Frame_Map.GetFirstChild("Quad_MapPoolOn") as CMlQuad);
+			declare Quad_MultiOn	<=> (Frame_Map.GetFirstChild("Quad_MapPoolMultiOn") as CMlQuad);
+			declare Quad_MultiOff	<=> (Frame_Map.GetFirstChild("Quad_MapPoolMultiOff") as CMlQuad);
+			declare Quad_ValidOn	<=> (Frame_Map.GetFirstChild("Quad_MapPoolValidOn") as CMlQuad);
+			declare Quad_ValidOff	<=> (Frame_Map.GetFirstChild("Quad_MapPoolValidOff") as CMlQuad);
+			declare Label_Name		<=> (Frame_Map.GetFirstChild("Label_MapName") as CMlLabel);
+			declare Label_NameBG	<=> (Frame_Map.GetFirstChild("Label_MapPool_"^MlIndex) as CMlLabel);
+			declare Label_Order		<=> (Frame_Map.GetFirstChild("Label_MapOrder") as CMlLabel);
+			
+			Quad_Off.PosnY = 0.;
+			Quad_On.PosnY = 0.;
+			Quad_MultiOff.PosnY = 0.;
+			Quad_MultiOn.PosnY = 0.;
+			Quad_ValidOff.PosnY = 0.;
+			Quad_ValidOn.PosnY = 0.;
+			
+			Quad_On.Hide();
+			Quad_Off.Hide();
+			Quad_MultiOn.Hide();
+			Quad_MultiOff.Hide();
+			Quad_ValidOn.Hide();
+			Quad_ValidOff.Hide();
+			Label_NameBG.Show();
+			Label_Order.Hide();
+			Label_Name.Show();
+			Label_Name.PosnX = 0.;
+			Label_Name.HorizontalAlign = CMlControl::AlignHorizontal::HCenter;
+			
+			declare MapIndex = -2;
+			declare ShiftedIndex = ((G_CurrentPage - 1) * C_MapsByPage) + I;
+			if (_MapsIndex.existskey(ShiftedIndex)) MapIndex = _MapsIndex[ShiftedIndex];
+			
+			if (_MapsBanned.exists(MapIndex)) {
+				Quad_Off.Show();
+				if (_MapsBanned.exists(MapIndex)) Label_NameBG.Hide();
+			} else if (_MapsSelected.exists(MapIndex)) {
+				Quad_On.Show();
+				if (_MapsSelected.exists(MapIndex)) Label_NameBG.Hide();
+			} else if (_SelectionMulti.exists(MapIndex)) {
+				if (Banning) {
+					Quad_MultiOff.Show();
+					if (MapIndex == _SelectionValid) Quad_ValidOff.Show();
+				} else {
+					Quad_MultiOn.Show();
+					if (MapIndex == _SelectionValid) Quad_ValidOn.Show();
+				}
+				Label_Order.Show();
+				Label_Order.SetText(TextLib::ToText(VoteCount[MapIndex]));
+			}
+			
+			if (_MapsName.existskey(MapIndex)) {
+				Frame_Map.Show();
+				Label_Name.SetText(_MapsName[MapIndex]);
+			} else {
+				Frame_Map.Hide();
+			}
+		}
+	}
+	
+	/* ------------------------------------- */
+	// Update players list
+	Void UpdatePlayerList(Text[][Integer] _Players, Text[][Integer] _Logins, Boolean[Text][Integer] _Ready, Integer _VotingClan) {
+		declare Frame_Team = [
+			1 => (Page.GetFirstChild("Team1") as CMlFrame),
+			2 => (Page.GetFirstChild("Team2") as CMlFrame)
+		];
+		
+		for (I, 1, 2) {
+			for (J, 1, 8) {
+				if (!_Players.existskey(I) || !_Logins.existskey(I)) continue;
+				
+				declare Frame_Player		<=> (Frame_Team[I].GetFirstChild("Frame_Player_"^J) as CMlFrame);
+				declare Label_PlayerName	<=> (Frame_Player.GetFirstChild("Label_PlayerName") as CMlLabel);
+				declare Quad_IconReady		<=> (Frame_Player.GetFirstChild("Quad_IconReady") as CMlQuad);
+				declare Quad_IconNotReady	<=> (Frame_Player.GetFirstChild("Quad_IconNotReady") as CMlQuad);
+				
+				if (_Players[I].existskey(J - 1) && _Logins[I].existskey(J - 1)) {
+					Frame_Player.Show();
+					Quad_IconReady.Hide();
+					Quad_IconNotReady.Show();
+					
+					Label_PlayerName.SetText("$s"^_Players[I][J - 1]);
+					if (
+						I == _VotingClan
+						&& _Ready[I].existskey(_Logins[I][J - 1])
+						&& _Ready[I][_Logins[I][J - 1]]
+					) {
+						Quad_IconReady.Show();
+						Quad_IconNotReady.Hide();
+					} else if (I != _VotingClan) {
+						Quad_IconNotReady.Hide();
+					}
+				} else {
+					Frame_Player.Hide();
+				}
+			}
+		}
+	}
+	
+	/* ------------------------------------- */
+	/** Easing function
+	 *
+	 *	@param	_Time		Current time
+	 *	@param	_StartPos	Starting position
+	 *	@param	_EndPos		Ending position
+	 *	@param	_Duration	Duration of the animation
+	 *	@param	_Damping	Damping at the start of the animation
+	 */
+	Real EaseInOutBack(Integer _Time, Real _StartPos, Real _EndPos, Integer _Duration, Real _Damping) {
+		declare Distance = (_EndPos - _StartPos) / 2.;
+		declare Progression = (_Time * 1.) / (_Duration / 2.);
+		declare Damping = _Damping * 1.525;
+		
+		// In
+		if (Progression < 1.) {
+			return Distance * Progression * Progression * ((Damping + 1.) * Progression - Damping) + _StartPos;
+		} 
+		// Out
+		else {
+			Progression -= 2.;
+			return Distance * (Progression * Progression * ((Damping + 1.) * Progression + Damping) + 2.) + _StartPos;
+		}
+		
+		return 0.;
+	}
+	
+	main() {
+		declare netread Integer				Net_LibDraft_MapSelectionServerUpdate for UI;
+		declare netread Integer				Net_LibDraft_MapSelectionServerSynchro for UI;
+		declare netread Integer				Net_LibDraft_MapSelectionServerValid for UI;
+		declare netread Integer[Text]		Net_LibDraft_MapSelectionServerMulti for UI;
+		declare netread Boolean[Text][Integer]	Net_LibDraft_MapSelectionServerReady for UI;
+		
+		declare netread Integer				Net_LibDraft_MapSelectionClan for UI;
+		declare netread Integer				Net_LibDraft_MapSelectionSequence for UI;
+		
+		declare netread Integer[Integer]	Net_LibDraft_MapSelectionMapsBanned for UI;
+		declare netread Integer[Integer]	Net_LibDraft_MapSelectionMapsSelected for UI;
+		declare netread Integer[Integer]	Net_LibDraft_MapSelectionMapsIndex for UI;
+		declare netread Text[Integer]		Net_LibDraft_MapSelectionMapsName for UI;
+		
+		declare netread Text[][Integer]		Net_LibDraft_TeamSelectionPlayers for UI;
+		declare netread Text[][Integer]		Net_LibDraft_TeamSelectionLogins for UI;
+		
+		declare netwrite Integer			Net_LibDraft_MapSelectionPlayerUpdate for UI;
+		declare netwrite Integer			Net_LibDraft_MapSelectionPlayerSynchro for UI;
+		declare netwrite Integer			Net_LibDraft_MapSelectionPlayerSelection for UI;
+		declare netwrite Integer			Net_LibDraft_MapSelectionPlayerReady for UI;
+		Net_LibDraft_MapSelectionPlayerUpdate = 0;
+		Net_LibDraft_MapSelectionPlayerSynchro = 0;
+		Net_LibDraft_MapSelectionPlayerSelection = -1;
+		Net_LibDraft_MapSelectionPlayerReady = 0;
+		
+		declare Button_Validate		<=> (Page.GetFirstChild("Validate") as CMlLabel);
+		declare Frame_MapBan		<=> (Page.GetFirstChild("MapBan") as CMlFrame);
+		declare Frame_MapDisplay	<=> (Page.GetFirstChild("MapDisplay") as CMlFrame);
+		declare Label_Pager			<=> (Page.GetFirstChild("Pager") as CMlLabel);
+		declare Quad_Team1Select	<=> (Page.GetFirstChild("Team1Select") as CMlQuad);
+		declare Quad_Team2Select	<=> (Page.GetFirstChild("Team2Select") as CMlQuad);
+		declare Quad_Left1			<=> (Page.GetFirstChild("Left1") as CMlQuad);
+		declare Quad_Left2			<=> (Page.GetFirstChild("Left2") as CMlQuad);
+		declare Quad_Right1			<=> (Page.GetFirstChild("Right1") as CMlQuad);
+		declare Quad_Right2			<=> (Page.GetFirstChild("Right2") as CMlQuad);
+		declare Frame_Pager			<=> (Page.GetFirstChild("Frame_Pager") as CMlFrame);
+		declare Button_Up			<=> (Page.GetFirstChild("PagerUp") as CMlLabel);
+		declare Button_Up2			<=> (Page.GetFirstChild("PagerUp2") as CMlLabel);
+		declare Button_Down			<=> (Page.GetFirstChild("PagerDown") as CMlLabel);
+		declare Button_Down2		<=> (Page.GetFirstChild("PagerDown2") as CMlLabel);
+		
+		Frame_MapBan.Show();
+		Frame_MapDisplay.Hide();
+		Button_Up.Hide();
+		Button_Down2.Hide();
+		
+		declare LastUpdate		= 0;
+		declare Synchro			= -1;
+		declare VotingClan		= 1;
+		declare LastSequence	= 1;
+		
+		declare Integer[Integer]	MapsBanned;
+		declare Integer[Integer]	MapsSelected;
+		declare Integer[Integer]	MapsIndex;
+		declare Text[Integer]		MapsName;
+		declare Integer				SelectionValid;
+		declare Integer[Text]		SelectionMulti;
+		declare Boolean[Text][Integer] PlayersReady;
+		
+		UpdateMapList(MapsBanned, MapsSelected, -1, SelectionMulti, MapsName, MapsIndex, VotingClan);
+		
+		declare AnimSeq2StartTime	= -1;
+		declare AnimSeq2EndTime		= -1;
+		declare AnimSeq2Duration	= 1000;
+		
+		G_CurrentPage = 1;
+		declare PageMax = 1;
+		
+		while (True) {
+			yield;
+			
+			// Manage events only for players of the voting clan
+			if (InputPlayer != Null && InputPlayer.CurrentClan == VotingClan) {
+				foreach (Event in PendingEvents) {
+					if (Event.Type == CMlEvent::Type::MouseClick) {
+						declare ControlName = TextLib::SubString(Event.ControlId, 0, 13);
+						
+						// Click on a map
+						if (ControlName == "Label_MapPool") {
+							declare LabelIndex = TextLib::ToInteger(TextLib::SubString(Event.ControlId, 14, 20)) - 1;
+							declare ShiftedIndex = ((G_CurrentPage - 1) * C_MapsByPage) + LabelIndex;
+							if (MapsIndex.existskey(ShiftedIndex)) {
+								declare Selection = MapsIndex[ShiftedIndex];
+								if (
+									Selection != Net_LibDraft_MapSelectionPlayerSelection
+									&& !MapsBanned.exists(Selection)
+									&& !MapsSelected.exists(Selection)
+								) {
+									Net_LibDraft_MapSelectionPlayerUpdate = ArenaNow;
+									Net_LibDraft_MapSelectionPlayerSynchro = Synchro;
+									Net_LibDraft_MapSelectionPlayerSelection = Selection;
+									
+									UpdateMapList(MapsBanned, MapsSelected, SelectionValid, SelectionMulti, MapsName, MapsIndex, VotingClan);
+								}
+							}
+						}
+						// Click on validate button
+						else if (Event.ControlId == "Validate") {
+							Net_LibDraft_MapSelectionPlayerUpdate = ArenaNow;
+							Net_LibDraft_MapSelectionPlayerSynchro = Synchro;
+							Net_LibDraft_MapSelectionPlayerReady = ArenaNow;
+							Button_Validate.Hide();
+						}
+						// Click on PagerUp button
+						else if (Event.ControlId == "PagerUp") {
+							G_CurrentPage -= 1;
+							if (G_CurrentPage < 1) G_CurrentPage = 1;
+							UpdateMapList(
+								MapsBanned, MapsSelected, SelectionValid, SelectionMulti, MapsName, MapsIndex, VotingClan
+							);
+							Label_Pager.SetText(G_CurrentPage^"/"^PageMax);
+							
+							// Hide/Show pager buttons
+							if (G_CurrentPage <= 1) { Button_Up.Hide(); Button_Up2.Show(); }
+							else { Button_Up.Show(); Button_Up2.Hide(); }
+							if (G_CurrentPage >= PageMax) { Button_Down.Hide(); Button_Down2.Show(); }
+							else { Button_Down.Show(); Button_Down2.Hide(); }
+						}
+						// Click on PagerDown button
+						else if (Event.ControlId == "PagerDown") {
+							G_CurrentPage += 1;
+							if (G_CurrentPage > PageMax) G_CurrentPage = PageMax;
+							UpdateMapList(
+								MapsBanned, MapsSelected, SelectionValid, SelectionMulti, MapsName, MapsIndex, VotingClan
+							);
+							Label_Pager.SetText(G_CurrentPage^"/"^PageMax);
+							
+							// Hide/Show pager buttons
+							if (G_CurrentPage <= 1) { Button_Up.Hide(); Button_Up2.Show(); }
+							else { Button_Up.Show(); Button_Up2.Hide(); }
+							if (G_CurrentPage >= PageMax) { Button_Down.Hide(); Button_Down2.Show(); }
+							else { Button_Down.Show(); Button_Down2.Hide(); }
+						}
+					}
+				}
+			}
+			
+			// Check for updates from the server
+			if (LastUpdate != Net_LibDraft_MapSelectionServerUpdate) {
+				LastUpdate = Net_LibDraft_MapSelectionServerUpdate;
+				
+				Synchro		= Net_LibDraft_MapSelectionServerSynchro;
+				VotingClan	= Net_LibDraft_MapSelectionClan;
+				
+				MapsBanned		= Net_LibDraft_MapSelectionMapsBanned;
+				MapsSelected	= Net_LibDraft_MapSelectionMapsSelected;
+				MapsIndex		= Net_LibDraft_MapSelectionMapsIndex;
+				MapsName		= Net_LibDraft_MapSelectionMapsName;
+				SelectionValid	= Net_LibDraft_MapSelectionServerValid;
+				SelectionMulti	= Net_LibDraft_MapSelectionServerMulti;
+				PlayersReady	= Net_LibDraft_MapSelectionServerReady;
+				
+				UpdatePlayerList(Net_LibDraft_TeamSelectionPlayers, Net_LibDraft_TeamSelectionLogins, PlayersReady, VotingClan);
+				
+				// How many pages needed
+				if (MapsIndex.count % C_MapsByPage == 0) PageMax = MapsIndex.count / C_MapsByPage;
+				else PageMax = (MapsIndex.count / C_MapsByPage) + 1;
+				Label_Pager.SetText(G_CurrentPage^"/"^PageMax);
+				if (PageMax <= 1) Frame_Pager.Hide();
+				else Frame_Pager.Show();
+				
+				// Highlight the background of the voting clan
+				if (VotingClan == 1) {
+					Quad_Team1Select.Show();
+					Quad_Team2Select.Hide();
+					Quad_Left1.Hide(); Quad_Left2.Show();
+					Quad_Right1.Show(); Quad_Right2.Hide();
+				} else if (VotingClan == 2) {
+					Quad_Team1Select.Hide();
+					Quad_Team2Select.Show();
+					Quad_Left1.Show(); Quad_Left2.Hide();
+					Quad_Right1.Hide(); Quad_Right2.Show();
+				}
+				
+				Net_LibDraft_MapSelectionPlayerSynchro = Synchro;
+				Net_LibDraft_MapSelectionPlayerReady = 0;
+				
+				// Check if we are banning/selecting (Sequence 1) or displaying (sequence 2) maps
+				// Ban
+				if (Net_LibDraft_MapSelectionSequence == 1) {					
+					if (InputPlayer != Null && InputPlayer.CurrentClan == VotingClan) {
+						if (
+							PlayersReady[VotingClan].existskey(InputPlayer.Login) 
+							&& !PlayersReady[VotingClan][InputPlayer.Login]
+						) {
+							Button_Validate.Show();
+						} else {
+							Button_Validate.Hide();
+						}
+					} else {
+						Button_Validate.Hide();
+					}
+				} 
+				// Select
+				else if (Net_LibDraft_MapSelectionSequence == 2) {
+					for (I, 1, C_MapsByPage) {
+						declare Label_Name <=> (Page.GetFirstChild("Label_MapName_"^I) as CMlLabel);
+						if (Label_Name == Null) continue;
+						if (!Net_LibDraft_MapSelectionMapsSelected.existskey(I)) continue;
+
+						if (MapsName.existskey(Net_LibDraft_MapSelectionMapsSelected[I])) 
+							Label_Name.SetText(MapsName[Net_LibDraft_MapSelectionMapsSelected[I]]);
+					}
+				}
+				
+				// If we changed sequence
+				if (LastSequence != Net_LibDraft_MapSelectionSequence) {
+					if (Net_LibDraft_MapSelectionSequence == 2) {
+						Frame_MapDisplay.Show();
+						AnimSeq2StartTime = Now;
+						AnimSeq2EndTime = AnimSeq2StartTime + AnimSeq2Duration;
+					}
+					LastSequence = Net_LibDraft_MapSelectionSequence;
+				}
+				
+				// Update map list UI
+				UpdateMapList(MapsBanned, MapsSelected, SelectionValid, SelectionMulti, MapsName, MapsIndex, VotingClan);
+			}
+			
+			// Play animations
+			if (AnimSeq2StartTime >= 0 && AnimSeq2EndTime > Now) {				
+				declare Frame = Now - AnimSeq2StartTime;
+				Frame_MapBan.PosnY = EaseInOutBack(Frame, 40., -140., AnimSeq2Duration, 1.1);
+				Frame_MapDisplay.PosnY = EaseInOutBack(Frame, -160., 0., AnimSeq2Duration, 1.1);
+			} else if (AnimSeq2StartTime >= 0 && AnimSeq2EndTime <= Now) {
+				AnimSeq2StartTime = -1;
+				Frame_MapDisplay.PosnY = 0.;
+				Frame_MapBan.Hide();
+			}
+		}
+	}
+--></script>
+<frame posn="0 40 10" id="MapBan">
+	<frame posn="-70 0 1">
+		<quad posn="0.5 0 1" sizen="0.5 115" halign="right" bgcolor="{{{C_UIColors[1]}}}" />
+		<quad posn="15 0 1" sizen="0.5 105" halign="right" bgcolor="{{{C_UIColors[1]}}}" />
+		<quad posn="0 0 10" sizen="15 105" halign="left" bgcolor="{{{C_UIColors[2]}}}" id="Team1Select" />
+		<frame posn="-25 0 2" id="Team1">
+			{{{MapClanString[1]}}}
+		</frame>
+		<label posn="-25 -107.5 5" sizen="50 8" halign="center" textprefix="$s" text="{{{Team1Name}}}" />
+		<quad posn="0 -105 10" sizen="50 0.5" halign="right" valign="bottom" bgcolor="{{{C_UIColors[1]}}}" />
+	</frame>
+	<frame posn="70 0 1">
+		<quad posn="-0.5 0 1" sizen="0.5 115" halign="left" bgcolor="{{{C_UIColors[1]}}}" />
+		<quad posn="-15 0 1" sizen="0.5 105" halign="left" bgcolor="{{{C_UIColors[1]}}}" />
+		<quad posn="0 0 10" sizen="15 105" halign="right" bgcolor="{{{C_UIColors[2]}}}" id="Team2Select" />
+		<frame posn="25 0 2" id="Team2">
+			{{{MapClanString[2]}}}
+		</frame>
+		<label posn="25 -107.5 5" sizen="50 8" halign="center" textprefix="$s" text="{{{Team2Name}}}" />
+		<quad posn="0 -105 10" sizen="50 0.5" halign="left" valign="bottom" bgcolor="{{{C_UIColors[1]}}}" />
+	</frame>
+	<frame posn="0 0 0">
+		<quad posn="0 0 1" sizen="240 115" halign="center" bgcolor="{{{C_UIColors[3]}}}" />
+		<frame posn="0 -10 5" id="MapPool">
+			{{{MapPoolString}}}
+		</frame>
+		<frame posn="0 -51.5 4">
+			<quad posn="-53 0 55" sizen="20 20" halign="right" valign="center" style="Icons64x64_1" substyle="ShowLeft" id="Left1" />
+			<quad posn="-53 0 50" sizen="20 20" halign="right" valign="center" style="Icons64x64_1" substyle="ShowLeft2" id="Left2" />
+			<quad posn="53 0 55" sizen="20 20" halign="left" valign="center" style="Icons64x64_1" substyle="ShowRight" id="Right1" />
+			<quad posn="53 0 50" sizen="20 20" halign="left" valign="center" style="Icons64x64_1" substyle="ShowRight2" id="Right2" />
+		</frame>
+		<frame posn="0 -95 10" id="Frame_Pager">
+			<quad posn="13 0 1" sizen="10 10" halign="center" style="Icons64x64_1" substyle="ArrowDown" id="PagerDown" ScriptEvents="1" />
+			<quad posn="13 0 0" sizen="10 10" halign="center" style="Icons64x64_1" substyle="ClipPause" id="PagerDown2" />
+			<quad posn="-13 0 1" sizen="10 10" halign="center" style="Icons64x64_1" substyle="ArrowUp" id="PagerUp" ScriptEvents="1" />
+			<quad posn="-13 0 0" sizen="10 10" halign="center" style="Icons64x64_1" substyle="ClipPause" id="PagerUp2" />
+			<label posn="0 -2.5 0" sizen="10 10" textsize="4" textcolor="{{{C_UIColors[0]}}}" halign="center" text="1/1" id="Pager" />
+		</frame>
+	</frame>
+	<frame posn="0 -110 5">
+		<quad posn="0 5 5" sizen="139 0.5" halign="center" valign="bottom" bgcolor="{{{C_UIColors[1]}}}" />
+		<label posn="0 0 2" sizen="139 10" halign="center" valign="center" style="TextButtonNav" focusareacolor1="{{{C_UIColors[4]}}}" focusareacolor2="{{{C_UIColors[5]}}}" textprefix="$fff" text="{{{_("|Infinitive|Confirm")}}}" id="Validate" ScriptEvents="1" />
+	</frame>
+</frame>
+<frame posn="0 -160 40" id="MapDisplay">
+	<quad posn="0 0 1" sizen="320 26" halign="center" valign="bottom" bgcolor="{{{C_UIColors[3]}}}" id="Display_BG" />
+	<frame posn="0 0 2">
+		{{{MapDisplayString}}}
+	</frame>
+</frame>
+</manialink>
+""";
+}
+
+/* ------------------------------------- */
+/// Update the TeamSelection layer
+Void UpdateTeam() {
+	declare CustomAllPlayers = CSmPlayer[];
+	declare LibDraft_TeamSelectionPlayers = [0 => Text[], 1 => Text[], 2 => Text[]];
+	declare LibDraft_TeamSelectionLogins = [0 => Text[], 1 => Text[], 2 => Text[]];
+	
+	foreach (Player in Players) {
+		if (LibDraft_TeamSelectionPlayers.existskey(Player.CurrentClan)) {
+			LibDraft_TeamSelectionPlayers[Player.CurrentClan].add(Player.User.Name);
+			LibDraft_TeamSelectionLogins[Player.CurrentClan].add(Player.User.Login);
+		}
+		CustomAllPlayers.add(Player); 
+	}
+	foreach (Spectator in Spectators) {
+		if (LibDraft_TeamSelectionPlayers.existskey(Spectator.CurrentClan)) {
+			LibDraft_TeamSelectionPlayers[Spectator.CurrentClan].add(Spectator.User.Name);
+			LibDraft_TeamSelectionLogins[Spectator.CurrentClan].add(Spectator.User.Login);
+		}
+		CustomAllPlayers.add(Spectator); 
+	}
+	
+	foreach (Player in CustomAllPlayers) {
+		declare UI <=> UIManager.GetUI(Player);
+		if (UI == Null) continue;
+		
+		declare netwrite Integer			Net_LibDraft_MapSelectionServerUpdate for UI;
+		declare netwrite Text[][Integer]	Net_LibDraft_TeamSelectionPlayers for UI;
+		declare netwrite Text[][Integer]	Net_LibDraft_TeamSelectionLogins for UI;
+		Net_LibDraft_MapSelectionServerUpdate = Now;
+		Net_LibDraft_TeamSelectionPlayers = LibDraft_TeamSelectionPlayers;
+		Net_LibDraft_TeamSelectionLogins = LibDraft_TeamSelectionLogins;
+	}
+}
+
+/* ------------------------------------- */
+/** Complete MapSelection layer update
+ *
+ *	@param	_Player			The player to update
+ *	@param	_Synchro		The current synchro number
+ *	@param	_Valid			The id of the valid map
+ *	@param	_Page			The number of the page to display
+ *	@param	_Clan			The number of the voting clan
+ *	@param	_MapsBanned		The ids of the banned maps
+ *	@param	_MapsSelected	The ids of the selected maps
+ *	@param	_MapsIndex		The relation between the map order and the map index
+ *	@param	_MapsName		The maps names
+ */
+Void UpdateLayerComplete(
+	CSmPlayer _Player,
+	Integer _Synchro,
+	Integer _Valid,
+	Integer[Text] _Multi,
+	Boolean[Ident][Integer] _Ready,
+	Integer _Page,
+	Integer _Clan,
+	Integer[Integer] _MapsBanned,
+	Integer[Integer] _MapsSelected,
+	Integer[Integer] _MapsIndex,
+	Text[Integer] _MapsName
+) {
+	declare UI <=> UIManager.GetUI(_Player);
+	if (UI == Null) return;
+	
+	declare netwrite Integer Net_LibDraft_MapSelectionServerUpdate for UI;		///< Update time on server
+	declare netwrite Integer Net_LibDraft_MapSelectionServerSynchro for UI;		///< Synchro server <=> player
+	declare netwrite Integer Net_LibDraft_MapSelectionServerValid for UI;		///< The most voted map
+	declare netwrite Integer[Text] Net_LibDraft_MapSelectionServerMulti for UI;	///< All maps selected by players
+	declare netwrite Boolean[Text][Integer] Net_LibDraft_MapSelectionServerReady for UI;///< Players ready status
+	declare netwrite Integer Net_LibDraft_MapSelectionServerPage for UI;		///< The maplist page to display
+	declare netwrite Integer Net_LibDraft_MapSelectionClan for UI;				///< The voting clan
+	declare netwrite Integer Net_LibDraft_MapSelectionSequence for UI;			///< 1 => Map ban/selection, 2 => Map display
+	
+	declare netwrite Integer[Integer]	Net_LibDraft_MapSelectionMapsBanned for UI;		///< Banned maps
+	declare netwrite Integer[Integer]	Net_LibDraft_MapSelectionMapsSelected for UI;	///< Played maps
+	declare netwrite Integer[Integer]	Net_LibDraft_MapSelectionMapsIndex for UI;		///< Relation map number <=> map index
+	declare netwrite Text[Integer]		Net_LibDraft_MapSelectionMapsName for UI;		///< Maps name
+	
+	declare ReadyConvert = [1 => Boolean[Text], 2 => Boolean[Text]];
+	for (I, 1, 2) {
+		foreach (PlayerId => IsReady in _Ready[I]) {
+			if (!Players.existskey(PlayerId)) continue;
+			ReadyConvert[I][Players[PlayerId].User.Login] = IsReady;
+		}
+	}
+	
+	Net_LibDraft_MapSelectionServerUpdate	= Now;
+	Net_LibDraft_MapSelectionServerSynchro	= _Synchro;
+	Net_LibDraft_MapSelectionServerValid	= _Valid;
+	Net_LibDraft_MapSelectionServerMulti	= _Multi;
+	Net_LibDraft_MapSelectionServerPage		= _Page;
+	Net_LibDraft_MapSelectionClan			= _Clan;
+	Net_LibDraft_MapSelectionSequence		= 1;
+	
+	Net_LibDraft_MapSelectionMapsBanned		= _MapsBanned;
+	Net_LibDraft_MapSelectionMapsSelected	= _MapsSelected;
+	Net_LibDraft_MapSelectionMapsIndex		= _MapsIndex;
+	Net_LibDraft_MapSelectionMapsName		= _MapsName;
+	Net_LibDraft_MapSelectionServerReady	= ReadyConvert;
+}
+
+/* ------------------------------------- */
+/** Small MapSelection layer update
+ *
+ *	@param	_Player		The player to update
+ *	@param	_Valid		The index of the most selected map
+ *	@param	_Multi		The index of all the selected maps
+ *	@param	_Page		The number of the page to display
+ */
+Void UpdateLayerMapSelection(
+	CSmPlayer _Player, 
+	Integer _Valid,
+	Integer[Text] _Multi,
+	Integer _Page
+) {
+	declare UI <=> UIManager.GetUI(_Player);
+	if (UI == Null) return;
+	
+	declare netwrite Integer Net_LibDraft_MapSelectionServerUpdate for UI;
+	declare netwrite Integer Net_LibDraft_MapSelectionServerValid for UI;
+	declare netwrite Integer[Text] Net_LibDraft_MapSelectionServerMulti for UI;
+	declare netwrite Integer Net_LibDraft_MapSelectionServerPage for UI;
+	
+	Net_LibDraft_MapSelectionServerUpdate	= Now;
+	Net_LibDraft_MapSelectionServerValid	= _Valid;
+	Net_LibDraft_MapSelectionServerMulti	= _Multi;
+	Net_LibDraft_MapSelectionServerPage		= _Page;
+}
+
+/* ------------------------------------- */
+/** Update ready state of a player
+ *
+ *	@param	_Player		The player to update
+ *	@param	_Ready		Players validate their choice
+ */
+Void UpdateLayerReadyState(
+	CSmPlayer _Player, 
+	Boolean[Ident][Integer] _Ready
+) {
+	declare UI <=> UIManager.GetUI(_Player);
+	if (UI == Null) return;
+	
+	declare netwrite Integer Net_LibDraft_MapSelectionServerUpdate for UI;
+	declare netwrite Boolean[Text][Integer] Net_LibDraft_MapSelectionServerReady for UI;
+
+	declare ReadyConvert = [1 => Boolean[Text], 2 => Boolean[Text]];
+	for (I, 1, 2) {
+		foreach (PlayerId => IsReady in _Ready[I]) {
+			if (!Players.existskey(PlayerId)) continue;
+			ReadyConvert[I][Players[PlayerId].User.Login] = IsReady;
+		}
+	}
+	
+	Net_LibDraft_MapSelectionServerUpdate = Now;
+	Net_LibDraft_MapSelectionServerReady = ReadyConvert;
+}
+/* ------------------------------------- */
+/**	Update the DisplayMap layer
+ *
+ *	@param	_Player		The player to udpate
+ *	@param	_MapsName	The name of the maps
+ */
+Void UpdateLayerDisplayMap(CSmPlayer _Player, Text[Integer] _MapsName) {
+	declare UI <=> UIManager.GetUI(_Player);
+	if (UI == Null) return;
+	
+	declare netwrite Integer Net_LibDraft_MapSelectionServerUpdate for UI;
+	declare netwrite Integer Net_LibDraft_MapSelectionSequence for UI;
+	declare netwrite Text[Integer] Net_LibDraft_MapSelectionMapsName for UI;
+	declare netwrite Integer[Integer] Net_LibDraft_MapSelectionMapsSelected for UI;
+	
+	Net_LibDraft_MapSelectionServerUpdate	= Now;
+	Net_LibDraft_MapSelectionSequence		= 2;
+	Net_LibDraft_MapSelectionMapsName		= _MapsName;
+	Net_LibDraft_MapSelectionMapsSelected	= G_LibDraft_MapsSelected;
+}
+
+/* ------------------------------------- */
+/** Launch the map selection sequence
+ *
+ *	@param	_BanNb		Number of map to ban
+ *	@param	_PickNb		Number of map to pick
+ *	@param	_ClanNb		First clan to vote
+ */
+Void MapSelection(Integer _BanNb, Integer _PickNb, Integer _ClanNb) {
+	declare BanTotalMax		= _BanNb;
+	// Change the nb of maps to ban if the setting is an automatic (-1) or if there's not enough maps
+	if (BanTotalMax < 0 || MapList.count - _PickNb < _BanNb) BanTotalMax = MapList.count - _PickNb;
+	
+	// Initialize UI
+	UIManager.UILayers[G_LibDraft_LayerDraftId].ManialinkPage = CreateLayerMapSelection(BanTotalMax, _PickNb);
+	UIManager.UIAll.ScoreTableVisibility = CUIConfig::EVisibility::ForcedHidden;
+	
+	// Initialize players and spectators
+	foreach (Player in Players) {
+		declare LibDraft_NewPlayer for Player = True;
+		declare LibDraft_NewSpectator for Player = True;
+		LibDraft_NewPlayer = True;
+		LibDraft_NewSpectator = True;
+		if (Player.SpawnStatus != CSmPlayer::ESpawnStatus::NotSpawned) UnspawnPlayer(Player);
+		if (G_LibDraft_PlayersSelected[1].exists(Player.Id)) SetPlayerClan(Player, 1);
+		else if (G_LibDraft_PlayersSelected[2].exists(Player.Id)) SetPlayerClan(Player, 2);
+		else SetPlayerClan(Player, 0);
+	}
+	foreach (Spectator in Spectators) {
+		declare LibDraft_NewPlayer for Spectator = True;
+		declare LibDraft_NewSpectator for Spectator = True;
+		LibDraft_NewPlayer = True;
+		LibDraft_NewSpectator = True;
+		if (G_LibDraft_PlayersSelected[1].exists(Spectator.Id)) SetPlayerClan(Spectator, 1);
+		else if (G_LibDraft_PlayersSelected[2].exists(Spectator.Id)) SetPlayerClan(Spectator, 2);
+		else SetPlayerClan(Spectator, 0);
+	}
+	
+	// Initialized variables
+	declare Synchro			= 1;
+	declare VotingClan		= _ClanNb;
+	declare CurrentPage		= 1;
+	declare BanTotal		= 0;
+	declare SelectedTotal	= 0;
+	declare MapsBanned		= Integer[Integer];
+	declare MapsSelected	= Integer[Integer];
+	declare MapsIndex		= Integer[Integer];
+	declare MapsName		= Text[Integer];
+	declare MapsId			= Ident[Integer];
+	declare PlayersReady	= [1 => Boolean[Ident], 2 => Boolean[Ident]];
+	declare VoteNb			= 0;
+	declare VoteOrder		= [1 => _ClanNb, 2 => 3 - _ClanNb];
+	
+	declare J = 0;
+	foreach (Index => Map in MapList) {
+		MapsIndex[J] = Index;
+		MapsName[Index] = Map.Name;
+		J += 1;
+	}
+	
+	UpdateTeam();
+	
+	while ((!ServerShutdownRequested && !MatchEndRequested) && SelectedTotal < _PickNb) {
+		declare StopTurn = False;
+		declare SelectionValid = -1;
+		declare SelectionMulti = Integer[Text];
+		declare SelectionPriority = Integer[Integer];
+		
+		// Initialize ready state
+		for (I, 1, 2) {
+			foreach (PlayerId in G_LibDraft_PlayersSelected[I]) {
+				PlayersReady[I][PlayerId] = False;
+			}
+		}
+		
+		// Synchronize player UI
+		foreach (Player in Players) {	
+			UpdateLayerComplete(
+				Player, Synchro, SelectionValid, SelectionMulti, PlayersReady, CurrentPage, 
+				VotingClan, MapsBanned, MapsSelected, MapsIndex, MapsName
+			);
+		}
+		foreach (Spectator in Spectators) {
+			UpdateLayerComplete(
+				Spectator, Synchro, SelectionValid, SelectionMulti, PlayersReady, CurrentPage, 
+				VotingClan, MapsBanned, MapsSelected, MapsIndex, MapsName
+			);
+		}
+		
+		// Display big message
+		UIManager.UIAll.BigMessageSound = CUIConfig::EUISound::PhaseChange;
+		UIManager.UIAll.BigMessageSoundVariant = 0;
+		UIManager.UIAll.StatusMessage = Teams[VotingClan - 1].ColorizedName;
+		UIManager.UIAll.UISequence = CUIConfig::EUISequence::Podium;
+		if (BanTotal < BanTotalMax) {
+			UIManager.UIAll.BigMessage = TextLib::Compose(_("Ban map %1"), TextLib::ToText(BanTotal + 1));
+		} else {
+			UIManager.UIAll.BigMessage = TextLib::Compose(_("Select map %1"), TextLib::ToText(SelectedTotal + 1));
+		}
+		
+		// Initialize timers
+		StartTime = Now;
+		UIManager.UIAll.CountdownEndTime = StartTime + C_MapSelectionDuration;
+		
+		while ((!ServerShutdownRequested && !MatchEndRequested) && !StopTurn && Now < UIManager.UIAll.CountdownEndTime) {
+			yield;
+			
+			// If there's only one map left, select it automatically
+			if (BanTotal + SelectedTotal >= MapsIndex.count - 1) StopTurn = True;
+			
+			// Detect player disconnection
+			for (I, 1, 2) {
+				declare IdsToRemove = Ident[];
+				foreach (PlayerId in G_LibDraft_PlayersSelected[I]) {
+					if (!Players.existskey(PlayerId)) {
+						IdsToRemove.add(PlayerId);
+					} else if (Players[PlayerId].CurrentClan != I) {
+						IdsToRemove.add(PlayerId);
+					}
+				}
+				foreach (IdToRemove in IdsToRemove) {
+					declare Removed = G_LibDraft_PlayersSelected[I].remove(IdToRemove);
+					Removed = PlayersReady[I].removekey(IdToRemove);
+					G_LibDraft_TeamReady[I] = False;
+					UpdateTeam();
+					foreach (Player in Players) {
+						UpdateLayerReadyState(Player, PlayersReady);
+					}
+					foreach (Spectator in Spectators) {
+						UpdateLayerReadyState(Spectator, PlayersReady);
+					}
+					
+					// If all players are ready, change voting clan
+					StopTurn = True;
+					foreach (Ready in PlayersReady[VotingClan]) {
+						if (!Ready) StopTurn = False;
+						break;
+					}
+				}
+			}
+		
+			declare MostRecentChange = 0;
+			declare LayerNeedUpdate = False;
+			foreach (Player in Players) {
+				declare LibDraft_NewPlayer for Player = True;
+				declare LibDraft_NewSpectator for Player = True;
+				
+				// Monitor new players
+				if (LibDraft_NewPlayer) {
+					LibDraft_NewPlayer = False;
+					LibDraft_NewSpectator = True;
+					
+					declare LibDraft_MapSelectionPlayerUpdate for Player = 0;
+					declare LibDraft_MapSelectionPlayerReady for Player = 0;
+					LibDraft_MapSelectionPlayerUpdate = Now;
+					LibDraft_MapSelectionPlayerReady = Now;
+					
+					for (I, 1, 2) {
+						if (!G_LibDraft_PlayersSelected.existskey(I)) continue;
+						if (G_LibDraft_PlayersSelected[I].exists(Player.Id)) {
+							SetPlayerClan(Player, I);
+							break;
+						} else {
+							SetPlayerClan(Player, 0);
+						}
+					}
+					
+					UpdateLayerComplete(
+						Player, Synchro, SelectionValid, SelectionMulti, PlayersReady, CurrentPage, 
+						VotingClan, MapsBanned, MapsSelected, MapsIndex, MapsName
+					);
+					UpdateTeam();
+					AttachLayerDraft(Player);
+				}
+				
+				// Monitor players actions on the interface
+				declare UI <=> UIManager.GetUI(Player);
+				// Only actions from the voting clan is taken into account
+				if (
+					UI != Null 
+					&& Player.CurrentClan == VotingClan					///< Player in voting clan
+					&& PlayersReady[VotingClan].existskey(Player.Id)	///< Player didn't validate his choice already
+					&& !PlayersReady[VotingClan][Player.Id]
+				) {
+					declare netread Integer Net_LibDraft_MapSelectionPlayerUpdate for UI;
+					declare LibDraft_MapSelectionPlayerUpdate for Player = 0;
+					
+					if (
+						LibDraft_MapSelectionPlayerUpdate < Net_LibDraft_MapSelectionPlayerUpdate
+						&& Net_LibDraft_MapSelectionPlayerUpdate <= Now + Period
+					) {
+						LibDraft_MapSelectionPlayerUpdate = Net_LibDraft_MapSelectionPlayerUpdate;
+						
+						// Skip change that have already been overriden by another change
+						// which have reached the server faster
+						// ex: P1 clic at t = 1000, P2 clic at t = 1500,
+						// P2 clic reaches the server at t = 2000 and P1 at t = 2500,
+						// then ignore P1 clic on the server side
+						if (Net_LibDraft_MapSelectionPlayerUpdate > MostRecentChange) {
+							MostRecentChange = Net_LibDraft_MapSelectionPlayerUpdate;
+							declare netread Integer Net_LibDraft_MapSelectionPlayerReady for UI;
+							declare netread Integer Net_LibDraft_MapSelectionPlayerSynchro for UI;
+							declare netread Integer Net_LibDraft_MapSelectionPlayerSelection for UI;
+							declare netread Integer Net_LibDraft_MapSelectionPlayerPage for UI;
+							declare LibDraft_MapSelectionPlayerReady for Player = 0;
+							
+							// Ignore non synchronized player input
+							if (Net_LibDraft_MapSelectionPlayerSynchro == Synchro) {
+								declare Selection = 0;
+								
+								if (!MapsIndex.existskey(Net_LibDraft_MapSelectionPlayerSelection)) {
+									foreach (MapIndex in MapsIndex) {
+										if (!MapsBanned.exists(MapIndex) && !MapsSelected.exists(MapIndex)) {
+											Selection = MapIndex;
+											break;
+										}
+									}
+								} else {
+									Selection = Net_LibDraft_MapSelectionPlayerSelection;
+								}
+								
+								// Save map priority
+								if (!SelectionMulti.exists(Selection)) SelectionPriority[Selection] = Net_LibDraft_MapSelectionPlayerUpdate;
+								SelectionPriority = SelectionPriority.sort();
+								// Save player selection
+								SelectionMulti[Player.User.Login] = Selection;
+								// Count number of vote for each map
+								declare SelectionCount = Integer[Integer];
+								foreach (PlayerLogin => MapIndex in SelectionMulti) {
+									if (SelectionCount.existskey(MapIndex)) {
+										SelectionCount[MapIndex] += 1;
+									} else {
+										SelectionCount[MapIndex] = 1;
+									}
+								}
+								SelectionCount = SelectionCount.sort();
+								// Find the most voted maps
+								declare SelectionMost = Integer[];
+								declare VoteMax = 0;
+								foreach (MapIndex => VoteCount in SelectionCount) {
+									if (VoteCount > VoteMax) {
+										SelectionMost = [MapIndex];
+										VoteMax = VoteCount;
+									} else if (VoteCount == VoteMax) {
+										SelectionMost.add(MapIndex);
+									}
+								}
+								// Sort the most voted maps by priority
+								declare SelectionCountPriority = Integer[Integer];
+								foreach (MapIndex in SelectionMost) {
+									SelectionCountPriority[MapIndex] = SelectionPriority[MapIndex];
+								}
+								SelectionCountPriority = SelectionCountPriority.sort();
+								// Select the map to valid
+								foreach (MapIndex => MapPriority in SelectionCountPriority) {
+									SelectionValid = MapIndex;
+									break;
+								}
+								
+								// Check if the player validated its choice
+								if (LibDraft_MapSelectionPlayerReady < Net_LibDraft_MapSelectionPlayerReady) {
+									PlayersReady[VotingClan][Player.Id] = True;
+									
+									// If all players validated, change voting clan
+									StopTurn = True;
+									foreach (Ready in PlayersReady[VotingClan]) {
+										if (!Ready) {
+											StopTurn = False;
+											break;
+										}
+									}
+								}
+								
+								CurrentPage = Net_LibDraft_MapSelectionPlayerPage;
+								LayerNeedUpdate = True;
+							}
+						}
+					}
+				}
+			}
+			
+			foreach (Spectator in Spectators) {
+				declare LibDraft_NewPlayer for Spectator = True;
+				declare LibDraft_NewSpectator for Spectator = True;
+				
+				// Monitor new spectators
+				if (LibDraft_NewSpectator) {
+					LibDraft_NewPlayer = True;
+					LibDraft_NewSpectator = False;
+					
+					UpdateLayerComplete(
+						Spectator, Synchro, SelectionValid, SelectionMulti, PlayersReady, CurrentPage, 
+						VotingClan, MapsBanned, MapsSelected, MapsIndex, MapsName
+					);
+					AttachLayerDraft(Spectator);
+				}
+			}
+			
+			if (LayerNeedUpdate) {
+				foreach (Player in Players) {
+					UpdateLayerMapSelection(Player, SelectionValid, SelectionMulti, CurrentPage);
+					UpdateLayerReadyState(Player, PlayersReady);
+				}
+				foreach (Spectator in Spectators) {
+					UpdateLayerMapSelection(Spectator, SelectionValid, SelectionMulti, CurrentPage);
+					UpdateLayerReadyState(Spectator, PlayersReady);
+				}
+			}			
+		}
+		
+		// Ban the selected map
+		if (BanTotal < BanTotalMax) {
+			// Valid map index
+			if (!MapsIndex.exists(SelectionValid) || MapsBanned.exists(SelectionValid)) {
+				foreach (MapIndex in MapsIndex) {
+					if (!MapsBanned.exists(MapIndex) && !MapsSelected.exists(MapIndex)) {
+						SelectionValid = MapIndex;
+						break;
+					}
+				}
+			}
+			BanTotal += 1;
+			MapsBanned[BanTotal] = SelectionValid;
+			//declare Removed = MapsIndex.remove(SelectionValid);
+		} else if (SelectedTotal < _PickNb) {
+			// Valid map index
+			if (!MapsIndex.exists(SelectionValid) || MapsSelected.exists(SelectionValid)) {
+				foreach (MapIndex in MapsIndex) {
+					if (!MapsBanned.exists(MapIndex) && !MapsSelected.exists(MapIndex)) {
+						SelectionValid = MapIndex;
+						break;
+					}
+				}
+			}
+			if (SelectionValid <= 0) {
+				foreach (MapIndex in MapsIndex) { SelectionValid = MapIndex; break; }
+			}
+			SelectedTotal += 1;
+			MapsSelected[SelectedTotal] = SelectionValid;
+			MapsId[SelectedTotal] = MapList[SelectionValid].Id;
+			//declare Removed = MapsIndex.remove(SelectionValid);
+		}
+		Synchro += 1;
+		VoteNb += 1;
+		if (VoteNb >= C_VoteFormat.count) VoteNb = 0;
+		VotingClan = VoteOrder[C_VoteFormat[VoteNb]];
+	}
+	
+	// End vote map	
+	G_LibDraft_MapsSelected = MapsSelected;
+	G_LibDraft_MapsSelectedId = MapsId;
+	
+	declare CustomAllPlayers = CSmPlayer[];
+	foreach (Player in Players) { CustomAllPlayers.add(Player); }
+	foreach (Spectator in Spectators) { CustomAllPlayers.add(Spectator); }
+	
+	// Display the selected map
+	foreach (Player in CustomAllPlayers) {
+		UpdateLayerDisplayMap(Player, MapsName);
+	}
+	
+	StartTime = Now;
+	UIManager.UIAll.CountdownEndTime = StartTime + C_MapDisplayDuration;
+	UIManager.UIAll.BigMessageSound = CUIConfig::EUISound::PhaseChange;
+	UIManager.UIAll.BigMessageSoundVariant = 0;
+	UIManager.UIAll.BigMessage = _("Selected maps");
+	UIManager.UIAll.StatusMessage = "";
+	
+	while (Now <= UIManager.UIAll.CountdownEndTime) {
+		yield;
+		
+		// Monitor new Players
+		foreach (Player in Players) {
+			declare LibDraft_NewPlayer for Player = True;
+			declare LibDraft_NewSpectator for Player = True;
+			
+			if (LibDraft_NewPlayer) {
+				LibDraft_NewPlayer = False;
+				LibDraft_NewSpectator = True;
+				
+				UpdateLayerDisplayMap(Player, MapsName);
+				AttachLayerDraft(Player);
+			}
+		}
+		
+		// Monitor new spectators
+		foreach (Spectator in Spectators) {
+			declare LibDraft_NewPlayer for Spectator = True;
+			declare LibDraft_NewSpectator for Spectator = True;
+			
+			if (LibDraft_NewSpectator) {
+				LibDraft_NewPlayer = True;
+				LibDraft_NewSpectator = False;
+				
+				UpdateLayerDisplayMap(Spectator, MapsName);
+				AttachLayerDraft(Spectator);
+			}
+		}
+	}
+	
+	sleep(1000); ///< Let the countdown sound end
+	foreach (Player in Players) { DetachLayerDraft(Player); }
+	foreach (Spectator in Spectators) { DetachLayerDraft(Spectator); }
+	
+	StartTime = -1;
+	UIManager.UIAll.CountdownEndTime = -1;
+	UIManager.UIAll.BigMessage = "";
+	UIManager.UIAll.StatusMessage = "";
+	UIManager.UIAll.ScoreTableVisibility = CUIConfig::EVisibility::Normal;
+}
+

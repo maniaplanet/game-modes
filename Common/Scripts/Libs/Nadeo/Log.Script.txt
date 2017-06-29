@@ -1,0 +1,149 @@
+/**
+ *	Log library
+ */
+#Const	Version			"2016-10-28"
+#Const	ScriptName	"Libs/Nadeo/Log.Script.txt"
+
+// ---------------------------------- //
+// Libraries
+// ---------------------------------- //
+#Include "Libs/Nadeo/Env.Script.txt" as Env
+
+// ---------------------------------- //
+// Globales
+// ---------------------------------- //
+declare Text[] G_ScriptsNames; ///< Array containing the registered scripts names
+declare Text[] G_ScriptsVersions; ///< Array containing the registered scripts versions
+declare Boolean G_LogWarning; ///< Was the log warning displayed?
+declare Boolean G_ErrorWarning; ///< Was the error warning displayed?
+declare Boolean G_DumpWarning; ///< Was the dump warning displayed?
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+// ---------------------------------- //
+/**	Return the version number of the script
+ *
+ *	@return														The version number of the script
+ */
+Text GetScriptVersion() {
+	return Version;
+}
+
+// ---------------------------------- //
+/**	Return the name of the script
+ *
+ *	@return														The name of the script
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+// ---------------------------------- //
+/** Display a log in the debug console
+ *	Behavior change depending on
+ *	the script environment :
+ *	- production -> do nothing
+ *	- others -> send a log
+ *
+ *	@param	_Text											The text to display
+ */
+Void Log(Text _Text) {
+	if (Env::Get() == Env::Env_Development() || Env::Get() == Env::Env_Test()) {
+		log("[LOG]"^Now^"> "^_Text);
+	} else if (!G_LogWarning) {
+		G_LogWarning = True;
+		log("""[LOG]{{{Now}}}> [Log] Logs are disabled in the "{{{Env::Get()}}}" environment.""");
+	}
+}
+Void Message(Text _Text) {
+	Log(_Text);
+}
+
+// ---------------------------------- //
+/** Display an error
+ *	Behavior change depending on
+ *	the script environment :
+ *	- development -> send an assert
+ *	- test -> send a log 
+ *	- others -> do nothing
+ */
+Void Error(Text _Text) {
+	declare Error = "[ERROR]"^Now^"> "^_Text;
+	switch (Env::Get()) {
+		case Env::Env_Development(): {
+			assert(False, Error);
+		}
+		case Env::Env_Test(): {
+			log(Error);
+		}
+		default: {
+			if (!G_LogWarning) {
+				G_LogWarning = True;
+				log("""[ERROR]{{{Now}}}> [Log] Errors are disabled in the "{{{Env::Get()}}}" environment.""");
+			}
+		}
+	}
+}
+
+// ---------------------------------- //
+/** Dump the "declare for" variable of an instance
+ *
+ *	@param	_Instance									The instance to check
+ *	@param	_StatsOnly								Only dump the stats
+ */
+Void DumpDeclareFor(CNod _Nod, Boolean _StatsOnly) {
+	if (Env::Get() == Env::Env_Development() || Env::Get() == Env::Env_Test()) {
+		log("[DUMP]"^Now^"> "^_Nod^" :\n"^Dbg_DumpDeclareForVariables(_Nod, _StatsOnly));
+	} else if (!G_LogWarning) {
+		G_LogWarning = True;
+		log("""[DUMP]{{{Now}}}> [Log] Dumps are disabled in the "{{{Env::Get()}}}" environment.""");
+	}
+}
+
+// ---------------------------------- //
+/// Overload DumpDeclareFor()
+Void DumpDeclareFor(CNod _Nod) {
+	DumpDeclareFor(_Nod, True);
+}
+
+// ---------------------------------- //
+/** Register a script
+ *
+ *	@param	_ScriptName								The name of the script
+ *	@param	_ScriptVersion						The version of the script
+ */
+Void RegisterScript(Text _ScriptName, Text _ScriptVersion) {
+	G_ScriptsNames.add(_ScriptName);
+	G_ScriptsVersions.add(_ScriptVersion);
+}
+
+// ---------------------------------- //
+/// Display the version and name of the registered scripts
+Void DisplayScripts() {
+	if (G_ScriptsNames.count <= 0) return;
+	
+	declare End = G_ScriptsNames.count - 1;
+	for (I, 0, End) {
+		Log("#Include > Script : "^G_ScriptsNames[I]^" | Version : "^G_ScriptsVersions[I]);
+	}
+}
+
+// ---------------------------------- //
+/// Unload the library
+Void Unload() {
+	G_ScriptsNames.clear();
+	G_ScriptsVersions.clear();
+	G_LogWarning = False;
+	G_ErrorWarning = False;
+	G_DumpWarning = False;
+}
+
+// ---------------------------------- //
+/// Load the library
+Void Load() {
+	Unload();
+}

@@ -1,0 +1,2920 @@
+/**
+ * Trackmania UI client library
+ */
+#Const Version    "2017-06-12"
+#Const ScriptName "ManiaApps/Nadeo/TrackMania/UI_Client.Script.txt"
+
+// ---------------------------------- //
+// Libraries
+// ---------------------------------- //
+#Include "TextLib" as TL
+#Include "ManiaApps/Nadeo/Layers.Script.txt" as Layers
+#Include "ManiaApps/Nadeo/TrackMania/UI_Common.Script.txt" as UI_Common
+#Include "Libs/Nadeo/Manialink3WPrevAnims.Script.txt" as Manialink
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_LibUI_TimeGapPos <48., -52., 5.>
+#Const C_LibUI_SmallScoresTablePos <-158.5, 40., 150.>
+#Const C_LibUI_ChronoPos <0., -80., -5.>
+#Const C_LibUI_CheckpointTimePos <0., 3., -10.>
+#Const C_LibUI_PrevBestTimePos <157., -24.,  5.>
+#Const C_LibUI_SpeedAndDistancePos <137., -69., 5.>
+#Const C_LibUI_CountdownPos <153., -7., 5.>
+#Const C_LibUI_LapsPos <140., 84., 5.>
+#Const C_LibUI_MapRankingPos <150.5, -28., 5.>
+#Const C_LibUI_CheckpointRankingPos <0., 84., 5.>
+#Const C_LibUI_MapInfoPos <-160., 80., 150.>
+#Const C_LibUI_LiveInfoPos <-159., 84., 5.>
+#Const C_LibUI_SpectatorInfoPos <0., -68., 5.>
+// Manialinks
+#Const C_ImgPath "file://Media/Manialinks/Nadeo/TrackMania/Ingame/"
+// Settings
+#Const C_HideLegend 1
+// Speedometer
+#Const C_Speed_Size 30.
+#Const C_Speed_Opacity 1.0
+#Const C_Speed_ClipOffset 0.2
+#Const C_Speed_FullCircleValue 150.
+// Colors
+#Const C_ColorHex_White "ffffff"
+#Const C_ColorRGB_White <1., 1., 1.>
+#Const C_ColorHex_Red "fa2626"
+#Const C_ColorRGB_Red <0.980, 0.149, 0.149>
+#Const C_ColorHex_Yellow "ffdb35"
+#Const C_ColorRGB_Yellow <1., 0.859, 0.208>
+#Const C_ColorRGB_Blue <0.149, 0.149, 0.980>
+#Const C_ColorHex_DarkBlue "0b081b"
+#Const C_ColorRGB_DarkBlue <0.043, 0.031, 0.106>
+#Const C_ColorHex_BlueGreen "1ec8c2"
+#Const C_ColorRGB_BlueGreen <0.117, 0.784, 0.761>
+// Scale
+#Const C_Speed_Scale 0.7
+#Const C_Chrono_Scale 0.8
+#Const C_CheckpoinRanking_Scale 0.7
+#Const C_CheckpointTime_Scale 0.9
+// Text style
+#Const C_Stylesheet """
+<stylesheet>
+  <style class="text-default" textfont="Oswald" textcolor="ffffff" textsize="3" textemboss="1" />
+  <style class="text-number" textfont="OswaldMono" textcolor="ffffff" textsize="3" textemboss="1" />
+</stylesheet>
+"""
+// Sounds
+#Const C_SoundPath "file://Media/Manialinks/Nadeo/Trackmania/Ingame/Sound/"
+#Const C_Sound_Checkpoint "RaceCheckPoint_Experimental.wav"
+#Const C_Sound_CheckpointLate "RaceCheckPointLate_Experimental.wav"
+#Const C_Sound_CheckpointAhead "RaceCheckPointAhead_Experimental.wav"
+
+// ---------------------------------- //
+// Globales
+// ---------------------------------- //
+declare Integer G_ModulesUpdate;
+declare Text[] G_Modules;
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+// ---------------------------------- //
+// Private
+// ---------------------------------- //
+// ---------------------------------- //
+/** Inject helpers functions in a
+ *  manialink script
+ *
+ *  @return                           Helpers functions
+ */
+Text Private_InjectHelpers() {
+  return """
+Void HideDuringIntro(CMlFrame _Frame) {
+  if (_Frame == Null) return;
+
+  declare IsIntro = (
+    UI.UISequence == CUIConfig::EUISequence::Intro ||
+    UI.UISequence == CUIConfig::EUISequence::RollingBackgroundIntro ||
+    UI.UISequence == CUIConfig::EUISequence::Outro
+  );
+
+  if (_Frame.Visible && IsIntro) {
+    _Frame.Visible = False;
+  } else if (!_Frame.Visible && !IsIntro) {
+    _Frame.Visible = True;
+  }
+}
+""";
+}
+// ---------------------------------- //
+/** Create the manialink for the time gap module
+ *
+ *  @return                           The manialink
+ */
+Text Private_CreateMLTimeGap() {
+  declare Img_FootLine_Checkpoint = "FootLine_Checkpoint.dds";
+  declare Img_Arrow = "Arrow_v.dds";
+  
+  //L16N [Trackmania UI] Legend displayed above the ranking at the latest crossed checkpoint
+  declare Text_CheckpointRanking = TL::ToUpperCase(_("Checkpoint ranking"));
+  
+  return """
+<manialink version="3" name="Lib_UI2:TimeGap">
+{{{C_Stylesheet}}}
+<framemodel id="Framemodel_Player">
+  <label pos="0 0" size="24 4" valign="center2" textsize="2" class="text-default" id="Label_Name" />
+  <quad pos="26.5 0" size="2.5 2.5" halign="center" valign="center" colorize="{{{C_ColorHex_White}}}" opacity="0.25" keepratio="Fit" image="{{{C_ImgPath^Img_Arrow}}}" id="Quad_Arrow" />
+  <label pos="42 0" size="13 4" halign="right" valign="center2" textcolor="{{{C_ColorHex_BlueGreen}}}" textsize="2" class="text-number" id="Label_Time" />
+</framemodel>
+<framemodel id="Framemodel_Background">
+  <frame size="47 5">
+    <quad size="80 80" rot="-12" style="Bgs1" substyle="BgDialogBlur" opacity="0.1" bluramount="0.1" />
+    <quad size="80 80" rot="-12" bgcolor="{{{C_ColorHex_DarkBlue}}}" opacity="0.3" id="Quad_Color" />
+  </frame>
+</framemodel>
+<frame pos="{{{C_LibUI_TimeGapPos.X}}} {{{C_LibUI_TimeGapPos.Y}}}" z-index="{{{C_LibUI_TimeGapPos.Z}}}" id="Frame_TimeGap" hidden="1">
+  <frame pos="30 0" z-index="0" hidden="{{{C_HideLegend}}}">
+    <quad pos="0.1 -3.2" z-index="0" size="47 2" halign="center" valign="center" keepratio="Fit" opacity="0.3" image="{{{C_ImgPath^Img_FootLine_Checkpoint}}}" />
+    <quad size="47 5" z-index="1" halign="center" valign="center" style="Bgs1" substyle="BgDialogBlur" opacity="0.1" bluramount="0.1" />
+    <quad size="47 5" z-index="2" halign="center" valign="center" bgcolor="{{{C_ColorHex_White}}}" opacity="0.3" />
+    <label z-index="3" size="46 5" halign="center" valign="center2" text="{{{Text_CheckpointRanking}}}" class="text-default" />
+  </frame>
+  <frame pos="6.5 -5.5" z-index="1" id="Frame_Backgrounds">
+    <frameinstance pos="0 0" modelid="Framemodel_Background" />
+    <frameinstance pos="0 -5.5" modelid="Framemodel_Background" />
+    <frameinstance pos="0 -11" modelid="Framemodel_Background" />
+    <frameinstance pos="0 -16.5" modelid="Framemodel_Background" />
+    <frameinstance pos="0 -22" modelid="Framemodel_Background" />
+  </frame>
+  <frame pos="9 -8" z-index="2" id="Frame_PlayersList">
+    <frameinstance pos="0 0" modelid="Framemodel_Player" />
+    <frameinstance pos="0 -5.5" modelid="Framemodel_Player" />
+    <frameinstance pos="0 -11" modelid="Framemodel_Player" />
+    <frameinstance pos="0 -16.5" modelid="Framemodel_Player" />
+    <frameinstance pos="0 -22" modelid="Framemodel_Player" />
+  </frame>
+</frame>
+<script><!--
+#Include "TextLib" as TL
+#Include "MathLib" as ML
+
+#Const C_LibUI_TimeGapPos <{{{C_LibUI_TimeGapPos.X}}}, {{{C_LibUI_TimeGapPos.Y}}}, {{{C_LibUI_TimeGapPos.Z}}}>
+
+declare CMlFrame[] Frames_Player;
+declare CMlFrame[] Frames_Background;
+
+Text TimeToText(Integer _Time) {
+  declare Time = TL::TimeToText(_Time, True);
+  declare Milliseconds = ML::Abs(_Time % 10);
+  if (Milliseconds >= 0) Time ^= TL::ToText(Milliseconds);
+  return Time;
+}
+
+CTmMlPlayer GetOwner() {
+  if (GUIPlayer != Null) return GUIPlayer;
+  if (InputPlayer != Null) return InputPlayer;
+  return Null;
+}
+
+Void UpdateSlot(Integer _SlotNb, CTmScore _Score) {
+  if (!Frames_Player.existskey(_SlotNb) || !Frames_Background.existskey(_SlotNb)) return;
+  declare Frame_Player <=> Frames_Player[_SlotNb];
+  declare Label_Time <=> (Frame_Player.GetFirstChild("Label_Time") as CMlLabel);
+  //declare Label_LocalRank <=> (Frame_Player.GetFirstChild("Label_LocalRank") as CMlLabel);
+  declare Label_Name <=> (Frame_Player.GetFirstChild("Label_Name") as CMlLabel);
+  declare Quad_Arrow <=> (Frame_Player.GetFirstChild("Quad_Arrow") as CMlQuad);
+  declare Frame_Background <=> Frames_Background[_SlotNb];
+  declare Quad_Color <=> (Frame_Background.GetFirstChild("Quad_Color") as CMlQuad);
+  
+  declare Owner <=> GetOwner();
+    
+  if (_Score != Null && Scores.count > 0 && Owner != Null) {
+    if (!Frame_Player.Visible) Frame_Player.Visible = True;
+    if (UseClans && _Score.TeamNum == 1) Quad_Color.BgColor = Teams[0].ColorPrimary;
+    else if (UseClans && _Score.TeamNum == 2) Quad_Color.BgColor = Teams[1].ColorPrimary;
+    else Quad_Color.BgColor = {{{C_ColorRGB_DarkBlue}}};
+    
+    declare Format = "";
+      
+    declare netread Text[Text] Net_LibUI_Settings for Teams[0];
+    declare CheckpointTime = 0;
+    
+    if (Net_LibUI_Settings.existskey("{{{UI_Common::C_Module_TimeGap}}}_Mode") && Net_LibUI_Settings["{{{UI_Common::C_Module_TimeGap}}}_Mode"] == "CurRace") {
+      declare CTmMlPlayer ScorePlayer;
+      foreach (Player in Players) {
+        if (Player.Score == _Score) {
+          ScorePlayer <=> Player;
+          break;
+        }
+      }
+
+      if (ScorePlayer != Null && ScorePlayer.CurRace.Checkpoints.count > 0) {
+        CheckpointTime = ScorePlayer.CurRace.Checkpoints[Owner.CurRace.Checkpoints.count - 1];
+      } else {
+        Frame_Player.Visible = False;
+        return;
+      }
+    } else {
+      if (Owner.CurLap.Checkpoints.count <= 0) {
+        if (_Score.Id == Owner.Score.Id) CheckpointTime = _Score.PrevRace.Time;
+        else CheckpointTime = _Score.BestRace.Time;
+      } else {
+        if (_Score.Id == Owner.Score.Id) CheckpointTime = Owner.CurLap.Checkpoints[Owner.CurLap.Checkpoints.count - 1];
+        else CheckpointTime = _Score.BestRace.Checkpoints[Owner.CurLap.Checkpoints.count - 1];
+      }
+    }
+    
+    declare LibUI_TimeGap_CheckpointLeadTime for Owner = 0;
+    if (_SlotNb == 0 && CheckpointTime == LibUI_TimeGap_CheckpointLeadTime) {
+      Label_Time.Value = Format^TimeToText(CheckpointTime);
+    } else {
+      declare LibUI_TimeGap_CheckpointLeadTime for Owner = 0;
+      declare Gap = CheckpointTime - LibUI_TimeGap_CheckpointLeadTime;
+      Label_Time.Value = Format^"+"^TimeToText(Gap);
+    }
+    
+    declare LibUI_TimeGap_Rank for _Score = 1;
+    //Label_LocalRank.Value = Format^(LibUI_TimeGap_Rank)^".";
+    Label_Name.Value = "$<"^_Score.User.Name^"$>";
+    
+    if (Owner.Score.Id == _Score.Id) {
+      Label_Time.TextColor = {{{C_ColorRGB_Yellow}}};
+      //Label_Name.TextColor = {{{C_ColorRGB_Yellow}}};
+      Quad_Arrow.Colorize = {{{C_ColorRGB_Yellow}}};
+    } else {
+      Label_Time.TextColor = {{{C_ColorRGB_BlueGreen}}};
+      //Label_Name.TextColor = {{{C_ColorRGB_White}}};
+      Quad_Arrow.Colorize = {{{C_ColorRGB_White}}};
+    }
+  } else {
+    if (Frame_Player.Visible) Frame_Player.Visible = False;
+    Quad_Color.BgColor = {{{C_ColorRGB_DarkBlue}}};
+  }
+}
+
+Void UpdateTimeGap(Boolean _OnlyTeam) {
+  declare Owner <=> GetOwner();
+  if (Owner == Null || Owner.Score == Null) return;
+  
+  if (Owner.CurRace.Checkpoints.count <= 0) return;
+  
+  declare netread Text[Text] Net_LibUI_Settings for Teams[0];
+  
+  declare CheckpointsSort = Integer[CTmScore];
+  if (Net_LibUI_Settings.existskey("{{{UI_Common::C_Module_TimeGap}}}_Mode") && Net_LibUI_Settings["{{{UI_Common::C_Module_TimeGap}}}_Mode"] == "CurRace") {
+    foreach (Player in Players) {
+      if (Player.CurRace.Checkpoints.count < Owner.CurRace.Checkpoints.count) continue;
+      if (_OnlyTeam && Player.CurrentClan != Owner.CurrentClan) continue;
+      CheckpointsSort[Player.Score] = Player.CurRace.Checkpoints[Owner.CurRace.Checkpoints.count-1];
+    }
+  } else {
+    if (Owner.CurLap.Checkpoints.count <= 0 && Owner.Score.PrevRace.Checkpoints.count <= 0) return;
+  
+    declare CheckpointsCount = 0;
+    if (Owner.CurLap.Checkpoints.count <= 0) {
+      CheckpointsSort[Owner.Score] = Owner.Score.PrevRace.Time;
+      CheckpointsCount = Owner.Score.PrevRace.Checkpoints.count;
+    } else {
+      CheckpointsSort[Owner.Score] = Owner.CurLap.Checkpoints[Owner.CurLap.Checkpoints.count-1];
+      CheckpointsCount = Owner.CurLap.Checkpoints.count;
+    }
+    
+    foreach (Score in Scores) {
+      if (Score == Null) continue;
+      if (Score.BestRace.Checkpoints.count < CheckpointsCount || Score.Id == Owner.Score.Id) continue;
+      if (_OnlyTeam && Score.TeamNum != Owner.CurrentClan) continue;
+      CheckpointsSort[Score] = Score.BestRace.Checkpoints[CheckpointsCount-1];
+    }
+  }
+  
+  CheckpointsSort = CheckpointsSort.sort();
+  
+  declare Start = 0;
+  declare End = 0;
+  foreach (Score => CheckpointTime in CheckpointsSort) {
+    if (Score.Id == Owner.Score.Id) break;
+    End +=1;
+  }
+  Start = End - Frames_Player.count + 1;
+  if (Start < 0) Start = 0;
+  if (End < Frames_Player.count - 1) End = Frames_Player.count - 1;
+  
+  declare LibUI_TimeGap_CheckpointLeadTime for Owner = 0;
+  declare SlotNb = 0;
+  declare I = 0;
+  foreach (Score => CheckpointTime in CheckpointsSort) {
+    if (I == 0) LibUI_TimeGap_CheckpointLeadTime = CheckpointTime;
+    if (I >= Start && I <= End) {
+      declare LibUI_TimeGap_Rank for Score = 1;
+      LibUI_TimeGap_Rank = I + 1;
+      UpdateSlot(SlotNb, Score);
+      SlotNb += 1;
+    }
+    I += 1;
+  }
+  for (J, SlotNb, Frames_Player.count) {
+    UpdateSlot(J, Null);
+  }
+}
+
+main() {
+  declare Frame_TimeGap   <=> (Page.GetFirstChild("Frame_TimeGap")    as CMlFrame);
+  declare Frame_PlayersList <=> (Page.GetFirstChild("Frame_PlayersList")  as CMlFrame);
+  foreach (Control in Frame_PlayersList.Controls) {
+    Frames_Player.add((Control as CMlFrame));
+  }
+  declare Frame_Backgrounds <=> (Page.GetFirstChild("Frame_Backgrounds")  as CMlFrame);
+  foreach (Control in Frame_Backgrounds.Controls) {
+    Frames_Background.add((Control as CMlFrame));
+  }
+  
+  declare netread Integer Net_LibUI_SettingsUpdate for Teams[0];
+  declare netread Text[Text] Net_LibUI_Settings for Teams[0];
+  declare PrevSettingsUpdate = -1;
+  declare DisplayTimeGap = True;
+  declare OnlyTeam = False;
+  
+  while (True) {
+    sleep(250);
+    declare Owner <=> GetOwner();
+    if (Owner == Null) continue;
+    if (Owner.Score == Null) continue;
+    if (!PageIsVisible) continue;
+    
+    declare NeedUpdate = False;
+
+    if (PrevSettingsUpdate != Net_LibUI_SettingsUpdate) {
+      PrevSettingsUpdate = Net_LibUI_SettingsUpdate;
+      foreach (SettingName => SettingValue in Net_LibUI_Settings) {
+        switch (SettingName) {
+          case "{{{UI_Common::C_Module_TimeGap}}}_Display": {
+            if (SettingValue == "True") {
+              Frame_TimeGap.Visible = True;
+              DisplayTimeGap = True;
+            } else {
+              Frame_TimeGap.Visible = False;
+              DisplayTimeGap = False;
+            }
+          }
+          case "{{{UI_Common::C_Module_TimeGap}}}_Position": {
+            declare PositionSplit = TL::Split(" ", SettingValue);
+            Frame_TimeGap.RelativePosition_V3 = <TL::ToReal(PositionSplit[0]), TL::ToReal(PositionSplit[1])>;
+            Frame_TimeGap.ZIndex = TL::ToReal(PositionSplit[2]);
+          }
+          case "{{{UI_Common::C_Module_TimeGap}}}_OnlyTeam": {
+            NeedUpdate = True;
+            if (SettingValue == "1") {
+              OnlyTeam = True;
+            } else {
+              OnlyTeam = False;
+            }
+          }
+        }
+      }
+    }
+    
+    if (DisplayTimeGap) {
+      if (Owner.CurRace.Checkpoints.count <= 0 && Frame_TimeGap.Visible) {
+        Frame_TimeGap.Visible = False;
+      } else if (Owner.CurRace.Checkpoints.count > 0 && !Frame_TimeGap.Visible) {
+        Frame_TimeGap.Visible = True;
+      }
+    }
+
+    if (Net_LibUI_Settings.existskey("{{{UI_Common::C_Module_TimeGap}}}_Mode") && Net_LibUI_Settings["{{{UI_Common::C_Module_TimeGap}}}_Mode"] == "CurRace") {
+      foreach (Player in Players) {
+        declare LibUI_TimeGap_PrevCheckpointsCount for Player = -1;
+        if (LibUI_TimeGap_PrevCheckpointsCount != Player.CurRace.Checkpoints.count) {
+          LibUI_TimeGap_PrevCheckpointsCount = Player.CurRace.Checkpoints.count;
+          if (Player.CurRace.Checkpoints.count == Owner.CurRace.Checkpoints.count) {
+            NeedUpdate = True;
+          }
+        }
+      }
+    } else {
+      declare LibUI_TimeGap_PrevCheckpointsCount for Owner = -1;
+      declare LibUI_TimeGap_PrevRaceTime for Owner = -1;
+      if (
+        LibUI_TimeGap_PrevCheckpointsCount != Owner.CurRace.Checkpoints.count 
+        || LibUI_TimeGap_PrevRaceTime != Owner.Score.PrevRace.Time
+      ) {
+        LibUI_TimeGap_PrevCheckpointsCount = Owner.CurRace.Checkpoints.count;
+        LibUI_TimeGap_PrevRaceTime = Owner.Score.PrevRace.Time;
+        NeedUpdate = True;
+      }
+      foreach (Score in Scores) {
+        declare LibUI_TimeGap_PrevBestRaceTime for Score = -1;
+        if (LibUI_TimeGap_PrevBestRaceTime != Score.BestRace.Time) {
+          LibUI_TimeGap_PrevBestRaceTime = Score.BestRace.Time;
+          NeedUpdate = True;
+        }
+      }
+    }
+    
+    if (NeedUpdate) UpdateTimeGap(OnlyTeam);
+  }
+}
+--></script>
+</manialink>""";
+}
+
+// ---------------------------------- //
+/** Create the manialink for the small scores table module
+ *
+ *  @return                           The manialink
+ */
+Text Private_CreateMLSmallScoresTable() {
+  declare Img_FootLine_RoundRanking = "FootLine_RoundRanking.dds";
+  declare Img_Arrow = "Arrow_v.dds";
+  
+  //L16N [Trackmania UI] Legend displayed above the ranking at the end of a race
+  declare Text_RoundRanking = TL::ToUpperCase(_("Race ranking"));
+  
+  return """
+<manialink version="3" name="Lib_UI2:SmallScoresTable">
+{{{C_Stylesheet}}}
+<framemodel id="Framemodel_Player">
+  <frame pos="2.5 -3.2" z-index="1">
+    <label pos="0 0" size="18 4" valign="center2" class="text-default" id="Label_Name" />
+    <label pos="22 0" size="6 4" halign="center" valign="center2" textsize="2.3" class="text-default" id="Label_RoundPoints" />
+    <quad pos="26.5 0" size="2.5 2.5" halign="center" valign="center" colorize="{{{C_ColorHex_White}}}" opacity="0.25" keepratio="Fit" image="{{{C_ImgPath^Img_Arrow}}}" id="Quad_Arrow" />
+    <label pos="42 0" size="13 4" halign="right" valign="center2" textcolor="{{{C_ColorHex_BlueGreen}}}" textsize="2.3" class="text-number" id="Label_Time" />
+  </frame>
+</framemodel>
+<framemodel id="Framemodel_Background">
+  <frame size="47 6.2">
+    <quad pos="47 0" z-index="0" size="80 20" rot="12" halign="right" style="Bgs1" substyle="BgDialogBlur" opacity="0.1" bluramount="0.1" />
+    <quad pos="47 0" z-index="1" size="80 20" rot="12" halign="right" bgcolor="{{{C_ColorHex_DarkBlue}}}" opacity="0.3" id="Quad_TeamColor" />
+  </frame>
+</framemodel>
+<frame id="Frame_Global">
+  <frame pos="{{{C_LibUI_SmallScoresTablePos.X}}} {{{C_LibUI_SmallScoresTablePos.Y}}}" z-index="{{{C_LibUI_SmallScoresTablePos.Z}}}" id="Frame_SmallScoresTable" hidden="1">
+    <frame pos="25.3 0" z-index="0">
+      <quad pos="0 -3.2" z-index="0" size="47 2" halign="center" valign="center" keepratio="Fit" opacity="0.3" image="{{{C_ImgPath^Img_FootLine_RoundRanking}}}" />
+      <quad size="47 5" z-index="1" halign="center" valign="center" style="Bgs1" substyle="BgDialogBlur" opacity="0.1" bluramount="0.1" />
+      <quad size="47 5" z-index="2" halign="center" valign="center" bgcolor="{{{C_ColorHex_White}}}" opacity="0.3" />
+      <label z-index="3" size="46 5" halign="center" valign="center2" text="{{{Text_RoundRanking}}}" class="text-default" />
+    </frame>
+    <frame pos="2 -4.5" z-index="1" id="Frame_Backgrounds">
+      <frameinstance pos="0 0" modelid="Framemodel_Background" />
+      <frameinstance pos="0 -6.7" modelid="Framemodel_Background" />
+      <frameinstance pos="0 -13.4" modelid="Framemodel_Background" />
+      <frameinstance pos="0 -20.1" modelid="Framemodel_Background" />
+      <frameinstance pos="0 -26.8" modelid="Framemodel_Background" />
+      <frameinstance pos="0 -33.5" modelid="Framemodel_Background" />
+      <frameinstance pos="0 -40.2" modelid="Framemodel_Background" />
+      <frameinstance pos="0 -46.9" modelid="Framemodel_Background" />
+    </frame>
+    <frame pos="2 -4.5" z-index="2" id="Frame_PlayersList">
+      <frameinstance pos="0 0" modelid="Framemodel_Player" />
+      <frameinstance pos="0 -6.7" modelid="Framemodel_Player" />
+      <frameinstance pos="0 -13.4" modelid="Framemodel_Player" />
+      <frameinstance pos="0 -20.1" modelid="Framemodel_Player" />
+      <frameinstance pos="0 -26.8" modelid="Framemodel_Player" />
+      <frameinstance pos="0 -33.5" modelid="Framemodel_Player" />
+      <frameinstance pos="0 -40.2" modelid="Framemodel_Player" />
+      <frameinstance pos="0 -46.9" modelid="Framemodel_Player" />
+    </frame>
+  </frame>
+</frame>
+<script><!--
+#Include "TextLib" as TL
+#Include "MathLib" as ML
+
+declare CMlFrame[] Frames_Player;
+declare CMlFrame[] Frames_Background;
+
+Text TimeToText(Integer _Time) {
+  declare Time = TL::TimeToText(_Time, True);
+  declare Milliseconds = ML::Abs(_Time % 10);
+  if (Milliseconds >= 0) Time ^= TL::ToText(Milliseconds);
+  return Time;
+}
+
+CTmMlPlayer GetOwner() {
+  if (GUIPlayer != Null) return GUIPlayer;
+  if (InputPlayer != Null) return InputPlayer;
+  return Null;
+}
+
+Void UpdateSlot(Integer _SlotNb, CTmScore _Score) {
+  if (!Frames_Player.existskey(_SlotNb) || !Frames_Background.existskey(_SlotNb)) return;
+  declare Frame_Background <=> Frames_Background[_SlotNb];
+  declare Quad_TeamColor <=> (Frame_Background.GetFirstChild("Quad_TeamColor") as CMlQuad);
+  declare Frame_Player <=> Frames_Player[_SlotNb];
+  declare Label_Time <=> (Frame_Player.GetFirstChild("Label_Time") as CMlLabel);
+  declare Label_RoundPoints <=> (Frame_Player.GetFirstChild("Label_RoundPoints") as CMlLabel);
+  declare Label_Name <=> (Frame_Player.GetFirstChild("Label_Name") as CMlLabel);
+  declare Quad_Arrow <=> (Frame_Player.GetFirstChild("Quad_Arrow") as CMlQuad);
+  
+  if (_Score != Null) {
+    if (!Frame_Player.Visible) Frame_Player.Visible = True;
+    
+    if (UseClans && (_Score.TeamNum == 1 || _Score.TeamNum == 2)) {
+      Quad_TeamColor.BgColor = Teams[_Score.TeamNum - 1].ColorPrimary;
+    } else {
+      Quad_TeamColor.BgColor = {{{C_ColorRGB_DarkBlue}}};
+    }
+    
+    Label_Time.Value = TimeToText(_Score.PrevRace.Time);
+    
+    if (_Score.PrevRaceDeltaPoints > 0) Label_RoundPoints.Value = "+"^_Score.PrevRaceDeltaPoints;
+    else if (_Score.PrevRaceDeltaPoints == 0) Label_RoundPoints.Value = "";
+    else Label_RoundPoints.Value = TL::ToText(_Score.PrevRaceDeltaPoints);
+    
+    Label_Name.Value = "$<"^_Score.User.Name^"$>";
+    
+    declare Owner <=> GetOwner();
+    if (Owner != Null && Owner.Score == _Score) {
+      Label_Time.TextColor = {{{C_ColorRGB_Yellow}}};
+      //Label_Name.TextColor = {{{C_ColorRGB_Yellow}}};
+      Label_RoundPoints.TextColor = {{{C_ColorRGB_Yellow}}};
+      Quad_Arrow.Colorize = {{{C_ColorRGB_Yellow}}};
+    } else {
+      Label_Time.TextColor = {{{C_ColorRGB_BlueGreen}}};
+      //Label_Name.TextColor = {{{C_ColorRGB_White}}};
+      Label_RoundPoints.TextColor = {{{C_ColorRGB_White}}};
+      Quad_Arrow.Colorize = {{{C_ColorRGB_White}}};
+    }
+  } else {
+    if (Frame_Player.Visible) Frame_Player.Visible = False;
+    Quad_TeamColor.BgColor = {{{C_ColorRGB_DarkBlue}}};
+  }
+}
+
+Void UpdateSmallScoresTable() {
+  declare FinishSort = Integer[CTmScore];
+  foreach (Score in Scores) {
+    if (Score.PrevRace.Time >= 0) FinishSort[Score] = Score.PrevRace.Time;
+  }
+  FinishSort = FinishSort.sort();
+  
+  declare I = 0;
+  foreach (Score => Time in FinishSort) {
+    UpdateSlot(I, Score);
+    I += 1;
+    if (I > Frames_Player.count - 1) break;
+  }
+  for (J, I, Frames_Player.count - 1) {
+    UpdateSlot(J, Null);
+  }
+}
+
+main() {
+  declare Frame_Global <=> (Page.GetFirstChild("Frame_Global") as CMlFrame);
+  declare Frame_SmallScoresTable <=> (Page.GetFirstChild("Frame_SmallScoresTable") as CMlFrame);
+  declare Frame_PlayersList <=> (Page.GetFirstChild("Frame_PlayersList") as CMlFrame);
+  foreach (Control in Frame_PlayersList.Controls) {
+    Frames_Player.add((Control as CMlFrame));
+  }
+  declare Frame_Backgrounds <=> (Page.GetFirstChild("Frame_Backgrounds") as CMlFrame);
+  foreach (Control in Frame_Backgrounds.Controls) {
+    Frames_Background.add((Control as CMlFrame));
+  }
+  
+  // Force clip to take effet. It seems that if the clip start hidden, it does not clip its content properly
+  Frame_SmallScoresTable.Visible = True;
+  yield;
+  Frame_SmallScoresTable.Visible = False;
+  
+  declare netread Integer Net_LibUI_SettingsUpdate for Teams[0];
+  declare netread Text[Text] Net_LibUI_Settings for Teams[0];
+  
+  declare PrevUseClans = False;
+  declare PrevSettingsUpdate = -1;
+  
+  while (True) {
+    sleep(250);
+    declare Owner <=> GetOwner();
+    if (Owner == Null) continue;
+    if (!PageIsVisible) continue;
+    
+    if (PrevUseClans != UseClans) {
+      PrevUseClans = UseClans;
+      if (!UseClans) {
+        foreach (Frame_Background in Frames_Background) {
+          declare Quad_TeamColor <=> (Frame_Background.GetFirstChild("Quad_TeamColor") as CMlQuad);
+          Quad_TeamColor.BgColor= <0., 0., 0.>;
+        }
+      }
+    }
+    
+    if (PrevSettingsUpdate != Net_LibUI_SettingsUpdate) {
+      PrevSettingsUpdate = Net_LibUI_SettingsUpdate;
+      foreach (SettingName => SettingValue in Net_LibUI_Settings) {
+        switch (SettingName) {
+          case "{{{UI_Common::C_Module_SmallScoresTable}}}_Display": {
+            if (SettingValue == "True") Frame_Global.Visible = True;
+            else Frame_Global.Visible = False;
+          }
+          case "{{{UI_Common::C_Module_SmallScoresTable}}}_Position": {
+            declare PositionSplit = TL::Split(" ", SettingValue);
+            Frame_SmallScoresTable.RelativePosition_V3 = <TL::ToReal(PositionSplit[0]), TL::ToReal(PositionSplit[1])>;
+            Frame_SmallScoresTable.ZIndex = TL::ToReal(PositionSplit[2]);
+          }
+        }
+      }
+    }
+    
+    if (!Frame_Global.Visible) continue;
+    
+    declare NeedUpdate = False;
+    declare OneFinish = False;
+    foreach (Player in Players) {
+      if (Player.Score == Null) continue;
+      declare LibUI_SmallScoresTable_PrevRaceTime for Player = -1;
+      declare LibUI_SmallScoresTable_PrevRaceDeltaPoints for Player = -1;
+      declare LibUI_SmallScoresTable_PrevTeamNum for Player = -1;
+      if (
+        LibUI_SmallScoresTable_PrevRaceTime != Player.Score.PrevRace.Time
+        || LibUI_SmallScoresTable_PrevRaceDeltaPoints != Player.Score.PrevRaceDeltaPoints
+        || LibUI_SmallScoresTable_PrevTeamNum != Player.Score.TeamNum
+      ) {
+        LibUI_SmallScoresTable_PrevRaceTime = Player.Score.PrevRace.Time;
+        LibUI_SmallScoresTable_PrevRaceDeltaPoints = Player.Score.PrevRaceDeltaPoints;
+        LibUI_SmallScoresTable_PrevTeamNum = Player.Score.TeamNum;
+        if (Player.Score.PrevRace.Time >= 0) NeedUpdate = True; 
+      }
+      if (
+        Player.Score.PrevRace.Time >= 0 && 
+        Owner.RaceState != CTmMlPlayer::ERaceState::Running && 
+        UI.UISequence != CUIConfig::EUISequence::Podium
+      ) OneFinish = True;
+    }
+    
+    if (NeedUpdate) UpdateSmallScoresTable();
+    
+    if (OneFinish && !Frame_SmallScoresTable.Visible) Frame_SmallScoresTable.Visible = True;
+    else if (!OneFinish && Frame_SmallScoresTable.Visible) Frame_SmallScoresTable.Visible = False;
+  }
+}
+--></script>
+</manialink>""";
+}
+
+// ---------------------------------- //
+/** Create the manialink for the chrono
+ *
+ *  @return                           The manialink
+ */
+Text Private_CreateMLChrono() {
+  //L16N [Trackmania UI] Legend displayed next to the main race chrono
+  declare Text_RaceTime = TL::ToUpperCase(_("Race time"));
+  
+  declare Img_FootLine_RaceTime = "FootLine_RaceTime.dds";
+  
+  return """
+<manialink version="3" name="Lib_UI2:Chrono">
+{{{C_Stylesheet}}}
+<frame pos="{{{C_LibUI_ChronoPos.X}}} {{{C_LibUI_ChronoPos.Y}}}" z-index="{{{C_LibUI_ChronoPos.Z}}}" scale="{{{C_Chrono_Scale}}}" hidden="1" id="Frame_Chrono">
+<frame id="Frame_Intro">
+  <label pos="0 0.3" z-index="1" size="50 10" halign="center" valign="center" textsize="12" text="--:--.--" class="text-number" id="Label_Chrono" />
+  <frame pos="31 -2" z-index="0" hidden="{{{C_HideLegend}}}">
+    <quad pos="0.1 -3" z-index="0" size="15.6 24" halign="center" valign="center"  opacity="0.3" keepratio="Fit" image="{{{C_ImgPath^Img_FootLine_RaceTime}}}" id="Quad_Footer" />
+    <quad size="15.2 5" z-index="1" halign="center" valign="center" style="Bgs1" substyle="BgDialogBlur" opacity="0.1" bluramount="0.1" />
+    <quad size="15.2 5" z-index="2" halign="center" valign="center" bgcolor="{{{C_ColorHex_White}}}" opacity="0.3" id="Quad_Legend" />
+    <label z-index="3" size="15 5" halign="center" valign="center2" text="{{{Text_RaceTime}}}" class="text-default" id="Label_Legend" />
+  </frame>
+</frame>
+</frame>
+<script><!--
+#Include "TextLib" as TL
+
+CTmMlPlayer GetOwner() {
+  if (GUIPlayer != Null) return GUIPlayer;
+  if (InputPlayer != Null) return InputPlayer;
+  return Null;
+}
+
+{{{Private_InjectHelpers()}}}
+
+main() {
+  declare Frame_Chrono <=> (Page.GetFirstChild("Frame_Chrono") as CMlFrame);
+  declare Frame_Intro <=> (Page.GetFirstChild("Frame_Intro") as CMlFrame);
+  declare Label_Chrono <=> (Page.GetFirstChild("Label_Chrono") as CMlLabel);
+  declare Label_Legend <=> (Page.GetFirstChild("Label_Legend") as CMlLabel);
+  declare Quad_Legend <=> (Page.GetFirstChild("Quad_Legend") as CMlQuad);
+  declare Quad_Footer <=> (Page.GetFirstChild("Quad_Footer") as CMlQuad);
+  
+  declare netread Integer Net_LibUI_SettingsUpdate for Teams[0];
+  declare netread Text[Text] Net_LibUI_Settings for Teams[0];
+  
+  declare IsIndependantLaps = False;
+  declare DisplayChrono = True;
+  
+  declare PrevSettingsUpdate = -1;
+  declare PrevRaceState = CTmMlPlayer::ERaceState::Running;
+  declare PrevUIStatus = CUIConfig::EUIStatus::None;
+  
+  while (True) {
+    yield;
+
+    HideDuringIntro(Frame_Intro);
+    
+    declare Owner <=> GetOwner();
+    if (!PageIsVisible || Owner == Null) continue;
+    
+    if (PrevSettingsUpdate != Net_LibUI_SettingsUpdate) {
+      PrevSettingsUpdate = Net_LibUI_SettingsUpdate;
+      foreach (SettingName => SettingValue in Net_LibUI_Settings) {
+        switch (SettingName) {
+          case "{{{UI_Common::C_Module_Chrono}}}_Display": {
+            if (SettingValue == "True") {
+              Frame_Chrono.Visible = True;
+              DisplayChrono = True;
+            } else {
+              Frame_Chrono.Visible = False;
+              DisplayChrono = False;
+            }
+          }
+          case "{{{UI_Common::C_Module_Chrono}}}_Position": {
+            declare PositionSplit = TL::Split(" ", SettingValue);
+            Frame_Chrono.RelativePosition_V3 = <TL::ToReal(PositionSplit[0]), TL::ToReal(PositionSplit[1])>;
+            Frame_Chrono.ZIndex = TL::ToReal(PositionSplit[2]);
+          }
+          case "IndependantLaps": {
+            if (SettingValue == "True") IsIndependantLaps = True;
+            else IsIndependantLaps = False;
+          }
+        }
+      }
+    }
+    
+    if (PrevRaceState != Owner.RaceState) {
+      PrevRaceState = Owner.RaceState;
+      
+      if (PrevRaceState == CTmMlPlayer::ERaceState::Finished) {
+        if(Owner.CurRace != Null) {
+          Label_Chrono.Value = TL::TimeToText(Owner.CurRace.Time, True);
+        } else {
+          Label_Chrono.Value = "--:--.--";
+        }
+      } else if (PrevRaceState == CTmMlPlayer::ERaceState::BeforeStart) {
+        Label_Chrono.Value = TL::TimeToText(0, True);
+      }
+    }
+    
+    if (PrevRaceState == CTmMlPlayer::ERaceState::Running) {
+      if (IsIndependantLaps && Owner.CurLap != Null) {
+        Label_Chrono.Value = TL::TimeToText(Owner.CurLap.Time, True);
+      } else if (Owner.CurRace != Null) {
+        Label_Chrono.Value = TL::TimeToText(Owner.CurRace.Time, True);
+      } 
+    }
+    
+    if (UI != Null && PrevUIStatus != UI.UIStatus) {
+      PrevUIStatus = UI.UIStatus;
+      switch (UI.UIStatus) {
+        case CUIConfig::EUIStatus::Warning: {
+          Label_Chrono.TextColor = <1., 0.6, 0.>;
+          //Label_Legend.TextColor = <1., 0.6, 0.>;
+          //Quad_Legend.BgColor = <1., 0.6, 0.>;
+          //Quad_Footer.Colorize = <1., 0.6, 0.>;
+        }
+        case CUIConfig::EUIStatus::Error: {
+          Label_Chrono.TextColor = <1., 0., 0.>;
+          //Label_Legend.TextColor = <1., 0., 0.>;
+          //Quad_Legend.BgColor = <1., 0., 0.>;
+          //Quad_Footer.Colorize = <1., 0., 0.>;
+        }
+        case CUIConfig::EUIStatus::Official: {
+          Label_Chrono.TextColor = <0., 0.6, 0.>;
+          //Label_Legend.TextColor = <0., 0.6, 0.>;
+          //Quad_Legend.BgColor = <0., 0.6, 0.>;
+          //Quad_Footer.Colorize = <0., 0.6, 0.>;
+        }
+        default: {
+          Label_Chrono.TextColor = <1., 1., 1.>;
+          //Label_Legend.TextColor = {{{C_ColorRGB_White}}};
+          //Quad_Legend.BgColor = {{{C_ColorRGB_White}}};
+          //Quad_Footer.Colorize = {{{C_ColorRGB_White}}};
+        }
+      }
+    }
+    
+    if (DisplayChrono) {
+      if (Owner.IsSpawned) {
+        if (!Frame_Chrono.Visible) Frame_Chrono.Visible = True;
+      } else if (Frame_Chrono.Visible) {
+        Frame_Chrono.Visible = False;
+      }
+    }
+  }
+}
+--></script>
+</manialink>""";
+}
+
+// ---------------------------------- //
+/** Create the manialink for the checkpoint time module
+ *
+ *  @return                           The manialink
+ */
+Text Private_CreateMLCheckpointTime() {
+  declare Img_Chrono = "Chrono.dds";
+  declare Img_Arrow = "Arrow.dds";
+  declare Img_Arrow2 = "Arrow2.dds";
+  
+  return """
+<manialink version="3" name="Lib_UI2:CheckpointTime">
+{{{C_Stylesheet}}}
+<framemodel id="FrameModel_WayPointInfo">
+  <quad pos="0 0" z-index="0" size="30 6.7" style="Bgs1" substyle="BgDialogBlur" opacity="0.1" bluramount="0.1" id="Quad_Bg" hidden="1" />
+  <quad z-index="1" size="30 6.7" bgcolor="{{{C_ColorHex_DarkBlue}}}" opacity="0.5" id="Quad_Color" />
+  <quad pos="3.7 -3.5" z-index="2" size="5 5" halign="center" valign="center" keepratio="Fit" opacity="0.9" image="{{{C_ImgPath^Img_Chrono}}}" id="Quad_Img" />
+  <label pos="3.7 -2.8" z-index="3" size="7 5" halign="center" valign="center" textsize="2" class="text-default" id="Label_Rank" />
+  <label pos="16.9 -2.8" z-index="4" size="30 8" halign="center" valign="center" textsize="3.5" text="--:--.---" class="text-number" id="Label_WayPointInfo" />
+</framemodel>
+<frame pos="{{{C_LibUI_CheckpointTimePos.X}}} {{{C_LibUI_CheckpointTimePos.Y}}}" z-index="{{{C_LibUI_CheckpointTimePos.Z}}}" scale="{{{C_CheckpointTime_Scale}}}" hidden="1" id="Frame_Global">
+  <frame id="Frame_WayPoint">
+    <quad pos="0 34" z-index="2" size="0.4 21" halign="center" valign="center" bgcolor="eee" opacity="0.5" id="Quad_Ligne" />
+    <frame pos="-30 0" z-index="1" clip="True" clipposn="10 30" clipsizen="40 80" id="Frame_ClipWayPointLeft">
+      <frameinstance pos="31. 34." z-index="0" modelid="FrameModel_WayPointInfo" id="Frame_WayPointInfo0" />
+      <frameinstance pos="31. 43.3" z-index="1" modelid="FrameModel_WayPointInfo" hidden="1" id="Frame_WayPointInfo2" />
+    </frame>
+    <frame z-index="0" clip="True" clipposn="20 30" clipsizen="40 80" id="Frame_ClipWayPointRight">
+      <frameinstance pos="-31. 34." z-index="0" modelid="FrameModel_WayPointInfo" hidden="1" id="Frame_WayPointInfo3" />
+      <frameinstance pos="-31. 43.3" z-index="1" modelid="FrameModel_WayPointInfo" id="Frame_WayPointInfo1" />
+    </frame>
+  </frame>
+</frame>
+<script><!--
+#Const C_DisplayDuration 2500
+#Const C_ShowHideDuration 500
+#Const C_ShowHideSpeed 0.5
+#Const C_UpdateSpeed 1.
+#Const C_Anim 0
+
+{{{Manialink::GetIncludes()}}}
+{{{Manialink::Load()}}}
+
+Text TimeToText(Integer _Time) {
+  declare Time = TL::TimeToText(_Time, True);
+  declare Milliseconds = ML::Abs(_Time % 10);
+  if (Milliseconds >= 0) Time ^= TL::ToText(Milliseconds);
+  return Time;
+}
+
+CTmMlPlayer GetOwner() {
+  if (GUIPlayer != Null) return GUIPlayer;
+  if (InputPlayer != Null) return InputPlayer;
+  return Null;
+}
+
+Integer GetCurRank(CTmMlPlayer _Player, Integer _CheckpointIndex, Integer _Time, Boolean _IsIndependantLaps) {
+  declare Rank = 1;
+  declare CTmResult Result;
+  foreach (Player in Players) {
+    if (_IsIndependantLaps) Result <=> Player.CurLap;
+    else Result <=> Player.CurRace;
+    
+    if (Result != Null && Player.Id != _Player.Id) {
+      if (_CheckpointIndex >= 0 && Result.Checkpoints.count > _CheckpointIndex) {
+        if (Result.Checkpoints[_CheckpointIndex] < _Time) Rank += 1;
+      } 
+    }
+  }
+  
+  return Rank;
+}
+
+Integer GetBestRank(CTmMlPlayer _Player, Integer _CheckpointIndex, Integer _Time, Boolean _IsIndependantLaps) {
+  declare Rank = 1;
+  declare CTmResult Result;
+  foreach (Score in Scores) {
+    if (_IsIndependantLaps) Result <=> Score.BestLap;
+    else Result <=> Score.BestRace;
+    
+    if (Result != Null && Result.Time >= 0 && Score.User.Id != _Player.User.Id) {
+      if (_CheckpointIndex >= 0 && Result.Checkpoints.count > _CheckpointIndex) {
+        if (Result.Checkpoints[_CheckpointIndex] < _Time) Rank += 1;
+      } else if (Result.Time >= 0) {
+        if (Result.Time < _Time) Rank += 1;
+      }
+    }
+  }
+  
+  return Rank;
+}
+
+Void AnimFade(CMlFrame _Frame, Boolean _Show) {
+  if (_Frame == Null) return;
+  foreach (Control in _Frame.Controls) {
+    if (Control is CMlFrame) {
+      AnimFade((Control as CMlFrame), _Show);
+    } else if (Control is CMlQuad) {
+      declare Quad <=> (Control as CMlQuad);
+      declare Opacity = 0.;
+      if (_Show) {
+        Quad.Opacity = 0.;
+        Opacity = 1.;
+      }
+      if (Quad.ControlId == "Quad_Bg") Opacity *= 0.1;
+      else if (Quad.ControlId == "Quad_Color") Opacity *= 0.5;
+      else if (Quad.ControlId == "Quad_Img") Opacity *= 0.9;
+      else if (Quad.ControlId == "Quad_Ligne") Opacity *= 0.5;
+      AnimMgr.Add(Quad, "<quad opacity=\""^Opacity^"\" hidden=\"0\" />", ML::NearestInteger(C_ShowHideDuration * C_ShowHideSpeed), CAnimManager::EAnimManagerEasing::QuintOut);
+    } else if (Control is CMlLabel) {
+      declare Label <=> (Control as CMlLabel);
+      declare Opacity = 0.;
+      if (_Show) {
+        Label.Opacity = 0.;
+        Opacity = 1.;
+      }
+      AnimMgr.Add(Label, "<label opacity=\""^Opacity^"\" hidden=\"1\" />", ML::NearestInteger(C_ShowHideDuration * C_ShowHideSpeed), CAnimManager::EAnimManagerEasing::QuintOut);
+    }
+  }
+}
+
+Integer ShowWaypoint(
+  Integer _CheckpointTime,
+  Integer _Rank,
+  Integer _TimeDiff,
+  Boolean _ShowTimeDiff,
+  Integer _LapTime,
+  Integer _LapTimeDiff,
+  Boolean _ShowLapTime,
+  Boolean _ShowLapTimeDiff,
+  Boolean _IsAlreadyDisplayed
+) {
+  declare CMlFrame Frame_WayPoint      <=> (Page.MainFrame.GetFirstChild("Frame_WayPoint")           as CMlFrame);
+  declare CMlFrame Frame_WayPointInfo0 <=> (Frame_WayPoint.GetFirstChild("Frame_WayPointInfo0")      as CMlFrame);
+  declare CMlLabel Label_WayPointInfo0 <=> (Frame_WayPointInfo0.GetFirstChild("Label_WayPointInfo")  as CMlLabel);
+  declare CMlFrame Frame_WayPointInfo1 <=> (Frame_WayPoint.GetFirstChild("Frame_WayPointInfo1")      as CMlFrame);
+  declare CMlLabel Label_WayPointInfo1 <=> (Frame_WayPointInfo1.GetFirstChild("Label_WayPointInfo")  as CMlLabel);
+  declare CMlFrame Frame_WayPointInfo2 <=> (Frame_WayPoint.GetFirstChild("Frame_WayPointInfo2")      as CMlFrame);
+  declare CMlLabel Label_WayPointInfo2 <=> (Frame_WayPointInfo2.GetFirstChild("Label_WayPointInfo")  as CMlLabel);
+  declare CMlFrame Frame_WayPointInfo3 <=> (Frame_WayPoint.GetFirstChild("Frame_WayPointInfo3")      as CMlFrame);
+  declare CMlLabel Label_WayPointInfo3 <=> (Frame_WayPointInfo3.GetFirstChild("Label_WayPointInfo")  as CMlLabel);
+  declare CMlQuad Quad_Color           <=> (Frame_WayPointInfo1.GetFirstChild("Quad_Color")          as CMlQuad);
+  declare CMlQuad Quad_Color3          <=> (Frame_WayPointInfo3.GetFirstChild("Quad_Color")          as CMlQuad);
+  declare CMlQuad Quad_Img1            <=> (Frame_WayPointInfo1.GetFirstChild("Quad_Img")            as CMlQuad);
+  declare CMlQuad Quad_Img3            <=> (Frame_WayPointInfo3.GetFirstChild("Quad_Img")            as CMlQuad);
+  declare CMlQuad Quad_Ligne           <=> (Frame_WayPoint.GetFirstChild("Quad_Ligne")               as CMlQuad);
+  declare CMlQuad Quad_Img2            <=> (Frame_WayPointInfo2.GetFirstChild("Quad_Img")            as CMlQuad);
+  declare CMlLabel Label_LocalRank     <=> (Frame_WayPointInfo0.GetFirstChild("Label_Rank")          as CMlLabel);
+  declare CMlQuad Quad_Img0            <=> (Frame_WayPointInfo0.GetFirstChild("Quad_Img")            as CMlQuad);
+
+  Frame_WayPoint.Visible = True;
+
+  if (_Rank == 1) {
+    Label_LocalRank.Value = "{{{_("1st")}}}";
+  } else if (_Rank == 2) {
+    Label_LocalRank.Value = "{{{_("2nd")}}}";
+  } else if (_Rank == 3) {
+    Label_LocalRank.Value = "{{{_("3rd")}}}";
+  } else {
+    Label_LocalRank.Value = TL::Compose("{{{_("%1th")}}}", TL::ToText(_Rank));
+  }
+  Quad_Img0.Visible = False;
+
+  // Update checkpoint time
+  Quad_Color.Visible = True;
+  Quad_Img1.ImageUrl = "{{{C_ImgPath^Img_Arrow}}}";
+  Frame_WayPointInfo1.Visible = _ShowTimeDiff;
+  
+  declare Prefix = "";
+  if (_TimeDiff < 0) {
+    Frame_WayPointInfo1.RelativePosition_V3.Y = 36.;
+    Prefix = "";
+    Quad_Color.BgColor = {{{C_ColorRGB_Blue}}};
+    Quad_Img1.RelativeRotation = -90.;
+    Quad_Img1.RelativePosition_V3.Y = -3.0;
+  } else {
+    Frame_WayPointInfo1.RelativePosition_V3.Y = 32.;
+    Prefix = "+";
+    Quad_Color.BgColor = {{{C_ColorRGB_Red}}};
+    Quad_Img1.RelativeRotation = 90.;
+    Quad_Img1.RelativePosition_V3.Y = -3.5;
+  }
+  
+  Label_WayPointInfo1.SetText(Prefix^""^TimeToText(_TimeDiff));
+  Label_WayPointInfo0.SetText(TimeToText(_CheckpointTime));
+  
+  // Update lap time
+  Quad_Img2.ImageUrl = "{{{C_ImgPath^Img_Arrow2}}}";
+  Quad_Img2.Size = <4., 4.>;
+  Label_WayPointInfo2.SetText("LAP " ^ TimeToText(_LapTime));
+  Label_WayPointInfo2.TextColor = {{{C_ColorRGB_Yellow}}};
+  
+  // Update lap time diff
+  Quad_Color3.Visible = True;
+  Quad_Img3.Opacity = 0.;
+  Frame_WayPointInfo2.Visible = _ShowLapTime;
+  Frame_WayPointInfo3.Visible = _ShowLapTime && _ShowLapTimeDiff;
+  
+  if (_LapTimeDiff < 0) {
+    Frame_WayPointInfo3.RelativePosition_V3.Y = 43.3;
+    Prefix = "";
+    //Quad_Color3.BgColor = <0.,0.,1.>;
+  } else if(_LapTimeDiff > 0){
+    Frame_WayPointInfo3.RelativePosition_V3.Y = 43.3;
+    Prefix = "+";
+    //Quad_Color3.BgColor = {{{C_ColorRGB_Red}}};
+  } else {
+    //Quad_Color3.BgColor = {{{C_ColorRGB_DarkBlue}}};
+  }
+  
+  Label_WayPointInfo3.SetText(Prefix^""^TimeToText(_LapTimeDiff));
+  Label_WayPointInfo3.TextColor = {{{C_ColorRGB_Yellow}}};
+  
+  
+  // UI is hidden, play "reveal" animation
+  if (!_IsAlreadyDisplayed) {
+    if (C_Anim == 1) {
+      Frame_WayPointInfo0.RelativePosition_V3.X = 0.;
+      Frame_WayPointInfo1.RelativePosition_V3.X = 0.;
+      
+      if (_ShowLapTime) {
+        Frame_WayPointInfo2.RelativePosition_V3.X = 0.;
+        if (_ShowLapTimeDiff) {
+          Frame_WayPointInfo3.RelativePosition_V3.X = 0.;
+        } else {
+          Frame_WayPointInfo3.RelativePosition_V3.X = -31.;
+        }
+      } else {
+        Frame_WayPointInfo2.RelativePosition_V3.X = 31.;
+        Frame_WayPointInfo3.RelativePosition_V3.X = -31.;
+      }
+      
+      AnimFade(Frame_WayPoint, True);
+    } else if (C_Anim == 2) {
+      LibManialink_AnimStop(Quad_Ligne);
+      LibManialink_AnimStop(Frame_WayPointInfo0);
+      LibManialink_AnimStop(Frame_WayPointInfo1);
+      
+      declare AnimKey_1 = ML::NearestInteger(0 * C_ShowHideSpeed);
+      declare AnimKey_2 = ML::NearestInteger(200 * C_ShowHideSpeed);
+      Quad_Ligne.Size.Y = 0.;
+      LibManialink_SetTargetSize(Quad_Ligne, <0.4, 21.>);
+      LibManialink_PresetAnimInsert(Quad_Ligne, AnimKey_1, AnimKey_2, "EaseOutQuint");
+      
+      declare AnimKey_3 = ML::NearestInteger(130 * C_ShowHideSpeed);
+      declare AnimKey_4 = ML::NearestInteger(500 * C_ShowHideSpeed);
+      Frame_WayPointInfo0.RelativePosition_V3.X = 30.;
+      LibManialink_SetTargetPosition(Frame_WayPointInfo0, <0., Frame_WayPointInfo0.RelativePosition_V3.Y>);
+      LibManialink_PresetAnimInsert(Frame_WayPointInfo0, AnimKey_3, AnimKey_4, "EaseOutQuint");
+      
+      Frame_WayPointInfo1.RelativePosition_V3.X = -30.;
+      LibManialink_SetTargetPosition(Frame_WayPointInfo1, <0., Frame_WayPointInfo1.RelativePosition_V3.Y>);
+      LibManialink_PresetAnimInsert(Frame_WayPointInfo1, AnimKey_3, AnimKey_4, "EaseOutQuint");
+    
+      if (_ShowLapTime) {
+        LibManialink_AnimStop(Frame_WayPointInfo2);
+        LibManialink_AnimStop(Frame_WayPointInfo3);
+        
+        Frame_WayPointInfo2.RelativePosition_V3.X = 30.;
+        LibManialink_SetTargetPosition(Frame_WayPointInfo2, <0., Frame_WayPointInfo2.RelativePosition_V3.Y>);
+        LibManialink_PresetAnimInsert(Frame_WayPointInfo2, AnimKey_3, AnimKey_4, "EaseOutQuint");
+        
+        if (_ShowLapTimeDiff) {
+          Frame_WayPointInfo3.RelativePosition_V3.X = -30.;
+          LibManialink_SetTargetPosition(Frame_WayPointInfo3, <0., Frame_WayPointInfo3.RelativePosition_V3.Y>);
+          LibManialink_PresetAnimInsert(Frame_WayPointInfo3, AnimKey_3, AnimKey_4, "EaseOutQuint");
+        }
+      } else {
+        Frame_WayPointInfo2.RelativePosition_V3.X = 31.;
+        Frame_WayPointInfo3.RelativePosition_V3.X = -31.;
+      }
+    } else {
+      Frame_WayPoint.Visible = True;
+      Frame_WayPointInfo0.RelativePosition_V3.X = 0.;
+      Frame_WayPointInfo1.RelativePosition_V3.X = 0.;
+      
+      if (_ShowLapTime) {
+        Frame_WayPointInfo2.RelativePosition_V3.X = 0.;
+        if (_ShowLapTimeDiff) {
+          Frame_WayPointInfo3.RelativePosition_V3.X = 0.;
+        } else {
+          Frame_WayPointInfo3.RelativePosition_V3.X = -31.;
+        }
+      } else {
+        Frame_WayPointInfo2.RelativePosition_V3.X = 31.;
+        Frame_WayPointInfo3.RelativePosition_V3.X = -31.;
+      }
+    }
+  } 
+  // UI is already displayed, play "update" animation
+  else {
+    declare AnimKey_1 = ML::NearestInteger(0 * C_UpdateSpeed);
+    declare AnimKey_2 = ML::NearestInteger(100 * C_UpdateSpeed);
+    LibManialink_SetTargetScale(Label_WayPointInfo0, 1.1);
+    LibManialink_PresetAnimInsert(Label_WayPointInfo0, AnimKey_1, AnimKey_2, "EaseLinear");
+    LibManialink_SetTargetScale(Label_WayPointInfo1, 1.1);
+    LibManialink_PresetAnimInsert(Label_WayPointInfo1, AnimKey_1, AnimKey_2, "EaseLinear");
+    LibManialink_SetTargetScale(Label_WayPointInfo2, 1.1);
+    LibManialink_PresetAnimInsert(Label_WayPointInfo2, AnimKey_1, AnimKey_2, "EaseLinear");
+    LibManialink_SetTargetScale(Label_WayPointInfo3, 1.1);
+    LibManialink_PresetAnimInsert(Label_WayPointInfo3, AnimKey_1, AnimKey_2, "EaseLinear");
+
+    declare AnimKey_3 = ML::NearestInteger(100 * C_UpdateSpeed);
+    declare AnimKey_4 = ML::NearestInteger(100 * C_UpdateSpeed);
+    LibManialink_SetTargetScale(Label_WayPointInfo0, 1.0);
+    LibManialink_PresetAnimInsert(Label_WayPointInfo0, AnimKey_3, AnimKey_4, "EaseLinear");
+    LibManialink_SetTargetScale(Label_WayPointInfo1, 1.0);
+    LibManialink_PresetAnimInsert(Label_WayPointInfo1, AnimKey_3, AnimKey_4, "EaseLinear");
+    LibManialink_SetTargetScale(Label_WayPointInfo2, 1.0);
+    LibManialink_PresetAnimInsert(Label_WayPointInfo2, AnimKey_3, AnimKey_4, "EaseLinear");
+    LibManialink_SetTargetScale(Label_WayPointInfo3, 1.0);
+    LibManialink_PresetAnimInsert(Label_WayPointInfo3, AnimKey_3, AnimKey_4, "EaseLinear");
+    
+    if (_ShowLapTime) {
+      Frame_WayPointInfo2.RelativePosition_V3.X = 0.;
+      if (_ShowLapTimeDiff) {
+        Frame_WayPointInfo3.RelativePosition_V3.X = 0.;
+      }
+    }
+  }
+
+  return Now + C_DisplayDuration;
+}
+
+Void HideWaypoint() {
+  declare CMlFrame Frame_WayPoint      <=> (Page.MainFrame.GetFirstChild("Frame_WayPoint")           as CMlFrame);
+  declare CMlFrame Frame_WayPointInfo0 <=> (Frame_WayPoint.GetFirstChild("Frame_WayPointInfo0")      as CMlFrame);
+  declare CMlFrame Frame_WayPointInfo1 <=> (Frame_WayPoint.GetFirstChild("Frame_WayPointInfo1")      as CMlFrame);
+  declare CMlFrame Frame_WayPointInfo2 <=> (Frame_WayPoint.GetFirstChild("Frame_WayPointInfo2")      as CMlFrame);
+  declare CMlFrame Frame_WayPointInfo3 <=> (Frame_WayPoint.GetFirstChild("Frame_WayPointInfo3")      as CMlFrame);
+  declare CMlQuad  Quad_Ligne          <=> (Frame_WayPoint.GetFirstChild("Quad_Ligne")               as CMlQuad);
+  
+  if (C_Anim == 1) {
+    AnimFade(Frame_WayPoint, False);
+  } else if (C_Anim == 2) {
+    declare AnimKey_1 = ML::NearestInteger(200 * C_ShowHideSpeed);
+    declare AnimKey_2 = ML::NearestInteger(300 * C_ShowHideSpeed);
+    declare AnimKey_3 = ML::NearestInteger(0 * C_ShowHideSpeed);
+    declare AnimKey_4 = ML::NearestInteger(500 * C_ShowHideSpeed);
+    LibManialink_SetTargetSize(Quad_Ligne, <0.4, 0.>);
+    LibManialink_PresetAnimInsert(Quad_Ligne, AnimKey_1, AnimKey_2, "EaseOutQuint");
+    LibManialink_SetTargetPosition(Frame_WayPointInfo0, <31., Frame_WayPointInfo0.RelativePosition_V3.Y>);
+    LibManialink_PresetAnimInsert(Frame_WayPointInfo0, AnimKey_3, AnimKey_4, "EaseOutQuint");
+    LibManialink_SetTargetPosition(Frame_WayPointInfo1, <-31., Frame_WayPointInfo1.RelativePosition_V3.Y>);
+    LibManialink_PresetAnimInsert(Frame_WayPointInfo1, AnimKey_3, AnimKey_4, "EaseOutQuint");
+    
+    LibManialink_SetTargetPosition(Frame_WayPointInfo2, <31., Frame_WayPointInfo2.RelativePosition_V3.Y>);
+    LibManialink_PresetAnimInsert(Frame_WayPointInfo2, AnimKey_3, AnimKey_4, "EaseOutQuint");
+    LibManialink_SetTargetPosition(Frame_WayPointInfo3, <-31., Frame_WayPointInfo3.RelativePosition_V3.Y>);
+    LibManialink_PresetAnimInsert(Frame_WayPointInfo3, AnimKey_3, AnimKey_4, "EaseOutQuint");
+  } else {
+    Frame_WayPoint.Visible = False;
+  }
+}
+
+main() {
+  declare Frame_Global <=> (Page.GetFirstChild("Frame_Global") as CMlFrame);
+  
+  declare netread Integer Net_LibUI_SettingsUpdate for Teams[0];
+  declare netread Text[Text] Net_LibUI_Settings for Teams[0];
+  
+  declare PrevSettingsUpdate = -1;
+  declare PrevLapRaceTime = -1;
+  declare PrevCurCheckpointRaceTime = -1;
+  declare HideTime = -1;
+  declare HideAnimTime = -1;
+  
+  declare CheckpointTimeVisible = True;
+  
+  declare CAudioSource Checkpoint       = Audio.CreateSound("{{{C_SoundPath^C_Sound_Checkpoint}}}", 0.0, False, False, False);
+  declare CAudioSource CheckpointLate   = Audio.CreateSound("{{{C_SoundPath^C_Sound_CheckpointLate}}}", 0.0, False, False, False);
+  declare CAudioSource CheckpointAhead  = Audio.CreateSound("{{{C_SoundPath^C_Sound_CheckpointAhead}}}", 0.0, False, False, False);
+
+  declare BestRaceTime = -1;
+  declare BestRaceCheckpoints = Integer[];
+  declare BestLapTime = -1;
+  declare BestLapCheckpoints = Integer[];
+  declare PrevOwnerId = NullId;
+  
+  HideWaypoint();
+  
+  while (True) {
+    yield;
+
+    declare Owner <=> GetOwner();
+    if (!PageIsVisible || Owner == Null) continue;
+
+    if (PrevOwnerId != Owner.Id) {
+      PrevOwnerId = Owner.Id;
+
+      // Cancel any checkpoint time when switching to another player
+      PrevCurCheckpointRaceTime = Owner.CurCheckpointRaceTime;
+      if (HideAnimTime >= 0) HideAnimTime = Now;
+
+      if (Owner.Score != Null && Owner.Score.BestRace != Null) {
+        BestRaceTime = Owner.Score.BestRace.Time;
+        BestRaceCheckpoints = Integer[];
+        foreach (CheckpointTime in Owner.Score.BestRace.Checkpoints) BestRaceCheckpoints.add(CheckpointTime);
+      } else {
+        BestRaceTime = -1;
+        BestRaceCheckpoints = Integer[];
+      }
+      if (Owner.Score != Null && Owner.Score.BestLap != Null) {
+        BestLapTime = Owner.Score.BestLap.Time;
+        BestLapCheckpoints = Integer[];
+        foreach (CheckpointTime in Owner.Score.BestLap.Checkpoints) BestLapCheckpoints.add(CheckpointTime);
+      } else {
+        BestLapTime = -1;
+        BestLapCheckpoints = Integer[];
+      }
+    }
+    
+    LibManialink_AnimLoop();
+    
+    if (PrevSettingsUpdate != Net_LibUI_SettingsUpdate) {
+      PrevSettingsUpdate = Net_LibUI_SettingsUpdate;
+      foreach (SettingName => SettingValue in Net_LibUI_Settings) {
+        switch (SettingName) {
+          case "{{{UI_Common::C_Module_CheckpointTime}}}_Display": {
+            if (SettingValue == "True") CheckpointTimeVisible = True;
+            else CheckpointTimeVisible = False;
+          }
+          case "{{{UI_Common::C_Module_CheckpointTime}}}_Position": {
+            declare PositionSplit = TL::Split(" ", SettingValue);
+            Frame_Global.RelativePosition_V3 = <TL::ToReal(PositionSplit[0]), TL::ToReal(PositionSplit[1])>;
+            Frame_Global.ZIndex = TL::ToReal(PositionSplit[2]);
+          }
+        }
+      }
+    }
+    
+    if (Frame_Global.Visible && (HideTime <= Now || Owner.CurCheckpointRaceTime < 0)) {
+      Frame_Global.Visible = False;
+    }
+    
+    if (HideAnimTime >= 0 && HideAnimTime <= Now) {
+      HideWaypoint();
+      HideAnimTime = -1;
+      HideTime = Now + ML::NearestInteger(C_ShowHideDuration * C_ShowHideSpeed);
+    }
+    
+    if (PrevCurCheckpointRaceTime != Owner.CurCheckpointRaceTime) {
+      PrevCurCheckpointRaceTime = Owner.CurCheckpointRaceTime;
+      
+      if (Owner.CurCheckpointRaceTime >= 0) {
+        HideTime = Now + C_DisplayDuration + ML::NearestInteger(C_ShowHideDuration * C_ShowHideSpeed);
+        Frame_Global.Visible = CheckpointTimeVisible;
+        
+        declare CheckpointIndex = -1;
+        declare CheckpointTime = -1;
+        declare LapTime = -1;
+        declare IsIndependantLaps = False;
+        
+        if (Net_LibUI_Settings.existskey("IndependantLaps") && Net_LibUI_Settings["IndependantLaps"] == "True") IsIndependantLaps = True;
+        
+        declare IsEndLap = False;
+        if (Owner.CurCheckpointLapTime < 0) {
+          if (Owner.CurrentNbLaps <= 1) {
+            LapTime = Owner.CurCheckpointRaceTime;
+          } else {
+            LapTime = Owner.CurCheckpointRaceTime - PrevLapRaceTime;
+          }
+          PrevLapRaceTime = Owner.CurCheckpointRaceTime;
+          IsEndLap = True;
+        } else {
+          LapTime = Owner.CurCheckpointLapTime;
+        }
+        
+        if (IsIndependantLaps) {
+          CheckpointTime = LapTime;
+          CheckpointIndex = Owner.CurLap.Checkpoints.count - 1;
+        } else {
+          CheckpointTime = Owner.CurCheckpointRaceTime;
+          CheckpointIndex = Owner.CurRace.Checkpoints.count - 1;
+        }
+        
+        declare ShowLap = False;
+        if (IsIndependantLaps && LapTime >= 0) {
+          ShowLap = False;
+        } else if (Owner.CurrentNbLaps < 1 || (NbLaps <= 1 && Owner.CurrentNbLaps == 1 && (Owner.CurCheckpointLapTime < 0 || GUIPlayer != InputPlayer))) {
+          ShowLap = False;
+        } else {
+          ShowLap = True;
+        }
+        
+        declare ShowTimeDiff = False;
+        declare TimeDiff = 0;
+        if (
+          IsIndependantLaps &&
+          Owner.Score != Null &&
+          Owner.Score.BestLap != Null &&
+          BestLapTime >= 0 &&
+          Owner.CurLap != Null
+        ) {
+          ShowTimeDiff = True;
+          if (CheckpointIndex >= 0 && BestLapCheckpoints.count > CheckpointIndex) {
+            TimeDiff = Owner.CurLap.Checkpoints[CheckpointIndex] - BestLapCheckpoints[CheckpointIndex];
+          } else {
+            TimeDiff = LapTime - BestLapTime;
+          }
+        } 
+        else if (
+          Owner.Score != Null &&
+          Owner.Score.BestRace != Null &&
+          BestRaceTime >= 0 &&
+          Owner.CurRace != Null
+        ) {
+          ShowTimeDiff = True;
+          if (CheckpointIndex >= 0 && BestRaceCheckpoints.count > CheckpointIndex) {
+            TimeDiff = Owner.CurRace.Checkpoints[CheckpointIndex] - BestRaceCheckpoints[CheckpointIndex];
+          }
+        }
+        
+        if (
+          ShowTimeDiff &&
+          Net_LibUI_Settings.existskey("{{{UI_Common::C_Module_CheckpointTime}}}_DisplayTimeDiff") &&
+          Net_LibUI_Settings["{{{UI_Common::C_Module_CheckpointTime}}}_DisplayTimeDiff"] == "True"
+        ) {
+          ShowTimeDiff = True;
+        } else {
+          ShowTimeDiff = False;
+        }
+        
+        if (IsEndLap) {
+          Audio.PlaySoundEvent(CAudioManager::ELibSound::Checkpoint, 1, 0.0);
+        } else {
+          CheckpointLate.Stop();
+          CheckpointAhead.Stop();
+          Checkpoint.Stop();
+          if(TimeDiff > 0) {  
+            CheckpointLate.Play();
+          } else if(TimeDiff < 0) {
+            CheckpointAhead.Play();
+          } else {
+            Checkpoint.Play();
+          }
+        }
+        
+        declare ShowLapTimeDiff = False;
+        declare LapTimeDiff = 0;
+        if (
+          Owner.Score != Null &&
+          Owner.Score.BestLap != Null &&
+          BestLapTime >= 0 &&
+          Owner.CurLap != Null
+        ) {
+          ShowLapTimeDiff = True;
+          declare LapCheckpointIndex = Owner.CurLap.Checkpoints.count - 1;
+          if (LapCheckpointIndex >= 0 && BestLapCheckpoints.count > LapCheckpointIndex) {
+            LapTimeDiff = Owner.CurLap.Checkpoints[LapCheckpointIndex] - BestLapCheckpoints[LapCheckpointIndex];
+          } else {
+            LapTimeDiff = LapTime - BestLapTime;
+          }
+        }
+        
+        if (
+          ShowLapTimeDiff &&
+          Net_LibUI_Settings.existskey("{{{UI_Common::C_Module_CheckpointTime}}}_DisplayLapTimeDiff") &&
+          Net_LibUI_Settings["{{{UI_Common::C_Module_CheckpointTime}}}_DisplayLapTimeDiff"] == "True"
+        ) {
+          ShowLapTimeDiff = True;
+        } else {
+          ShowLapTimeDiff = False;
+        }
+
+        declare Rank = 0;
+        if (Net_LibUI_Settings.existskey("{{{UI_Common::C_Module_CheckpointTime}}}_Mode") && Net_LibUI_Settings["{{{UI_Common::C_Module_CheckpointTime}}}_Mode"] == "CurRace") {
+          Rank = GetCurRank(Owner, CheckpointIndex, CheckpointTime, IsIndependantLaps);
+        } else {
+          Rank = GetBestRank(Owner, CheckpointIndex, CheckpointTime, IsIndependantLaps);
+        }
+        
+        HideAnimTime = ShowWaypoint(CheckpointTime, Rank, TimeDiff, ShowTimeDiff, LapTime, LapTimeDiff, ShowLap, ShowLapTimeDiff, HideAnimTime >= 0);
+      }
+    }
+
+    // Update best times
+    // We have to delay this otherwise the spectating players get them too early and the finish time comparaison
+    // in case of improvement does not work
+    if (Owner.Score != Null && Owner.Score.BestRace != Null) {
+      BestRaceTime = Owner.Score.BestRace.Time;
+      BestRaceCheckpoints = Integer[];
+      foreach (CheckpointTime in Owner.Score.BestRace.Checkpoints) BestRaceCheckpoints.add(CheckpointTime);
+    } else {
+      BestRaceTime = -1;
+      BestRaceCheckpoints = Integer[];
+    }
+    if (Owner.Score != Null && Owner.Score.BestLap != Null) {
+      BestLapTime = Owner.Score.BestLap.Time;
+      BestLapCheckpoints = Integer[];
+      foreach (CheckpointTime in Owner.Score.BestLap.Checkpoints) BestLapCheckpoints.add(CheckpointTime);
+    } else {
+      BestLapTime = -1;
+      BestLapCheckpoints = Integer[];
+    }
+  }
+}
+--></script>
+</manialink>
+""";
+}
+
+// ---------------------------------- //
+/** Create the manialink for the prev best time module
+ *
+ *  @return                           The manialink
+ */
+Text Private_CreateMLPrevBestTime() {
+  return """
+<manialink version="3" name="Lib_UI2:PrevBestTime">
+{{{C_Stylesheet}}}
+<frame pos="{{{C_LibUI_PrevBestTimePos.X}}} {{{C_LibUI_PrevBestTimePos.Y}}}" z-index="{{{C_LibUI_PrevBestTimePos.Z}}}" id="Frame_Global">
+<frame id="Frame_Intro">
+  <label size="10 6" scale="1.1" halign="right" textsize="1" text="-" class="text-number" id="Label_PrevTime" />
+  <label pos="0 -4" size="10 6" scale="1.1" halign="right" textsize="1" text="-" class="text-number" id="Label_BestTime" />
+  <label pos="-12 0" size="12 6" halign="right" textsize="1" text="{{{_("Prev")}}}" class="text-default" />
+  <label pos="-12 -4" size="12 6" halign="right" textsize="1" text="{{{_("Best")}}}" class="text-default" />
+</frame>
+</frame>
+<script><!--
+#Include "TextLib" as TL
+#Include "MathLib" as ML
+
+Text TimeToText(Integer _Time) {
+  declare Time = TL::TimeToText(_Time, True);
+  declare Milliseconds = ML::Abs(_Time % 10);
+  if (Milliseconds >= 0) Time ^= TL::ToText(Milliseconds);
+  return Time;
+}
+
+CTmMlPlayer GetOwner() {
+  if (GUIPlayer != Null) return GUIPlayer;
+  if (InputPlayer != Null) return InputPlayer;
+  return Null;
+}
+
+{{{Private_InjectHelpers()}}}
+
+main() {
+  declare Frame_Global <=> (Page.GetFirstChild("Frame_Global") as CMlFrame);
+  declare Frame_Intro <=> (Page.GetFirstChild("Frame_Intro") as CMlFrame);
+  declare Label_PrevTime <=> (Page.GetFirstChild("Label_PrevTime") as CMlLabel);
+  declare Label_BestTime <=> (Page.GetFirstChild("Label_BestTime") as CMlLabel);
+  
+  declare netread Integer Net_LibUI_SettingsUpdate for Teams[0];
+  declare netread Text[Text] Net_LibUI_Settings for Teams[0];
+  
+  declare PrevSettingsUpdate = -1;
+  declare PrevPrevTime = -1;
+  declare PrevBestTime = -1;
+  
+  declare PrevBestTimeVisible = True;
+  
+  while (True) {
+    sleep(150);
+
+    HideDuringIntro(Frame_Intro);
+    
+    declare Owner <=> GetOwner();
+    if (
+      !PageIsVisible || Owner == Null || Owner.Score == Null 
+      || Owner.Score.PrevRace == Null || Owner.Score.BestRace == Null
+    ) continue;
+    
+    if (PrevSettingsUpdate != Net_LibUI_SettingsUpdate) {
+      PrevSettingsUpdate = Net_LibUI_SettingsUpdate;
+      foreach (SettingName => SettingValue in Net_LibUI_Settings) {
+        switch (SettingName) {
+          case "{{{UI_Common::C_Module_PrevBestTime}}}_Display": {
+            if (SettingValue == "True") {
+              PrevBestTimeVisible = True;
+              Frame_Global.Visible = True;
+            } else {
+              PrevBestTimeVisible = False;
+              Frame_Global.Visible = False;
+            }
+          }
+          case "{{{UI_Common::C_Module_PrevBestTime}}}_Position": {
+            declare PositionSplit = TL::Split(" ", SettingValue);
+            Frame_Global.RelativePosition_V3 = <TL::ToReal(PositionSplit[0]), TL::ToReal(PositionSplit[1])>;
+            Frame_Global.ZIndex = TL::ToReal(PositionSplit[2]);
+          }
+        }
+      }
+    }
+    
+    if (PrevBestTimeVisible) {
+      if (Owner.IsSpawned) {
+        if (!Frame_Global.Visible) Frame_Global.Visible = True;
+      } else if (Frame_Global.Visible) {
+        Frame_Global.Visible = False;
+      }
+    }
+    
+    if (!Frame_Global.Visible) continue;
+    
+    if (PrevPrevTime != Owner.Score.PrevRace.Time) {
+      PrevPrevTime = Owner.Score.PrevRace.Time;
+      if (Owner.Score.PrevRace.Time >= 0) {
+        Label_PrevTime.Value = TimeToText(Owner.Score.PrevRace.Time);
+      } else {
+        Label_PrevTime.Value = "-";
+      }
+    }
+    
+    if (PrevBestTime != Owner.Score.BestRace.Time) {
+      PrevBestTime = Owner.Score.BestRace.Time;
+      if (Owner.Score.BestRace.Time >= 0) {
+        Label_BestTime.Value = TimeToText(Owner.Score.BestRace.Time);
+      } else {
+        Label_BestTime.Value = "-";
+      }
+    }
+  }
+}
+--></script>
+</manialink>""";
+}
+
+// ---------------------------------- //
+/** Create the manialink for the speed and distance module
+ *
+ *  @return                           The manialink
+ */
+Text Private_CreateMLSpeedAndDistance() {
+  declare Img_FooterKMH = "FooterKMH.dds";
+  declare Img_FootLine_Distance = "FootLine_Distance.dds";
+  declare Img_SpeedBarre = "SpeedBarre.dds";
+  declare Img_SpeedGaugeBG = "SpeedGaugeBG2.dds";
+  
+  declare GaugeStyle = """ pos="0 0" z-index="0.2" size="{{{C_Speed_Size*0.5}}} {{{C_Speed_Size}}}" valign="center" halign="right" colorize="fff" """;
+  declare GaugeLeft = "";
+  declare GaugeRight = "";
+  for(I, 1, 3) {
+    GaugeLeft ^= """
+      <quad {{{GaugeStyle}}} rot="0" opacity="{{{C_Speed_Opacity}}}" image="{{{C_ImgPath}}}NewSpeed-gauge{{{I}}}.dds" id="Quad_GaugeLeft{{{I}}}" />""";
+  }
+  for(I, 1, 3) {
+    GaugeRight ^= """
+      <quad {{{GaugeStyle}}} rot="180" opacity="{{{C_Speed_Opacity}}}" image="{{{C_ImgPath}}}NewSpeed-gauge{{{I}}}.dds" id="Quad_GaugeRight{{{I}}}" />""";
+  }
+  
+  return """
+<manialink version="3" name="Lib_UI2:SpeedAndDistance">
+{{{C_Stylesheet}}}
+<frame pos="{{{C_LibUI_SpeedAndDistancePos.X}}} {{{C_LibUI_SpeedAndDistancePos.Y}}}" z-index="{{{C_LibUI_SpeedAndDistancePos.Z}}}" id="Frame_Global" scale="{{{C_Speed_Scale}}}">
+<frame id="Frame_Intro">
+  <frame z-index="0" id="Frame_SpeedGauge">
+    <quad pos="-0.2 0" z-index="0" size="55.3 55.3" halign="center" valign="center" keepratio="Fit" image="{{{C_ImgPath^Img_SpeedGaugeBG}}}" />
+    <frame z-index="1" scale="1.82">
+      <frame clip="True" clipposn="{{{-C_Speed_Size*0.25-C_Speed_ClipOffset+0.153}}} 0" clipsizen="{{{C_Speed_Size*0.5}}} {{{C_Speed_Size}}}" id="Frame_ClipLeft">
+        {{{GaugeLeft}}}
+      </frame>
+      <frame clip="True" clipposn="{{{C_Speed_Size*0.25+C_Speed_ClipOffset-0.152}}} 0" clipsizen="{{{C_Speed_Size*0.5}}} {{{C_Speed_Size}}}" id="Frame_ClipRight">
+        {{{GaugeRight}}}
+      </frame>
+    </frame>
+    <frame pos="0 2" z-index="0">
+      <frame id="Frame_SpeedBarre">
+        <quad pos="0 0.15" z-index="1" size="8 8" halign="right" valign="center" keepratio="Fit" colorize="fff" image="{{{C_ImgPath^Img_SpeedBarre}}}" />
+      </frame>
+    </frame>
+  </frame>
+  <frame z-index="2">
+    <label z-index="1" size="30 20" halign="center" valign="center2" textsize="17" textfont="RajdhaniMono" text="0" class="text-default" id="Label_Speed" />
+    <quad pos="7.5 -7.4" z-index="0" size="41 24" halign="center" valign="center" keepratio="Fit" image="{{{C_ImgPath^Img_FooterKMH}}}" />
+  </frame>
+  <frame pos="7.3 -20" z-index="3" id="Frame_Distance">
+    <label pos="0 -0.7" z-index="2" size="14 10" halign="left" valign="bottom" textsize="6.5" textfont="RajdhaniMono" text="0" class="text-default" id="Label_Distance" />
+    <label pos="16 0" z-index="1" size="30 10" halign="left" valign="bottom" textsize="3" text="KM" class="text-default" />
+    <quad pos="10.5 -1.5" z-index="0" size="20 24" halign="center" valign="center" opacity="0.3" keepratio="Fit" image="{{{C_ImgPath^Img_FootLine_Distance}}}" />
+  </frame>
+</frame>
+</frame>
+<script><!--
+#Include "TextLib" as TL
+#Include "MathLib" as ML
+
+#Const C_MaxRotationLeft 0.
+#Const C_MaxRotationRight 100.
+
+CTmMlPlayer GetOwner() {
+  if (GUIPlayer != Null) return GUIPlayer;
+  if (InputPlayer != Null) return InputPlayer;
+  return Null;
+}
+
+Void GaugeUpdate(CMlQuad _QuadLeft, CMlQuad _QuadRight, Real _GaugeRatio)
+{
+  declare SecondHalf = (_GaugeRatio > 0.5 && _GaugeRatio <= 1.) || (_GaugeRatio > 1.5 && _GaugeRatio <= 2.) || (_GaugeRatio > 2.5 && _GaugeRatio <= 3.);
+  declare Real RotationDecal;
+  declare Real SpeedBarreRadius;
+  declare Real[] RotationDecalArray    = [0., -148., -315., 0.];
+  declare Real[] SpeedBarreDecalArray  = [0., -148., -315., 0.];
+  declare Real[] SpeedBarreRadiusArray = [22.0, 24.4, 27.3, 0.];
+  declare Real MaxRotationRight = C_MaxRotationRight;
+
+  if(_GaugeRatio > 3.){
+    RotationDecal    = RotationDecalArray[3];
+    SpeedBarreRadius = SpeedBarreRadiusArray[3];
+  }
+  else if(_GaugeRatio > 2.){
+    MaxRotationRight = 79.;
+    RotationDecal    = RotationDecalArray[2];
+    SpeedBarreRadius = SpeedBarreRadiusArray[2];
+  }
+  else if(_GaugeRatio > 1.){
+    MaxRotationRight = 75.5;
+    RotationDecal    = RotationDecalArray[1];
+    SpeedBarreRadius = SpeedBarreRadiusArray[1];
+  }
+  else
+  {
+    MaxRotationRight = 83.;
+    RotationDecal    = RotationDecalArray[0];
+    SpeedBarreRadius = SpeedBarreRadiusArray[0];
+  }
+
+
+
+  declare CMlFrame Frame_SpeedBarre <=> (Page.MainFrame.GetFirstChild("Frame_SpeedBarre")     as CMlFrame);
+  if(_GaugeRatio == 0.)
+  {
+    Frame_SpeedBarre.Hide();
+  }
+  else
+  {
+    Frame_SpeedBarre.Show();
+  }
+  if(SecondHalf)
+  {
+    declare GaugeRatioRight       = 2.* (_GaugeRatio - 0.5);
+    _QuadLeft   .RelativeRotation = 0.;
+    _QuadRight  .RelativeRotation = RotationDecal + MaxRotationRight  * GaugeRatioRight;
+
+    //declare Real BarreRotation         = -180 + 180 * GaugeRatioLeft-90.;
+    declare Real BarreRotation         = RotationDecal + MaxRotationRight  * GaugeRatioRight-90.;
+    declare Real BarreRotation2        = -RotationDecal + MaxRotationRight  * -GaugeRatioRight+90.;
+    declare Real AngleRadian           = BarreRotation2*2.* ML::PI()/360.;
+    declare Real PosX                  = ML::Cos(AngleRadian)*SpeedBarreRadius+0.;
+    declare Real PosY                  = ML::Sin(AngleRadian)*SpeedBarreRadius-2.;
+    Frame_SpeedBarre.RelativePosition_V3.X = PosX;
+    Frame_SpeedBarre.RelativePosition_V3.Y = PosY;
+    Frame_SpeedBarre.RelativeRotation   = BarreRotation;
+  } 
+  else
+  {
+    declare GaugeRatioLeft        = 2.*  _GaugeRatio ;
+    _QuadLeft   .RelativeRotation = -180 + 180 * GaugeRatioLeft;
+    _QuadRight  .RelativeRotation =  0.;
+    
+    declare Real BarreRotation         = -180 + 180 * GaugeRatioLeft-90.;
+    declare Real BarreRotation2        = 180 + 180 * -GaugeRatioLeft+90.;
+    declare Real AngleRadian           = BarreRotation2*2.* ML::PI()/360.;
+    declare Real PosX                  = ML::Cos(AngleRadian)*SpeedBarreRadius+0.;
+    declare Real PosY                  = ML::Sin(AngleRadian)*SpeedBarreRadius-2.0;
+    Frame_SpeedBarre.RelativePosition_V3.X = PosX;
+    Frame_SpeedBarre.RelativePosition_V3.Y = PosY;
+    Frame_SpeedBarre.RelativeRotation   = BarreRotation;
+  }
+  if(_GaugeRatio >= 3.)
+  {
+    _QuadLeft   .RelativeRotation   =  0.;
+    _QuadRight  .RelativeRotation   =  0.;
+  }
+}
+
+Void SetGauges(CMlQuad[] _QuadsLeft, CMlQuad[] _QuadsRight, Real _GaugeRatio)
+{
+  
+  declare Boolean Phase2 = (_GaugeRatio > 1. && _GaugeRatio <= 2.);
+  declare Boolean Phase3 = (_GaugeRatio > 2. && _GaugeRatio <= 3.);
+  declare Boolean Phase4 = _GaugeRatio > 2.98;
+  
+  if(Phase4)
+  {
+    _QuadsLeft[0].Visible = True;
+    _QuadsRight[0].Visible = True;
+    _QuadsLeft[1].Visible = True;
+    _QuadsRight[1].Visible = True;
+    _QuadsLeft[2].Visible = True;
+    _QuadsRight[2].Visible = True;
+    _QuadsLeft[0].RelativeRotation = C_MaxRotationLeft;
+    _QuadsRight[0].RelativeRotation = 83.;
+    _QuadsLeft[1].RelativeRotation = C_MaxRotationLeft;
+    _QuadsRight[1].RelativeRotation = 80.0;
+    _QuadsLeft[2].RelativeRotation = C_MaxRotationLeft;
+    _QuadsRight[2].RelativeRotation = 80.0;
+
+    _QuadsLeft[0].Opacity = 0.2;
+    _QuadsRight[0].Opacity = 0.2;
+    _QuadsLeft[1].Opacity = 0.3;
+    _QuadsRight[1].Opacity = 0.3;
+    _QuadsLeft[2].Opacity = 1.0;
+    _QuadsRight[2].Opacity = 1.0;
+    //GaugeUpdate(_QuadsLeft[1], _QuadsRight[1], _GaugeRatio);
+  }
+  else if(Phase2)
+  {
+    _QuadsLeft[1].Visible = True;
+    _QuadsRight[1].Visible = True;
+    _QuadsLeft[2].Visible = False;
+    _QuadsRight[2].Visible = False;
+    _QuadsLeft[0].RelativeRotation = C_MaxRotationLeft;
+    _QuadsRight[0].RelativeRotation = 83.;
+    _QuadsLeft[0].Opacity = 0.4;
+    _QuadsRight[0].Opacity = 0.4;
+    _QuadsLeft[1].Opacity = 1.0;
+    _QuadsRight[1].Opacity = 1.0;
+    GaugeUpdate(_QuadsLeft[1], _QuadsRight[1], _GaugeRatio);
+  }
+  else 
+  if(Phase3)
+  {
+    _QuadsLeft[1].Visible = True;
+    _QuadsRight[1].Visible = True;
+    _QuadsLeft[2].Visible = True;
+    _QuadsRight[2].Visible = True;
+    _QuadsLeft[0].RelativeRotation = C_MaxRotationLeft;
+    _QuadsRight[0].RelativeRotation = 83.;
+    _QuadsLeft[1].RelativeRotation = C_MaxRotationLeft;
+    _QuadsRight[1].RelativeRotation = 80.0;
+    _QuadsLeft[0].Opacity = 0.4;
+    _QuadsRight[0].Opacity = 0.4;
+    _QuadsLeft[1].Opacity = 0.5;
+    _QuadsRight[1].Opacity = 0.5;
+    _QuadsLeft[2].Opacity = 1.0;
+    _QuadsRight[2].Opacity = 1.0;
+    GaugeUpdate(_QuadsLeft[2], _QuadsRight[2], _GaugeRatio);
+  }
+  else // (Phase1)
+  {
+    _QuadsLeft[1].Visible = False;
+    _QuadsRight[1].Visible = False;
+    _QuadsLeft[2].Visible = False;
+    _QuadsRight[2].Visible = False;
+    _QuadsLeft[0].Opacity = 1.0;
+    _QuadsRight[0].Opacity = 1.0;
+    GaugeUpdate(_QuadsLeft[0], _QuadsRight[0], _GaugeRatio);
+  }
+}
+
+{{{Private_InjectHelpers()}}}
+
+main() {
+  declare Frame_Global <=> (Page.GetFirstChild("Frame_Global") as CMlFrame);
+  declare Frame_Intro <=> (Page.GetFirstChild("Frame_Intro") as CMlFrame);
+  declare Label_Distance <=> (Page.GetFirstChild("Label_Distance") as CMlLabel);
+  declare Label_Speed <=> (Page.GetFirstChild("Label_Speed") as CMlLabel);
+  
+  declare Frame_SpeedGauge <=> (Page.GetFirstChild("Frame_SpeedGauge") as CMlFrame);
+  declare Quad_GaugeLeft1 <=> (Frame_SpeedGauge.GetFirstChild("Quad_GaugeLeft1") as CMlQuad);
+  declare Quad_GaugeRight1 <=> (Frame_SpeedGauge.GetFirstChild("Quad_GaugeRight1") as CMlQuad);
+  declare Quad_GaugeLeft2 <=> (Frame_SpeedGauge.GetFirstChild("Quad_GaugeLeft2") as CMlQuad);
+  declare Quad_GaugeRight2 <=> (Frame_SpeedGauge.GetFirstChild("Quad_GaugeRight2") as CMlQuad);
+  declare Quad_GaugeLeft3 <=> (Frame_SpeedGauge.GetFirstChild("Quad_GaugeLeft3") as CMlQuad);
+  declare Quad_GaugeRight3 <=> (Frame_SpeedGauge.GetFirstChild("Quad_GaugeRight3") as CMlQuad);
+  
+  declare Quad_GaugeRight = [Quad_GaugeRight1, Quad_GaugeRight2, Quad_GaugeRight3];
+  declare Quad_GaugeLeft = [Quad_GaugeLeft1, Quad_GaugeLeft2, Quad_GaugeLeft3];
+
+  declare Frame_Distance <=> (Frame_Global.GetFirstChild("Frame_Distance") as CMlFrame);
+  
+  declare netread Integer Net_LibUI_SettingsUpdate for Teams[0];
+  declare netread Text[Text] Net_LibUI_Settings for Teams[0];
+  
+  declare PrevSettingsUpdate = -1;
+  declare PrevDistance = -1.;
+  declare PrevSpeed = -1;
+  declare PrevSpeedAndDistanceVisible = True;
+  declare PrevIsSpectatorClient = !IsSpectatorClient;
+  
+  while (True) {
+    yield;
+
+    HideDuringIntro(Frame_Intro);
+    
+    declare Owner <=> GetOwner();
+    if (!PageIsVisible || Owner == Null) continue;
+    
+    if (PrevSettingsUpdate != Net_LibUI_SettingsUpdate) {
+      PrevSettingsUpdate = Net_LibUI_SettingsUpdate;
+      foreach (SettingName => SettingValue in Net_LibUI_Settings) {
+        switch (SettingName) {
+          case "{{{UI_Common::C_Module_SpeedAndDistance}}}_Display": {
+            if (SettingValue == "True") {
+              PrevSpeedAndDistanceVisible = True;
+              Frame_Global.Visible = True;
+            } else {
+              PrevSpeedAndDistanceVisible = False;
+              Frame_Global.Visible = False;
+            }
+          }
+          case "{{{UI_Common::C_Module_SpeedAndDistance}}}_Position": {
+            declare PositionSplit = TL::Split(" ", SettingValue);
+            Frame_Global.RelativePosition_V3 = <TL::ToReal(PositionSplit[0]), TL::ToReal(PositionSplit[1])>;
+            Frame_Global.ZIndex = TL::ToReal(PositionSplit[2]);
+          }
+          case "{{{UI_Common::C_Module_SpeedAndDistance}}}_DisplaySpeedGauge": {
+            Frame_SpeedGauge.Visible = (SettingValue == "True");
+          }
+        }
+      }
+    }
+
+    if (PrevIsSpectatorClient != IsSpectatorClient) {
+      PrevIsSpectatorClient = IsSpectatorClient;
+
+      if (IsSpectatorClient) {
+        Frame_Distance.Visible = False;
+      } else {
+        Frame_Distance.Visible = True;
+      }
+    }
+    
+    if (PrevSpeedAndDistanceVisible) {
+      if (Owner.IsSpawned) {
+        if (!Frame_Global.Visible) Frame_Global.Visible = True;
+      } else if (Frame_Global.Visible) {
+        Frame_Global.Visible = False;
+      }
+    }
+    
+    if (Frame_Global.Visible) {
+      if (PrevDistance != Owner.Distance) {
+        PrevDistance = Owner.Distance;
+        
+        declare DistanceKm = ML::NearestInteger(Owner.Distance / 1000.);
+        declare SpaceLeft = 4 - TL::Length(TL::ToText(DistanceKm));
+        if (SpaceLeft > 0) {
+          Label_Distance.Value = TL::FormatReal(Owner.Distance / 1000., SpaceLeft, False, True);
+        } else {
+          Label_Distance.Value = TL::ToText(DistanceKm);
+        }
+      }
+      
+      if (PrevSpeed != Owner.DisplaySpeed) {
+        PrevSpeed = Owner.DisplaySpeed;
+        Label_Speed.Value = TL::ToText(Owner.DisplaySpeed);
+        declare M_GaugeRatio = Owner.DisplaySpeed / {{{C_Speed_FullCircleValue}}};
+        SetGauges(Quad_GaugeLeft, Quad_GaugeRight, M_GaugeRatio);
+      }
+    }
+  }
+}
+--></script>
+</manialink>""";
+}
+
+// ---------------------------------- //
+/** Create the manialink for the countdown module
+ *
+ *  @return                           The manialink
+ */
+Text Private_CreateMLCountdown() {
+  declare Img_FootLine_RemainingTime = "FootLine_RemainingTime.dds";
+  
+  // L16 [Trackmania UI] Legend displayed above the label indicating the remaining time before the end of the map
+  declare Text_RemainingTime = TL::ToUpperCase(_("Remaining time"));
+  
+  return """
+<manialink version="3" name="Lib_UI2:Countdown">
+{{{C_Stylesheet}}}
+<frame pos="{{{C_LibUI_CountdownPos.X}}} {{{C_LibUI_CountdownPos.Y}}}" z-index="{{{C_LibUI_CountdownPos.Z}}}" id="Frame_Global">
+<frame id="Frame_Intro">
+  <frame pos="-7.5 1" z-index="0" hidden="{{{C_HideLegend}}}">
+    <quad pos="0.1 -3" z-index="0" size="23 24" halign="center" valign="center"  opacity="0.3" keepratio="Fit" image="{{{C_ImgPath^Img_FootLine_RemainingTime}}}" />
+    <quad size="23 5" z-index="1" halign="center" valign="center" style="Bgs1" substyle="BgDialogBlur" opacity="0.1" bluramount="0.1" />
+    <quad size="23 5" z-index="2" halign="center" valign="center" bgcolor="{{{C_ColorHex_White}}}" opacity="0.3"/>
+    <label z-index="3" size="22 5" halign="center" valign="center2" text="{{{Text_RemainingTime}}}" class="text-default" />
+  </frame>
+  <label pos="4 -4.2" z-index="1" size="40 6" halign="right" textsize="8" textcolor="{{{C_ColorHex_Red}}}" class="text-number" id="Label_Countdown" />
+</frame>
+</frame>
+<script><!--
+#Include "TextLib" as TL
+
+Text TimeToText(Integer _Time) {
+  if (_Time < 0) {
+    return "0:00";
+  }
+  
+  declare Seconds = (_Time / 1000) % 60;
+  declare Minutes = (_Time / 60000) % 60;
+  declare Hours = (_Time / 3600000);
+  
+  declare Time = "";
+  if (Hours > 0) Time = Hours^":"^TL::FormatInteger(Minutes, 2)^":"^TL::FormatInteger(Seconds, 2);
+  else Time = Minutes^":"^TL::FormatInteger(Seconds, 2);
+  return Time;
+}
+
+CTmMlPlayer GetOwner() {
+  if (GUIPlayer != Null) return GUIPlayer;
+  if (InputPlayer != Null) return InputPlayer;
+  return Null;
+}
+
+{{{Private_InjectHelpers()}}}
+
+main() {
+  declare Frame_Global  <=> (Page.GetFirstChild("Frame_Global")   as CMlFrame);
+  declare Frame_Intro  <=> (Page.GetFirstChild("Frame_Intro")   as CMlFrame);
+  declare Label_Countdown <=> (Page.GetFirstChild("Label_Countdown")  as CMlLabel);
+  
+  declare netread Integer Net_LibUI_SettingsUpdate for Teams[0];
+  declare netread Text[Text] Net_LibUI_Settings for Teams[0];
+  
+  declare PrevSettingsUpdate = -1;
+  declare CutOffTimeLimit = -1;
+  
+  declare PrevCountdownVisible = True;
+  
+  while (True) {
+    yield;
+
+    HideDuringIntro(Frame_Intro);
+    
+    declare Owner <=> GetOwner();
+    if (!PageIsVisible || Owner == Null) continue;
+    
+    if (PrevSettingsUpdate != Net_LibUI_SettingsUpdate) {
+      PrevSettingsUpdate = Net_LibUI_SettingsUpdate;
+      foreach (SettingName => SettingValue in Net_LibUI_Settings) {
+        switch (SettingName) {
+          case "{{{UI_Common::C_Module_Countdown}}}_Display": {
+            if (SettingValue == "True") {
+              PrevCountdownVisible = True;
+              Frame_Global.Visible = True;
+            } else {
+              PrevCountdownVisible = False;
+              Frame_Global.Visible = False;
+            }
+          }
+          case "{{{UI_Common::C_Module_Countdown}}}_Position": {
+            declare PositionSplit = TL::Split(" ", SettingValue);
+            Frame_Global.RelativePosition_V3 = <TL::ToReal(PositionSplit[0]), TL::ToReal(PositionSplit[1])>;
+            Frame_Global.ZIndex = TL::ToReal(PositionSplit[2]);
+          }
+          case "{{{UI_Common::C_Module_Countdown}}}_CutOffTimeLimit": {
+            CutOffTimeLimit = TL::ToInteger(SettingValue);
+          }
+        }
+      }
+    }
+    
+    if (PrevCountdownVisible) {
+      if (CutOffTimeLimit > 0) {
+        if (!Frame_Global.Visible) Frame_Global.Visible = True;
+      } else if (Frame_Global.Visible) {
+        Frame_Global.Visible = False;
+      }
+    }
+    
+    if (!Frame_Global.Visible) continue;
+    
+    if (CutOffTimeLimit >= GameTime) Label_Countdown.Value = TimeToText(CutOffTimeLimit - GameTime + 1);
+    else Label_Countdown.Value = TimeToText(0);
+
+    if (CutOffTimeLimit - GameTime > 30000) Label_Countdown.TextColor = {{{C_ColorRGB_White}}};
+    else Label_Countdown.TextColor = {{{C_ColorRGB_Red}}};
+  }
+}
+--></script>
+</manialink>""";
+}
+
+// ---------------------------------- //
+/** Create the manialink for the laps module
+ *
+ *  @return                           The manialink
+ */
+Text Private_CreateMLLaps() {
+  declare Img_FootLine_Laps = "FootLine_Laps.dds";
+  declare Img_FootLine_Ranking = "FootLine_Ranking.dds";
+  
+  //L16N [Trackmania UI] Legend displayed near the number of laps raced and the total number of laps to race
+  declare Text_Laps = TL::ToUpperCase(_("|UI|Laps"));
+  
+  return """
+<manialink version="3" name="Lib_UI2:Laps">
+{{{C_Stylesheet}}}
+<frame pos="{{{C_LibUI_LapsPos.X}}} {{{C_LibUI_LapsPos.Y}}}" z-index="{{{C_LibUI_LapsPos.Z}}}" id="Frame_Global">
+<frame id="Frame_Intro">
+  <frame z-index="0" id="Frame_Legend">
+    <quad pos="0.1 -3.2" z-index="0" size="34 24" halign="center" valign="center" opacity="0.3" keepratio="Fit" image="{{{C_ImgPath^Img_FootLine_Ranking}}}" />
+    <quad size="34 5" z-index="1" halign="center" valign="center" style="Bgs1" substyle="BgDialogBlur" opacity="0.1" bluramount="0.1" />
+    <quad size="34 5" z-index="2" halign="center" valign="center" bgcolor="{{{C_ColorHex_White}}}" opacity="0.3"/>
+    <label z-index="3" size="33 5" halign="center" valign="center2" text="{{{Text_Laps}}}" class="text-default" />
+  </frame>
+  <frame pos="0 -4.2" id="Frame_Center">
+    <label pos="0 1" z-index="2" size="20 6" textsize="16.5" class="text-number" id="Label_CurrentLap" />
+    <label pos="9 0" z-index="1" size="16 6" textsize="8" class="text-number" id="Label_NbLaps" />
+  </frame>
+</frame>
+</frame>
+<script><!--
+#Include "TextLib" as TL
+
+CTmMlPlayer GetOwner() {
+  if (GUIPlayer != Null) return GUIPlayer;
+  if (InputPlayer != Null) return InputPlayer;
+  return Null;
+}
+
+{{{Private_InjectHelpers()}}}
+
+Void UpdateLaps(Integer _Current, Integer _Total) {
+  declare Frame_Global <=> (Page.GetFirstChild("Frame_Global") as CMlFrame);
+  declare Frame_Center <=> (Frame_Global.GetFirstChild("Frame_Center") as CMlFrame);
+  declare Label_CurrentLap <=> (Frame_Global.GetFirstChild("Label_CurrentLap") as CMlLabel);
+  declare Label_NbLaps <=> (Frame_Global.GetFirstChild("Label_NbLaps") as CMlLabel);
+  
+  Label_CurrentLap.Value = TL::ToText(_Current);
+  Label_NbLaps.Value = "/"^_Total;
+  
+  declare CurrentLapWidth = Label_CurrentLap.ComputeWidth(TL::ToText(_Current));
+  if (CurrentLapWidth > Label_CurrentLap.Size.X) CurrentLapWidth = Label_CurrentLap.Size.X;
+  declare NbLapsWidth = Label_NbLaps.ComputeWidth("/"^_Total);
+  if (NbLapsWidth > Label_NbLaps.Size.X) NbLapsWidth = Label_NbLaps.Size.X;
+  Label_NbLaps.RelativePosition_V3.X = CurrentLapWidth + 1.;
+  
+  Frame_Center.RelativePosition_V3.X = (CurrentLapWidth + 1. + NbLapsWidth) * -0.5;
+}
+
+main() {
+  declare Frame_Global <=> (Page.GetFirstChild("Frame_Global") as CMlFrame);
+  declare Frame_Intro <=> (Page.GetFirstChild("Frame_Intro") as CMlFrame);
+  
+  declare netread Integer Net_LibUI_SettingsUpdate for Teams[0];
+  declare netread Text[Text] Net_LibUI_Settings for Teams[0];
+  
+  declare PrevSettingsUpdate = -1;
+  declare PrevLapsVisible = True;
+  
+  declare PrevCurrentLap = -1;
+  declare PrevNbLaps = -1;
+  
+  declare CurrentLap = -1;
+  
+  UpdateLaps(1, 1);
+  
+  while (True) {
+    yield;
+
+    HideDuringIntro(Frame_Intro);
+    
+    declare Owner <=> GetOwner();
+    if (!PageIsVisible || Owner == Null) continue;
+    
+    if (PrevSettingsUpdate != Net_LibUI_SettingsUpdate) {
+      PrevSettingsUpdate = Net_LibUI_SettingsUpdate;
+      foreach (SettingName => SettingValue in Net_LibUI_Settings) {
+        switch (SettingName) {
+          case "{{{UI_Common::C_Module_Laps}}}_Display": {
+            if (SettingValue == "True") {
+              PrevLapsVisible = True;
+              Frame_Global.Visible = True;
+            } else {
+              PrevLapsVisible = False;
+              Frame_Global.Visible = False;
+            }
+          }
+          case "{{{UI_Common::C_Module_Laps}}}_Position": {
+            declare PositionSplit = TL::Split(" ", SettingValue);
+            Frame_Global.RelativePosition_V3 = <TL::ToReal(PositionSplit[0]), TL::ToReal(PositionSplit[1])>;
+            Frame_Global.ZIndex = TL::ToReal(PositionSplit[2]);
+          }
+        }
+      }
+    }
+    
+    if (PrevLapsVisible) {
+      if (NbLaps > 1 && GUIPlayer != Null && GUIPlayer.IsSpawned) {
+        if (!Frame_Global.Visible) Frame_Global.Visible = True;
+      } else if (Frame_Global.Visible) {
+        Frame_Global.Visible = False;
+      }
+    }
+    
+    if (!Frame_Global.Visible) continue;
+    
+    if (PrevNbLaps != NbLaps) {
+      PrevNbLaps = NbLaps;
+      //Label_NbLaps.Value = "/"^NbLaps;
+      UpdateLaps(CurrentLap, NbLaps);
+    }
+    
+    if (GUIPlayer != Null && PrevCurrentLap != GUIPlayer.CurrentNbLaps) {
+      PrevCurrentLap = GUIPlayer.CurrentNbLaps;
+      CurrentLap = GUIPlayer.CurrentNbLaps + 1;
+      if (CurrentLap > NbLaps) CurrentLap = NbLaps;
+      //Label_CurrentLap.Value = TL::ToText(CurrentLap);
+      UpdateLaps(CurrentLap, NbLaps);
+    }
+  }
+}
+--></script>
+</manialink>""";
+}
+
+// ---------------------------------- //
+/** Create the manialink for the map ranking module
+ *
+ *  @return                           The manialink
+ */
+Text Private_CreateMLMapRanking() {
+  declare Img_FootLine_Ranking = "FootLine_Ranking.dds";
+  
+  //L16N [Trackmania UI] Legend displayed above the player's map ranking
+  declare Text_MapRanking = TL::ToUpperCase(_("Map ranking"));
+  
+  return """
+<manialink version="3" name="Lib_UI2:MapRanking">
+{{{C_Stylesheet}}}
+<frame pos="{{{C_LibUI_MapRankingPos.X}}} {{{C_LibUI_MapRankingPos.Y}}}" z-index="{{{C_LibUI_MapRankingPos.Z}}}" id="Frame_Global">
+<frame id="Frame_Intro">
+  <frame z-index="0" hidden="{{{C_HideLegend}}}">
+    <quad pos="0.1 -3.2" z-index="0" size="34 24" halign="center" valign="center" opacity="0.3" keepratio="Fit" image="{{{C_ImgPath^Img_FootLine_Ranking}}}" />
+    <quad size="34 5" z-index="1" halign="center" valign="center" style="Bgs1" substyle="BgDialogBlur" opacity="0.1" bluramount="0.1" />
+    <quad size="34 5" z-index="2" halign="center" valign="center" bgcolor="{{{C_ColorHex_White}}}" opacity="0.3"/>
+    <label z-index="3" size="33 5" halign="center" valign="center2" text="{{{Text_MapRanking}}}" class="text-default" />
+  </frame>
+  <frame pos="0 -4.2" id="Frame_Center">
+    <label pos="0 0.25" z-index="2" size="20 6" textsize="4" class="text-number" id="Label_CurrentPos" />
+    <label pos="9 0" z-index="1" size="16 6" textsize="2" class="text-number" id="Label_MaxPos" />
+  </frame>
+</frame>
+</frame>
+<script><!--
+#Include "TextLib" as TL
+
+#Const C_UpdateInterval 250
+
+CTmMlPlayer GetOwner() {
+  if (GUIPlayer != Null) return GUIPlayer;
+  if (InputPlayer != Null) return InputPlayer;
+  return Null;
+}
+
+Void UpdatePosition(Integer _Current, Integer _Total) {
+  declare Frame_Global <=> (Page.GetFirstChild("Frame_Global") as CMlFrame);
+  declare Frame_Center <=> (Frame_Global.GetFirstChild("Frame_Center") as CMlFrame);
+  declare Label_CurrentPos <=> (Frame_Global.GetFirstChild("Label_CurrentPos") as CMlLabel);
+  declare Label_MaxPos <=> (Frame_Global.GetFirstChild("Label_MaxPos") as CMlLabel);
+  
+  Label_CurrentPos.Value = TL::ToText(_Current);
+  Label_MaxPos.Value = "/"^_Total;
+  
+  declare CurrentPosWidth = Label_CurrentPos.ComputeWidth(TL::ToText(_Current));
+  if (CurrentPosWidth > Label_CurrentPos.Size.X) CurrentPosWidth = Label_CurrentPos.Size.X;
+  declare MaxPosWidth = Label_MaxPos.ComputeWidth("/"^_Total);
+  if (MaxPosWidth > Label_MaxPos.Size.X) MaxPosWidth = Label_MaxPos.Size.X;
+  Label_MaxPos.RelativePosition_V3.X = CurrentPosWidth + 0.5;
+  
+  Frame_Center.RelativePosition_V3.X = (CurrentPosWidth + 0.5 + MaxPosWidth) * -0.5;
+}
+
+{{{Private_InjectHelpers()}}}
+
+main() {
+  declare Frame_Global <=> (Page.GetFirstChild("Frame_Global") as CMlFrame);
+  declare Frame_Intro <=> (Page.GetFirstChild("Frame_Intro") as CMlFrame);
+  
+  declare netread Integer Net_LibUI_SettingsUpdate for Teams[0];
+  declare netread Text[Text] Net_LibUI_Settings for Teams[0];
+  
+  declare PrevSettingsUpdate = -1;
+  declare PrevScoresCount = -1;
+  
+  declare CurrentPos = 1;
+  declare NextUpdate = -1;
+  
+  declare MapRankingVisible = True;
+  
+  UpdatePosition(1, 1);
+  
+  while (True) {
+    yield;
+
+    HideDuringIntro(Frame_Intro);
+    
+    declare Owner <=> GetOwner();
+    if (!PageIsVisible || Owner == Null) continue;
+    
+    if (PrevSettingsUpdate != Net_LibUI_SettingsUpdate) {
+      PrevSettingsUpdate = Net_LibUI_SettingsUpdate;
+      foreach (SettingName => SettingValue in Net_LibUI_Settings) {
+        switch (SettingName) {
+          case "{{{UI_Common::C_Module_MapRanking}}}_Display": {
+            if (SettingValue == "True") {
+              MapRankingVisible = True;
+              Frame_Global.Visible = True;
+            } else {
+              MapRankingVisible = False;
+              Frame_Global.Visible = False;
+            }
+          }
+          case "{{{UI_Common::C_Module_MapRanking}}}_Position": {
+            declare PositionSplit = TL::Split(" ", SettingValue);
+            Frame_Global.RelativePosition_V3 = <TL::ToReal(PositionSplit[0]), TL::ToReal(PositionSplit[1])>;
+            Frame_Global.ZIndex = TL::ToReal(PositionSplit[2]);
+          }
+        }
+      }
+    }
+    
+    if (MapRankingVisible) {
+      if (Owner.IsSpawned) {
+        if (!Frame_Global.Visible) Frame_Global.Visible = True;
+      } else if (Frame_Global.Visible) {
+        Frame_Global.Visible = False;
+      }
+    }
+    
+    if (PrevScoresCount != Scores.count) {
+      PrevScoresCount = Scores.count;
+      UpdatePosition(CurrentPos, Scores.count);
+    }
+    
+    if (Now >= NextUpdate) {
+      NextUpdate = Now + C_UpdateInterval;
+      
+      declare Rank = 1;
+      foreach (Score in Scores) {
+        if (Score == Owner.Score) {
+            break;
+        }
+        Rank += 1;
+      }
+      
+      if (CurrentPos != Rank) {
+        CurrentPos = Rank;
+        UpdatePosition(CurrentPos, Scores.count);
+      }
+    }
+  }
+}
+--></script>
+</manialink>""";
+}
+
+// ---------------------------------- //
+/** Create the manialink for the checkpoint ranking module
+ *
+ *  @return                           The manialink
+ */
+Text Private_CreateMLCheckpointRanking() {
+  declare Img_FootLine_Ranking = "FootLine_Ranking.dds";
+  
+  //L16N [Trackmania UI] Legend displayed above the player's checkpoint ranking
+  declare Text_CheckpointRanking = TL::ToUpperCase(_("Checkpoint ranking"));
+  
+  return """
+<manialink version="3" name="Lib_UI2:CheckpointRanking">
+{{{C_Stylesheet}}}
+<frame pos="{{{C_LibUI_CheckpointRankingPos.X}}} {{{C_LibUI_CheckpointRankingPos.Y}}}" z-index="{{{C_LibUI_CheckpointRankingPos.Z}}}" id="Frame_Global" scale="{{{C_CheckpoinRanking_Scale}}}">
+  <frame id="Frame_Anim">
+    <frame z-index="0">
+      <quad pos="0.1 -3.2" z-index="0" size="34 24" halign="center" valign="center" opacity="0.3" keepratio="Fit" image="{{{C_ImgPath^Img_FootLine_Ranking}}}" />
+      <quad size="34 5" z-index="1" halign="center" valign="center" style="Bgs1" substyle="BgDialogBlur" opacity="0.1" bluramount="0.1" />
+      <quad size="34 5" z-index="2" halign="center" valign="center" bgcolor="{{{C_ColorHex_White}}}" opacity="0.3"/>
+      <label z-index="3" size="33 5" halign="center" valign="center2" text="{{{Text_CheckpointRanking}}}" class="text-default" />
+    </frame>
+    <frame pos="0 -4.2" z-index="1" id="Frame_Center">
+      <label pos="0 1" z-index="2" size="20 6" textsize="16.5" class="text-number" id="Label_CurrentPos" />
+      <label pos="9 0" z-index="1" size="16 6" textsize="8" textcolor="{{{C_ColorHex_BlueGreen}}}" class="text-number" id="Label_MaxPos" />
+    </frame>
+  </frame>
+</frame>
+<script><!--
+#Include "TextLib" as TL
+
+CTmMlPlayer GetOwner() {
+  if (GUIPlayer != Null) return GUIPlayer;
+  if (InputPlayer != Null) return InputPlayer;
+  return Null;
+}
+
+Void UpdatePosition(Integer _Current, Integer _Total) {
+  declare Frame_Global <=> (Page.GetFirstChild("Frame_Global") as CMlFrame);
+  declare Frame_Center <=> (Frame_Global.GetFirstChild("Frame_Center") as CMlFrame);
+  declare Label_CurrentPos <=> (Frame_Global.GetFirstChild("Label_CurrentPos") as CMlLabel);
+  declare Label_MaxPos <=> (Frame_Global.GetFirstChild("Label_MaxPos") as CMlLabel);
+  
+  Label_CurrentPos.Value = TL::ToText(_Current);
+  Label_MaxPos.Value = "/"^_Total;
+  
+  declare CurrentPosWidth = Label_CurrentPos.ComputeWidth(TL::ToText(_Current));
+  if (CurrentPosWidth > Label_CurrentPos.Size.X) CurrentPosWidth = Label_CurrentPos.Size.X;
+  declare MaxPosWidth = Label_MaxPos.ComputeWidth("/"^_Total);
+  if (MaxPosWidth > Label_MaxPos.Size.X) MaxPosWidth = Label_MaxPos.Size.X;
+  Label_MaxPos.RelativePosition_V3.X = CurrentPosWidth + 1.;
+  
+  Frame_Center.RelativePosition_V3.X = (CurrentPosWidth + 1. + MaxPosWidth) * -0.5;
+}
+
+Integer GetCurRank(CTmMlPlayer _Player, Integer _CheckpointIndex, Integer _Time, Boolean _IsIndependantLaps) {
+  declare Rank = 1;
+  declare CTmResult Result;
+  foreach (Player in Players) {
+    if (_IsIndependantLaps) Result <=> Player.CurLap;
+    else Result <=> Player.CurRace;
+    
+    if (Result != Null && Player.Id != _Player.Id) {
+      if (_CheckpointIndex >= 0 && Result.Checkpoints.count > _CheckpointIndex) {
+        if (Result.Checkpoints[_CheckpointIndex] < _Time) Rank += 1;
+      } 
+    }
+  }
+  
+  return Rank;
+}
+
+Integer GetBestRank(CTmMlPlayer _Player, Integer _CheckpointIndex, Integer _Time, Boolean _IsIndependantLaps) {
+  declare Rank = 1;
+  declare CTmResult Result;
+  foreach (Score in Scores) {
+    if (_IsIndependantLaps) Result <=> Score.BestLap;
+    else Result <=> Score.BestRace;
+    
+    if (Result != Null && Result.Time >= 0 && Score.User.Id != _Player.User.Id) {
+      if (_CheckpointIndex >= 0 && Result.Checkpoints.count > _CheckpointIndex) {
+        if (Result.Checkpoints[_CheckpointIndex] < _Time) Rank += 1;
+      } else if (Result.Time >= 0) {
+        if (Result.Time < _Time) Rank += 1;
+      }
+    }
+  }
+  
+  return Rank;
+}
+
+main() {
+  declare Frame_Global <=> (Page.GetFirstChild("Frame_Global") as CMlFrame);
+  declare Frame_Anim <=> (Frame_Global.GetFirstChild("Frame_Anim") as CMlFrame);
+  
+  declare netread Integer Net_LibUI_SettingsUpdate for Teams[0];
+  declare netread Text[Text] Net_LibUI_Settings for Teams[0];
+  
+  declare PrevSettingsUpdate = -1;
+  declare PrevRaceState = CTmMlPlayer::ERaceState::Running;
+  declare PrevLapRaceTime = -1;
+  
+  UpdatePosition(1, 1);
+  
+  while (True) {
+    yield;
+    
+    if (!PageIsVisible) continue;
+    
+    if (PrevSettingsUpdate != Net_LibUI_SettingsUpdate) {
+      PrevSettingsUpdate = Net_LibUI_SettingsUpdate;
+      foreach (SettingName => SettingValue in Net_LibUI_Settings) {
+        switch (SettingName) {
+          case "{{{UI_Common::C_Module_CheckpointRanking}}}_Display": {
+            if (SettingValue == "True") {
+              Frame_Global.Visible = True;
+            } else {
+              Frame_Global.Visible = False;
+            }
+          }
+          case "{{{UI_Common::C_Module_CheckpointRanking}}}_Position": {
+            declare PositionSplit = TL::Split(" ", SettingValue);
+            Frame_Global.RelativePosition_V3 = <TL::ToReal(PositionSplit[0]), TL::ToReal(PositionSplit[1])>;
+            Frame_Global.ZIndex = TL::ToReal(PositionSplit[2]);
+          }
+        }
+      }
+    }
+    
+    declare NeedUpdate = False;
+    foreach (Event in RaceEvents) {
+      if (
+        Event.Type == CTmRaceClientEvent::EType::WayPoint ||
+        Event.Type == CTmRaceClientEvent::EType::Respawn
+      ) {
+        NeedUpdate = True;
+      }
+    }
+    
+    declare Owner <=> GetOwner();
+    if (Owner != Null) {
+      if (Owner.CurRace.Checkpoints.count <= 0 && Frame_Anim.Visible) {
+        Frame_Anim.Visible = False;
+      } else if (Owner.CurRace.Checkpoints.count > 0 && !Frame_Anim.Visible) {
+        Frame_Anim.Visible = True;
+      }
+    
+      if (PrevRaceState != Owner.RaceState) {
+        PrevRaceState = Owner.RaceState;
+        NeedUpdate = True;
+      }
+    
+      if (NeedUpdate) {
+        if (Owner.CurCheckpointRaceTime >= 0) {
+          declare CheckpointIndex = -1;
+          declare CheckpointTime = -1;
+          declare LapTime = -1;
+          declare IsIndependantLaps = False;
+          
+          if (Net_LibUI_Settings.existskey("IndependantLaps") && Net_LibUI_Settings["IndependantLaps"] == "True") IsIndependantLaps = True;
+          
+          declare IsEndLap = False;
+          if (Owner.CurCheckpointLapTime < 0) {
+            if (Owner.CurrentNbLaps <= 1) {
+              LapTime = Owner.CurCheckpointRaceTime;
+            } else {
+              LapTime = Owner.CurCheckpointRaceTime - PrevLapRaceTime;
+            }
+            PrevLapRaceTime = Owner.CurCheckpointRaceTime;
+            IsEndLap = True;
+          } else {
+            LapTime = Owner.CurCheckpointLapTime;
+          }
+          
+          if (IsIndependantLaps) {
+            CheckpointTime = LapTime;
+            CheckpointIndex = Owner.CurLap.Checkpoints.count - 1;
+          } else {
+            CheckpointTime = Owner.CurCheckpointRaceTime;
+            CheckpointIndex = Owner.CurRace.Checkpoints.count - 1;
+          }
+          
+          declare Rank = 0;
+          if (Net_LibUI_Settings.existskey("{{{UI_Common::C_Module_CheckpointTime}}}_Mode") && Net_LibUI_Settings["{{{UI_Common::C_Module_CheckpointTime}}}_Mode"] == "CurRace") {
+            Rank = GetCurRank(Owner, CheckpointIndex, CheckpointTime, IsIndependantLaps);
+          } else {
+            Rank = GetBestRank(Owner, CheckpointIndex, CheckpointTime, IsIndependantLaps);
+          }
+          
+          UpdatePosition(Rank, Scores.count);
+        }
+      }
+    }
+  }
+}
+--></script>
+</manialink>""";
+}
+
+// ---------------------------------- //
+/** Create the manialink for the map info module
+ *
+ *  @return                           The manialink
+ */
+Text Private_CreateMLMapInfo() {
+  declare Img_FootLine_MapInfo = "FootLine_MapInfo.dds";
+  
+  return """
+<manialink version="3" name="Lib_UI2:MapInfo">
+{{{C_Stylesheet}}}
+<frame pos="{{{C_LibUI_MapInfoPos.X}}} {{{C_LibUI_MapInfoPos.Y}}}" z-index="{{{C_LibUI_MapInfoPos.Z}}}" id="Frame_Global">
+  <!--<frame z-index="0">
+    <quad z-index="0" size="100 5" opacity="0.45" keepratio="Fit" image="{{{C_ImgPath^Img_FootLine_MapInfo}}}" />
+    <quad pos="0 -1.5" z-index="1" size="70 20" style="Bgs1" substyle="BgDialogBlur" opacity="0.1" bluramount="0.1" />
+    <quad pos="0 -1.5" z-index="2" size="70 20" bgcolor="{{{C_ColorHex_White}}}" opacity="0.3"/>
+  </frame>-->
+  <frame pos="0 -1.5" z-index="1">
+    <quad pos="1.5 -1.5" size="0.7 17" bgcolor="{{{C_ColorHex_White}}}" />
+    <label pos="5 -2" size="92.5 10" textsize="8" class="text-default" id="Label_MapName" />
+    <label pos="5 -12.5" size="92.5 10" textsize="4" class="text-default" id="Label_AuthorName" />
+  </frame>
+</frame>
+<script><!--
+#Include "TextLib" as TL
+
+CTmMlPlayer GetOwner() {
+  if (GUIPlayer != Null) return GUIPlayer;
+  if (InputPlayer != Null) return InputPlayer;
+  return Null;
+}
+
+main() {
+  declare Frame_Global <=> (Page.GetFirstChild("Frame_Global") as CMlFrame);
+  declare Label_MapName <=> (Frame_Global.GetFirstChild("Label_MapName") as CMlLabel);
+  declare Label_AuthorName <=> (Frame_Global.GetFirstChild("Label_AuthorName") as CMlLabel);
+  
+  declare netread Integer Net_LibUI_SettingsUpdate for Teams[0];
+  declare netread Text[Text] Net_LibUI_Settings for Teams[0];
+  
+  declare PrevSettingsUpdate = -1;
+  
+  declare PrevMapName = "";
+  declare PrevMapAuthor = "";
+  
+  while (True) {
+    yield;
+    
+    declare Owner <=> GetOwner();
+    if (!PageIsVisible || Owner == Null) continue;
+    
+    if (PrevSettingsUpdate != Net_LibUI_SettingsUpdate) {
+      PrevSettingsUpdate = Net_LibUI_SettingsUpdate;
+      foreach (SettingName => SettingValue in Net_LibUI_Settings) {
+        switch (SettingName) {
+          case "{{{UI_Common::C_Module_MapInfo}}}_Display": {
+            if (SettingValue == "True") {
+              Frame_Global.Visible = True;
+            } else {
+              Frame_Global.Visible = False;
+            }
+          }
+          case "{{{UI_Common::C_Module_MapInfo}}}_Position": {
+            declare PositionSplit = TL::Split(" ", SettingValue);
+            Frame_Global.RelativePosition_V3 = <TL::ToReal(PositionSplit[0]), TL::ToReal(PositionSplit[1])>;
+            Frame_Global.ZIndex = TL::ToReal(PositionSplit[2]);
+          }
+        }
+      }
+    }
+    
+    if (Map != Null) {
+      if (PrevMapName != Map.MapName) {
+        PrevMapName = Map.MapName;
+        Label_MapName.Value = Map.MapName;
+      }
+      
+      if (PrevMapAuthor != Map.AuthorNickName) {
+        PrevMapAuthor = Map.AuthorNickName;
+        Label_AuthorName.Value = Map.AuthorNickName;
+      }
+    }
+  }
+}
+--></script>
+</manialink>""";
+}
+
+// ---------------------------------- //
+/** Create the manialink for the live info module
+ *
+ *  @return                           The manialink
+ */
+Text Private_CreateMLLiveInfo() {
+  return """
+<manialink version="3" name="Lib_UI2:LiveInfo">
+{{{C_Stylesheet}}}
+<frame pos="{{{C_LibUI_LiveInfoPos.X}}} {{{C_LibUI_LiveInfoPos.Y}}}" z-index="{{{C_LibUI_LiveInfoPos.Z}}}" id="frame-global">
+  <quad size="10 10" valign="center" keepratio="Fit" id="quad-image" />
+  <label pos="11 0" size="90 10" valign="center2" textsize="4" class="text-default" id="label-message" /> 
+</frame>
+<script><!--
+#Include "TextLib" as TL
+
+#Const C_PlayersUpdateInterval 1000
+#Const C_MessageQueueLimit 3
+#Const C_MessageUpdateInterval 2000
+
+#Const C_Message {{{UI_Common::C_Message_Message}}}
+#Const C_Image {{{UI_Common::C_Message_Image}}}
+#Const C_Login 2
+#Const C_Name 3
+
+declare Text[Integer][] G_MessagesQueue;
+
+CTmMlPlayer GetOwner() {
+  if (GUIPlayer != Null) return GUIPlayer;
+  if (InputPlayer != Null) return InputPlayer;
+  return Null;
+}
+
+Boolean PushMessage(Text[Integer] _Message) {
+  G_MessagesQueue.add(_Message);
+
+  declare Full = G_MessagesQueue.count > C_MessageQueueLimit;
+
+  while (G_MessagesQueue.count > C_MessageQueueLimit) {
+    declare Removed = G_MessagesQueue.removekey(0);
+    if (!Removed) break;
+  }
+
+  return Full;
+}
+
+Text[Integer] PullMessage() {
+  declare Message = Text[Integer];
+
+  if (G_MessagesQueue.existskey(0)) {
+    Message = G_MessagesQueue[0];
+    declare Removed = G_MessagesQueue.removekey(0);
+  }
+
+  return Message;
+}
+
+Void DisplayMessage(Text[Integer] _Message, CMlLabel _Label_Message, CMlQuad _Quad_Image) {
+  if (_Label_Message != Null) {
+    if (_Message.existskey(C_Message)) {
+      _Label_Message.Value = _Message[C_Message];
+      _Label_Message.Visible = True;
+    } else if (_Label_Message.Visible) {
+      _Label_Message.Visible = False;
+    }
+  }
+
+  if (_Quad_Image != Null) {
+    if (_Message.existskey(C_Image)) {
+      _Quad_Image.ImageUrl = _Message[C_Image];
+      _Quad_Image.Visible = True;
+    } else if (_Quad_Image.Visible) {
+      _Quad_Image.Visible = False;
+    }
+  }
+}
+
+main() {
+  declare Frame_Global <=> (Page.GetFirstChild("frame-global") as CMlFrame);
+  declare Label_Message <=> (Frame_Global.GetFirstChild("label-message") as CMlLabel);
+  declare Quad_Image <=> (Frame_Global.GetFirstChild("quad-image") as CMlQuad);
+  
+  declare netread Integer Net_LibUI_SettingsUpdate for Teams[0];
+  declare netread Text[Text] Net_LibUI_Settings for Teams[0];
+  
+  declare netread Net_LibUI_LiveEvent for UI = Text[Integer][Integer];
+  declare netread Net_LibUI_LiveEventUpdate for UI = Now;
+  declare netwrite Net_LibUI_LiveEventRead for UI = Integer[];
+  
+  declare PrevSettingsUpdate = -1;
+  declare PrevLiveEventUpdate = -1;
+  declare NextMessageUpdate = Now;
+  
+  while (True) {
+    yield;
+    
+    declare Owner <=> GetOwner();
+    if (!PageIsVisible || Owner == Null) continue;
+    
+    if (PrevSettingsUpdate != Net_LibUI_SettingsUpdate) {
+      PrevSettingsUpdate = Net_LibUI_SettingsUpdate;
+      foreach (SettingName => SettingValue in Net_LibUI_Settings) {
+        switch (SettingName) {
+          case "{{{UI_Common::C_Module_LiveInfo}}}_Display": {
+            if (SettingValue == "True") {
+              Frame_Global.Visible = True;
+            } else {
+              Frame_Global.Visible = False;
+            }
+          }
+          case "{{{UI_Common::C_Module_LiveInfo}}}_Position": {
+            declare PositionSplit = TL::Split(" ", SettingValue);
+            Frame_Global.RelativePosition_V3 = <TL::ToReal(PositionSplit[0]), TL::ToReal(PositionSplit[1])>;
+            Frame_Global.ZIndex = TL::ToReal(PositionSplit[2]);
+          }
+        }
+      }
+    }
+
+    if (PrevLiveEventUpdate != Net_LibUI_LiveEventUpdate) {
+      PrevLiveEventUpdate = Net_LibUI_LiveEventUpdate;
+
+      declare ToRemove = Integer[];
+      foreach (Key in Net_LibUI_LiveEventRead) {
+        if (!Net_LibUI_LiveEvent.existskey(Key)) {
+          ToRemove.add(Key);
+        }
+      }
+      foreach (Key in ToRemove) {
+        Net_LibUI_LiveEventRead.remove(Key);
+      }
+
+      foreach (Key => LiveEvent in Net_LibUI_LiveEvent) {
+        if (!Net_LibUI_LiveEventRead.exists(Key)) {
+          Net_LibUI_LiveEventRead.add(Key);
+          PushMessage(LiveEvent);
+        }
+      }
+    }
+
+    if (Now >= NextMessageUpdate) {
+      if (G_MessagesQueue.count > 0) {
+        NextMessageUpdate = Now + C_MessageUpdateInterval;
+      } else {
+        NextMessageUpdate = Now;
+      }
+
+      DisplayMessage(PullMessage(), Label_Message, Quad_Image);
+    }
+  }
+}
+--></script>
+</manialink>""";
+}
+
+// ---------------------------------- //
+/** Create the manialink for the spectator info
+ *
+ *  @return                           The manialink
+ */
+Text Private_CreateMLSpectatorInfo() {
+  return """
+<manialink version="3" name="Lib_UI2:SpectatorInfo">
+{{{C_Stylesheet}}}
+<frame pos="{{{C_LibUI_SpectatorInfoPos.X}}} {{{C_LibUI_SpectatorInfoPos.Y}}}" z-index="{{{C_LibUI_SpectatorInfoPos.Z}}}" hidden="1" id="frame-global">
+<frame id="frame-intro">
+  <frame id="frame-spectator-info">
+    <quad z-index="0" size="10 10" valign="center" keepratio="Fit" id="quad-avatar" />
+    <label pos="11 0" z-index="1" size="40 10" valign="center2" textsize="8" class="text-default" id="label-name" />
+  </frame>
+</frame>
+</frame>
+<script><!--
+#Include "TextLib" as TL
+
+CTmMlPlayer GetOwner() {
+  if (GUIPlayer != Null) return GUIPlayer;
+  if (InputPlayer != Null) return InputPlayer;
+  return Null;
+}
+
+Void SetTarget(CTmMlPlayer _Target, CMlFrame _Frame_SpectatorInfo, CMlLabel _Label_Name, CMlQuad _Quad_Avatar) {
+  if (_Frame_SpectatorInfo == Null || _Label_Name == Null || _Quad_Avatar == Null) return;
+
+  if (_Target != Null) {
+    _Label_Name.Value = _Target.User.Name;
+    _Quad_Avatar.ImageUrl = _Target.User.AvatarUrl;
+
+    declare NameSize = _Label_Name.ComputeWidth(_Target.User.Name);
+    if (NameSize > _Label_Name.Size.X) NameSize = _Label_Name.Size.X;
+    declare FullSize = NameSize + 1. + _Quad_Avatar.Size.X;
+    _Frame_SpectatorInfo.RelativePosition_V3.X = FullSize * -0.5;
+
+    _Label_Name.Visible = True;
+    _Quad_Avatar.Visible = True;
+  } else {
+    _Label_Name.Visible = False;
+    _Quad_Avatar.Visible = False;
+  }
+}
+
+{{{Private_InjectHelpers()}}}
+
+main() {
+  declare Frame_Global <=> (Page.GetFirstChild("frame-global") as CMlFrame);
+  declare Frame_Intro <=> (Page.GetFirstChild("frame-intro") as CMlFrame);
+  declare Frame_SpectatorInfo <=> (Frame_Global.GetFirstChild("frame-spectator-info") as CMlFrame);
+  declare Label_Name <=> (Frame_SpectatorInfo.GetFirstChild("label-name") as CMlLabel);
+  declare Quad_Avatar <=> (Frame_SpectatorInfo.GetFirstChild("quad-avatar") as CMlQuad);
+  
+  declare netread Integer Net_LibUI_SettingsUpdate for Teams[0];
+  declare netread Text[Text] Net_LibUI_Settings for Teams[0];
+  
+  declare PrevSettingsUpdate = -1;
+  declare PrevTargetId = NullId;
+  declare PrevIsSpectatorClient = !IsSpectatorClient;
+  
+  while (True) {
+    yield;
+
+    HideDuringIntro(Frame_Intro);
+    
+    declare Owner <=> GetOwner();
+    if (!PageIsVisible || Owner == Null) continue;
+    
+    if (PrevSettingsUpdate != Net_LibUI_SettingsUpdate) {
+      PrevSettingsUpdate = Net_LibUI_SettingsUpdate;
+      foreach (SettingName => SettingValue in Net_LibUI_Settings) {
+        switch (SettingName) {
+          case "{{{UI_Common::C_Module_SpectatorInfo}}}_Display": {
+            Frame_Global.Visible = (SettingValue == "True");
+          }
+          case "{{{UI_Common::C_Module_SpectatorInfo}}}_Position": {
+            declare PositionSplit = TL::Split(" ", SettingValue);
+            Frame_Global.RelativePosition_V3 = <TL::ToReal(PositionSplit[0]), TL::ToReal(PositionSplit[1])>;
+            Frame_Global.ZIndex = TL::ToReal(PositionSplit[2]);
+          }
+        }
+      }
+    }
+
+    if (PrevIsSpectatorClient != IsSpectatorClient) {
+      PrevIsSpectatorClient = IsSpectatorClient;
+      Frame_SpectatorInfo.Visible = IsSpectatorClient;
+    }
+
+    if (
+      (GUIPlayer != Null && PrevTargetId != GUIPlayer.Id) ||
+      (GUIPlayer == Null && PrevTargetId != NullId)
+    ) {
+      if (GUIPlayer != Null) {
+        PrevTargetId = Owner.Id;
+      } else {
+        PrevTargetId = NullId;
+      }
+      SetTarget(GUIPlayer, Frame_SpectatorInfo, Label_Name, Quad_Avatar);
+    }
+  }
+}
+--></script>
+</manialink>""";
+}
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+// ---------------------------------- //
+/** Return the version number of the script
+ *
+ *  @return   The version number of the script
+ */
+Text GetScriptVersion() {
+  return Version;
+}
+
+// ---------------------------------- //
+/** Return the name of the script
+ *
+ *  @return   The name of the script
+ */
+Text GetScriptName() {
+  return ScriptName;
+}
+
+// ---------------------------------- //
+/** Load a module
+ *
+ *  @param  _ModuleId                 The id of the module to load
+ */
+Void LoadModule(Text _ModuleId) {
+  if (G_Modules.exists(_ModuleId)) return;
+
+  switch (_ModuleId) {
+    case UI_Common::C_Module_TimeGap: {
+      Layers::Create(_ModuleId, Private_CreateMLTimeGap());
+    }
+    case UI_Common::C_Module_SmallScoresTable: {
+      Layers::Create(_ModuleId, Private_CreateMLSmallScoresTable());
+    }
+    case UI_Common::C_Module_Chrono: {
+      Layers::Create(_ModuleId, Private_CreateMLChrono());
+    }
+    case UI_Common::C_Module_CheckpointTime: {
+      Layers::Create(_ModuleId, Private_CreateMLCheckpointTime());
+    }
+    case UI_Common::C_Module_PrevBestTime: {
+      Layers::Create(_ModuleId, Private_CreateMLPrevBestTime());
+    }
+    case UI_Common::C_Module_SpeedAndDistance: {
+      Layers::Create(_ModuleId, Private_CreateMLSpeedAndDistance());
+    }
+    case UI_Common::C_Module_Countdown: {
+      Layers::Create(_ModuleId, Private_CreateMLCountdown());
+    }
+    case UI_Common::C_Module_Laps: {
+      Layers::Create(_ModuleId, Private_CreateMLLaps());
+    }
+    case UI_Common::C_Module_MapRanking: {
+      Layers::Create(_ModuleId, Private_CreateMLMapRanking());
+    }
+    case UI_Common::C_Module_CheckpointRanking: {
+      Layers::Create(_ModuleId, Private_CreateMLCheckpointRanking());
+    }
+    case UI_Common::C_Module_MapInfo: {
+      Layers::Create(_ModuleId, Private_CreateMLMapInfo());
+      Layers::SetType(UI_Common::C_Module_MapInfo, CUILayer::EUILayerType::ScoresTable);
+    }
+    case UI_Common::C_Module_LiveInfo: {
+      Layers::Create(_ModuleId, Private_CreateMLLiveInfo());
+    }
+    case UI_Common::C_Module_SpectatorInfo: {
+      Layers::Create(_ModuleId, Private_CreateMLSpectatorInfo());
+    }
+  }
+
+  G_Modules.add(_ModuleId);
+}
+
+// ---------------------------------- //
+/** Unload a module
+ *
+ *  @param  _ModuleId                 The id of the module to unload
+ */
+Void UnloadModule(Text _ModuleId) {
+  declare Removed = G_Modules.remove(_ModuleId);
+  Layers::Destroy(_ModuleId);
+}
+
+// ---------------------------------- //
+/// Update the library
+Void Yield() {
+  declare netread AppTMUI_ModulesUpdate for Playground.Teams[0] = -1;
+
+  if (G_ModulesUpdate != AppTMUI_ModulesUpdate) {
+    declare netread AppTMUI_Modules for Playground.Teams[0] = Text[];
+    G_ModulesUpdate = AppTMUI_ModulesUpdate;
+
+    foreach (ModuleId in AppTMUI_Modules) {
+      if (!G_Modules.exists(ModuleId)) {
+        LoadModule(ModuleId);
+      }
+    }
+
+    foreach (ModuleId in G_Modules) {
+      if (!AppTMUI_Modules.exists(ModuleId)) {
+        UnloadModule(ModuleId);
+      }
+    }
+  }
+}
+
+// ---------------------------------- //
+/// Unload the library
+Void Unload() {
+  foreach (Module in UI_Common::C_Modules) {
+    UnloadModule(Module);
+  }
+  G_ModulesUpdate = -1;
+  G_Modules.clear();
+}
+
+// ---------------------------------- //
+/// Load the library
+Void Load() {
+  Unload();
+}

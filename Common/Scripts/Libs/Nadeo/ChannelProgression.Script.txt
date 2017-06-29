@@ -1,0 +1,1907 @@
+/**
+ *	Channel progression library
+ */
+#Const	Version			"2017-05-31"
+#Const	ScriptName	"Libs/Nadeo/ChannelProgression.Script.txt"
+
+// ---------------------------------- //
+// Libraries
+// ---------------------------------- //
+#Include "TextLib" as TL
+#Include "MathLib" as ML
+#Include "TimeLib" as TiL
+#Include "Libs/Nadeo/Log.Script.txt" as Log
+#Include "Libs/Nadeo/Json2.Script.txt" as Json
+#Include "Libs/Nadeo/Ladder.Script.txt" as Ladder
+#Include "Libs/Nadeo/Layers2.Script.txt" as Layers
+#Include "Libs/Nadeo/Manialink/Grid.Script.txt" as Grid
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_LayerName	"LibChannelProgression"
+#Const C_ApiUrl "https://www.maniaplanet.com"
+#Const C_GetServerInfo "/ingame/public/season/server"
+#Const C_GetMapInfo "/ingame/public/season/players"
+#Const C_SetMapInfo "/ingame/public/season/match"
+#Const C_RequestTimeout 5000
+#Const C_RequestHeaders "Content-Type: application/json\nAccept: application/xml"
+#Const C_BestScoresNb 10 ///< Maximum number of best scores
+
+// ---------------------------------- //
+// Globales
+// ---------------------------------- //
+declare Boolean G_Enabled; //< The status of the library
+declare Ident G_RequestId_ServerInfo; //< Id of the server info request
+declare Ident G_RequestId_MatchInfo; //< Id of the match info request
+declare Ident G_RequestId_MapInfo; //< Id of the map info request
+declare Integer[Ident] G_RequestsTimeout; //< Timeout of the http requests
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+// ---------------------------------- //
+// Private
+// ---------------------------------- //
+// ---------------------------------- //
+/** Generate the manialink of a header
+ *
+ *	@param	_Size											The size of the header
+ *	@param	_Ratio										The ratio between the small and big
+ *																		part of the header
+ *
+ *	@return														The header manialink
+ */
+Text Private_GenerateHeaderML(Vec2 _Size, Real _Ratio) {
+	return """
+	<quad z-index="0" size="{{{_Size.X*_Ratio}}} {{{_Size.Y}}}" class="header-small" />
+	<quad z-index="1" pos="{{{_Size.X*_Ratio}}} 0" size="{{{_Size.X-(_Size.X*_Ratio)}}} {{{_Size.Y}}}" class="header-big" />
+""";
+}
+
+// ---------------------------------- //
+/** Get the channel progression manialink
+ *
+ *	@return														The manialink
+ */
+Text Private_GetChannelProgressionML() {
+	declare PlayerClass = "CTmMlPlayer";
+	if (This is CSmMode) PlayerClass = "CSmPlayer";
+	
+	// Colors
+	declare RGB_White = <1., 1., 1.>;
+	declare HEX_White = "ffffff";
+	declare RGB_Red = <1., 0., 0.>;
+	declare HEX_Red = "ff0000";
+	
+	// Title
+	declare SizeX_Title = 200.;
+	declare SizeY_Title = 30.;
+	//L16N [Channel progression] Title displayed above the channel's progression window
+	declare Title = TL::ToUpperCase(_("Season progression"));
+	//L16N [Channel progression] Text displayed abode the channel's progression window. Display the season's and episode's number. eg: Season 3 Episode 6
+	declare SeasonText = _("Season %1 Episode %2");
+	
+	declare GridX_Title = Grid::CreateConfig(SizeX_Title, 64, 1., False, Grid::C_Direction_Right);
+	declare GridY_Title = Grid::CreateConfig(SizeY_Title, 16, 4., True, Grid::C_Direction_Top);
+	
+	declare SizeX_Bar = Grid::GetSize(GridX_Title, 1);
+	declare SizeX_TitleValue = Grid::GetSize(GridX_Title, 63);
+	declare SizeX_TitleSeason = Grid::GetSize(GridX_Title, 63);
+	declare PosX_Bar = Grid::Push(GridX_Title, 0);
+	declare PosX_TitleValue = Grid::Push(GridX_Title, 1);
+	declare PosX_TitleSeason = Grid::Push(GridX_Title, 1);
+	
+	declare SizeY_Bar = Grid::GetSize(GridY_Title, 16);
+	declare SizeY_TitleValue = Grid::GetSize(GridY_Title, 8);
+	declare SizeY_TitleSeason = Grid::GetSize(GridY_Title, 4);
+	declare PosY_Bar = Grid::Push(GridY_Title, 0, Grid::C_Align_Center, SizeY_Bar);
+	declare PosY_TitleValue = Grid::Push(GridY_Title, 6, Grid::C_Align_Center, SizeY_TitleValue);
+	declare PosY_TitleSeason = Grid::Push(GridY_Title, 2, Grid::C_Align_Center, SizeY_TitleSeason);
+	
+	// Content
+	declare Columns = 16;
+	declare Lines = 16;
+	declare Margin = 1.;
+	declare Padding= False;
+	declare SizeX_Content = 200.;
+	declare SizeY_Content = 100.;
+	
+	declare GridX_Content = Grid::CreateConfig(SizeX_Content, Columns, Margin, Padding, Grid::C_Direction_Right);
+	declare GridY_Content = Grid::CreateConfig(SizeY_Content, Lines, Margin, Padding, Grid::C_Direction_Bottom);
+	
+	declare SizeX_LeftColumn = Grid::GetSize(GridX_Content, 4);
+	declare SizeX_RightColumn = Grid::GetSize(GridX_Content, 12);
+	declare PosX_LeftColumn = Grid::Push(GridX_Content, 0);
+	declare PosX_RightColumn = Grid::Push(GridX_Content, 4);
+	
+	declare SizeY_Ranking = Grid::GetSize(GridY_Content, 8);
+	declare SizeY_Score = Grid::GetSize(GridY_Content, 8);
+	declare PosY_Ranking = Grid::Push(GridY_Content, 0);
+	declare PosY_Score = Grid::Push(GridY_Content, 8);
+	
+	declare SizeY_Emblem = Grid::GetSize(GridY_Content, 4);
+	declare SizeY_BestScores = Grid::GetSize(GridY_Content, 4);
+	declare SizeY_Reward = Grid::GetSize(GridY_Content, 8);
+	declare PosY_BestScores = Grid::Push(GridY_Content, 0);
+	declare PosY_Emblem = Grid::Push(GridY_Content, 4);
+	declare PosY_Reward = Grid::Push(GridY_Content, 8);
+	
+	// Ranking
+	declare RankingPadding = True;
+	declare RankingsNb = 9;
+	
+	declare GridX_Ranking = Grid::CreateConfig(SizeX_LeftColumn, Columns, Margin, RankingPadding, Grid::C_Direction_Right);
+	declare GridY_Ranking = Grid::CreateConfig(SizeY_Ranking, RankingsNb, Margin, RankingPadding, Grid::C_Direction_Bottom);
+	
+	declare SizeX_RankingPosition = Grid::GetSize(GridX_Ranking, 2);
+	declare SizeX_RankingName = Grid::GetSize(GridX_Ranking, 10);
+	declare SizeX_RankingScore = Grid::GetSize(GridX_Ranking, 4);
+	declare SizeY_RankingItem = Grid::GetSize(GridY_Ranking, 1);
+	
+	declare PosX_RankingPosition = Grid::Push(GridX_Ranking, 0, Grid::C_Align_Center, SizeX_RankingPosition);
+	declare PosX_RankingName = Grid::Push(GridX_Ranking, 2);
+	declare PosX_RankingScore = Grid::Push(GridX_Ranking, 12, Grid::C_Align_Right, SizeX_RankingScore);
+	
+	declare RankingsML = "";
+	for (I, 1, RankingsNb) {
+		declare PosY = Grid::Push(GridY_Ranking, (I - 1), Grid::C_Align_Center, SizeY_RankingItem);
+		RankingsML ^= """<frameinstance pos="0 {{{PosY}}}" modelid="framemodel-player-ranking" />""";
+	}
+	
+	// Score
+	declare ScorePadding = True;
+	declare ScoreColumns = 1;
+	declare ScoreLines = 10;
+	//L16N [Channel progression] Legend displayed above the score of the player in the channel progression window
+	declare ScoreLegend = _("Score");
+	
+	declare GridX_Score = Grid::CreateConfig(SizeX_LeftColumn, ScoreColumns, Margin, ScorePadding, Grid::C_Direction_Right);
+	declare GridY_Score = Grid::CreateConfig(SizeY_Score, ScoreLines, Margin, ScorePadding, Grid::C_Direction_Bottom);
+	
+	declare SizeX_ScoreLegend = Grid::GetSize(GridX_Score, 1);
+	declare SizeX_ScoreValue = Grid::GetSize(GridX_Score, 1);
+	declare SizeY_ScoreLegend = Grid::GetSize(GridY_Score, 4);
+	declare SizeY_ScoreValue = Grid::GetSize(GridY_Score, 6);
+	
+	declare PosX_ScoreLegend = Grid::Push(GridX_Score, 0, Grid::C_Align_Center, SizeX_ScoreLegend);
+	declare PosX_ScoreValue = Grid::Push(GridX_Score, 0, Grid::C_Align_Center, SizeX_ScoreValue);
+	declare PosY_ScoreLegend = Grid::Push(GridY_Score, 0, Grid::C_Align_Bottom, SizeY_ScoreLegend);
+	declare PosY_ScoreValue = Grid::Push(GridY_Score, 4);
+	
+	// Emblem
+	declare EmblemPadding = True;
+	declare EmblemColumns = 16;
+	declare EmblemLines = 16;
+	
+	declare GridX_Emblem = Grid::CreateConfig(SizeX_RightColumn, EmblemColumns, Margin, EmblemPadding, Grid::C_Direction_Right);
+	declare GridY_Emblem = Grid::CreateConfig(SizeY_Emblem, EmblemLines, Margin, EmblemPadding, Grid::C_Direction_Bottom);
+	
+	declare SizeX_CurrentEmblem = Grid::GetSize(GridX_Emblem, 3);
+	declare SizeX_EmblemProgressBar = Grid::GetSize(GridX_Emblem, 10);
+	declare SizeX_EmblemGain = Grid::GetSize(GridX_Emblem, 10);
+	declare SizeX_EmblemPoints = Grid::GetSize(GridX_Emblem, 10);
+	declare SizeX_NextEmblem = Grid::GetSize(GridX_Emblem, 3);
+	declare PosX_CurrentEmblem = Grid::Push(GridX_Emblem, 0, Grid::C_Align_Center, SizeX_CurrentEmblem);
+	declare PosX_EmblemProgressBar = Grid::Push(GridX_Emblem, 3);
+	declare PosX_EmblemGain = Grid::Push(GridX_Emblem, 3, Grid::C_Align_Right, SizeX_EmblemGain);
+	declare PosX_EmblemPoints = Grid::Push(GridX_Emblem, 3, Grid::C_Align_Center, SizeX_EmblemPoints);
+	declare PosX_NextEmblem = Grid::Push(GridX_Emblem, 13, Grid::C_Align_Center, SizeX_NextEmblem);
+	
+	declare SizeY_EmblemProgress = Grid::GetSize(GridY_Emblem, 16);
+	declare SizeY_EmblemProgressBar = Grid::GetSize(GridY_Emblem, 4);
+	declare SizeY_EmblemGain = Grid::GetSize(GridY_Emblem, 4);
+	declare SizeY_EmblemPoints = Grid::GetSize(GridY_Emblem, 6);
+	declare PosY_EmblemProgress = Grid::Push(GridY_Emblem, 0, Grid::C_Align_Center, SizeY_EmblemProgress);
+	declare PosY_EmblemProgressBar = Grid::Push(GridY_Emblem, 6);
+	declare PosY_EmblemGain = Grid::Push(GridY_Emblem, 6, Grid::C_Align_Center, SizeY_EmblemGain);
+	declare PosY_EmblemPoints = Grid::Push(GridY_Emblem, 10, Grid::C_Align_Center, SizeY_EmblemPoints);
+	
+	// Best scores
+	declare BestScoresPadding = True;
+	declare BestScoresNb = C_BestScoresNb;
+	declare BestScoresLines = 16;
+	//L16N [Channel progression] Legend displayed above the best scores of the player in the channel progression window
+	declare BestScoresLegend = _("Best scores");
+	
+	declare GridX_BestScores = Grid::CreateConfig(SizeX_RightColumn, BestScoresNb, Margin, BestScoresPadding, Grid::C_Direction_Right);
+	declare GridY_BestScores = Grid::CreateConfig(SizeY_BestScores, BestScoresLines, Margin, BestScoresPadding, Grid::C_Direction_Bottom);
+	
+	declare SizeX_BestScoresLegend = Grid::GetSize(GridX_BestScores, BestScoresNb);
+	declare SizeX_BestScore = Grid::GetSize(GridX_BestScores, 1);
+	declare PosX_BestScoresLegend = Grid::Push(GridX_BestScores, 0, Grid::C_Align_Center, SizeX_BestScoresLegend);
+	
+	declare SizeY_BestScoresLegend = Grid::GetSize(GridY_BestScores, 6);
+	declare SizeY_BestScoreValue = Grid::GetSize(GridY_BestScores, 6);
+	declare SizeY_BestScoreRank = Grid::GetSize(GridY_BestScores, 4);
+	declare PosY_BestScoresLegend = Grid::Push(GridY_BestScores, 0, Grid::C_Align_Center, SizeY_BestScoresLegend);
+	declare PosY_BestScoreValue = Grid::Push(GridY_BestScores, 6, Grid::C_Align_Center, SizeY_BestScoreValue);
+	declare PosY_BestScoreRank = Grid::Push(GridY_BestScores, 12, Grid::C_Align_Center, SizeY_BestScoreRank);
+	
+	declare BestScoresPositions = Real[];
+	declare BestScoresML = "";
+	for (I, 1, BestScoresNb) {
+		declare PosX = Grid::Push(GridX_BestScores, (I-1), Grid::C_Align_Center, SizeX_BestScore);
+		BestScoresPositions.add(PosX);
+		BestScoresML ^= """<frameinstance pos="{{{PosX}}} 0" modelid="framemodel-best-score" />""";
+	}
+	
+	// Reward
+	declare RewardPadding = True;
+	declare RewardColumns = 16;
+	declare RewardLines = 1;
+	//L16N [Channel progression] Message displayed when the player did not earned a reward
+	declare RewardUnavailable = _("No reward");
+	
+	declare GridX_Reward = Grid::CreateConfig(SizeX_RightColumn, RewardColumns, Margin, RewardPadding, Grid::C_Direction_Right);
+	declare GridY_Reward = Grid::CreateConfig(SizeY_Reward, RewardLines, Margin, RewardPadding, Grid::C_Direction_Bottom);
+	
+	declare SizeX_RewardRoulette = Grid::GetSize(GridX_Reward, 7);
+	declare SizeX_RewardArrow = Grid::GetSize(GridX_Reward, 2);
+	declare SizeX_RewardResult = Grid::GetSize(GridX_Reward, 7);
+	declare SizeX_RewardMessage = Grid::GetSize(GridX_Reward, 16);
+	declare PosX_RewardRoulette = Grid::Push(GridX_Reward, 0);
+	declare PosX_RewardArrow = Grid::Push(GridX_Reward, 7, Grid::C_Align_Center, SizeX_RewardArrow);
+	declare PosX_RewardResult = Grid::Push(GridX_Reward, 9, Grid::C_Align_Center, SizeX_RewardResult);
+	declare PosX_RewardMessage = Grid::Push(GridX_Reward, 0, Grid::C_Align_Center, SizeX_RewardMessage);
+	
+	declare SizeY_RewardRoulette = Grid::GetSize(GridY_Reward, 1);
+	declare SizeY_RewardArrow = Grid::GetSize(GridY_Reward, 1);
+	declare SizeY_RewardResult = Grid::GetSize(GridY_Reward, 1);
+	declare SizeY_RewardMessage = Grid::GetSize(GridY_Reward, 1);
+	declare PosY_RewardRoulette = Grid::Push(GridY_Reward, 0);
+	declare PosY_RewardArrow = Grid::Push(GridY_Reward, 0, Grid::C_Align_Center, SizeY_RewardArrow);
+	declare PosY_RewardResult = Grid::Push(GridY_Reward, 0, Grid::C_Align_Center, SizeY_RewardResult);
+	declare PosY_RewardMessage = Grid::Push(GridY_Reward, 0, Grid::C_Align_Center, SizeY_RewardMessage);
+	
+	// Roulette
+	declare RoulettePadding = False;
+	declare RouletteColumns = 1;
+	declare RouletteLines = 2;
+	declare RouletteMargin = 0.5;
+	
+	declare GridX_Roulette = Grid::CreateConfig(SizeX_RewardRoulette, RouletteColumns, RouletteMargin, RoulettePadding, Grid::C_Direction_Right);
+	declare GridY_Roulette = Grid::CreateConfig(SizeY_RewardRoulette, RouletteLines, RouletteMargin, RoulettePadding, Grid::C_Direction_Bottom);
+	
+	declare SizeX_Roulette = Grid::GetSize(GridX_Roulette, 1);
+	declare PosX_Roulette = Grid::Push(GridX_Roulette, 0, Grid::C_Align_Center, SizeX_RewardRoulette);
+	
+	declare SizeY_Roulette = Grid::GetSize(GridY_Roulette, 1);
+	
+	declare RouletteTranslate = SizeY_Roulette + (RouletteMargin * 2.);
+	declare RouletteHalfSize = SizeY_Roulette * 1.5;
+	
+	declare RouletteML = "";
+	for (I, 0, RouletteLines+1) {
+		declare PosY = Grid::Push(GridY_Roulette, I, Grid::C_Align_Center, SizeY_Roulette);
+		RouletteML ^= """<frameinstance pos="{{{PosX_Roulette}}} {{{PosY}}}" modelid="framemodel-roulette-item" />""";
+	}
+	
+	// Region ranking
+	declare RegionPadding = True;
+	declare RegionColumns = 16;
+	declare RegionSectionsNb = 5;
+	declare RegionTitleLines = 2;
+	declare RegionLines = RegionSectionsNb + RegionTitleLines;
+	//L16N [Channel Progression] Legend displayed above the regional ranking of the player. It is the season's rank of the player in each world subdivision. eg: 10th World, 8th Europe, 6th France, 5th Outre-Mer, 3rd Réunion.
+	declare RegionalRanking = _("Regional ranking");
+	
+	declare RegionX_Reward = Grid::CreateConfig(SizeX_RightColumn, RegionColumns, Margin, RegionPadding, Grid::C_Direction_Right);
+	declare RegionY_Reward = Grid::CreateConfig(SizeY_Reward, RegionLines, Margin, RegionPadding, Grid::C_Direction_Bottom);
+	
+	declare SizeX_RegionLegend = Grid::GetSize(RegionX_Reward, 16);
+	declare SizeX_RegionZone = Grid::GetSize(RegionX_Reward, 8);
+	declare SizeX_RegionRanking = Grid::GetSize(RegionX_Reward, 4);
+	declare SizeX_RegionGain = Grid::GetSize(RegionX_Reward, 4);
+	declare PosX_RegionLegend = Grid::Push(RegionX_Reward, 0, Grid::C_Align_Center, SizeX_RegionLegend);
+	declare PosX_RegionZone = Grid::Push(RegionX_Reward, 0, Grid::C_Align_Right, SizeX_RegionZone);
+	declare PosX_RegionRanking = Grid::Push(RegionX_Reward, 8, Grid::C_Align_Left, SizeX_RegionRanking);
+	declare PosX_RegionGain = Grid::Push(RegionX_Reward, 12, Grid::C_Align_Left, SizeX_RegionGain);
+	
+	declare SizeY_RegionLegend = Grid::GetSize(RegionY_Reward, RegionTitleLines);
+	declare SizeY_RegionLine = Grid::GetSize(RegionY_Reward, 1);
+	declare PosY_RegionLegend = Grid::Push(RegionY_Reward, 0, Grid::C_Align_Center, SizeY_RegionLegend);
+	declare PosY_RegionLine = Grid::Push(RegionY_Reward, 1, Grid::C_Align_Center, SizeY_RegionLegend);
+	
+	declare RegionalRankingML = "";
+	for (I, 0, RegionSectionsNb-1) {
+		declare PosY = Grid::Push(RegionY_Reward, I + RegionTitleLines, Grid::C_Align_Center, SizeY_RegionLine);
+		RegionalRankingML ^= """<frameinstance pos="0 {{{PosY}}}" modelid="framemodel-regional-ranking" />""";
+	}
+	
+	return """
+<manialink version="3" name="ChannelProgression">
+<stylesheet>
+	<style class="bg-dark" opacity="0.5" bgcolor="0b081b" />
+	<style class="bg-blur" style="Bgs1" substyle="BgDialogBlur" opacity="0.1" />
+	<style class="header-small" valign="bottom" colorize="1ec8c2" image="file://Media/Manialinks/Nadeo/Common/ScoresTable/HeaderSmall.dds" />
+	<style class="header-big" valign="bottom" colorize="1ec8c2" image="file://Media/Manialinks/Nadeo/Common/ScoresTable/HeaderBig.dds" />
+	<style class="text-small" textsize="1" textfont="OswaldMono" textcolor="{{{HEX_White}}}" textemboss="1" />
+	<style class="text-default" textsize="2" textfont="OswaldMono" textcolor="{{{HEX_White}}}" textemboss="1" />
+	<style class="text-score" textsize="4" textfont="OswaldMono" textcolor="{{{HEX_White}}}" textemboss="1" />
+	<style class="text-medium" textsize="6" textfont="OswaldMono" textcolor="{{{HEX_White}}}" textemboss="1" />
+	<style class="text-big" textsize="12" textfont="OswaldMono" textcolor="{{{HEX_White}}}" textemboss="1" />
+</stylesheet>
+<framemodel id="framemodel-player-ranking">
+	<label pos="{{{PosX_RankingPosition}}} 0" size="{{{SizeX_RankingPosition}}} {{{SizeY_RankingItem}}}" halign="center" valign="center2" class="text-default" id="label-rank" />
+	<label pos="{{{PosX_RankingName}}} 0" size="{{{SizeX_RankingName}}} {{{SizeY_RankingItem}}}" valign="center2" class="text-default" id="label-name" />
+	<label pos="{{{PosX_RankingScore}}} 0" size="{{{SizeX_RankingScore}}} {{{SizeY_RankingItem}}}" halign="right" valign="center2" class="text-default" id="label-score" />
+</framemodel>
+<framemodel id="framemodel-best-score">
+	<label pos="0 {{{PosY_BestScoreRank}}}" size="{{{SizeX_BestScore}}} {{{SizeY_BestScoreRank}}}" halign="center" valign="center2" class="text-small" id="label-date" />
+	<label pos="0 {{{PosY_BestScoreValue}}}" size="{{{SizeX_BestScore}}} {{{SizeY_BestScoreValue}}}" halign="center" valign="center2" class="text-score" id="label-score" />
+</framemodel>
+<framemodel id="framemodel-roulette-item">
+	<quad z-index="0" size="{{{SizeX_Roulette}}} {{{SizeY_Roulette}}}" halign="center" valign="center" bgcolor="ccc" />
+	<quad z-index="1" size="{{{SizeX_Roulette}}} {{{SizeY_Roulette}}}" halign="center" valign="center" keepratio="fit" id="quad-reward" />
+</framemodel>
+<framemodel id="framemodel-regional-ranking">
+	<label pos="{{{PosX_RegionZone}}} 0" size="{{{SizeX_RegionZone}}} {{{SizeY_RegionLine}}}" halign="right" valign="center2" class="text-default" id="label-zone" />
+	<label pos="{{{PosX_RegionRanking}}} 0" size="{{{SizeX_RegionRanking}}} {{{SizeY_RegionLine}}}" valign="center2" class="text-default" id="label-rank" />
+	<label pos="{{{PosX_RegionGain}}} 0" size="{{{SizeX_RegionGain}}} {{{SizeY_RegionLine}}}" valign="center2" textcolor="ece05b" class="text-default" id="label-gain" />
+</framemodel>
+<frame z-index="25" id="frame-global">
+	<frame pos="0 50" id="frame-pos">
+		<frame pos="{{{SizeX_Content*-0.5}}} 0">
+			<!-- Title -->
+			<frame pos="0 0" z-index="0">
+				<quad pos="{{{PosX_Bar}}} {{{PosY_Bar}}}" z-index="1" size="{{{SizeX_Bar}}} {{{SizeY_Bar}}}" valign="center" bgcolor="{{{HEX_White}}}" />
+				<quad pos="{{{PosX_Bar + 0.5}}} {{{PosY_Bar-0.5}}}" z-index="0" size="{{{SizeX_Bar}}} {{{SizeY_Bar}}}" valign="center" bgcolor="000" />
+				<label pos="{{{PosX_TitleValue}}} {{{PosY_TitleValue}}}" z-index="2" size="{{{SizeX_TitleValue}}} {{{SizeY_TitleValue}}}" valign="center2" text="{{{Title}}}" class="text-big" />
+				<label pos="{{{PosX_TitleSeason}}} {{{PosY_TitleSeason}}}" z-index="3" size="{{{SizeX_TitleSeason}}} {{{SizeY_TitleSeason}}}" valign="center2" class="text-medium" id="label-season" />
+			</frame>
+			<!-- Left column -->
+			<frame pos="{{{PosX_LeftColumn}}} 0" z-index="1">
+	      <frame pos="0 1" z-index="0">
+					{{{Private_GenerateHeaderML(<SizeX_LeftColumn, 0.6>, 0.95)}}}
+				</frame>
+				<!-- Ranking -->
+				<frame pos="0 {{{PosY_Ranking}}}" z-index="1">
+					<frame z-index="0">
+						<quad z-index="1" size="{{{SizeX_LeftColumn}}} {{{SizeY_Ranking}}}" class="bg-dark" />
+						<quad z-index="0" size="{{{SizeX_LeftColumn}}} {{{SizeY_Ranking}}}" class="bg-blur" />
+					</frame>
+					<frame z-index="1" id="frame-ranking">
+						{{{RankingsML}}}
+					</frame>
+				</frame>
+				<!-- Score -->
+				<frame pos="0 {{{PosY_Score}}}" z-index="2" id="frame-score">
+					<frame z-index="0">
+						<quad size="{{{SizeX_LeftColumn}}} {{{SizeY_Score}}}" class="bg-dark" />
+						<quad size="{{{SizeX_LeftColumn}}} {{{SizeY_Score}}}" class="bg-blur" />
+					</frame>
+					<frame z-index="1">
+						<label pos="{{{PosX_ScoreLegend}}} {{{PosY_ScoreLegend}}}" size="{{{SizeX_ScoreLegend}}} {{{SizeY_ScoreLegend}}}" halign="center" valign="bottom" text="{{{ScoreLegend}}}" class="text-medium" />
+						<label pos="{{{PosX_ScoreValue}}} {{{PosY_ScoreValue}}}" size="{{{SizeX_ScoreValue}}} {{{SizeY_ScoreValue}}}" halign="center" text="0" class="text-big" id="label-score" />
+					</frame>
+				</frame>
+			</frame>
+			<!-- Right column -->
+			<frame pos="{{{PosX_RightColumn}}} 0" z-index="2">
+	      <frame pos="0 1" z-index="0">
+					{{{Private_GenerateHeaderML(<SizeX_RightColumn, 0.6>, 0.7)}}}
+				</frame>
+				<!-- Emblem -->
+				<frame pos="0 {{{PosY_Emblem}}}" z-index="1">
+					<frame z-index="0">
+						<quad size="{{{SizeX_RightColumn}}} {{{SizeY_Emblem}}}" class="bg-dark" />
+						<quad size="{{{SizeX_RightColumn}}} {{{SizeY_Emblem}}}" class="bg-blur" />
+					</frame>
+					<frame z-index="1" id="frame-emblem">
+						<frame pos="{{{PosX_CurrentEmblem}}} {{{PosY_EmblemProgress}}}" z-index="1" size="{{{SizeX_CurrentEmblem}}} {{{SizeY_EmblemProgress}}}" halign="center" valign="center" id="frame-current-emblem">
+							<frame id="frame-anim">
+								<quad z-index="0" size="{{{SizeX_CurrentEmblem}}} {{{SizeY_EmblemProgress}}}" halign="center" valign="center" keepratio="fit" id="quad-current-emblem" />
+								<quad pos="{{{SizeX_CurrentEmblem}}} 0" z-index="1" size="{{{SizeX_CurrentEmblem}}} {{{SizeY_EmblemProgress}}}" halign="center" valign="center" keepratio="fit" id="quad-next-emblem" />
+							</frame>
+						</frame>
+						<frame pos="{{{PosX_EmblemProgressBar}}} {{{PosY_EmblemProgressBar}}}" z-index="0">
+							<quad size="{{{SizeX_EmblemProgressBar}}} {{{SizeY_EmblemProgressBar}}}" z-index="0" bgcolor="777" />
+							<quad size="{{{SizeX_EmblemProgressBar*0.5}}} {{{SizeY_EmblemProgressBar}}}" z-index="1" bgcolor="{{{HEX_Red}}}" id="quad-progress-bar" />
+						</frame>
+						<label pos="{{{PosX_EmblemGain-1}}} {{{PosY_EmblemGain-0.25}}}" z-index="4" size="{{{SizeX_EmblemGain}}} {{{SizeY_EmblemGain}}}" halign="right" valign="center2" class="text-default" id="label-gain" />
+						<label pos="{{{PosX_EmblemPoints}}} {{{PosY_EmblemPoints}}}" z-index="3" size="{{{SizeX_EmblemPoints}}} {{{SizeY_EmblemPoints}}}" halign="center" valign="center2" class="text-medium" id="label-points" />
+						<frame pos="{{{PosX_NextEmblem}}} {{{PosY_EmblemProgress}}}" z-index="2" size="{{{SizeX_NextEmblem}}} {{{SizeY_EmblemProgress}}}" halign="center" valign="center" id="frame-next-emblem">
+							<frame id="frame-anim">
+								<quad z-index="0" size="{{{SizeX_NextEmblem}}} {{{SizeY_EmblemProgress}}}" halign="center" valign="center" keepratio="fit" id="quad-current-emblem" />
+								<quad pos="{{{SizeX_NextEmblem}}} 0" z-index="1" size="{{{SizeX_NextEmblem}}} {{{SizeY_EmblemProgress}}}" halign="center" valign="center" keepratio="fit" id="quad-next-emblem" />
+							</frame>
+						</frame>
+					</frame>
+				</frame>
+				<!-- Best scores -->
+				<frame pos="0 {{{PosY_BestScores}}}" z-index="2">
+					<frame z-index="0">
+						<quad size="{{{SizeX_RightColumn}}} {{{SizeY_BestScores}}}" class="bg-dark" />
+						<quad size="{{{SizeX_RightColumn}}} {{{SizeY_BestScores}}}" class="bg-blur" />
+					</frame>
+					<frame z-index="1">
+						<label pos="{{{PosX_BestScoresLegend}}} {{{PosY_BestScoresLegend}}}" z-index="0" size="{{{SizeX_BestScoresLegend}}} {{{SizeY_BestScoresLegend}}}" halign="center" valign="center2" class="text-medium" text="{{{BestScoresLegend}}}" />
+						<frame z-index="1" id="frame-best-scores">
+							{{{BestScoresML}}}
+						</frame>
+					</frame>
+				</frame>
+				<!-- Reward -->
+				<frame pos="0 {{{PosY_Reward}}}" z-index="3" id="frame-reward">
+					<frame z-index="0">
+						<quad size="{{{SizeX_RightColumn}}} {{{SizeY_Reward}}}" class="bg-dark" />
+						<quad size="{{{SizeX_RightColumn}}} {{{SizeY_Reward}}}" class="bg-blur" />
+					</frame>
+					<!-- Roulette -->
+					<frame z-index="1" hidden="1">
+						<frame hidden="1" id="frame-reward-available">
+							<frame pos="{{{PosX_RewardRoulette}}} {{{PosY_RewardRoulette}}}" size="{{{SizeX_RewardRoulette}}} {{{SizeY_RewardRoulette}}}">
+								<frame id="frame-roulette">
+									<frame pos="0 {{{RouletteHalfSize}}}" id="frame-content">
+										{{{RouletteML}}}
+									</frame>
+								</frame>
+							</frame>
+							<label pos="{{{PosX_RewardArrow}}} {{{PosY_RewardArrow}}}" size="{{{SizeX_RewardArrow}}} {{{SizeY_RewardArrow}}}" halign="center" valign="center2" textsize="20" text="⏵" />
+							<quad pos="{{{PosX_RewardResult}}} {{{PosY_RewardResult}}}" size="{{{SizeX_RewardResult*0.8}}} {{{SizeY_RewardResult*0.8}}}" halign="center" valign="center" keepratio="fit" id="quad-result" />
+						</frame>
+						<frame id="frame-reward-unavailable">
+							<label pos="{{{PosX_RewardMessage}}} {{{PosY_RewardMessage}}}" size="{{{SizeX_RewardMessage}}} {{{SizeY_RewardMessage}}}" halign="center" valign="center2" text="{{{RewardUnavailable}}}" class="text-big" />
+						</frame>
+					</frame>
+					<!-- Regional ranking -->
+					<frame z-index="1">
+						<label pos="{{{PosX_RegionLegend}}} {{{PosY_RegionLegend}}}" size="{{{SizeX_RegionLegend}}} {{{SizeY_RegionLegend}}}" halign="center" valign="center2" text="{{{RegionalRanking}}}" class="text-medium" />
+						<frame id="frame-regional-ranking">
+							{{{RegionalRankingML}}}
+						</frame>
+					</frame>
+				</frame>
+			</frame>
+		</frame>
+	</frame>
+</frame>
+<script><!--
+#Include "TextLib" as TL
+#Include "MathLib" as ML
+#Include "AnimLib" as AL
+#Include "TimeLib" as TiL
+
+#Const C_AnimRoulette_Loop 0
+#Const C_AnimRoulette_Spring 1
+
+#Const C_BestScores_AnimDuration 500
+
+#Const C_BestScoresPositions {{{dump(BestScoresPositions)}}}
+
+Text TimeToText(Integer _Time) {
+  declare Time = TL::TimeToText(_Time, True);
+  declare Milliseconds = ML::Abs(_Time % 10);
+  if (Milliseconds >= 0) Time ^= TL::ToText(Milliseconds);
+  return Time;
+}
+
+{{{PlayerClass}}} GetOwner() {
+	if (GUIPlayer != Null) return GUIPlayer;
+	return InputPlayer;
+}
+
+Void SetSeasonEpisode(Integer _SeasonNumber, Integer _SeasonEpisode, CMlLabel _Label_Season) {
+	if (_Label_Season == Null) return;
+	
+	if (_SeasonNumber < 0 && _SeasonEpisode < 0) {
+		_Label_Season.Visible = False;
+	} else {
+		_Label_Season.Value = TL::Compose("{{{SeasonText}}}", TL::ToText(_SeasonNumber), TL::ToText(_SeasonEpisode));
+		_Label_Season.Visible = True;
+	}
+}
+
+Void UpdateRanking(Text[] _Names, Integer[] _Scores, Integer _MyRank, Boolean _IsTime, CMlFrame _Frame) {
+	if (_Frame == Null) return;
+	
+	declare StartRank = 0;
+	declare MaxStartRank = _Scores.count - _Frame.Controls.count;
+	
+	if (_Scores.count > _Frame.Controls.count) {
+		StartRank = _MyRank - (_Frame.Controls.count / 2);
+		if (StartRank < 0) {
+			StartRank = 0; 
+		}
+		if (StartRank > MaxStartRank) {
+			StartRank = MaxStartRank;
+		}
+	}
+		
+	foreach (Key => Control in _Frame.Controls) {
+		declare Frame_Item <=> (Control as CMlFrame);
+		
+		declare Rank = StartRank + Key;
+		
+		if (_Names.existskey(Rank) && _Scores.existskey(Rank)) {
+			declare Label_Rank <=> (Frame_Item.GetFirstChild("label-rank") as CMlLabel);
+			declare Label_Name <=> (Frame_Item.GetFirstChild("label-name") as CMlLabel);
+			declare Label_Score <=> (Frame_Item.GetFirstChild("label-score") as CMlLabel);
+			Label_Rank.Value = TL::ToText(Rank + 1);
+			Label_Name.Value = _Names[Rank];
+			
+			if (_IsTime) {
+				Label_Score.Value = TimeToText(_Scores[Rank]);
+			} else {
+				Label_Score.Value = TL::ToText(_Scores[Rank]);
+			}
+			
+			if (Rank == _MyRank) {
+				Label_Rank.TextColor = {{{RGB_Red}}};
+				Label_Name.TextColor = {{{RGB_Red}}};
+				Label_Score.TextColor = {{{RGB_Red}}};
+			} else {
+				Label_Rank.TextColor = {{{RGB_White}}};
+				Label_Name.TextColor = {{{RGB_White}}};
+				Label_Score.TextColor = {{{RGB_White}}};
+			}
+			
+			Frame_Item.Visible = True;
+		} else {
+			Frame_Item.Visible = False;
+		}
+	}
+}
+
+Void UpdateBestScores(CMlFrame _Frame, Integer[] _OldBestScores, Text[] _OldBestDates, Integer[] _NewBestScores, Text[] _NewBestDates, Integer _AnimStartTime) {
+	if (_Frame == Null) return;
+	
+	declare AnimShift = Integer[Integer];
+	declare TargetScores = _OldBestScores;
+	declare Shift = 0;
+	foreach (NewKey => Points in _NewBestScores) {
+		if (TargetScores.exists(Points)) {
+			AnimShift[NewKey] = TargetScores.keyof(Points) + Shift;
+			declare Removed = TargetScores.remove(Points);
+			Shift += 1;
+		} else {
+			AnimShift[NewKey] = -1;
+		}
+	}
+	
+	foreach (Key => Control in _Frame.Controls) {
+		declare Frame_Item <=> (Control as CMlFrame);
+		declare Label_Date <=> (Frame_Item.GetFirstChild("label-date") as CMlLabel);
+		declare Label_Score <=> (Frame_Item.GetFirstChild("label-score") as CMlLabel);
+		
+		declare ScoreIsEmpty = False;
+		
+		if (_NewBestScores.existskey(Key) && _NewBestDates.existskey(Key)) {
+			Label_Date.Value = TiL::FormatDate(_NewBestDates[Key], TiL::EDateFormats::DateShort);
+			Label_Score.Value = TL::ToText(_NewBestScores[Key]);
+		} else {
+			Label_Date.Value = "-";
+			Label_Score.Value = "0";
+			ScoreIsEmpty = True;
+		}
+		
+		declare StartKey = Key;
+		declare EndKey = Key;
+		if (AnimShift.existskey(EndKey)) {
+			StartKey = AnimShift[EndKey];
+		}
+		
+		declare AnimDuration = C_BestScores_AnimDuration;
+		AnimMgr.Add(Frame_Item, "", 0, CAnimManager::EAnimManagerEasing::QuadOut);
+		AnimMgr.Add(Label_Date, "", 0, CAnimManager::EAnimManagerEasing::QuadOut);
+		AnimMgr.Add(Label_Score, "", 0, CAnimManager::EAnimManagerEasing::QuadOut);
+		Frame_Item.RelativeScale = 1.;
+		Frame_Item.RelativePosition_V3.Y = 0.;
+		if (C_BestScoresPositions.existskey(Key)) {
+			Frame_Item.RelativePosition_V3.X = C_BestScoresPositions[Key];
+		}
+		Label_Date.Opacity = 1.;
+		Label_Score.Opacity = 1.;
+		if (StartKey < 0) {
+			Label_Date.TextColor = {{{RGB_Red}}};
+			Label_Score.TextColor = {{{RGB_Red}}};
+		} else {
+			Label_Date.TextColor = {{{RGB_White}}};
+			Label_Score.TextColor = {{{RGB_White}}};
+		}
+			
+		if (_AnimStartTime >= 0) {
+			if (StartKey < 0) {
+				Frame_Item.RelativeScale = 1.5;
+				Frame_Item.RelativePosition_V3.Y = 15.;
+				Label_Date.Opacity = 0.;
+				Label_Score.Opacity = 0.;
+				AnimMgr.Add(Frame_Item, "<frame pos=\""^Frame_Item.RelativePosition_V3.X^" 0\" scale=\"1\" />", _AnimStartTime, AnimDuration, CAnimManager::EAnimManagerEasing::QuadOut);
+				AnimMgr.Add(Label_Date, "<label opacity=\"1\" />", _AnimStartTime, AnimDuration, CAnimManager::EAnimManagerEasing::QuadOut);
+				AnimMgr.Add(Label_Score, "<label opacity=\"1\" />", _AnimStartTime, AnimDuration, CAnimManager::EAnimManagerEasing::QuadOut);
+			} else if (StartKey >= 0 && EndKey >= 0) {
+				declare StartPos = 0.;
+				declare EndPos = 0.;
+				if (C_BestScoresPositions.existskey(StartKey)) {
+					StartPos = C_BestScoresPositions[StartKey];
+				}
+				if (C_BestScoresPositions.existskey(EndKey)) {
+					EndPos = C_BestScoresPositions[EndKey];
+				}
+				Frame_Item.RelativePosition_V3.X = StartPos;
+				AnimMgr.Add(Frame_Item, "<frame pos=\""^EndPos^" 0\" />", _AnimStartTime, AnimDuration, CAnimManager::EAnimManagerEasing::QuadOut);
+			}
+		}
+	}
+}
+
+Void SetEmblems(Text[] _EmblemsLogo, Integer _CurrentLevel, Integer _NextLevel, CMlFrame _Frame_CurrentEmblem, CMlFrame _Frame_NextEmblem) {
+	if (_Frame_CurrentEmblem != Null) {
+		if (_EmblemsLogo.existskey(_CurrentLevel)) {
+			declare Quad_CurrentEmblem <=> (_Frame_CurrentEmblem.GetFirstChild("quad-current-emblem") as CMlQuad);
+			declare Quad_NextEmblem <=> (_Frame_CurrentEmblem.GetFirstChild("quad-next-emblem") as CMlQuad);
+			Quad_CurrentEmblem.ImageUrl = _EmblemsLogo[_CurrentLevel];
+			if (_EmblemsLogo.existskey(_CurrentLevel + 1)) {
+				Quad_NextEmblem.ImageUrl = _EmblemsLogo[_CurrentLevel + 1];
+			} else {
+				Quad_NextEmblem.ImageUrl = _EmblemsLogo[_CurrentLevel];
+			}
+			_Frame_CurrentEmblem.Visible = True;
+		} else {
+			_Frame_CurrentEmblem.Visible = False;
+		}
+	}
+	
+	if (_Frame_NextEmblem != Null) {
+		if (_EmblemsLogo.existskey(_NextLevel)) {
+			declare Quad_CurrentEmblem <=> (_Frame_NextEmblem.GetFirstChild("quad-current-emblem") as CMlQuad);
+			declare Quad_NextEmblem <=> (_Frame_NextEmblem.GetFirstChild("quad-next-emblem") as CMlQuad);
+			Quad_CurrentEmblem.ImageUrl = _EmblemsLogo[_NextLevel];
+			if (_EmblemsLogo.existskey(_CurrentLevel + 1)) {
+				Quad_NextEmblem.ImageUrl = _EmblemsLogo[_NextLevel + 1];
+			} else {
+				Quad_NextEmblem.ImageUrl = _EmblemsLogo[_NextLevel];
+			}
+			_Frame_NextEmblem.Visible = True;
+		} else {
+			_Frame_NextEmblem.Visible = False;
+		}
+	}
+}
+
+Void SetXP(Integer[] _EmblemsXP, Text[] _EmblemsLogo, Integer _XP, CMlFrame _Frame_CurrentEmblem, CMlFrame _Frame_NextEmblem, CMlQuad _Quad_ProgressBar) {
+	declare CurrentLevel = 0;
+	declare NextLevel = 0;
+	declare CurrentXP = 0;
+	declare NextXP = 0;
+	
+	foreach (Level => EmblemXP in _EmblemsXP) {
+		if (EmblemXP <= _XP) {
+			CurrentLevel = Level;
+			CurrentXP = EmblemXP;
+		}
+		NextXP = EmblemXP;
+		NextLevel = Level;
+		if (EmblemXP > _XP) {
+			break;
+		}
+	}
+	
+	declare LevelTotalXP = NextXP - CurrentXP;
+	declare LevelXP = _XP - CurrentXP;
+	declare Ratio = 0.;
+	// Last emblem already reached
+	if (_EmblemsXP.count > 0 && _XP > _EmblemsXP[_EmblemsXP.count - 1]) {
+		Ratio = 1.;
+	} else {
+		if (LevelTotalXP > 0) Ratio = LevelXP / (LevelTotalXP * 1.);
+		if (Ratio < 0.) Ratio = 0.;
+		else if (Ratio > 1.) Ratio = 1.;
+	}
+	
+	if (_Quad_ProgressBar != Null) {
+		_Quad_ProgressBar.Size.X = {{{SizeX_EmblemProgressBar}}} * Ratio;
+	}
+	
+	SetEmblems(_EmblemsLogo, CurrentLevel, NextLevel, _Frame_CurrentEmblem, _Frame_NextEmblem);
+}
+
+Void SetXPProgression(Integer _OldXP, Integer _NewXP, CMlLabel _Label_Points, CMlLabel _Label_Gain) {
+	declare DiffXP = _NewXP - _OldXP;
+	if (_Label_Points != Null) {
+		_Label_Points.Value = TL::ToText(_NewXP);
+	}
+	if (_Label_Gain != Null) {
+		if (DiffXP > 0) {
+			_Label_Gain.Value = "+"^DiffXP;
+		} else {
+			_Label_Gain.Value = TL::ToText(DiffXP);
+		}
+	}
+}
+
+Integer GetXPAnimDuration(Integer[] _EmblemsXP, Integer _OldXP, Integer _NewXP) {
+	declare Duration = 0;
+	
+	foreach (Level => EmblemXP in _EmblemsXP) {
+		if (EmblemXP >= _OldXP) {
+			Duration += 2500;
+		}
+		if (EmblemXP > _NewXP) {
+			break;
+		}
+	}
+	
+	if (Duration > 10000) Duration = 10000;
+	
+	return Duration;
+}
+
+Boolean SetReward(Text[] _Rewards, Integer _Reward, CMlFrame _Frame_RewardUnavailable, CMlFrame _Frame_RewardAvailable, CMlQuad _Quad_Result) {
+	declare RunRoulette = _Rewards.existskey(_Reward);
+	
+	if (RunRoulette) {
+		if (_Frame_RewardAvailable != Null) _Frame_RewardAvailable.Visible = True;
+		if (_Frame_RewardUnavailable != Null) _Frame_RewardUnavailable.Visible = False;
+		
+		if (_Quad_Result != Null) {
+			_Quad_Result.ImageUrl = _Rewards[_Reward];
+		}
+	} else {
+		if (_Frame_RewardAvailable != Null) _Frame_RewardAvailable.Visible = False;
+		if (_Frame_RewardUnavailable != Null) _Frame_RewardUnavailable.Visible = True;
+	}
+	
+	return RunRoulette;
+}
+
+Void SetRewards(Text[] _Rewards, Integer _Reward, Integer _Index, Integer _AnimSteps, CMlFrame _Frame_RouletteContent) {
+	if (_Frame_RouletteContent == Null) return;
+	
+	if (_Rewards.count <= 0) {
+		foreach (Key => Control in _Frame_RouletteContent.Controls) {
+			declare Quad_Reward <=> (Control as CMlQuad);
+			Quad_Reward.Visible = False;
+		}
+	} else {
+		foreach (Key => Control in _Frame_RouletteContent.Controls) {
+			declare RewardShift = _Reward - 2 + _AnimSteps;
+			declare AnimShift = _Rewards.count - (_Index % _Rewards.count);
+			declare Index = (AnimShift + Key + RewardShift) % _Rewards.count;
+			declare NormalizedIndex = (_Rewards.count + Index) % _Rewards.count;
+			declare Reward = _Rewards[NormalizedIndex];
+			
+			declare Frame_RouletteItem <=> (Control as CMlFrame);
+			declare Quad_Reward <=> (Frame_RouletteItem.GetFirstChild("quad-reward") as CMlQuad);
+			Quad_Reward.ImageUrl = Reward;
+			Quad_Reward.Visible = True;
+		}
+	}
+}
+
+Real CustomEaseOutElastic(Integer _T, Real _B, Real _C, Integer _D) {
+	declare X = _T / (_D*1.);
+	declare Y = _D * 0.15;
+	declare Z = 1.70158;
+	if (_T == 0) return _B;
+	if (X == 1.) return _B + _C;
+	if (_C < ML::Abs(_C)) Z = Y / 4.;
+	else Z = Y / (2. * ML::PI()) * ML::Asin(1.);
+	return _C * ML::Pow(2., -10. * X) * ML::Sin((X * _D - Z)*(2.*ML::PI()) / Y) + _C + _B;
+}
+
+Void SetRegionalRanking(Text[] _Zones, Integer[Integer][] _OldRankings, Integer[Integer][] _NewRankings, CMlFrame _Frame_RegionalRanking) {
+	if (_Frame_RegionalRanking == Null) return;
+	
+	foreach (Key => Control in _Frame_RegionalRanking.Controls) {
+		declare Frame_Ranking <=> (Control as CMlFrame);
+		declare Label_Rank <=> (Frame_Ranking.GetFirstChild("label-rank") as CMlLabel);
+		declare Label_Zone <=> (Frame_Ranking.GetFirstChild("label-zone") as CMlLabel);
+		declare Label_Gain <=> (Frame_Ranking.GetFirstChild("label-gain") as CMlLabel);
+			
+		declare Visible = False;
+		declare NewRank = -1;
+		
+		if (_Zones.existskey(Key)) {
+			Label_Zone.Value = TL::Compose("%1: ", _Zones[Key]);
+			Visible = True;
+		} else {
+			Label_Zone.Value = "-";
+		}
+		if (_NewRankings.existskey(Key)) {
+			foreach (Max => Rank in _NewRankings[Key]) {
+				Label_Rank.Value = Rank^"/"^Max;
+				NewRank = Rank;
+			}
+			Visible = True;
+		} else {
+			Label_Rank.Value = "-";
+		}
+		if (_OldRankings.existskey(Key) && _NewRankings.existskey(Key)) {
+			foreach (Max => Rank in _OldRankings[Key]) {
+				declare Diff = Rank - NewRank;
+				if (Diff > 0) {
+					Label_Gain.Value = "+"^Diff^" ";
+					Label_Gain.Visible = True;
+				} else {
+					Label_Gain.Visible = False;
+				}
+			}
+		} else {
+			Label_Gain.Visible = False;
+		}
+		
+		Frame_Ranking.Visible = Visible;
+	}
+}
+
+main() {
+	declare Label_Season <=> (Page.GetFirstChild("label-season") as CMlLabel);
+	declare Frame_Rankings <=> (Page.GetFirstChild("frame-ranking") as CMlFrame);
+	declare Frame_Score <=> (Page.GetFirstChild("frame-score") as CMlFrame);
+	declare Label_Score <=> (Frame_Score.GetFirstChild("label-score") as CMlLabel);
+	declare Frame_BestScores <=> (Page.GetFirstChild("frame-best-scores") as CMlFrame);
+	declare Frame_Emblems <=> (Page.GetFirstChild("frame-emblem") as CMlFrame);
+	declare Frame_CurrentEmblem <=> (Frame_Emblems.GetFirstChild("frame-current-emblem") as CMlFrame);
+	declare Frame_NextEmblem <=> (Frame_Emblems.GetFirstChild("frame-next-emblem") as CMlFrame);
+	declare Quad_ProgressBar <=> (Frame_Emblems.GetFirstChild("quad-progress-bar") as CMlQuad);
+	declare Label_Points <=> (Frame_Emblems.GetFirstChild("label-points") as CMlLabel);
+	declare Label_Gain <=> (Frame_Emblems.GetFirstChild("label-gain") as CMlLabel);
+	declare Frame_Reward <=> (Page.GetFirstChild("frame-reward") as CMlFrame);
+	declare Frame_RewardAvailable <=> (Frame_Reward.GetFirstChild("frame-reward-available") as CMlFrame);
+	declare Frame_Roulette <=> (Frame_RewardAvailable.GetFirstChild("frame-roulette") as CMlFrame);
+	declare Frame_RouletteContent <=> (Frame_Roulette.GetFirstChild("frame-content") as CMlFrame);
+	declare Frame_RewardUnavailable <=> (Frame_Reward.GetFirstChild("frame-reward-unavailable") as CMlFrame);
+	declare Quad_RewardResult <=> (Frame_Reward.GetFirstChild("quad-result") as CMlQuad);
+	declare Frame_RegionalRanking <=> (Frame_Reward.GetFirstChild("frame-regional-ranking") as CMlFrame);
+	
+	declare netread Net_LibChanPro_RankingUpdate for Teams[0] = -1;
+	declare netread Net_LibChanPro_RankingNames for Teams[0] = Text[];
+	declare netread Net_LibChanPro_RankingScores for Teams[0] = Integer[];
+	declare netread Net_LibChanPro_EmblemsBigLogoUpdate for Teams[0] = -1;
+	declare netread Net_LibChanPro_EmblemsBigLogo for Teams[0] = Text[];
+	declare netread Net_LibChanPro_EmblemsXPUpdate for Teams[0] = -1;
+	declare netread Net_LibChanPro_EmblemsXP for Teams[0] = Integer[];
+	declare netread Net_LibChanPro_RankingIsTime for Teams [0] = False;
+	declare netread Net_LibChanPro_SeasonNumber for Teams[0] = -1;
+	declare netread Net_LibChanPro_SeasonEpisode for Teams[0] = -1;
+	declare netread Net_LibChanPro_PlayRevealAnimation for Teams[0] = -1;
+	
+	declare PrevOwnerId = NullId;
+	declare PrevRankingUpdate = -2;
+	declare PrevRank = -2;
+	declare PrevScore = -1;
+	declare PrevBestScoresUpdate = -2;
+	declare PrevEmblemsLogoUpdate = -2;
+	declare PrevEmblemsXPUpdate = -2;
+	declare PrevXPUpdate = -2;
+	declare PrevRewardUpdate = -2;
+	declare PrevRankingIsTime = !Net_LibChanPro_RankingIsTime;
+	declare PrevSeasonNumber = -2;
+	declare PrevSeasonEpisode = -2;
+	declare PrevRegionalRankingUpdate = -2;
+	declare PrevPlayRevealAnimation = Net_LibChanPro_PlayRevealAnimation;
+	
+	declare PlayRevealAnimation = False;
+	
+	declare Ranking_AnimStart = -1;
+	declare Ranking_AnimDuration = 250;
+	declare Ranking_AnimDelay = 100;
+	
+	declare Score_AnimStart = -1;
+	declare Score_AnimBase = 0.;
+	declare Score_AnimChange = 0.;
+	declare Score_AnimDuration = 1500;
+	
+	declare BestScores_AnimStart = -1;
+	
+	declare XP = 0;
+	declare XP_AnimInit = False;
+	declare XP_AnimStart = -1;
+	declare XP_AnimBase = 0;
+	declare XP_AnimChange = 0;
+	declare XP_AnimDuration = 0;
+	
+	declare Roulette_AnimPart = C_AnimRoulette_Loop;
+	declare Roulette_AnimLoop = {{{RouletteTranslate}}};
+	declare Roulette_AnimFull = 25.;
+	declare Roulette_AnimStart = -1;
+	declare Roulette_AnimBase = 0.;
+	declare Roulette_AnimChange = (Roulette_AnimLoop * Roulette_AnimFull) + {{{SizeY_Roulette*0.3}}};
+	declare Roulette_AnimDuration = 4000;
+	declare Roulette_Index = 0;
+	declare Roulette_Rewards = Text[];
+	declare Roulette_Reward = -1;
+	
+	declare Spring_AnimStart = -1;
+	declare Spring_AnimBase = 0.;
+	declare Spring_AnimChange = 0.;
+	declare Spring_AnimDuration = 1000;
+	
+	declare Result_AnimStart = -1;
+	declare Result_AnimShift = 150;
+	declare Result_AnimDuration = 850;
+	
+	while (True) {
+		yield;
+		
+		declare Owner <=> GetOwner();
+		
+		if (PrevPlayRevealAnimation != Net_LibChanPro_PlayRevealAnimation) {
+			PrevPlayRevealAnimation = Net_LibChanPro_PlayRevealAnimation;
+			PlayRevealAnimation = True;
+			
+			// Ranking
+			Ranking_AnimStart = Now;
+			// Score
+			Score_AnimStart = Now + (Net_LibChanPro_RankingScores.count * Ranking_AnimDelay) + 500;
+			// Best scores
+			BestScores_AnimStart = Score_AnimStart + Score_AnimDuration;
+			// Emblem
+			XP_AnimInit = True;
+			XP_AnimStart = BestScores_AnimStart + C_BestScores_AnimDuration;
+			// Regional ranking
+			//RegionRanking_AnimStart = XP_AnimStart + XP_AnimDuration;
+		}
+		
+		if (PageIsVisible && PlayRevealAnimation) {
+			PlayRevealAnimation = False;
+		}
+		
+		if (PrevRankingUpdate != Net_LibChanPro_RankingUpdate || PrevRankingIsTime != Net_LibChanPro_RankingIsTime) {
+			PrevRankingUpdate = Net_LibChanPro_RankingUpdate;
+			PrevRankingIsTime = Net_LibChanPro_RankingIsTime;
+			UpdateRanking(Net_LibChanPro_RankingNames, Net_LibChanPro_RankingScores, PrevRank, Net_LibChanPro_RankingIsTime, Frame_Rankings);
+			Ranking_AnimStart = Now;
+		}
+		
+		if (
+			PrevEmblemsLogoUpdate != Net_LibChanPro_EmblemsBigLogoUpdate ||
+			PrevEmblemsXPUpdate!= Net_LibChanPro_EmblemsXPUpdate
+		) {
+			PrevEmblemsLogoUpdate = Net_LibChanPro_EmblemsBigLogoUpdate;
+			PrevEmblemsXPUpdate = Net_LibChanPro_EmblemsXPUpdate;
+			
+			PrevOwnerId = NullId;
+		}
+		
+		if (PrevSeasonNumber != Net_LibChanPro_SeasonNumber || PrevSeasonEpisode != Net_LibChanPro_SeasonEpisode) {
+			PrevSeasonNumber = Net_LibChanPro_SeasonNumber;
+			PrevSeasonEpisode = Net_LibChanPro_SeasonEpisode;
+			
+			SetSeasonEpisode(Net_LibChanPro_SeasonNumber, Net_LibChanPro_SeasonEpisode, Label_Season);
+		}
+		
+		if (Owner != Null) {
+			if (PrevOwnerId != Owner.Id) {
+				PrevOwnerId = Owner.Id;
+				PrevBestScoresUpdate = -2;
+				PrevXPUpdate = -2;
+				PrevRewardUpdate = -2;
+				PrevRank = -2;
+				PrevRegionalRankingUpdate = -2;
+			}
+			
+			if (Owner.Score != Null) {
+				declare netread Net_LibChanPro_Rank for Owner.Score = -1;
+				if (PrevRank != Net_LibChanPro_Rank) {
+					PrevRank = Net_LibChanPro_Rank;
+					UpdateRanking(Net_LibChanPro_RankingNames, Net_LibChanPro_RankingScores, Net_LibChanPro_Rank, Net_LibChanPro_RankingIsTime, Frame_Rankings);
+					Ranking_AnimStart = Now;
+				}
+				
+				declare netread Net_LibChanPro_Score for Owner.Score = 0;
+				if (PrevScore != Net_LibChanPro_Score) {
+					PrevScore = Net_LibChanPro_Score;
+					Score_AnimStart = Now;
+					Score_AnimBase = 0.;
+					Score_AnimChange = Net_LibChanPro_Score * 1.;
+				}
+				
+				declare netread Net_LibChanPro_BestScoresUpdate for Owner.Score = -1;
+				if (PrevBestScoresUpdate != Net_LibChanPro_BestScoresUpdate || (BestScores_AnimStart >= 0 && Now >= BestScores_AnimStart)) {
+					PrevBestScoresUpdate = Net_LibChanPro_BestScoresUpdate;
+					
+					declare AnimStartTime = Now;
+					if (Now >= BestScores_AnimStart) {
+						BestScores_AnimStart = -1;
+					}
+					if (BestScores_AnimStart >= 0) {
+						AnimStartTime = -1;
+					}
+					
+					declare netread Net_LibChanPro_OldBestScores for Owner.Score = Integer[];
+					declare netread Net_LibChanPro_OldBestScoresDates for Owner.Score = Text[];
+					declare netread Net_LibChanPro_NewBestScores for Owner.Score = Integer[];
+					declare netread Net_LibChanPro_NewBestScoresDates for Owner.Score = Text[];
+					
+					if (AnimStartTime >= 0) {
+						UpdateBestScores(Frame_BestScores, Net_LibChanPro_OldBestScores, Net_LibChanPro_OldBestScoresDates, Net_LibChanPro_NewBestScores, Net_LibChanPro_NewBestScoresDates, AnimStartTime);
+					} else {
+						UpdateBestScores(Frame_BestScores, Net_LibChanPro_OldBestScores, Net_LibChanPro_OldBestScoresDates, Net_LibChanPro_OldBestScores, Net_LibChanPro_OldBestScoresDates, AnimStartTime);
+					}
+				}
+				
+				declare netread Net_LibChanPro_XPUpdate for Owner.Score = -1;
+				if (PrevXPUpdate != Net_LibChanPro_XPUpdate) {
+					PrevXPUpdate = Net_LibChanPro_XPUpdate;
+					
+					declare netread Net_LibChanPro_OldXP for Owner.Score = 0;
+					declare netread Net_LibChanPro_NewXP for Owner.Score = 0;
+				
+					SetXPProgression(Net_LibChanPro_OldXP, Net_LibChanPro_NewXP, Label_Points, Label_Gain);
+					
+					XP_AnimInit = True;
+					XP_AnimStart = Now;
+					XP_AnimBase = Net_LibChanPro_OldXP;
+					XP_AnimChange = Net_LibChanPro_NewXP - Net_LibChanPro_OldXP;
+					XP_AnimDuration = GetXPAnimDuration(Net_LibChanPro_EmblemsXP, Net_LibChanPro_OldXP, Net_LibChanPro_NewXP);
+				}
+				
+				declare netread Net_LibChanPro_RewardUpdate for Owner.Score = -1;
+				if (PrevRewardUpdate != Net_LibChanPro_RewardUpdate) {
+					PrevRewardUpdate = Net_LibChanPro_RewardUpdate;
+					
+					declare netread Net_LibChanPro_Rewards for Owner.Score = Text[];
+					declare netread Net_LibChanPro_Reward for Owner.Score = -1;
+					
+					declare RunRoulette = SetReward(Net_LibChanPro_Rewards, Net_LibChanPro_Reward, Frame_RewardUnavailable, Frame_RewardAvailable, Quad_RewardResult);
+					
+					if (RunRoulette) {
+						Roulette_AnimStart = Now;
+						Roulette_Index = -1;
+						Roulette_Rewards = Net_LibChanPro_Rewards;
+						Roulette_Reward = Net_LibChanPro_Reward;
+						Quad_RewardResult.Visible = False;
+					}
+				}
+				
+				declare netread Net_LibChanPro_RegionalRankingUpdate for Owner.Score = -1;
+				if (PrevRegionalRankingUpdate != Net_LibChanPro_RegionalRankingUpdate) {
+					PrevRegionalRankingUpdate = Net_LibChanPro_RegionalRankingUpdate;
+					
+					declare netread Net_LibChanPro_RegionalRankingZones for Owner.Score = Text[];
+					declare netread Net_LibChanPro_RegionalRankingOldRankings for Owner.Score = Integer[Integer][];
+					declare netread Net_LibChanPro_RegionalRankingNewRankings for Owner.Score = Integer[Integer][];
+					
+					SetRegionalRanking(Net_LibChanPro_RegionalRankingZones, Net_LibChanPro_RegionalRankingOldRankings, Net_LibChanPro_RegionalRankingNewRankings, Frame_RegionalRanking);
+				}
+			}
+		}
+		
+		if (Ranking_AnimStart >= 0 && Now >= Ranking_AnimStart) {
+			Ranking_AnimStart = -1;
+			foreach (Key => Control in Frame_Rankings.Controls) {
+				declare Frame_Ranking <=> (Control as CMlFrame);
+				declare StartTime = Now + (Key * Ranking_AnimDelay);
+				Frame_Ranking.RelativePosition_V3.X = 2.;
+				AnimMgr.Add(Frame_Ranking, "", 0, CAnimManager::EAnimManagerEasing::QuadOut);
+				AnimMgr.Add(Frame_Ranking, "<frame pos=\"0 "^Frame_Ranking.RelativePosition_V3.Y^"\" />", StartTime, Ranking_AnimDuration, CAnimManager::EAnimManagerEasing::QuadOut);
+				foreach (Control in Frame_Ranking.Controls) {
+					(Control as CMlLabel).Opacity = 0.;
+					AnimMgr.Add(Control, "", 0, CAnimManager::EAnimManagerEasing::QuadOut);
+					AnimMgr.Add(Control, "<label opacity=\"1\" />", StartTime, Ranking_AnimDuration, CAnimManager::EAnimManagerEasing::QuadOut);
+				}
+			}
+		}
+		
+		if (Score_AnimStart >= 0) {
+			if (Now >= Score_AnimStart + Score_AnimDuration) {
+				Score_AnimStart = -1;
+				Label_Score.Value = TL::ToText(ML::NearestInteger(Score_AnimBase + Score_AnimChange));
+			} else {
+				declare Points = ML::NearestInteger(AL::EaseOutQuad(Now - Score_AnimStart, Score_AnimBase, Score_AnimChange, Score_AnimDuration));
+				Label_Score.Value = TL::ToText(Points);
+			}
+		}
+		
+		if (XP_AnimInit) {
+			XP_AnimInit = False;
+			SetXP(Net_LibChanPro_EmblemsXP, Net_LibChanPro_EmblemsBigLogo, XP_AnimBase, Frame_CurrentEmblem, Frame_NextEmblem, Quad_ProgressBar);
+		}
+		if (XP_AnimStart >= 0 && XP_AnimStart <= Now) {
+			if (Now >= XP_AnimStart + XP_AnimDuration) {
+				XP_AnimStart = -1;
+				XP = XP_AnimBase + XP_AnimChange;
+				SetXP(Net_LibChanPro_EmblemsXP, Net_LibChanPro_EmblemsBigLogo, XP, Frame_CurrentEmblem, Frame_NextEmblem, Quad_ProgressBar);
+			} else if (Now >= XP_AnimStart) {
+				XP = ML::NearestInteger(AL::EaseOutQuad(Now - XP_AnimStart, XP_AnimBase * 1., XP_AnimChange *1., XP_AnimDuration));
+				if (XP > XP_AnimBase + XP_AnimChange) {
+					XP = XP_AnimBase + XP_AnimChange;
+				}
+				SetXP(Net_LibChanPro_EmblemsXP, Net_LibChanPro_EmblemsBigLogo, XP, Frame_CurrentEmblem, Frame_NextEmblem, Quad_ProgressBar);
+			}
+		}
+		
+		if (Roulette_AnimStart >= 0) {
+			if (Now >= Roulette_AnimStart + Roulette_AnimDuration) {
+				Roulette_AnimStart = -1;
+				Spring_AnimStart = Now;
+				Spring_AnimBase = Frame_Roulette.RelativePosition_V3.Y;
+				Spring_AnimChange = 0. - Spring_AnimBase;
+				Result_AnimStart = Now + Result_AnimShift;
+			} else {
+				declare Y = AL::EaseOutQuad(Now - Roulette_AnimStart, Roulette_AnimBase, Roulette_AnimChange, Roulette_AnimDuration);
+				declare A = Y / Roulette_AnimLoop;
+				declare B = A - ML::FloorInteger(A);
+				
+				if (Roulette_Index == -1 || Frame_Roulette.RelativePosition_V3.Y < -B * Roulette_AnimLoop) {
+					Roulette_Index = ML::FloorInteger(A);
+					SetRewards(Roulette_Rewards, Roulette_Reward, Roulette_Index, ML::NearestInteger(Roulette_AnimFull), Frame_RouletteContent);
+				}
+				
+				Frame_Roulette.RelativePosition_V3.Y = -B * Roulette_AnimLoop;
+			}
+		}
+		
+		if (Spring_AnimStart >= 0) {
+			if (Now >= Spring_AnimStart + Spring_AnimDuration) {
+				Spring_AnimStart = -1;
+				Frame_Roulette.RelativePosition_V3.Y = Spring_AnimBase + Spring_AnimChange;
+			} else {
+				Frame_Roulette.RelativePosition_V3.Y = CustomEaseOutElastic(Now - Spring_AnimStart, Spring_AnimBase, Spring_AnimChange, Spring_AnimDuration);
+			}
+		}
+		
+		if (Result_AnimStart >= 0 && Now >= Result_AnimStart) {
+			Result_AnimStart = -1;
+			Quad_RewardResult.RelativePosition_V3 = <{{{PosX_RewardResult + 10.}}}, {{{PosY_RewardResult - 10.}}}>;
+			Quad_RewardResult.RelativeScale = 2.;
+			Quad_RewardResult.Opacity = 0.;
+			Quad_RewardResult.Visible = True;
+			AnimMgr.Add(Quad_RewardResult, "<quad pos=\"{{{PosX_RewardResult}}} {{{PosY_RewardResult}}}\" scale=\"1\" />", Result_AnimDuration, CAnimManager::EAnimManagerEasing::BounceOut);
+			AnimMgr.Add(Quad_RewardResult, "<quad opacity=\"1\" />", Now, Result_AnimDuration, CAnimManager::EAnimManagerEasing::QuadOut);
+		}
+	}
+}
+--></script>
+</manialink>""";
+}
+
+// ---------------------------------- //
+/** Create a post request to the Live API
+ *
+ *	@param	_Route										The route to request
+ *	@param	_Data											The data to add to the body
+ */
+CHttpRequest Private_CreatePost(Text _Route, Text _Data) {
+	return Http.CreatePost(C_ApiUrl^_Route, _Data, C_RequestHeaders);
+}
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+// ---------------------------------- //
+/**	Return the version number of the script
+ *
+ *	@return														The version number of the script
+ */
+Text GetScriptVersion() {
+	return Version;
+}
+
+// ---------------------------------- //
+/**	Return the name of the script
+ *
+ *	@return														The name of the script
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+// ---------------------------------- //
+/** Set the progression in the season
+ *
+ *	@param	_SeasonNumber							The season's number
+ *	@param	_SeasonEpisode						The episode's number
+ */
+Void SetSeasonEpisode(Integer _SeasonNumber, Integer _SeasonEpisode) {
+	declare netwrite Net_LibChanPro_SeasonNumber for Teams[0] = -1;
+	declare netwrite Net_LibChanPro_SeasonEpisode for Teams[0] = -1;
+	Net_LibChanPro_SeasonNumber = _SeasonNumber;
+	Net_LibChanPro_SeasonEpisode = _SeasonEpisode;
+}
+
+// ---------------------------------- //
+/** Update the players ranking
+ *
+ *	@param	_Names										The ordered names
+ *	@param	_Scores										The ordered scores
+ */
+Void SetRanking(Text[] _Names, Integer[] _Scores) {
+	declare netwrite Net_LibChanPro_RankingUpdate for Teams[0] = -1;
+	declare netwrite Net_LibChanPro_RankingNames for Teams[0] = Text[];
+	declare netwrite Net_LibChanPro_RankingScores for Teams[0] = Integer[];
+	Net_LibChanPro_RankingNames = _Names;
+	Net_LibChanPro_RankingScores = _Scores;
+	Net_LibChanPro_RankingUpdate = Now;
+}
+
+// ---------------------------------- //
+/** Set the player rank in the ranking
+ *
+ *	@param	_Score										The player's score
+ *	@param	_Rank											The player's rank, start at 0
+ */
+Void SetRank(CScore _Score, Integer _Rank) {
+	if (_Score == Null) return;
+	
+	declare netwrite Net_LibChanPro_Rank for _Score = -1;
+	Net_LibChanPro_Rank = _Rank;
+}
+
+// ---------------------------------- //
+/** Select if the ranking displays
+ *	a time or a score
+ *
+ *	@param	Boolean	_IsTime						True if the ranking must display times
+ *																		False if it must display scores
+ */
+Void SetRankingIsTime(Boolean _IsTime) {
+	declare netwrite Net_LibChanPro_RankingIsTime for Teams [0] = False;
+	Net_LibChanPro_RankingIsTime = _IsTime;
+}
+
+// ---------------------------------- //
+/** Update the player's channel XP
+ *
+ *	@param	_Score										The player's score
+ *	@param	_OldXP										The old amount of XP
+ *	@param	_NewXP										The new amount of XP
+ */
+Void SetXP(CScore _Score, Integer _OldXP, Integer _NewXP) {
+	if (_Score == Null) return;
+	
+	declare netwrite Net_LibChanPro_XPUpdate for _Score = -1;
+	declare netwrite Net_LibChanPro_OldXP for _Score = 0;
+	declare netwrite Net_LibChanPro_NewXP for _Score = 0;
+	Net_LibChanPro_OldXP = _OldXP;
+	Net_LibChanPro_NewXP = _NewXP;
+	Net_LibChanPro_XPUpdate = Now;
+}
+
+// ---------------------------------- //
+/** Update the player's best scores (points)
+ *
+ *	@param	_Score										The player's score
+ *	@param	_OldBestPoints						The player's previous best points
+ *	@param	_OldDates									The dates of the previous best scores
+ *	@param	_NewBestPoints						The player's new best points
+ *	@param	_NewDates									The dates of the new best scores
+ */
+Void SetBestScores(CScore _Score, Integer[] _OldBestPoints, Text[] _OldDates, Integer[] _NewBestPoints, Text[] _NewDates) {
+	if (_Score == Null) return;
+	
+	// Sort old points and dates
+	declare OldBestPointsSorting = Integer[Integer];
+	foreach (Key => Points in _OldBestPoints) {
+		OldBestPointsSorting[Key] = -Points;
+	}
+	OldBestPointsSorting = OldBestPointsSorting.sort();
+	declare OldBestPoints = Integer[];
+	declare OldDates = Text[];
+	declare Count = 0;
+	foreach (Key => Points in OldBestPointsSorting) {
+		if (!_OldDates.existskey(Key)) continue;
+		Count += 1;
+		if (Count > C_BestScoresNb) break;
+		OldBestPoints.add(-Points);
+		OldDates.add(_OldDates[Key]);
+	}
+	
+	// Sort new points and dates
+	declare NewBestPointsSorting = Integer[Integer];
+	foreach (Key => Points in _NewBestPoints) {
+		NewBestPointsSorting[Key] = -Points;
+	}
+	NewBestPointsSorting = NewBestPointsSorting.sort();
+	declare NewBestPoints = Integer[];
+	declare NewDates = Text[];
+	Count = 0;
+	foreach (Key => Points in NewBestPointsSorting) {
+		if (!_NewDates.existskey(Key)) continue;
+		Count += 1;
+		if (Count > C_BestScoresNb) break;
+		NewBestPoints.add(-Points);
+		NewDates.add(_NewDates[Key]);
+	}
+	
+	declare OldXP = 0;
+	declare NewXP = 0;
+	foreach (Points in OldBestPoints) {
+		OldXP += Points;
+	}
+	foreach (Points in NewBestPoints) {
+		NewXP += Points;
+	}
+	SetXP(_Score, OldXP, NewXP);
+	
+	declare netwrite Net_LibChanPro_BestScoresUpdate for _Score = -1;
+	declare netwrite Net_LibChanPro_OldBestScores for _Score = Integer[];
+	declare netwrite Net_LibChanPro_OldBestScoresDates for _Score = Text[];
+	declare netwrite Net_LibChanPro_NewBestScores for _Score = Integer[];
+	declare netwrite Net_LibChanPro_NewBestScoresDates for _Score = Text[];
+	Net_LibChanPro_OldBestScores = OldBestPoints;
+	Net_LibChanPro_OldBestScoresDates = OldDates;
+	Net_LibChanPro_NewBestScores = NewBestPoints;
+	Net_LibChanPro_NewBestScoresDates = NewDates;
+	Net_LibChanPro_BestScoresUpdate = Now;
+}
+
+// ---------------------------------- //
+/** Get the points from a player's new best scores
+ *
+ *	@param _Score											The player's score
+ *
+ *	@return														The player's best scores
+ */
+Integer[] GetNewBestScoresPoints(CScore _Score) {
+	if (_Score == Null) return Integer[];
+	
+	declare netwrite Net_LibChanPro_NewBestScores for _Score = Integer[];
+	return Net_LibChanPro_NewBestScores;
+}
+
+// ---------------------------------- //
+/** Get the dates from a player's new best scores
+ *
+ *	@param _Score											The player's score
+ *
+ *	@return														The player's best scores dates
+ */
+Text[] GetNewBestScoresDates(CScore _Score) {
+	if (_Score == Null) return Text[];
+	
+	declare netwrite Net_LibChanPro_NewBestScoresDates for _Score = Text[];
+	return Net_LibChanPro_NewBestScoresDates;
+}
+
+// ---------------------------------- //
+/** Get the points from a player's old best scores
+ *
+ *	@param _Score											The player's score
+ *
+ *	@return														The player's best scores
+ */
+Integer[] GetOldBestScoresPoints(CScore _Score) {
+	if (_Score == Null) return Integer[];
+	
+	declare netwrite Net_LibChanPro_OldBestScores for _Score = Integer[];
+	return Net_LibChanPro_OldBestScores;
+}
+
+// ---------------------------------- //
+/** Get the dates from a player's old best scores
+ *
+ *	@param _Score											The player's score
+ *
+ *	@return														The player's best scores dates
+ */
+Text[] GetOldBestScoresDates(CScore _Score) {
+	if (_Score == Null) return Text[];
+	
+	declare netwrite Net_LibChanPro_OldBestScoresDates for _Score = Text[];
+	return Net_LibChanPro_OldBestScoresDates;
+}
+
+// ---------------------------------- //
+/** Update the channel cumulated XP per level
+ *
+ *	@param	_EmblemsXP								XP cumulated to reach each level
+ */
+Void SetEmblemsXP(Integer[] _EmblemsXP) {
+	declare netwrite Net_LibChanPro_EmblemsXPUpdate for Teams[0] = -1;
+	declare netwrite Net_LibChanPro_EmblemsXP for Teams[0] = Integer[];
+	Net_LibChanPro_EmblemsXP = _EmblemsXP;
+	Net_LibChanPro_EmblemsXPUpdate = Now;
+}
+
+// ---------------------------------- //
+/** Update the emblems' logo
+ *
+ *	@param	EmblemsLogo								Path to the emblems' logo
+ */
+Void SetEmblemsLogo(Text[] _BigLogo, Text[] _SmallLogo) {
+	declare netwrite Net_LibChanPro_EmblemsBigLogoUpdate for Teams[0] = -1;
+	declare netwrite Net_LibChanPro_EmblemsBigLogo for Teams[0] = Text[];
+	Net_LibChanPro_EmblemsBigLogo = _BigLogo;
+	Net_LibChanPro_EmblemsBigLogoUpdate = Now;
+}
+
+// ---------------------------------- //
+/** Update the player's score (points)
+ *
+ *	@param	_Score										The player's score
+ *	@param	_Points										The player's points
+ */
+Void SetScore(CScore _Score, Integer _Points) {
+	if (_Score == Null) return;
+	
+	declare netwrite Net_LibChanPro_Score for _Score = 0;
+	Net_LibChanPro_Score = _Points;
+}
+
+// ---------------------------------- //
+/** Set the reward earned by a player
+ *
+ *	@param	_Score										The player's score
+ *	@param	_Rewards									The rewards available
+ *	@param	_Reward										The key of the reward in the _Rewards array
+ *																		If the key does not exists, disable the
+ *																		reward section
+ */
+Void SetReward(CScore _Score, Text[] _Rewards, Integer _Reward) {
+	if (_Score == Null) return;
+	
+	declare netwrite Net_LibChanPro_RewardUpdate for _Score = -1;
+	declare netwrite Net_LibChanPro_Rewards for _Score = Text[];
+	declare netwrite Net_LibChanPro_Reward for _Score = -1;
+	Net_LibChanPro_Rewards = _Rewards;
+	Net_LibChanPro_Reward = _Reward;
+	Net_LibChanPro_RewardUpdate = Now;
+}
+
+// ---------------------------------- //
+/** Set the regional ranking of a player
+ *
+ *	@param	_Score										The player's score
+ *	@param	_Zones										The zones names
+ *	@param	_Rankings									The zones' rankings
+ */
+Void SetRegionalRanking(CScore _Score, Text[] _Zones, Integer[Integer][] _OldRankings, Integer[Integer][] _NewRankings) {
+	declare netwrite Net_LibChanPro_RegionalRankingUpdate for _Score = -1;
+	declare netwrite Net_LibChanPro_RegionalRankingZones for _Score = Text[];
+	declare netwrite Net_LibChanPro_RegionalRankingOldRankings for _Score = Integer[Integer][];
+	declare netwrite Net_LibChanPro_RegionalRankingNewRankings for _Score = Integer[Integer][];
+	Net_LibChanPro_RegionalRankingZones = _Zones;
+	Net_LibChanPro_RegionalRankingOldRankings = _OldRankings;
+	Net_LibChanPro_RegionalRankingNewRankings = _NewRankings;
+	Net_LibChanPro_RegionalRankingUpdate = Now;
+}
+
+// ---------------------------------- //
+/** Get the regional ranking of a player
+ *
+ *	@param	_Score										The player's score
+ */
+Integer[Integer][] GetRegionalRanking(CScore _Score) {
+	if (_Score == Null) return Integer[Integer][];
+	
+	declare netwrite Net_LibChanPro_RegionalRankingNewRankings for _Score = Integer[Integer][];
+	return Net_LibChanPro_RegionalRankingNewRankings;
+}
+
+// ---------------------------------- //
+/** Play the reveral animation when
+ *	the season progression window is
+ *	displayed
+ */
+Void PlayRevealAnimation() {
+	declare netwrite Net_LibChanPro_PlayRevealAnimation for Teams[0] = -1;
+	Net_LibChanPro_PlayRevealAnimation = Now;
+}
+
+// ---------------------------------- //
+/// Request the server info from the Live API
+Void RequestServerInfo() {
+	// Stop previous request
+	if (Http.Requests.existskey(G_RequestId_ServerInfo)) {
+		Http.Destroy(Http.Requests[G_RequestId_ServerInfo]);
+	}
+	
+	declare Data = """{
+	"server": {{{Json::GetText(ServerLogin)}}}
+}""";
+
+	declare Request = CHttpRequest;//<=> Private_CreatePost(C_GetServerInfo, Data);
+	if (Request != Null) {
+		G_RequestId_ServerInfo = Request.Id;
+		G_RequestsTimeout[G_RequestId_ServerInfo] = Now + C_RequestTimeout;
+	} else {
+		G_RequestId_ServerInfo = NullId;
+	}
+	
+	Log::Log("""[ChannelProgression] RequestServerInfo() > RequestId : {{{G_RequestId_ServerInfo}}} | RequestData : {{{Data}}}""");
+}
+
+// ---------------------------------- //
+/** Request the map info from the live API
+ *
+ *	@param	_PlayersLogins						The logins for which we want to retrieve info
+ */
+Void RequestMapInfo(Text[] _PlayersLogins) {
+	// Stop previous request
+	if (Http.Requests.existskey(G_RequestId_MapInfo)) {
+		Http.Destroy(Http.Requests[G_RequestId_MapInfo]);
+	}
+	
+	declare Data = """{
+	"server": {{{Json::GetText(ServerLogin)}}},
+	"players": {{{Json::GetTextArray(_PlayersLogins)}}}
+}""";
+
+	declare Request <=> Private_CreatePost(C_GetMapInfo, Data);
+	if (Request != Null) {
+		G_RequestId_MapInfo = Request.Id;
+		G_RequestsTimeout[G_RequestId_MapInfo] = Now + C_RequestTimeout;
+	} else {
+		G_RequestId_MapInfo = NullId;
+	}
+	
+	Log::Log("""[ChannelProgression] RequestMapInfo() > RequestId : {{{G_RequestId_MapInfo}}} | RequestData : {{{Data}}}""");
+}
+
+// ---------------------------------- //
+/** Request the match info from the live API
+ *
+ *	@param	_PlayersLogins						The logins for which we want to retrieve info
+ *	@param	_PlayersScores						The scores of the players
+ */
+Void RequestMatchInfo(Text[] _PlayersLogins, Integer[] _PlayersScores) {
+	// Stop previous request
+	if (Http.Requests.existskey(G_RequestId_MatchInfo)) {
+		Http.Destroy(Http.Requests[G_RequestId_MatchInfo]);
+	}
+	
+	declare PlayersInfo = "";
+	foreach (Key => Login in _PlayersLogins) {
+		if (!_PlayersScores.existskey(Key)) continue;
+		
+		if (PlayersInfo != "") PlayersInfo ^= ",";
+		
+		PlayersInfo ^= """
+		{
+			"login": {{{Json::GetText(Login)}}},
+			"score": {{{Json::GetInteger(_PlayersScores[Key])}}}
+		}""";
+	}
+	
+	declare MapUid = "";
+	if (Map != Null && Map.MapInfo != Null) {
+		MapUid = Map.MapInfo.MapUid;
+	}
+	
+	declare Data = """{
+	"server": {{{Json::GetText(ServerLogin)}}},
+	"map": {{{Json::GetText(MapUid)}}},
+	"players": [
+		{{{PlayersInfo}}}
+	]
+}""";
+
+	declare Request <=> Private_CreatePost(C_SetMapInfo, Data);
+	if (Request != Null) {
+		G_RequestId_MatchInfo = Request.Id;
+		G_RequestsTimeout[G_RequestId_MatchInfo] = Now + C_RequestTimeout;
+	} else {
+		G_RequestId_MatchInfo = NullId;
+	}
+	
+	Log::Log("""[ChannelProgression] RequestMatchInfo() > RequestId : {{{G_RequestId_MatchInfo}}} | RequestData : {{{Data}}}""");
+}
+
+// ---------------------------------- //
+/** Parse the server info response
+ *
+ *	@param	_Xml											The server info response
+ */
+Void ResponseServerInfo(Text _Xml) {
+	declare EmblemsXP = Integer[];
+	declare EmblemsBigLogo = Text[];
+	declare EmblemsSmallLogo = Text[];
+	
+	declare XmlDoc <=> Xml.Create(_Xml);
+	
+	if (XmlDoc != Null) {
+		declare NodeEmblems <=> XmlDoc.Root.GetFirstChild("emblems");
+		if (NodeEmblems != Null) {
+			foreach (NodeEmblem in NodeEmblems.Children) {
+				EmblemsXP.add(NodeEmblem.GetAttributeInteger("points", 0));
+				EmblemsBigLogo.add(NodeEmblem.GetAttributeText("big-picture", ""));
+				EmblemsSmallLogo.add(NodeEmblem.GetAttributeText("small-picture", ""));
+			}
+		}
+	}
+	
+	Xml.Destroy(XmlDoc);
+	
+	Log::Log("""[ChannelProgression] ResponseServerInfo() > XP : {{{EmblemsXP}}} | Big logo : {{{EmblemsBigLogo}}} | Small logo : {{{EmblemsSmallLogo}}}""");
+	
+	SetEmblemsXP(EmblemsXP);
+	SetEmblemsLogo(EmblemsBigLogo, EmblemsSmallLogo);
+}
+
+// ---------------------------------- //
+/** Parse the map info response
+ *
+ *	@param	_Xml											The server map response
+ *	@param	_AreOldScores							True if the scores in the xml
+ *																		are the old ones
+ *																		False if they are the new ones
+ */
+Void ResponseMapInfo(Text _Xml, Boolean _AreOldScores) {
+	declare SeasonNumber = -1;
+	declare SeasonEpisode = -1;
+	declare PlayersBestScoresPoints = Integer[][Text];
+	declare PlayersBestScoresDate = Text[][Text];
+	declare PlayersRankingsRanks = Integer[Integer][][Text];
+	declare PlayersRankingsZones = Text[][Text];
+	
+	declare XmlDoc <=> Xml.Create(_Xml);
+	
+	if (XmlDoc != Null) {
+		declare NodeSeason <=> XmlDoc.Root.GetFirstChild("season");
+		if (NodeSeason != Null) {
+			SeasonNumber = NodeSeason.GetAttributeInteger("number", -1);
+			SeasonEpisode = NodeSeason.GetAttributeInteger("episode", -1);
+		}
+		
+		declare NodePlayers <=> XmlDoc.Root.GetFirstChild("players");
+		if (NodePlayers != Null) {
+			foreach (NodePlayer in NodePlayers.Children) {
+				declare Login = NodePlayer.GetAttributeText("login", "");
+				if (Login != "") {
+					PlayersBestScoresPoints[Login] = Integer[];
+					PlayersBestScoresDate[Login] = Text[];
+					PlayersRankingsRanks[Login] = Integer[Integer][];
+					PlayersRankingsZones[Login] = Text[];
+					
+					declare NodeScores <=> NodePlayer.GetFirstChild("scores");
+					if (NodeScores != Null) {
+						foreach (NodeScore in NodeScores.Children) {
+							declare Points = NodeScore.GetAttributeInteger("points", 0);
+							declare Date = NodeScore.GetAttributeText("date", "");
+							PlayersBestScoresPoints[Login].add(Points);
+							PlayersBestScoresDate[Login].add(Date);
+						}
+					}
+					
+					declare NodeRanking <=> NodePlayer.GetFirstChild("ranking");
+					if (NodeRanking != Null) {
+						foreach (NodeSection in NodeRanking.Children) {
+							declare FullPath = NodeSection.GetAttributeText("path", "");
+							declare Rank = NodeSection.GetAttributeInteger("rank", 0);
+							declare Max = NodeSection.GetAttributeInteger("max", 0);
+							declare SplitPath = TL::Split("|", FullPath);
+							declare Path = "";
+							if (SplitPath.count > 0) Path = SplitPath[SplitPath.count - 1];
+							PlayersRankingsZones[Login].add(Path);
+							PlayersRankingsRanks[Login].add([Max => Rank]);
+						}
+					}
+				}
+			}
+		}
+	}
+	
+	Xml.Destroy(XmlDoc);
+	
+	Log::Log("""[ChannelProgression] ResponseMapInfo() > SeasonNumber : {{{SeasonNumber}}} | SeasonEpisode : {{{SeasonEpisode}}} | PlayersBestScoresPoints : {{{PlayersBestScoresPoints}}} | PlayersBestScoresDate : {{{PlayersBestScoresDate}}} | PlayersRankingsZones : {{{PlayersRankingsZones}}} | PlayersRankingsRanks : {{{PlayersRankingsRanks}}}""");
+	
+	SetSeasonEpisode(SeasonNumber, SeasonEpisode);
+	
+	foreach (Score in Scores) {
+		if (PlayersBestScoresPoints.existskey(Score.User.Login) && PlayersBestScoresDate.existskey(Score.User.Login)) {
+			if (_AreOldScores) {
+				SetBestScores(
+					Score,
+					PlayersBestScoresPoints[Score.User.Login],
+					PlayersBestScoresDate[Score.User.Login],
+					GetNewBestScoresPoints(Score),
+					GetNewBestScoresDates(Score)
+				);
+			
+			} else {
+				SetBestScores(
+					Score,
+					GetOldBestScoresPoints(Score),
+					GetOldBestScoresDates(Score),
+					PlayersBestScoresPoints[Score.User.Login],
+					PlayersBestScoresDate[Score.User.Login]
+				);
+			}
+		}
+		if (PlayersRankingsZones.existskey(Score.User.Login) && PlayersRankingsRanks.existskey(Score.User.Login)) {
+			SetRegionalRanking(Score, PlayersRankingsZones[Score.User.Login], GetRegionalRanking(Score), PlayersRankingsRanks[Score.User.Login]);
+		}
+	}
+}
+
+// ---------------------------------- //
+/** Evaluate the player performance
+ *	during the map with a score between
+ *	0. and 1.
+ *	You must call this function before
+ *	closing the ladder or it won't
+ *	taken into consideration
+ *
+ *	@param	_Score										The player's score
+ *	@param	_Performance							The performance between 0. and 1.
+ *																		0. == poor, 1. == excellent
+ */
+Void SetPlayerPerformance(CScore _Score, Real _Performance) {
+	if (_Score == Null) return;
+	
+	declare Performance = _Performance;
+	if (Performance < 0.) Performance = 0.;
+	else if (Performance > 1.) Performance = 1.;
+	
+	_Score.LadderMatchScoreValue = Performance;
+	
+	Log::Log("""[Channel Progression] SetPlayerPerformance() > {{{_Score.User.Login}}} has a performance of {{{Performance}}}""");
+}
+
+// ---------------------------------- //
+/** Get the reference score of a player
+ *	after the closing of the ladder match
+ * 
+ *	@param	_Score										The player's score
+ *
+ *	@return														The reference score
+ */
+Integer GetReferenceScore(CScore _Score) {
+	if (_Score == Null) return 0;
+	return ML::NearestInteger(_Score.User.ReferenceScore);
+}
+
+// ---------------------------------- //
+/** Get the reference score of a player
+ *	after the closing of the ladder match
+ * 
+ *	@param	_User											The player's user
+ *
+ *	@return														The reference score
+ */
+Integer GetReferenceScore(CUser _User) {
+	if (_User == Null) return 0;
+	return ML::NearestInteger(_User.ReferenceScore);
+}
+
+// ---------------------------------- //
+/** Send the scores to the channel api
+ *	Use this function once the ladder is closed
+ */
+Void SendScores() {
+	declare PlayersLogins = Text[];
+	declare PlayersScores = Integer[];
+	
+	foreach (Score in Scores) {
+		PlayersLogins.add(Score.User.Login);
+		PlayersScores.add(GetReferenceScore(Score));
+	}
+	
+	RequestMatchInfo(PlayersLogins, PlayersScores);
+}
+
+// ---------------------------------- //
+/// Setup the right ladder results version
+Void SetResultsVersion() {
+	Ladder::SetResultsVersion(1);
+}
+
+// ---------------------------------- //
+/** Enable or disable the channel progression
+ *
+ *	@param	_Enabled									True to enable
+ *																		False to disable
+ */
+Void Enable(Boolean _Enabled) {
+	G_Enabled = _Enabled;
+	
+	if (_Enabled) {
+		Layers::Attach(C_LayerName);
+		SetResultsVersion();
+	} else {
+		Layers::Detach(C_LayerName);
+	}
+}
+
+// ---------------------------------- //
+/** Check if the channel progression
+ *	is enabled
+ *
+ *	@return														True if the channel progression is enabled
+ *																		False otherwise
+ */
+Boolean IsEnabled() {
+	return G_Enabled;
+}
+
+// ---------------------------------- //
+/** Show or hide the channel progression
+ *	window
+ *
+ *	@param	_Visible									True to show,
+ *																		False to hide
+ */
+Void SetVisibility(Boolean _Visible) {
+	Layers::SetVisibility(C_LayerName, _Visible);
+}
+
+// ---------------------------------- //
+/** Check if a request is in progress
+ *
+ *	@return														True if a request is in progress
+ *																		False otherwise
+ */
+Boolean RequestInProgress() {
+	return G_RequestsTimeout.count > 0;
+}
+
+// ---------------------------------- //
+/// Update the library
+Void Yield() {
+	declare ToDestroy = Ident[];
+	foreach (Request in Http.Requests) {
+		if (
+			(G_RequestId_ServerInfo != NullId && Request.Id == G_RequestId_ServerInfo) ||
+			(G_RequestId_MapInfo != NullId && Request.Id == G_RequestId_MapInfo) ||
+			(G_RequestId_MatchInfo != NullId && Request.Id == G_RequestId_MatchInfo)
+		) {
+			if (Request.IsCompleted) {
+				ToDestroy.add(Request.Id);
+				if (Request.StatusCode >= 200 && Request.StatusCode < 300) {
+					if (Request.Id == G_RequestId_ServerInfo) {
+						ResponseServerInfo(Request.Result);
+					} else if (Request.Id == G_RequestId_MapInfo) {
+						ResponseMapInfo(Request.Result, True);
+					} else if (Request.Id == G_RequestId_MatchInfo) {
+						ResponseMapInfo(Request.Result, False);
+					}
+				} else {
+					Log::Log("""[ChannelProgression] Error with the following request. Id : {{{Request.Id}}} | Url : {{{Request.Url}}} | StatusCode : {{{Request.StatusCode}}}""");
+				}
+			}
+			if (G_RequestsTimeout.existskey(Request.Id) && Now >= G_RequestsTimeout[Request.Id]) {
+				ToDestroy.add(Request.Id);
+			}
+		}
+	}
+	
+	foreach (RequestId in ToDestroy) {
+		declare Removed = G_RequestsTimeout.removekey(RequestId);
+		if (Http.Requests.existskey(RequestId)) {
+			Http.Destroy(Http.Requests[RequestId]);
+		}
+	}
+}
+
+// ---------------------------------- //
+/// Unload the library
+Void Unload() {
+	Enable(False);
+	
+	Layers::Destroy(C_LayerName);
+	
+	SetEmblemsXP(Integer[]);
+	SetEmblemsLogo(Text[], Text[]);
+	SetRanking(Text[], Integer[]);
+	SetRankingIsTime(False);
+	SetSeasonEpisode(-1, -1);
+	PlayRevealAnimation();
+	SetVisibility(False);
+	
+	if (Http.Requests.existskey(G_RequestId_ServerInfo)) {
+		Http.Destroy(Http.Requests[G_RequestId_ServerInfo]);
+	}
+	G_RequestId_ServerInfo = NullId;
+	if (Http.Requests.existskey(G_RequestId_MapInfo)) {
+		Http.Destroy(Http.Requests[G_RequestId_MapInfo]);
+	}
+	G_RequestId_MapInfo = NullId;
+	if (Http.Requests.existskey(G_RequestId_MatchInfo)) {
+		Http.Destroy(Http.Requests[G_RequestId_MatchInfo]);
+	}
+	G_RequestId_MatchInfo = NullId;
+	
+	G_RequestsTimeout = Integer[Ident];
+	
+	foreach (Score in Scores) {
+		SetRank(Score, -1);
+		SetScore(Score, 0);
+		SetBestScores(Score, Integer[], Text[], Integer[], Text[]);
+		SetReward(Score, Text[], -1);
+		SetRegionalRanking(Score, Text[], Integer[Integer][], Integer[Integer][]);
+	}
+}
+
+// ---------------------------------- //
+/// Load the library
+Void Load() {
+	Unload();
+	
+	Layers::Create(C_LayerName, Private_GetChannelProgressionML());
+	Enable(False);
+	SetVisibility(False);
+}

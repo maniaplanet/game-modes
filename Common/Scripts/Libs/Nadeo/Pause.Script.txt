@@ -1,0 +1,199 @@
+/**
+ *	Pause library
+ */
+#Const	Version			"2017-04-10"
+#Const	ScriptName	"Libs/Nadeo/Pause.Script.txt"
+
+// ---------------------------------- //
+// Libraries
+// ---------------------------------- //
+#Include "Libs/Nadeo/XmlRpc2.Script.txt" as XmlRpc
+#Include "Libs/Nadeo/Utils.Script.txt" as Utils
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+// XmlRpc callbacks
+#Const C_Callback_Pause_Status	"Maniaplanet.Pause.Status"
+// XmlRpc methods
+#Const C_Method_Pause_GetStatus	"Maniaplanet.Pause.GetStatus"
+#Const C_Method_Pause_SetActive	"Maniaplanet.Pause.SetActive"
+
+// ---------------------------------- //
+// Globales
+// ---------------------------------- //
+declare Boolean G_IsAvailable; ///< Is the pause system available in the game mode
+declare Boolean G_IsActive; ///< Is there an ongoing pause
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+// ---------------------------------- //
+/**	Return the version number of the script
+ *
+ *	@return														The version number of the script
+ */
+Text GetScriptVersion() {
+	return Version;
+}
+
+// ---------------------------------- //
+/**	Return the name of the script
+ *
+ *	@return														The name of the script
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+// ---------------------------------- //
+/** Send a callback with the pause status
+ *
+ *	@param	_ResponseId								The response id to pass to the callback
+ *	@param	_IsLoaded									Is the library loaded or not
+ *	@param	_IsActive									Is there an ongoing pause or not
+ */
+Void SendStatusCallback(Text _ResponseId, Boolean _IsLoaded, Boolean _IsActive) {
+	XmlRpc::SendCallback(C_Callback_Pause_Status, ["""{
+	"responseid": {{{dump(_ResponseId)}}},
+	"available": {{{XmlRpc::JsonGetBoolean(_IsLoaded)}}},
+	"active": {{{XmlRpc::JsonGetBoolean(_IsActive)}}}
+}"""]);
+}
+
+// ---------------------------------- //
+/** Set the availabality of the pause
+ *	system in the game mode
+ *
+ *	@param	_IsAvailable							True if the pause system is available
+ *																		False otherwise
+ */
+Void SetAvailability(Boolean _IsAvailable) {
+	G_IsAvailable = _IsAvailable;
+}
+
+// ---------------------------------- //
+/** Check if the pause system is available
+ *
+ *	@return														True if the pause system is available
+ *																		False otherwise
+ */
+Boolean IsAvailable() {
+	return G_IsAvailable;
+}
+
+// ---------------------------------- //
+/** Set the current status of the pause
+ *
+ *	@param	_IsActive									True if a pause is ongoing
+ *																		False otherwise
+ *	@param	_ResponseId								ResponseId to pass to the C_Callback_Pause_Status callback
+ */
+Void SetActive(Boolean _IsActive, Text _ResponseId) {
+	G_IsActive = G_IsAvailable && _IsActive;
+	SendStatusCallback(_ResponseId, G_IsAvailable, G_IsActive);
+}
+
+// ---------------------------------- //
+/// Overload SetActive()
+Void SetActive(Boolean _IsActive) {
+	SetActive(_IsActive, "");
+}
+
+// ---------------------------------- //
+/** Check if there is an active pause
+ *
+ *	@return														True if the pause is active
+ *																		False otherwise
+ */
+Boolean IsActive() {
+	return G_IsActive;
+}
+
+// ---------------------------------- //
+/// Update the library
+Void Yield() {
+	foreach (Event in XmlRpc.PendingEvents) {
+		if (Event.Type == CXmlRpcEvent::EType::CallbackArray) {
+			switch (Event.ParamArray1) {
+				case C_Method_Pause_GetStatus: {
+					declare ResponseId = "";
+					if (Event.ParamArray2.existskey(0)) ResponseId = Event.ParamArray2[0];
+					SendStatusCallback(ResponseId, G_IsAvailable, G_IsActive);
+				}
+				case C_Method_Pause_SetActive: {
+					declare Active = False;
+					if (Event.ParamArray2.existskey(0)) Active = Utils::ToBoolean(Event.ParamArray2[0]);
+					declare ResponseId = "";
+					if (Event.ParamArray2.existskey(1)) ResponseId = Event.ParamArray2[1];
+					SetActive(Active, ResponseId);
+				}
+			}
+		}
+	}
+}
+
+// ---------------------------------- //
+/// Unload the library
+Void Unload() {
+	G_IsAvailable = False;
+	G_IsActive = False;
+	
+	XmlRpc::UnregisterCallback(C_Callback_Pause_Status);
+	XmlRpc::UnregisterMethod(C_Method_Pause_GetStatus);
+	XmlRpc::UnregisterMethod(C_Method_Pause_SetActive);
+}
+
+// ---------------------------------- //
+/// Load the library
+Void Load() {
+	Unload();
+	
+	// Register callbacks
+	XmlRpc::RegisterCallback(C_Callback_Pause_Status, """
+* Name: {{{C_Callback_Pause_Status}}}
+* Type: CallbackArray
+* Description: The status of the pause.
+* Data:
+	- Version >=2.0.0:
+	```
+	[
+		"{
+			"responseid": "xyz", //< Facultative id passed by a script event
+			"available": true, //< true if a pause is available in the game mode, false otherwise
+			"active": true //< true if there is an ongoing pause, false otherwise
+		}"
+	]
+	```
+""");
+	
+	// Register methods
+	XmlRpc::RegisterMethod(C_Method_Pause_GetStatus, """
+* Name: {{{C_Method_Pause_GetStatus}}}
+* Type: TriggerModeScriptEventArray
+* Description: Get the status of the pause.
+* Data:
+	- Version >=2.0.0:
+	```
+	[
+		"responseid" //< Facultative id that will be passed to the "{{{C_Callback_Pause_Status}}}" callback.
+	]
+	```
+""");
+	XmlRpc::RegisterMethod(C_Method_Pause_SetActive, """
+* Name: {{{C_Method_Pause_SetActive}}}
+* Type: TriggerModeScriptEventArray
+* Description: Enable or disable the pause if it is available.
+* Data:
+	- Version >=2.0.0:
+	```
+	[
+		"true", //< true to enable the pause, false to disable it.
+		"responseid" //< Facultative id that will be passed to the "{{{C_Callback_Pause_Status}}}" callback.
+	]
+	```
+""");
+}

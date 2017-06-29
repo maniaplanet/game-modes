@@ -1,0 +1,695 @@
+#Const	Version		"2017-03-29"
+#Const	ScriptName	"WarmUpSimple.Script.txt"
+
+// ---------------------------------- //
+// Libraries
+// ---------------------------------- //
+#Include "TextLib" as TL
+#Include "Libs/Nadeo/XmlRpc2.Script.txt" as XmlRpc
+#Include "Libs/Nadeo/ShootMania/SM3.Script.txt" as SM
+#Include "Libs/Nadeo/ShootMania/Events.Script.txt" as Events
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+// XmlRpc callbacks
+#Const C_Callback_WarmUp_Start		"Maniaplanet.WarmUp.Start"
+#Const C_Callback_WarmUp_End			"Maniaplanet.WarmUp.End"
+#Const C_Callback_WarmUp_Status	"Maniaplanet.WarmUp.Status"
+// XmlRpc methods
+#Const C_Method_WarmUp_Extend		"Maniaplanet.WarmUp.Extend"
+#Const C_Method_WarmUp_Stop			"Maniaplanet.WarmUp.Stop"
+#Const C_Method_WarmUp_GetStatus	"Maniaplanet.WarmUp.GetStatus"
+
+// ---------------------------------- //
+// Globales
+// ---------------------------------- //
+declare CSmMapPlayerSpawn[Integer] G_Clan1Spawns; ///< Spawn points for the clan 1
+declare CSmMapPlayerSpawn[Integer] G_Clan2Spawns; ///< Spawn points for the clan 2
+declare Integer	G_Clan1SpawnsIndex; ///< Current index on the Clan1Spawns array
+declare Integer	G_Clan2SpawnsIndex; ///< Current index on the Clan2Spawns array
+declare Integer	G_WarmUpDuration; ///< Duration of the warm up
+declare Integer	G_CountdownOnPlayersReady; ///< Countdown time when all players are ready
+declare Boolean G_ForceWarmUpDuration; ///< Don't reset the warm up timer based on ready players
+declare Integer G_MinimumPlayersNumber; ///< Minimum number of players in each clan
+declare Text	G_BigMessage; ///< Big Message shown during the warm up
+declare Text	G_StatusMessage; ///< Status Message shown during the warm up
+declare Integer G_CurrentBarrier; ///< Ensure synchronisation between server and player UI
+declare CUILayer[] G_CustomLayers; ///< Add custom layers to the warmup interface
+declare Boolean	G_IsInitialized; ///< The options have been initialized
+declare Boolean G_LibWarmUp_IsInWarmUp; ///< The warmup is ongoing
+// Warmup loop
+declare Ident[Ident] G_WarmUpLayers;
+declare Integer G_MinReadyTime;
+declare Integer G_ForcedTime;
+declare Text G_OldBigMessage;
+declare Text G_OldStatusMessage;
+declare Integer G_OldStartTime;
+declare Integer G_OldEndTime;
+declare Integer G_TimeExtension;
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+// ---------------------------------- //
+/** Return the version number of the script
+ *
+ *	@return		The version number of the script
+ */
+Text GetScriptVersion() {
+	return Version;
+}
+
+// ---------------------------------- //
+/** Return the name of the script
+ *
+ *	@return		The name of the script
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+// ---------------------------------- //
+/** Initialize the warm up
+ *  Take all the options and initialize them to a correct value
+ *
+ *  @param		_Duration		Time duration in seconds of the warm up
+ *  @param		_Clan1Spawns	A list of spawns for clan 1 players or all players if the mode don't use clans
+ *  @param		_Clan2Spawns	A list of spawns for clan 2 players
+ */
+Void Initialize(Integer _Duration, CSmMapPlayerSpawn[] _Clan1Spawns, CSmMapPlayerSpawn[] _Clan2Spawns) {
+	G_WarmUpDuration		= _Duration;
+	G_ForceWarmUpDuration	= False;
+	G_BigMessage			= TL::Compose("$f90%1", _("Warm up"));
+	G_StatusMessage			= _("Press F6 once you're ready.");
+	G_Clan1SpawnsIndex		= 0;
+	G_Clan2SpawnsIndex		= 0;
+	G_CurrentBarrier		= Now;
+	
+	G_CountdownOnPlayersReady = 5;
+	
+	declare I = 0;
+	foreach (Spawn in _Clan1Spawns) {
+		if (Spawn == Null) continue;
+		G_Clan1Spawns[I] = Spawn;
+		I += 1;
+	}
+	I = 0;
+	foreach (Spawn in _Clan2Spawns) {
+		if (Spawn == Null) continue;
+		G_Clan2Spawns[I] = Spawn;
+		I += 1;
+	}
+	
+	G_IsInitialized = True;
+}
+
+// ---------------------------------- //
+/** Initialize the warm up (overload)
+ *
+ *  @param		_Duration		Time duration in seconds of the warm up
+ *  @param		_Clan1Spawn		The spawn for clan 1 players or all players if the mode don't use clans
+ *  @param		_Clan2Spawn		The spawn for clan 2 players
+ */
+Void Initialize(Integer _Duration, CSmMapPlayerSpawn _Clan1Spawn, CSmMapPlayerSpawn _Clan2Spawn) {
+	Initialize(_Duration, [_Clan1Spawn], [_Clan2Spawn]);
+}
+
+// ---------------------------------- //
+/** Initialize the warm up (overload)
+ *
+ *  @param		_Duration		Time duration in seconds of the warm up
+ *  @param		_Clan1Spawns	A list of spawns for clan 1 players or all players if the mode don't use clans
+ *  @param		_Clan2Spawn		The spawn for clan 2 players
+ */
+Void Initialize(Integer _Duration, CSmMapPlayerSpawn[] _Clan1Spawns, CSmMapPlayerSpawn _Clan2Spawn) {
+	Initialize(_Duration, _Clan1Spawns, [_Clan2Spawn]);
+}
+
+// ---------------------------------- //
+/** Initialize the warm up (overload)
+ *
+ *  @param		_Duration		Time duration in seconds of the warm up
+ *  @param		_Clan1Spawn		The spawn for clan 1 players or all players if the mode don't use clans
+ *  @param		_Clan2Spawns	A list of spawns for clan 2 players
+ */
+Void Initialize(Integer _Duration, CSmMapPlayerSpawn _Clan1Spawn, CSmMapPlayerSpawn[] _Clan2Spawns) {
+	Initialize(_Duration, [_Clan1Spawn], _Clan2Spawns);
+}
+
+// ---------------------------------- //
+/** Initialize the warm up (overload)
+ *  Short version for mode not using clans
+ *
+ *  @param		_Duration		Time duration in seconds of the warm up
+ *  @param		_Spawns			List of spawns for all players
+ */
+Void Initialize(Integer _Duration, CSmMapPlayerSpawn[] _Spawns) {
+	Initialize(_Duration, _Spawns, CSmMapPlayerSpawn[]);
+}
+
+// ---------------------------------- //
+/** Initialize the warm up (overload)
+ *  Short version for mode not using clans
+ *
+ *  @param		_Duration		Time duration in seconds of the warm up
+ *  @param		_Spawn			The spawn for all players
+ */
+Void Initialize(Integer _Duration, CSmMapPlayerSpawn _Spawn) {
+	Initialize(_Duration, [_Spawn], CSmMapPlayerSpawn[]);
+}
+
+// ---------------------------------- //
+/** Initialize the warm up (overload)
+ *
+ *  @param		_Duration		Time duration in seconds of the warm up
+ */
+Void Initialize(Integer _Duration) {
+	Initialize(_Duration, CSmMapPlayerSpawn[], CSmMapPlayerSpawn[]);
+}
+
+// ---------------------------------- //
+/// Initialize the warm up (overload)
+Void Initialize() {
+	Initialize(90, CSmMapPlayerSpawn[], CSmMapPlayerSpawn[]);
+}
+
+// ---------------------------------- //
+/** Return the warm up UI manialink
+ *  If the mode use clans then show the join team buttons
+ *
+ *  @return 	The warm up manialink
+ */
+Text GetWarmUpUI() {
+	declare ML = "";
+	declare JoinTeamButtons = "";
+	
+	// Show the join team buttons only if the mode uses clans
+	if (UseClans) {
+		JoinTeamButtons = """
+<label posn="-42 0 4" halign="right" style="CardButtonMedium" text="<< Join (F3)" id="BtnJoinClan1" ScriptEvents="1" />
+<label posn="43 0 4" halign="left" style="CardButtonMedium" text="Join (F4) >>" id="BtnJoinClan2" ScriptEvents="1" />
+		""";
+	}
+	
+	
+	ML = """
+<frame posn="0 -59.6 2">
+	{{{ JoinTeamButtons }}}
+	<frame posn="0 0 0">
+		<label posn="0 0 4" halign="center" style="CardButtonMedium" text=" Ready (F6)" id="BtnReady" ScriptEvents="1" />
+		<quad posn="-16 -1.3 5" sizen="5 5" style="Icons64x64_1" id="IconReady" substyle="LvlGreen" />
+		<quad posn="-16 -1.3 5" sizen="5 5" style="Icons64x64_1" id="IconNotReady" substyle="LvlRed" />
+	</frame>
+</frame>
+<script><!--
+	main () {
+		declare netread Net_Barrier for UI = 0;
+		declare netwrite Net_BarrierReached for UI = 0;
+		declare netwrite Net_ReadyToPlay for UI = False;
+		declare IconReady <=> Page.GetFirstChild("IconReady");
+		declare IconNotReady <=> Page.GetFirstChild("IconNotReady");
+		
+		Net_ReadyToPlay = False;
+		
+		while(True) {
+			Net_BarrierReached = Net_Barrier;
+			
+			// update UI
+			if (Net_ReadyToPlay) {
+				IconReady.Show();
+				IconNotReady.Hide();
+			} else {
+				IconReady.Hide();
+				IconNotReady.Show();
+			}
+
+			yield;
+
+			// process events.
+			foreach(Event in PendingEvents)	{
+				switch(Event.Type){
+					case CMlEvent::Type::MouseClick :
+					{		
+						if (Event.ControlId == "BtnReady")		Net_ReadyToPlay = !Net_ReadyToPlay;
+						if (Event.ControlId == "BtnJoinClan1")	JoinTeam1();
+						if (Event.ControlId == "BtnJoinClan2")	JoinTeam2();
+					}
+			
+					case CMlEvent::Type::KeyPress:
+					{
+						if (Event.KeyName == "F6") Net_ReadyToPlay = !Net_ReadyToPlay;	// F6
+						if (Event.KeyName == "F3") JoinTeam1();	// F3
+						if (Event.KeyName == "F4") JoinTeam2();	// F4
+					}
+				}
+			}
+		}
+	}
+--></script>
+	""";
+	
+	return ML;
+}
+
+// ---------------------------------- //
+/** Force the warm up to last a fixed time
+ *
+ *  @param		_Forced		Set the forced time warm up option to true or false
+ */
+Void SetForceWarmUpDuration(Boolean _Forced) {
+	G_ForceWarmUpDuration = _Forced;
+}
+
+// ---------------------------------- //
+/** Require a minimum number of players before the warm up can end
+ *
+ *  @param		_MinPlayers		The minimum number of players required to begin
+ */
+Void SetMinimumPlayersNumber(Integer _MinPlayers) {
+	G_MinimumPlayersNumber = _MinPlayers;
+}
+
+// ---------------------------------- //
+/** Change the warm up BigMessage 
+ *
+ *	@param		_NewBigMessage		The BigMessage to use
+ */
+Void SetBigMessage(Text _NewBigMessage) {
+	G_BigMessage = _NewBigMessage;
+}
+
+// ---------------------------------- //
+/** Change the warm up StatusMessage
+ *
+ *	@param		_NewStatusMessage	The StatusMessage to use
+ */
+Void SetStatusMessage(Text _NewStatusMessage) {
+	G_StatusMessage = _NewStatusMessage;
+}
+
+/**
+ * Set the duration of the timer when all players are ready.
+ */
+Void SetCountdownOnPlayersReady(Integer _TimeInSeconds) {
+	if(_TimeInSeconds > 0) G_CountdownOnPlayersReady = _TimeInSeconds;
+}
+
+// ---------------------------------- //
+/** Test if the players are ready to begin
+ *
+ *	@param		_RequireAllReady	If true all the players must be ready, else only one player is enough (in each clan)
+ *
+ *	@return		True if the players are ready, false otherwise
+ */
+Boolean PlayersAreReady(Boolean _RequireAllReady) {
+	declare NbClan1Ready = 0;		///< Number of clan 1 ready players
+	declare NbClan2Ready = 0;		///< number of clan 2 ready players
+	declare NbTotalReady = 0;		///< Total number of ready players
+	declare AllPlayersReady = True;	///< All players are ready
+	declare PlayersReady = False;	///< The final return value
+	
+	foreach(Player in Players) {
+		declare IsPlayerReady = False;
+		
+		/// Bots are ready by default
+		if (Player.IsFakePlayer) {
+			IsPlayerReady = True;
+		} 
+		/// Check if player is ready
+		else {
+			declare UI <=> UIManager.GetUI(Player);
+			if (UI != Null) {
+				declare netwrite Net_Barrier for UI = 0;
+				declare netread Net_BarrierReached for UI = 0;
+				declare netread Net_ReadyToPlay for UI = False;
+				
+				Net_Barrier = G_CurrentBarrier;
+				if (Net_BarrierReached == Net_Barrier && Net_ReadyToPlay) {
+					IsPlayerReady = True;
+				}
+			}
+		}
+
+		if (!IsPlayerReady) {
+			AllPlayersReady = False;
+			continue;
+		}
+		
+		NbTotalReady += 1;
+		if (Player.CurrentClan == 1) {
+			NbClan1Ready += 1;
+		} else if (Player.CurrentClan == 2) {
+			NbClan2Ready += 1;
+		}
+	}
+	
+	// We use clans and at least one player is ready in each team
+	if (!_RequireAllReady && UseClans) {
+		PlayersReady = (NbClan1Ready >= 1 && ClansNbPlayers[1] >= G_MinimumPlayersNumber) 
+						&& (NbClan2Ready >= 1 && ClansNbPlayers[2] >= G_MinimumPlayersNumber);
+	} 
+	// We don't use clans and at least one player is ready
+	else if (!_RequireAllReady && !UseClans) {
+		PlayersReady = NbTotalReady >= 1 && PlayersNbTotal >= G_MinimumPlayersNumber;
+	} 
+	// We use clans and all players are ready
+	else if (_RequireAllReady && UseClans) {
+		PlayersReady = (NbClan1Ready >= 1 && ClansNbPlayers[1] >= G_MinimumPlayersNumber) 
+					&& (NbClan2Ready >= 1 && ClansNbPlayers[2] >= G_MinimumPlayersNumber) 
+					&& AllPlayersReady;
+	} 
+	// We don't use clan and all players are ready
+	else {
+		PlayersReady = NbTotalReady >= 1 && PlayersNbTotal >= G_MinimumPlayersNumber && AllPlayersReady;
+	}
+			
+	return PlayersReady;
+}
+
+// ---------------------------------- //
+/** Test if all players are ready to begin
+ *	Short version of PlayersAreReady(True)
+ *
+ *	@return		True if all players are ready, false otherwise
+ */
+Boolean AllPlayersAreReady() {
+	return PlayersAreReady(True);
+}
+
+/** Test if one player is ready (in each clan if we use clans)
+ *	Short version of  PlayersAreReady(False)
+ *
+ *	@return		True if one player is ready, false otherwise
+ */
+Boolean MinimumPlayersAreReady() {
+	return PlayersAreReady(False);
+}
+
+// ---------------------------------- //
+/** Get the right BlockSpawn where to spawn the player
+ *
+ *	@param		_RequestedClan		The clan the player requested
+ *
+ *	@return		The BlockSpawn where to spawn the player
+ */
+CSmMapPlayerSpawn GetSpawn(Integer _RequestedClan) {
+	declare CSmMapPlayerSpawn BlockSpawn;
+	
+	// If player is in clan 1 or if we don't use clans
+	if (_RequestedClan <= 1 || !UseClans) {
+		if (G_Clan1Spawns.count >= 1) {
+			if (!G_Clan1Spawns.existskey(G_Clan1SpawnsIndex)) G_Clan1SpawnsIndex = 0;
+			BlockSpawn = G_Clan1Spawns[G_Clan1SpawnsIndex];
+			G_Clan1SpawnsIndex += 1;
+		} else {
+			foreach(Spawn in MapLandmarks_PlayerSpawn) {
+				BlockSpawn <=> Spawn.PlayerSpawn;
+				break;
+			}
+		}		
+	} 
+	// If player is in clan 2
+	else if (_RequestedClan >= 2) {
+		if (G_Clan2Spawns.count >= 1) {
+			if (!G_Clan2Spawns.existskey(G_Clan2SpawnsIndex)) G_Clan2SpawnsIndex = 0;
+			BlockSpawn = G_Clan2Spawns[G_Clan2SpawnsIndex];
+			G_Clan2SpawnsIndex += 1;
+		} else {
+			foreach(Spawn in MapLandmarks_PlayerSpawn) {
+				BlockSpawn <=> Spawn.PlayerSpawn;
+				break;
+			}
+		}	
+	}
+	
+	return BlockSpawn;
+}
+
+// ---------------------------------- //
+/// Start the warm up
+Void Start() {
+	XmlRpc::SendCallback(C_Callback_WarmUp_Start, ["{}"]);
+	G_LibWarmUp_IsInWarmUp = True;
+	
+	G_WarmUpLayers = Ident[Ident];
+	G_MinReadyTime = -1;
+	G_ForcedTime = Now + G_WarmUpDuration * 1000;
+	
+	SM::UnspawnAllPlayers();
+	
+	// Initialize UI
+	UIManager.UIAll.UISequence = CUIConfig::EUISequence::Playing;
+	G_OldBigMessage = UIManager.UIAll.BigMessage;
+	G_OldStatusMessage = UIManager.UIAll.StatusMessage;
+	UIManager.UIAll.BigMessage = G_BigMessage;
+	UIManager.UIAll.StatusMessage = G_StatusMessage;
+	G_CurrentBarrier += 1;
+	
+	// Initialize timer
+	G_OldStartTime = StartTime;
+	G_OldEndTime = EndTime;
+	G_TimeExtension = 0;
+	StartTime = Now;
+	EndTime = -1;
+}
+
+// ---------------------------------- //
+/** Update the warmup
+ *
+ *	@return														True if the warmup can continue
+ *																		False if the warmup must stop
+ */
+Boolean Loop() {
+	SM::UnspawnPlayersChangingClan();
+	
+	// Managing events
+	foreach (Event in PendingEvents) {
+		if (Event.Type == CSmModeEvent::EType::OnHit) {
+			if (Event.Victim != Null && Event.Shooter != Null && Event.Victim != Event.Shooter) {
+				Event.Damage = 100;
+				Event.Victim.Armor = Event.Victim.ArmorMax;
+				Event.ShooterPoints = 1;
+				Events::Valid(Event);
+			} else {
+				Events::Invalid(Event);
+			}
+		} else if (Event.Type == CSmModeEvent::EType::OnArmorEmpty) {
+			if (Event.Shooter != Null && Event.Victim != Null) {
+				Event.Victim.Armor = Event.Victim.ArmorMax;
+				Events::Invalid(Event);
+			} else {
+				Events::Valid(Event);
+			}
+		} else {
+			Events::Valid(Event);
+		}
+	}
+	
+	// Spawn players and set UI
+	foreach (Player in Players) {
+		// Spawn
+		if (Player.SpawnStatus == CSmPlayer::ESpawnStatus::NotSpawned) {
+			declare Spawn <=> GetSpawn(Player.RequestedClan);
+			if (Spawn != Null) {
+				if (UseClans) SM::Spawn(Player, Player.RequestedClan, Player.ArmorMax, Spawn, -1);
+				else SM::Spawn(Player, 0, Player.ArmorMax, Spawn, -1);
+			}
+		}
+		// UI
+		declare UI <=> UIManager.GetUI(Player);
+		if (UI == Null) continue;
+		if (!G_WarmUpLayers.existskey(Player.Id)) {
+			declare WarmUpLayer <=> UIManager.UILayerCreate();
+			WarmUpLayer.ManialinkPage = GetWarmUpUI();
+			UI.UILayers.add(WarmUpLayer);
+			G_WarmUpLayers[Player.Id] = WarmUpLayer.Id;
+		}
+	}
+	
+	declare LayersToRemove = Ident[];
+	foreach (PlayerId => LayerId in G_WarmUpLayers) {
+		if (!Players.existskey(PlayerId)) LayersToRemove.add(LayerId);
+	}
+	foreach (LayerId in LayersToRemove) {
+		if (UIManager.UILayers.existskey(LayerId)) UIManager.UILayerDestroy(UIManager.UILayers[LayerId]);
+		declare Removed = G_WarmUpLayers.remove(LayerId);
+	}
+	
+	// Warm up ending conditions	
+	if (AllPlayersAreReady()) {
+		if (EndTime == -1 || EndTime > Now + (G_CountdownOnPlayersReady*1000) + G_TimeExtension) {
+			EndTime = Now + (G_CountdownOnPlayersReady*1000) + G_TimeExtension;
+		}
+	} else if (MinimumPlayersAreReady()) {
+		if (G_MinReadyTime == -1) G_MinReadyTime = Now + (G_WarmUpDuration * 1000) + G_TimeExtension;			
+		EndTime = G_MinReadyTime;
+	} else {
+		G_TimeExtension = 0;
+		if (!G_ForceWarmUpDuration) {
+			EndTime = -1;
+			G_MinReadyTime = -1;
+		} else {
+			EndTime = G_ForcedTime;
+			G_MinReadyTime = G_ForcedTime;
+		}
+	}
+	
+	// XmlRpc commands
+	foreach (Event in XmlRpc.PendingEvents) {
+		if (Event.Type == CXmlRpcEvent::EType::CallbackArray) {
+			switch (Event.ParamArray1) {
+				case C_Method_WarmUp_Extend: {
+					declare ExtendTime = 0;
+					if (Event.ParamArray2.existskey(0)) ExtendTime = TL::ToInteger(Event.ParamArray2[0]);
+					if (EndTime >= 0) EndTime += ExtendTime;
+					G_MinReadyTime += ExtendTime;
+					G_TimeExtension += ExtendTime;
+				}
+				case C_Method_WarmUp_Stop: {
+					EndTime = Now - 1;
+				}
+			}
+		}
+	}
+	
+	return (EndTime == -1 || EndTime >= Now) && !MatchEndRequested && !ServerShutdownRequested;
+}
+
+// ---------------------------------- //
+// Stop the warm up
+Void End() {
+	// Delete the warm up layers
+	foreach (PlayerId => LayerId in G_WarmUpLayers) {
+		if (UIManager.UILayers.existskey(LayerId)) UIManager.UILayerDestroy(UIManager.UILayers[LayerId]);
+	}
+	
+	// Restore UI
+	UIManager.UIAll.UISequence = CUIConfig::EUISequence::EndRound;
+	UIManager.UIAll.BigMessage = G_OldBigMessage;
+	UIManager.UIAll.StatusMessage = G_OldStatusMessage;
+	
+	SM::UnspawnAllPlayers();
+	sleep(2000);
+	
+	// Restore timer
+	StartTime = G_OldStartTime;
+	EndTime = G_OldEndTime;
+	
+	G_LibWarmUp_IsInWarmUp = False;
+	XmlRpc::SendCallback(C_Callback_WarmUp_End, ["{}"]);
+}
+
+// ---------------------------------- //
+/// Library update
+Void Yield() {
+	foreach (Event in XmlRpc.PendingEvents) {
+		if (Event.Type == CXmlRpcEvent::EType::CallbackArray) {
+			switch (Event.ParamArray1) {
+				case C_Method_WarmUp_GetStatus: {
+					declare ResponseId = "";
+					if (Event.ParamArray2.existskey(0)) ResponseId = Event.ParamArray2[0];
+					XmlRpc::SendCallback(C_Callback_WarmUp_Status, ["""{
+	"responseid": {{{dump(ResponseId)}}},
+	"active": {{{XmlRpc::JsonGetBoolean(G_LibWarmUp_IsInWarmUp)}}}
+}"""]);
+				}
+			}
+		}
+	}
+}
+
+// ---------------------------------- //
+/// Unload the library
+Void Unload() {
+	G_LibWarmUp_IsInWarmUp = False;
+	
+	XmlRpc::UnregisterCallback(C_Callback_WarmUp_Start);
+	XmlRpc::UnregisterCallback(C_Callback_WarmUp_End);
+	XmlRpc::UnregisterCallback(C_Callback_WarmUp_Status);
+	
+	XmlRpc::UnregisterMethod(C_Method_WarmUp_Extend);
+	XmlRpc::UnregisterMethod(C_Method_WarmUp_Stop);
+	XmlRpc::UnregisterMethod(C_Method_WarmUp_GetStatus);
+}
+
+// ---------------------------------- //
+/// Load the library
+Void Load() {
+	Unload();
+	
+	XmlRpc::RegisterCallback(C_Callback_WarmUp_Start, """
+* Name: {{{C_Callback_WarmUp_Start}}}
+* Type: CallbackArray
+* Description: Callback sent when the warmup starts.
+* Data:
+	- Version >=2.0.0:
+	```
+	[
+		"{}"
+	]
+	```
+""");
+	XmlRpc::RegisterCallback(C_Callback_WarmUp_End, """
+* Name: {{{C_Callback_WarmUp_End}}}
+* Type: CallbackArray
+* Description: Callback sent when the warmup ends.
+* Data:
+	- Version >=2.0.0:
+	```
+	[
+		"{}"
+	]
+	```
+""");
+	XmlRpc::RegisterCallback(C_Callback_WarmUp_Status, """
+* Name: {{{C_Callback_WarmUp_Status}}}
+* Type: CallbackArray
+* Description: The status of the warmup.
+* Data:
+	- Version >=2.0.0:
+	```
+	[
+		"{
+			"responseid": "xyz", //< Facultative id passed by a script event
+			"active": true //< true if a warmup is ongoing, false otherwise
+		}"
+	]
+	```
+""");
+
+	XmlRpc::RegisterMethod(C_Method_WarmUp_Extend, """
+* Name: {{{C_Method_WarmUp_Extend}}}
+* Type: TriggerModeScriptEventArray
+* Description: Extend the duration of any ongoing warmup.
+* Data:
+	- Version >=2.0.0:
+	```
+	[
+		"60000" //< the duration of the extension in milliseconds.
+	]
+	```
+""");
+	XmlRpc::RegisterMethod(C_Method_WarmUp_Stop, """
+* Name: {{{C_Method_WarmUp_Stop}}}
+* Type: TriggerModeScriptEventArray
+* Description: Stop any ongoing warmup.
+* Data:
+	- Version >=2.0.0:
+	```
+	[]
+	```
+""");
+	XmlRpc::RegisterMethod(C_Method_WarmUp_GetStatus, """
+* Name: {{{C_Method_WarmUp_GetStatus}}}
+* Type: TriggerModeScriptEventArray
+* Description: Get the status of the warmup.
+* Data:
+	- Version >=2.0.0:
+	```
+	[
+		"responseid" //< Facultative id that will be passed to the "{{{C_Callback_WarmUp_Status}}}" callback.
+	]
+	```
+""");
+}

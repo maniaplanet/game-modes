@@ -1,0 +1,901 @@
+/**
+* Rules Quiz library
+* Run a quiz 
+*/
+
+
+#Const Version "2017-15-05"
+#Const ScriptName "QuizInterface.Script.txt"
+
+#Include "TextLib" as TL
+#Include "Libs/Nadeo/Manialink3.Script.txt" as Manialink
+
+//-------------------------//
+// Globales
+//-------------------------//
+
+declare Text G_LibQuizInterface_Name;													//<The name of the mode
+declare Text G_LibQuizInterface_LicenceName;										//<The name of the licence linked to the mode
+declare Integer G_LibQuizInterface_QuestionNumber; 						//<The number of questions in the quiz
+
+declare Ident G_LibQuizInterface_LayerQuizId;									//<The id of the layer containing the cancas
+
+declare Text[] G_LibQuizInterface_QuestionsArray;				//<An array with all the questions of the quiz
+declare Text[] G_LibQuizInterface_Answers1Array;				//<An array with all the first answers for all questions
+declare Boolean[] G_LibQuizInterface_IsCorrect1Array;	//<An array with all the values of the first answers
+declare Text[] G_LibQuizInterface_Answers2Array;				//<An array with all the second answers for all questions			
+declare Boolean[] G_LibQuizInterface_IsCorrect2Array;	//<An array with all the values of the second answers
+declare Text[] G_LibQuizInterface_Answers3Array;				//<An array with all the third answers for all questions
+declare Boolean[] G_LibQuizInterface_IsCorrect3Array;	//<An array with all the values of the third answers
+declare Text[] G_LibQuizInterface_PicturesArray;				//<An array with all the pictures URL
+
+//-------------------------//
+// Getters
+//-------------------------//
+/** Return the version number of the script
+*
+* @return The version number of the script
+*/
+
+Text GetScriptVersion(){
+	return Version;
+}
+
+// ---------------------------------- //
+/** Return the name of the script
+ *
+ *	@return		The name of the script
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+// ---------------------------------- //
+/** Inject the rules visibility variable
+ *	into a manialink script with the
+ *	given variable name
+ *
+ *	@param	_VariableName							The name to give to the variable
+ */
+Text InjectMLRulesVisibilityVariable(Text _VariableName) {
+	return """declare Quiz_RulesAreVisible as {{{_VariableName}}} for UI = False;""";
+}
+//---------------------------------- //
+// Setters
+//---------------------------------- //
+/** Define the name of the licence of the mode
+*
+* @param _LicenceName text defining the name of the licence stored localy
+*
+*/
+Void SetLicenceName(Text _LicenceName){
+	G_LibQuizInterface_LicenceName  = "Persistent_";
+	G_LibQuizInterface_LicenceName ^= _LicenceName;
+}
+
+/** Define the name of the mode
+*
+* @param _Name text defining the name of the mode displayed in the interface
+*
+*/
+Void SetName(Text _Name){
+	G_LibQuizInterface_Name = _Name;
+}
+
+/** Define the Question index, the text of the question and a picture linked to the question
+*
+*	@param _Question text defining the question
+* @param _Image text defining the Url of a picture relative to the question
+*/
+Void AddQuestion(Text _Question, Text _Image){
+	G_LibQuizInterface_QuestionsArray.add(_Question);
+	G_LibQuizInterface_QuestionNumber = G_LibQuizInterface_QuestionsArray.count; 	
+	G_LibQuizInterface_PicturesArray.add(_Image);
+}
+
+//OVERLOAD
+
+Void AddQuestion(Text _Question){
+	AddQuestion(_Question,"");
+}
+
+/** Define the answers of a question and their value (true or false)
+*
+*	@param _Answer1 text defining the first answer, the first choice
+* @param _IsCorrect1 boolean defining if the first answer is true or false
+* @param _Answer2 text defining the first answer, the first choice
+* @param _IsCorrect2 boolean defining if the second answer is true or false
+* @param _Answer3 text defining the first answer, the first choice
+* @param _IsCorrect3 boolean defining if the third answer is true or false
+*
+**/
+Void AddAnswers(Text _Answer1, Boolean _IsCorrect1, Text _Answer2, Boolean _IsCorrect2, Text _Answer3, Boolean _IsCorrect3){
+	G_LibQuizInterface_Answers1Array.add(_Answer1);
+	G_LibQuizInterface_Answers2Array.add(_Answer2);
+	G_LibQuizInterface_Answers3Array.add(_Answer3);
+	G_LibQuizInterface_IsCorrect1Array.add(_IsCorrect1);
+	G_LibQuizInterface_IsCorrect2Array.add(_IsCorrect2);
+	G_LibQuizInterface_IsCorrect3Array.add(_IsCorrect3);
+}
+
+// ---------------------------------- //
+// Reset
+// ---------------------------------- //
+
+/**
+*	Reset all the arrays
+**/
+Void Load(){
+	G_LibQuizInterface_QuestionsArray.clear();
+	G_LibQuizInterface_Answers1Array.clear();
+	G_LibQuizInterface_IsCorrect1Array.clear();
+	G_LibQuizInterface_Answers2Array.clear();
+	G_LibQuizInterface_IsCorrect2Array.clear();
+	G_LibQuizInterface_Answers3Array.clear();
+	G_LibQuizInterface_IsCorrect3Array.clear();
+	G_LibQuizInterface_PicturesArray.clear();
+}
+
+// ---------------------------------- //
+// Private Functions
+// ---------------------------------- //
+
+/** Create the manialink for the quiz
+*
+* @param _StartHidden boolean defining if the quiz is visible or not at the launch
+*
+**/
+
+Text Private_CreateLayerQuiz(Boolean _StartHidden){
+	declare ML="";
+	// Defining all to text to be translate
+	//L16N As a driving licence allowes to drive, this licence allowes the player to play a game mode
+	declare Text QuizTitle = _("Licence To Play");
+	declare Text QuizSubtitleWelcome = G_LibQuizInterface_Name;
+	declare Text QuizSubtitleCongratulations = G_LibQuizInterface_Name;
+	declare Text QuizSubtitleQuestion = _("Question");
+	declare Text QuizWelcomeText = TL::Compose("%1\n%2\n%3",_("To get your licence to play, you have to take a quiz on the rules of the mode."),_("You can read them anytime."),_("This licence gives you access to the lobby of the mode."));
+	declare Text QuizCongratulationText = TL::Compose("%1\n%2\n%3",_("Congrats!"),_("You just got your licence to play!"
+	),_("You can now join the lobby of the mode!"));
+	
+	declare Text Rules = _("|Verb Infinitive|Show Rules");
+	declare Text StartQuiz = _("|Verb Infinitive|Start Quiz");
+	declare Text GiveUpQuiz=_("|Verb Infinitive|Give Up");
+	declare Text QuitQuiz = _("|Verb Infinitive|Join Lobby");
+	
+	declare Text LicenceName ="";
+	declare Text SetLicence ="";
+	declare Text GetLicence ="";
+	
+	// Defining the licence that will be stored localy, and several actions needed
+	if(G_LibQuizInterface_LicenceName != ""){
+		LicenceName = """declare persistent Boolean {{{G_LibQuizInterface_LicenceName}}} for LocalUser = False;"""; 
+		SetLicence = """{{{G_LibQuizInterface_LicenceName}}} = True;""";
+		GetLicence = """{{{G_LibQuizInterface_LicenceName}}}""";
+	}
+	
+	
+	// Declare the global arrays for the client
+	declare Text QArrayText = "";
+	if(G_LibQuizInterface_QuestionsArray.count > 0) {
+		QArrayText = """Client_LibQuizInterface_QuestionsArray = {{{dump(G_LibQuizInterface_QuestionsArray)}}};""";
+	} 
+	declare Text A1ArrayText = "";
+	if(G_LibQuizInterface_Answers1Array.count > 0) {
+		A1ArrayText ="""Client_LibQuizInterface_Answers1Array = {{{dump(G_LibQuizInterface_Answers1Array)}}};""";
+	}
+	declare Text A2ArrayText = "";
+	if(G_LibQuizInterface_Answers2Array.count > 0) {
+		A2ArrayText ="""Client_LibQuizInterface_Answers2Array = {{{dump(G_LibQuizInterface_Answers2Array)}}};""";
+	}
+	declare Text A3ArrayText = "";
+	if(G_LibQuizInterface_Answers3Array.count > 0) {
+		A3ArrayText = """	Client_LibQuizInterface_Answers3Array = {{{dump(G_LibQuizInterface_Answers3Array)}}};""";
+	}
+	declare Text IC1ArrayText = "";
+	if(G_LibQuizInterface_IsCorrect1Array.count > 0){
+		IC1ArrayText = """Client_LibQuizInterface_IsCorrect1Array = {{{dump(G_LibQuizInterface_IsCorrect1Array)}}};""";
+	}
+	declare Text IC2ArrayText = "";
+	if(G_LibQuizInterface_IsCorrect2Array.count > 0) {
+		IC2ArrayText = """Client_LibQuizInterface_IsCorrect2Array = {{{dump(G_LibQuizInterface_IsCorrect2Array)}}};""";
+	}
+	declare Text IC3ArrayText = "";
+	if(G_LibQuizInterface_IsCorrect3Array.count > 0) {
+		IC3ArrayText ="""Client_LibQuizInterface_IsCorrect3Array = {{{dump(G_LibQuizInterface_IsCorrect3Array)}}};""";
+	}
+	
+	declare Text PArrayText = "";
+	if(G_LibQuizInterface_PicturesArray.count > 0) {
+		PArrayText ="""Client_LibQuizInterface_PicturesArray = {{{dump(G_LibQuizInterface_PicturesArray)}}};""";
+	}
+	
+	ML ^= """
+	<?xml version="1.0" encoding="utf-8" standalone="yes" ?>
+	<manialink version="3">
+	<script><!--
+	
+	#Include "TextLib" as TL
+	#Include "MathLib" as ML
+	{{{Manialink::DefaultIncludes()}}}
+	{{{Manialink::Animations(["EaseInExp","EaseInOutExp"])}}}
+	
+	Void HideWhileAnim(CMlLabel _GiveUpButton,CMlLabel _GiveUpText,CMlLabel _RulesButton,CMlLabel _RulesText, 
+	CMlQuad _GiveUpQuad, CMlQuad _RulesQuad){
+		_GiveUpButton.Visible = False;
+		_GiveUpText.Visible = False;
+		_RulesButton.Visible = False;
+		_RulesText.Visible = False;
+		_GiveUpQuad.Visible = False;
+		_RulesQuad.Visible = False;
+	} 
+	
+	Void ShowAfterAnim(CMlLabel _GiveUpButton,CMlLabel _GiveUpText,CMlLabel _RulesButton,CMlLabel _RulesText, 
+	CMlQuad _GiveUpQuad, CMlQuad _RulesQuad){
+		_GiveUpButton.Visible = True;
+		_GiveUpText.Visible = True;
+		_RulesButton.Visible = True;
+		_RulesText.Visible = True;
+		_GiveUpQuad.Visible = True;
+		_RulesQuad.Visible = True;
+	} 
+	
+	Void HideWhileAnimAnswers(Integer _IndexAnswer, CMlLabel[Integer] _ArrayStripes, CMlLabel[Integer] _ArrayText, 
+	CMlQuad[Integer] _ArrayQuad1, CMlQuad[Integer] _ArrayQuad2, CMlLabel[Integer] _ArrayButton ){
+		for(IndexAnswerBis,0,2){
+			if(IndexAnswerBis != _IndexAnswer){
+						_ArrayButton[IndexAnswerBis+1].Visible = False; 
+						_ArrayStripes[IndexAnswerBis+1].Visible = False;
+						_ArrayText[IndexAnswerBis+1].Visible = False;
+						_ArrayQuad1[IndexAnswerBis+1].Visible = False;
+						_ArrayQuad2[IndexAnswerBis+1].Visible = False;
+			}
+		}
+	}
+	
+	Void ShowAfterAnimAnswers(Integer _IndexAnswer, CMlLabel[Integer] _ArrayStripes, CMlLabel[Integer] _ArrayText, 
+	CMlQuad[Integer] _ArrayQuad1, CMlQuad[Integer] _ArrayQuad2, CMlLabel[Integer] _ArrayButton ){
+		for(IndexAnswerBis,0,2){
+			if(IndexAnswerBis != _IndexAnswer){
+						_ArrayButton[IndexAnswerBis+1].Visible = True; 
+						_ArrayStripes[IndexAnswerBis+1].Visible = True;
+						_ArrayText[IndexAnswerBis+1].Visible = True;
+						_ArrayQuad1[IndexAnswerBis+1].Visible = True;
+						_ArrayQuad2[IndexAnswerBis+1].Visible = True;
+			}
+		}
+	}	
+		
+	main(){
+	
+	//Declaring all the arrays for the client
+	declare Text[] Client_LibQuizInterface_QuestionsArray;
+	{{{QArrayText}}}
+	declare Text[] Client_LibQuizInterface_Answers1Array;
+	{{{A1ArrayText}}}
+	declare Boolean[] Client_LibQuizInterface_IsCorrect1Array;
+	{{{IC1ArrayText}}}
+	declare Text[] Client_LibQuizInterface_Answers2Array;
+	{{{A2ArrayText}}}
+	declare Boolean[] Client_LibQuizInterface_IsCorrect2Array;
+	{{{IC2ArrayText}}}
+	declare Text[] Client_LibQuizInterface_Answers3Array;
+	{{{A3ArrayText}}}
+	declare Boolean[] Client_LibQuizInterface_IsCorrect3Array;
+	{{{IC3ArrayText}}}
+	declare Text[] Client_LibQuizInterface_PicturesArray;
+	{{{PArrayText}}}
+	
+	{{{LicenceName}}}
+
+	//Declaring some vector to change color while using the quiz
+	declare Vec3 Red = <1.0,0.1,0.1>;
+	declare Vec3 White = <1.0,1.0,1.0>;
+	declare Vec3 Black = <0.0,0.0,0.0>;
+	declare Vec3 Green = <0.1,1.0,0.1>;
+	
+	
+	
+	//Defining if the title has to be at its initial position or position with a picture
+	declare Boolean TitlePos = False;
+	
+	//Defining the index of the first question
+	declare Integer PageIndex = 0;
+	
+	declare Integer QuestionsNumber = {{{G_LibQuizInterface_QuestionNumber}}};
+	declare Text QuizSubtitleValue;
+	declare Integer Delay = 0;
+	
+	//Defining how long the interface will be frozen during a good or bad answer
+	declare Integer FeedbackDelayGood = 30;
+	declare Integer TitleAnimDuration = 600;
+	declare Integer PictureAnimDuration = 400;
+	declare Integer TextAnimDuration = 200;
+	declare Integer FeedbackDelayBad  = 500;
+	
+	//Defining all Quad/Frame/Label
+	
+	declare Frame_QuizMain 			<=> (Page.GetFirstChild("Frame_QuizMain") as CMlFrame);
+	declare Frame_QuizStart			<=>	(Page.GetFirstChild("Frame_QuizStart") as CMlFrame);
+	declare Frame_QuizQuestion		<=>	(Page.GetFirstChild("Frame_QuizQuestion") as CMlFrame);
+	declare Frame_QuizEnd				<=>	(Page.GetFirstChild("Frame_QuizEnd") as CMlFrame);
+	
+	declare Button_Rules 				<=> (Page.GetFirstChild("Button_Rules") as CMlLabel);
+	declare Label_RulesText 			<=> (Page.GetFirstChild("Label_RulesText") as CMlLabel);
+	declare Quad_RulesBg					<=> (Page.GetFirstChild("Quad_RulesBg") as CMlQuad);
+	
+	declare Button_Continue 			<=> (Page.GetFirstChild("Button_Continue") as CMlLabel);
+	declare Label_ContinueText 	<=> (Page.GetFirstChild("Label_ContinueText") as CMlLabel);
+	declare Quad_ContinueBg			<=> (Page.GetFirstChild("Quad_ContinueBg") as CMlQuad);
+	
+	declare Button_Join 					<=> (Page.GetFirstChild("Button_Join") as CMlLabel);
+	declare Label_JoinText 			<=> (Page.GetFirstChild("Label_JoinText") as CMlLabel);
+	declare Quad_JoinBg					<=> (Page.GetFirstChild("Quad_JoinBg") as CMlQuad);
+	
+	declare Button_GiveUp				<=> (Page.GetFirstChild("Button_Join") as CMlLabel);
+	declare Label_GiveUpText			<=> (Page.GetFirstChild("Label_GiveUpText") as CMlLabel);
+	declare Quad_GiveUpBg					<=> (Page.GetFirstChild("Quad_GiveUpBg") as CMlQuad);
+	
+	declare Label_Question				<=> (Page.GetFirstChild("Label_Question") as CMlLabel);
+	
+	declare CMlLabel[Integer] Array_Button_Answer;
+	declare CMlLabel[Integer] Array_Label_AnswerStripe;
+	declare CMlLabel[Integer] Array_Label_AnswerText;
+	declare CMlQuad[Integer] Array_Quad_Feedback;
+	declare CMlLabel[Integer] Array_Label_Timer;
+	declare CMlQuad[Integer] Array_Quad_Bg;
+	
+	for(CurrentAnswer,1,3){
+		Array_Button_Answer[CurrentAnswer]					<=>	(Page.GetFirstChild("Button_Answer"^CurrentAnswer) as CMlLabel);
+		Array_Label_AnswerStripe[CurrentAnswer]		<=> (Page.GetFirstChild("Label_AnswerStripe"^CurrentAnswer) as CMlLabel);
+		Array_Label_AnswerText[CurrentAnswer]			<=> (Page.GetFirstChild("Label_AnswerText"^CurrentAnswer) as CMlLabel);
+		Array_Quad_Feedback[CurrentAnswer]					<=> (Page.GetFirstChild("Quad_Feedback"^CurrentAnswer) as CMlQuad);
+		Array_Label_Timer[CurrentAnswer]						<=> (Page.GetFirstChild("Label_Timer"^CurrentAnswer) as CMlLabel);
+		Array_Quad_Bg[CurrentAnswer]								<=> (Page.GetFirstChild("Quad_Bg"^CurrentAnswer) as CMlQuad);
+	}
+	
+	declare Frame_QuizTitle  					<=> (Page.GetFirstChild("Frame_QuizTitle") as CMlFrame);
+	declare Label_Title								<=> (Page.GetFirstChild("Label_Title") as CMlLabel);
+	declare Label_QuizSubtitle					<=> (Page.GetFirstChild("Label_QuizSubtitle") as CMlLabel);
+	declare Label_QuizCongratulations 	<=> (Page.GetFirstChild("Label_QuizCongratulations") as CMlLabel);
+	declare Label_QuizWelcome				 	<=> (Page.GetFirstChild("Label_QuizWelcome") as CMlLabel);
+	declare Quad_Picture								<=> (Page.GetFirstChild("Quad_Picture") as CMlQuad);
+	
+	//Declaring an array with the values of the answers of one question
+	declare Boolean [] AnswerTrue;
+	AnswerTrue = [False,False,False];
+	declare Boolean [] AnswerFalse;
+	AnswerFalse = [False,False,False];
+	
+	declare Boolean EndQuiz = False;
+	declare Boolean GaveUp = False;
+	declare Boolean LoadPicture = False;
+	declare Boolean AnimWelcome for UI;
+	AnimWelcome = False;
+	
+	declare Boolean ShowQuiz for UI;
+	ShowQuiz = False;
+	declare Boolean Licence for UI;
+	declare LicenceName for Teams[0] ="";
+	LicenceName = "{{{G_LibQuizInterface_LicenceName}}}";
+	
+	
+	//Be careful, dead technique with yield
+	while(True){
+		yield;
+		Licence = {{{GetLicence}}};
+		LicenceName = "{{{G_LibQuizInterface_LicenceName}}}";
+		LibManialink_AnimLoop();
+		
+		if(ShowQuiz){
+			Frame_QuizMain.Visible = True;
+		}else{
+			Frame_QuizMain.Visible = False;
+		}
+		
+		if(AnimWelcome && Frame_QuizStart.Visible == True){
+			AnimWelcome = False;
+			LibManialink_Anim({{{Manialink::Inject("""<frame pos="0 0" 
+			id="Frame_QuizTitle" />""")}}},TitleAnimDuration, "EaseInOutExp");
+			Label_Title.Opacity = 0.0;
+			LibManialink_Anim({{{Manialink::Inject("""<label opacity="1.0" 
+			id="Label_Title" />""")}}},TextAnimDuration, "EaseInExp");
+			Label_QuizSubtitle.Opacity = 0.0;
+			LibManialink_Anim({{{Manialink::Inject("""<label opacity="1.0" 
+			id="Label_QuizSubtitle" />""")}}},TextAnimDuration, "EaseInExp");
+			Label_QuizWelcome.Opacity = 0.0;
+			LibManialink_Anim({{{Manialink::Inject("""<label opacity="1.0" 
+			id="Label_QuizWelcome" />""")}}},TextAnimDuration, "EaseInExp");
+			Label_ContinueText.Opacity = 0.0;
+			LibManialink_Anim({{{Manialink::Inject("""<label opacity="1.0" 
+			id="Label_ContinueText" />""")}}},TextAnimDuration, "EaseInExp");
+			Label_RulesText.Opacity = 0.0;
+			LibManialink_Anim({{{Manialink::Inject("""<label opacity="1.0" 
+			id="Label_RulesText" />""")}}},TextAnimDuration, "EaseInExp");	
+		}
+		
+		//Creating all effects and feedbacks between the welcoming frame and the question frame
+		if(PageIndex == 0 && TitlePos){
+		
+			Label_Question.Value = Client_LibQuizInterface_QuestionsArray[PageIndex];
+			Label_RulesText.Opacity = 0.0;
+			LibManialink_Anim({{{Manialink::Inject("""<label opacity="1.0" 
+			id="Label_RulesText" />""")}}},TextAnimDuration, "EaseInExp");
+			Label_GiveUpText.Opacity = 0.0;
+			LibManialink_Anim({{{Manialink::Inject("""<label opacity="1.0" 
+			id="Label_GiveUpText" />""")}}},TextAnimDuration, "EaseInExp");
+			Label_Question.Opacity = 0.0;
+			LibManialink_Anim({{{Manialink::Inject("""<label opacity="1.0" 
+			id="Label_Question" />""")}}},TextAnimDuration, "EaseInExp");
+			Array_Label_AnswerText[1].Value = Client_LibQuizInterface_Answers1Array[PageIndex];
+			Array_Label_AnswerText[1].Opacity = 0.0;
+			LibManialink_Anim({{{Manialink::Inject("""<label opacity="1.0" 
+			id="Label_AnswerText1" />""")}}},TextAnimDuration, "EaseInExp");
+			Array_Label_AnswerText[2].Value = Client_LibQuizInterface_Answers2Array[PageIndex];
+			Array_Label_AnswerText[2].Opacity = 0.0;
+			LibManialink_Anim({{{Manialink::Inject("""<label opacity="1.0" 
+			id="Label_AnswerText2" />""")}}},TextAnimDuration, "EaseInExp");
+			Array_Label_AnswerText[3].Value = Client_LibQuizInterface_Answers3Array[PageIndex];
+			Array_Label_AnswerText[3].Opacity = 0.0;
+			LibManialink_Anim({{{Manialink::Inject("""<label opacity="1.0" 
+			id="Label_AnswerText3" />""")}}},TextAnimDuration, "EaseInExp");
+			QuizSubtitleValue = TL::Compose("%1%2%3%4%5","{{{QuizSubtitleQuestion}}}"," ",""^PageIndex+1,"/",
+			""^QuestionsNumber);
+			Label_QuizSubtitle.Opacity = 0.0;
+			LibManialink_Anim({{{Manialink::Inject("""<label opacity="1.0" 
+			id="Label_QuizSubtitle" />""")}}},TextAnimDuration, "EaseInExp");
+			Label_QuizSubtitle.Value = QuizSubtitleValue;
+			Quad_Picture.ChangeImageUrl(Client_LibQuizInterface_PicturesArray[PageIndex]);
+			Quad_Picture.Opacity = 0.0;
+			if(TitlePos){
+					LibManialink_Anim({{{Manialink::Inject("""<frame pos="0 40" 
+					id="Frame_QuizTitle" />""")}}},TitleAnimDuration, "EaseInOutExp");
+					LibManialink_Anim({{{Manialink::Inject("""<quad opacity="1.0" 
+					id="Quad_Picture" />""")}}},PictureAnimDuration, "EaseInExp");
+			}
+			TitlePos = False;
+			Frame_QuizStart.Visible = False;
+			Frame_QuizQuestion.Visible = True;
+		}
+		
+		//Creating all effects and feedbacks between the question frame and the closing of the quiz
+		if(GaveUp){
+			LibManialink_Anim({{{Manialink::Inject("""<quad opacity="0.0" 
+			id="Quad_Picture" />""")}}},PictureAnimDuration, "EaseInExp");	
+			GaveUp = False;
+		}
+		
+		//Creating all effects and feedbacks between the two questions
+		for(IndexAnswer,0,2){
+			if(AnswerTrue[IndexAnswer]){
+				AnswerTrue[IndexAnswer] = False;
+				Array_Label_AnswerStripe[IndexAnswer+1].Value = "";
+				if(PageIndex <= QuestionsNumber-1 ){
+					if(Client_LibQuizInterface_PicturesArray[PageIndex] == ""){
+						TitlePos = False;
+						Quad_Picture.ChangeImageUrl(Client_LibQuizInterface_PicturesArray[PageIndex]);
+					}else{
+						TitlePos = True;
+					}
+				}
+				HideWhileAnimAnswers(IndexAnswer, Array_Label_AnswerStripe, Array_Label_AnswerText, Array_Quad_Feedback, 
+				Array_Quad_Bg, Array_Button_Answer);
+				HideWhileAnim(Button_GiveUp, Label_GiveUpText, Button_Rules, Label_RulesText, Quad_RulesBg, Quad_GiveUpBg);
+				declare Integer Delay = 0;
+				declare Real Length = 120.0;
+				while(Delay < FeedbackDelayGood){
+					yield; //be careful
+					Delay +=1;
+					Array_Quad_Feedback[IndexAnswer+1].Size =<Length,10.>;
+					Array_Quad_Feedback[IndexAnswer+1].BgColor= Green;
+					Array_Quad_Feedback[IndexAnswer+1].Opacity= 0.65;
+					if(TitlePos){
+						LibManialink_Anim({{{Manialink::Inject("""<frame pos="0 40" 
+						id="Frame_QuizTitle" />""")}}},TitleAnimDuration, "EaseInOutExp");
+					}else{
+						LibManialink_Anim({{{Manialink::Inject("""<frame pos="0 0" 
+						id="Frame_QuizTitle" />""")}}},TitleAnimDuration, "EaseInExp");
+					}
+				}
+				ShowAfterAnimAnswers(IndexAnswer, Array_Label_AnswerStripe, Array_Label_AnswerText, Array_Quad_Feedback, 
+				Array_Quad_Bg, Array_Button_Answer);
+				ShowAfterAnim(Button_GiveUp, Label_GiveUpText, Button_Rules, Label_RulesText, Quad_RulesBg, Quad_GiveUpBg);
+				Array_Quad_Feedback[IndexAnswer+1].Size =<1.5,10.>;
+				Array_Quad_Feedback[IndexAnswer+1].BgColor= White;
+				Array_Label_AnswerStripe[IndexAnswer+1].Value = ">";
+				Array_Label_AnswerStripe[IndexAnswer+1].TextColor = Red ;
+				Array_Label_AnswerText[IndexAnswer+1].TextColor = White ;
+				Delay = 0;
+				if(!EndQuiz){
+					Label_Question.Value = Client_LibQuizInterface_QuestionsArray[PageIndex];
+					Label_RulesText.Opacity = 0.0;
+					LibManialink_Anim({{{Manialink::Inject("""<label opacity="1.0" 
+					id="Label_RulesText" />""")}}},TextAnimDuration, "EaseInExp");
+					Label_GiveUpText.Opacity = 0.0;
+					LibManialink_Anim({{{Manialink::Inject("""<label opacity="1.0" 
+					id="Label_GiveUpText" />""")}}},TextAnimDuration, "EaseInExp");
+					Label_Question.Opacity = 0.0;
+					LibManialink_Anim({{{Manialink::Inject("""<label opacity="1.0" 
+					id="Label_Question" />""")}}},TitleAnimDuration, "EaseInExp");
+					Array_Label_AnswerText[1].Value = Client_LibQuizInterface_Answers1Array[PageIndex]; 
+					Array_Label_AnswerText[1].Opacity = 0.0;
+					LibManialink_Anim({{{Manialink::Inject("""<label opacity="1.0" 
+					id="Label_AnswerText1" />""")}}},TextAnimDuration, "EaseInExp");
+					Array_Label_AnswerText[2].Value = Client_LibQuizInterface_Answers2Array[PageIndex];
+					Array_Label_AnswerText[2].Opacity = 0.0;
+					LibManialink_Anim({{{Manialink::Inject("""<label opacity="1.0" 
+					id="Label_AnswerText2" />""")}}},TextAnimDuration, "EaseInExp");
+					Array_Label_AnswerText[3].Value = Client_LibQuizInterface_Answers3Array[PageIndex];
+					QuizSubtitleValue = TL::Compose("%1%2%3%4%5","{{{QuizSubtitleQuestion}}}"," ",""^PageIndex+1,"/",
+					""^QuestionsNumber);
+					Array_Label_AnswerText[3].Opacity = 0.0;
+					LibManialink_Anim({{{Manialink::Inject("""<label opacity="1.0" 
+					id="Label_AnswerText3" />""")}}},TextAnimDuration, "EaseInExp");
+					Label_QuizSubtitle.Value = QuizSubtitleValue;
+					Label_QuizSubtitle.Opacity = 0.0;
+					LibManialink_Anim({{{Manialink::Inject("""<label opacity="1.0" 
+					id="Label_QuizSubtitle" />""")}}},TextAnimDuration, "EaseInExp");
+					Quad_Picture.Opacity = 0.0;
+					Quad_Picture.ChangeImageUrl(Client_LibQuizInterface_PicturesArray[PageIndex]);
+					LibManialink_AnimInsert({{{Manialink::Inject("""<quad opacity="1.0" 
+					id="Quad_Picture" />""")}}},PictureAnimDuration, TitleAnimDuration,"EaseInExp");
+					LoadPicture = True ;
+				}
+			}
+			if(AnswerFalse[IndexAnswer]){
+				AnswerFalse[IndexAnswer] = False;
+				Array_Label_AnswerStripe[IndexAnswer+1].Value = "";
+				declare Integer Delay = 0;
+				declare Real Length = 120.0;
+				declare Integer TimerValue = FeedbackDelayBad/100;
+				HideWhileAnimAnswers(IndexAnswer, Array_Label_AnswerStripe, Array_Label_AnswerText, Array_Quad_Feedback, 
+				Array_Quad_Bg, Array_Button_Answer);
+				HideWhileAnim(Button_GiveUp, Label_GiveUpText, Button_Rules, Label_RulesText, Quad_RulesBg, Quad_GiveUpBg);
+				while(Delay < FeedbackDelayBad){
+					yield; //be careful
+					Delay +=1;
+					Length -= 120.0/FeedbackDelayBad;
+					Array_Quad_Feedback[IndexAnswer+1].Size = <Length,10.>;
+					Array_Quad_Feedback[IndexAnswer+1].BgColor= Red;
+					Array_Quad_Feedback[IndexAnswer+1].Opacity= 0.65;
+					if(Delay%100 == 0){
+						TimerValue -=1 ;
+					}
+					Array_Label_Timer[IndexAnswer+1].Value = ""^TimerValue;
+				}
+				ShowAfterAnimAnswers(IndexAnswer, Array_Label_AnswerStripe, Array_Label_AnswerText, Array_Quad_Feedback, 
+				Array_Quad_Bg, Array_Button_Answer);
+				ShowAfterAnim(Button_GiveUp, Label_GiveUpText, Button_Rules, Label_RulesText, Quad_RulesBg, Quad_GiveUpBg);
+				Array_Label_Timer[IndexAnswer+1].Value = "";
+				Array_Quad_Feedback[IndexAnswer+1].Size = <1.5,10.>;
+				Array_Quad_Feedback[IndexAnswer+1].BgColor= White;
+				Array_Label_AnswerStripe[IndexAnswer+1].Value = ">";
+				Array_Label_AnswerStripe[IndexAnswer+1].TextColor = Red ;
+				Array_Label_AnswerText[IndexAnswer+1].TextColor = White ;
+				Delay = 0;
+			}
+		}
+		
+		//Creating all effects and feedbacks between the question frame and the congratulation frame
+		if(EndQuiz){
+			Frame_QuizQuestion.Visible = False;
+			Label_RulesText.Opacity = 0.0;
+			LibManialink_Anim({{{Manialink::Inject("""<label opacity="1.0" 
+			id="Label_RulesText" />""")}}},TextAnimDuration, "EaseInExp");
+			Label_JoinText.Opacity = 0.0;
+			LibManialink_Anim({{{Manialink::Inject("""<label opacity="1.0" 
+			id="Label_JoinText" />""")}}},TextAnimDuration, "EaseInExp");
+			LibManialink_Anim({{{Manialink::Inject("""<frame pos="0 0" 
+			id="Frame_QuizTitle" />""")}}},TextAnimDuration, "EaseInOutExp");
+			LibManialink_Anim({{{Manialink::Inject("""<quad opacity="0.0" 
+			id="Quad_Picture" />""")}}},PictureAnimDuration, "EaseInExp");
+			Label_QuizCongratulations.Opacity = 0.0;
+			LibManialink_Anim({{{Manialink::Inject("""<label opacity="1.0" 
+			id="Label_QuizCongratulations" />""")}}},TextAnimDuration, "EaseInExp");
+			EndQuiz =  False;
+			
+			Label_QuizSubtitle.Value = "{{{QuizSubtitleCongratulations}}}";
+			Label_QuizSubtitle.Opacity = 0.0;
+			LibManialink_Anim({{{Manialink::Inject("""<label opacity="1.0" 
+			id="Label_QuizSubtitle" />""")}}},TextAnimDuration, "EaseInExp");
+			
+			Frame_QuizEnd.Visible = True;
+		}
+		
+		
+		foreach (Event in PendingEvents){
+			switch(Event.Type){
+				case CMlEvent::Type::MouseClick:{
+					if(Event.ControlId == "Button_Continue"){
+					  if(Client_LibQuizInterface_PicturesArray[PageIndex] != ""){
+							TitlePos = True;
+						}else{
+							TitlePos = False;
+						}
+					}
+					declare Text ButtonId = "";
+					for(AnswerIndex,1,3){
+						ButtonId = "Button_Answer"^AnswerIndex;
+						if(Event.ControlId == ButtonId){
+							declare Boolean[] ArrayIsCorrect;
+							if(AnswerIndex == 1){
+									ArrayIsCorrect = Client_LibQuizInterface_IsCorrect1Array;
+							}else if(AnswerIndex == 2){
+									ArrayIsCorrect = Client_LibQuizInterface_IsCorrect2Array;
+							}else{
+									ArrayIsCorrect = Client_LibQuizInterface_IsCorrect3Array;
+							}
+							if(ArrayIsCorrect[PageIndex]){
+								PageIndex+=1;
+								if(PageIndex >= QuestionsNumber){
+									EndQuiz = True;
+									AnswerTrue[AnswerIndex-1] = True;
+								}else{
+									AnswerTrue[AnswerIndex-1] = True;
+								}
+							}else{
+								AnswerFalse[AnswerIndex-1] = True;
+							}	
+						}
+					}
+					if(Event.ControlId == "Button_GiveUp"){
+						PageIndex = 0;
+						ShowQuiz = False;
+						TitlePos = False;
+						GaveUp = True;
+						Label_QuizSubtitle.Value = "{{{QuizSubtitleWelcome}}}";
+						Frame_QuizQuestion.Visible = False;
+						Frame_QuizStart.Visible = True;
+					}
+					if(Event.ControlId == "Button_Join"){
+						ShowQuiz = False;
+						{{{SetLicence}}}
+					}
+					if(Event.ControlId == "Button_Rules"){
+						ShowQuiz = False;
+						declare Boolean Quiz_RulesAreVisible as Quiz_RulesAreVisible for UI;
+						Quiz_RulesAreVisible = True;						
+						declare Boolean FromQuiz for UI;
+						FromQuiz = True;
+					}
+				}
+				case CMlEvent::Type::MouseOver:{
+					if(Event.ControlId == "Button_Rules" ){
+						Label_RulesText.TextColor = Black;
+						Quad_RulesBg.BgColor = White;
+						Quad_RulesBg.Opacity = 0.4;
+					}
+					if(Event.ControlId == "Button_Continue" ){
+						Label_ContinueText.TextColor = Black;
+						Quad_ContinueBg.BgColor = White;
+						Quad_ContinueBg.Opacity = 0.4;
+					}
+					if(Event.ControlId == "Button_Join"){
+						Label_JoinText.TextColor = Black;
+						Quad_JoinBg.BgColor = White;
+						Quad_JoinBg.Opacity = 0.4;
+					}
+					
+					
+					if(Event.ControlId == "Button_GiveUp"){
+						Label_GiveUpText.TextColor = Black;
+						Quad_GiveUpBg.BgColor = White;
+						Quad_GiveUpBg.Opacity = 0.4;						
+					}
+					declare Text ButtonId = "";
+					for(AnswerIndex,1,3){
+						ButtonId = "Button_Answer"^AnswerIndex;
+						if(Event.ControlId == ButtonId){
+							Array_Label_AnswerText[AnswerIndex].TextColor = Black;
+							Array_Label_AnswerStripe[AnswerIndex].TextColor = Black;
+							Array_Quad_Bg[AnswerIndex].BgColor = White;
+							Array_Quad_Bg[AnswerIndex].Opacity = 0.4;
+						}
+					}
+				}
+				case CMlEvent::Type::MouseOut:{
+					if(Event.ControlId == "Button_Rules"){
+						Label_RulesText.TextColor = White;
+						Quad_RulesBg.BgColor = Black;
+						Quad_RulesBg.Opacity = 0.4;
+					}
+					if(Event.ControlId == "Button_Continue" ){
+						Label_ContinueText.TextColor = White;
+						Quad_ContinueBg.BgColor = Black;
+						Quad_ContinueBg.Opacity = 0.4;
+					}
+					if(Event.ControlId == "Button_Join"){
+						Label_JoinText.TextColor = White;
+						Quad_JoinBg.BgColor = Black;
+						Quad_JoinBg.Opacity = 0.4;
+					}
+					if(Event.ControlId == "Button_GiveUp"){
+						Label_GiveUpText.TextColor = White;
+						Quad_GiveUpBg.BgColor = Black;
+						Quad_GiveUpBg.Opacity = 0.4;
+					}
+					declare Text ButtonId = "";
+					for(AnswerIndex,1,3){
+						ButtonId = "Button_Answer"^AnswerIndex;
+						if(Event.ControlId == ButtonId){
+							Array_Label_AnswerText[AnswerIndex].TextColor = White;
+							Array_Label_AnswerStripe[AnswerIndex].TextColor = Red;
+							Array_Quad_Bg[AnswerIndex].BgColor = Black;
+							Array_Quad_Bg[AnswerIndex].Opacity = 0.4;
+						}
+					}
+				}
+			}
+		}
+	}
+	
+	}
+	--></script>
+	
+	<frame pos="-60 30 0" id="Frame_QuizMain" hidden="1">
+		<!--Main Frame and common elements-->
+		
+		<frame pos="0 40 30" id="Frame_QuizTitle">
+			<quad pos="-200 200" z-index="0" size="2000 2000" bgcolor="00000011" id="Quad_Background" scriptevents="1"/>
+			<quad pos="-200 200" z-index="0" size="2000 2000" style="Bgs1" substyle="BgDialogBlur" opacity="0.1" />
+			<label pos="4 0" z-index="30" size="195 14" text="{{{QuizTitle}}}" textsize="10" 
+			textfont="Oswald" textcolor="FFFFFFFF" textprefix="$s" id="Label_Title"/>
+			<label pos="4 -10" z-index="30" size="195 14" text="{{{QuizSubtitleWelcome}}}" textsize="7" 
+			textfont="Oswald" textcolor="FFFFFFFF" textprefix="$s" id="Label_QuizSubtitle"/>
+			<quad pos="0 0" z-index="30" size="2 18" bgcolor="FFFA" style="Bgs1" substyle="BgWindow4" id="Quad_Graph3"/>
+			<quad pos="0 -20" z-index="30" size="120 0.8" bgcolor="FFFA" style="Bgs1" substyle="BgWindow4" id="Quad_Graph1"/>
+			<quad pos="105 -19.3" z-index="30" size="15 1.3" bgcolor="FFFA" style="Bgs1" substyle="BgWindow4" id="Quad_Graph2"/>
+		</frame>	
+		
+		<quad pos="60.5 -83" z-index="25" size="59.5 10" bgcolor="00000066" id="Quad_RulesBg"/>
+		<quad pos="60.5 -83" z-index="24" size="59.5 10" style="Bgs1" substyle="BgDialogBlur" opacity="0.1"/>
+		<label pos="71.5 -85.5" z-index="30" size="59.5 10" text="{{{Rules}}}" textfont="Oswald" 
+		textcolor="FFFFFFFF" textsize="4" id="Label_RulesText"/>
+		<label pos="60.5 -83" z-index="28" size="59.5 10" id="Button_Rules"
+		focusareacolor1="00000000" focusareacolor2="00000000" scriptevents="1"/>
+		
+		
+		
+		<!--First Frame : Welcoming Frame-->
+		<frame pos="0 -23" z-index="10" id="Frame_QuizStart" hidden="0" >
+			<quad pos="0 0" z-index="25" size="120 55" bgcolor="00000066"/>
+			<quad pos="0 0" z-index="24" size="120 55" style="Bgs1" substyle="BgDialogBlur" opacity="0.1"/>
+			<label pos="10 -11" z-index="30" size="100 35" text="{{{QuizWelcomeText}}}" textsize="5" textfont="Oswald" 									textcolor="FFFFFFFF" autonewline="1" id="Label_QuizWelcome"/>
+			<quad pos="0 -58" z-index="30" size="120 0.8" bgcolor="FFFA" style="Bgs1" substyle="BgWindow4"/>
+			<quad pos="105 -57.3" z-index="30" size="15 1.3" bgcolor="FFFA" style="Bgs1" substyle="BgWindow4"/>
+			<quad pos="0 -60" z-index="25" size="59.5 10" bgcolor="00000066" id="Quad_ContinueBg"/>
+			<quad pos="0 -60" z-index="24" size="59.5 10" style="Bgs1" substyle="BgDialogBlur" opacity="0.1"/>
+			<label pos="11 -62.5" z-index="30" size="59.5 10" text="{{{StartQuiz}}}" textfont="Oswald" 
+			textcolor="FFFFFFFF" textsize="4" id="Label_ContinueText"/>
+			<label pos="0 -60" z-index="28" size="59.5 10" id="Button_Continue" 
+			focusareacolor1="00000000" focusareacolor2="00000000" scriptevents="1"/>
+		</frame>
+		
+		<!--Question Frame-->
+		<frame pos="0 -23" z-index="10" id="Frame_QuizQuestion" hidden="1">
+			
+			<quad pos="0 41" z-index="30" size="60 40" image="" id="Quad_Picture"/>
+			
+			<quad pos="0 -0" z-index="25" size="120 22" bgcolor="00000066"/>
+			<quad pos="0 -0" z-index="24" size="120 22" style="Bgs1" substyle="BgDialogBlur" opacity="0.1"/>
+			<label pos="5 -2.5" z-index="30" size="115 22" text="FrameQuestionText" textfont="Oswald" 
+			textcolor="FFFFFFFF" textsize="4" autonewline="1" maxline="3" id="Label_Question"/>
+	
+			<quad pos="0 -23" z-index="25" size="120 10" bgcolor="00000066" id="Quad_Bg1"/>
+			<quad pos="0 -23" z-index="24" size="120 10" style="Bgs1" substyle="BgDialogBlur" opacity="0.1"/>
+			<label pos="11 -25.5" z-index="30" size="107 10" text="LabelQuestionAnswer1" textfont="Oswald" 
+			textcolor="FFFFFFFF" textsize="4" id="Label_AnswerText1"/>
+			<label pos="5 -25" z-index="30" size="120 10" text=">" textfont="Oswald" textcolor="FF0000FF" textsize="4"
+			id="Label_AnswerStripe1"	/>
+			<label pos="0 -23" z-index="28" size="120 10" id="Button_Answer1" 
+		  focusareacolor1="00000000" focusareacolor2="00000000" scriptevents="1"/>
+			<quad pos="0 -23" z-index="28" halign="left" size="1.5 10" bgcolor="FFFFFFAA" id="Quad_Feedback1"/>
+			<label pos="115 -25" z-index="30" size="10 10" bgcolor="00000000" id="Label_Timer1" text="" textfont="Oswald"
+			textcolor="000000FF" textsize="6"/>
+		
+			<quad pos="0 -34" z-index="25" size="120 10" bgcolor="00000066" id="Quad_Bg2"/>
+			<quad pos="0 -34" z-index="24" size="120 10" style="Bgs1" substyle="BgDialogBlur" opacity="0.1"/>
+			<label pos="11 -36.5" z-index="30" size="107 10" text="LabelQuestionAnswer2" textfont="Oswald" 
+			textcolor="FFFFFFFF" textsize="4" id="Label_AnswerText2"/>
+			<label pos="5 -36" z-index="30" size="120 10" text=">" textfont="Oswald" textcolor="FF0000FF" textsize="4"
+			id="Label_AnswerStripe2"	/>
+			<label pos="0 -34" z-index="28" size="120 10" id="Button_Answer2" 
+		  focusareacolor1="00000000" focusareacolor2="00000000" scriptevents="1"/>
+			<quad pos="0-34" z-index="28" halign="left" size="1.5 10" bgcolor="FFFFFFAA" id="Quad_Feedback2"/>
+			<label pos="115 -36" z-index="30" size="10 10" bgcolor="00000000" id="Label_Timer2" text="" textfont="Oswald" 
+			textcolor="000000FF" textsize="6"/>
+		
+			<quad pos="0 -45" z-index="25" size="120 10" bgcolor="00000066" id="Quad_Bg3"/>
+			<quad pos="0 -45" z-index="24" size="120 10" style="Bgs1" substyle="BgDialogBlur" opacity="0.1"/>
+			<label pos="11 -47.5" z-index="30" size="107 10" text="LabelQuestionAnswer3" textfont="Oswald" 
+			textcolor="FFFFFFFF" textsize="4" id="Label_AnswerText3"/>
+			<label pos="5 -47" z-index="30" size="120 10" text=">" textfont="Oswald" textcolor="FF0000FF" textsize="4"
+			id="Label_AnswerStripe3"/>
+			<label pos="0 -45" z-index="28" size="120 10" id="Button_Answer3" 
+			focusareacolor1="00000000" focusareacolor2="00000000" scriptevents="1"/>
+			<quad pos="0 -45" z-index="28" halign="left" size="1.5 10" bgcolor="FFFFFFAA" id="Quad_Feedback3"/>
+			<label pos="115 -47" z-index="30" size="10 10" bgcolor="00000000" id="Label_Timer3" text="" textfont="Oswald"
+			textcolor="000000FF" textsize="6"/>
+		
+			<quad pos="0 -57" z-index="30" size="120 0.8" bgcolor="FFFA" style="Bgs1" substyle="BgWindow4"/>
+			<quad pos="105 -56.3" z-index="30" size="15 1.3" bgcolor="FFFA" style="Bgs1" substyle="BgWindow4"/>
+		
+			<quad pos="0 -60" z-index="25" size="59.5 10" bgcolor="00000066" id="Quad_GiveUpBg"/>
+			<quad pos="0 -60" z-index="24" size="59.5 10" style="Bgs1" substyle="BgDialogBlur" opacity="0.1"/>
+			<label pos="11 -62.5" z-index="30" size="59.5 10" text="{{{GiveUpQuiz}}}" textfont="Oswald" 
+			textcolor="FFFFFFFF" textsize="4"id="Label_GiveUpText"/>
+			<label pos="0 -60" z-index="30" size="59.5 10" id="Button_GiveUp"  
+			focusareacolor1="00000000" focusareacolor2="00000000" scriptevents="1"/>
+		</frame>
+		
+		<!--Last Frame : Congratulation Frame-->
+		<frame pos="0 -23" z-index="10" id="Frame_QuizEnd" hidden="1">
+			<quad pos="0 0" z-index="25" size="120 55" bgcolor="00000066"/>
+			<quad pos="0 0" z-index="24" size="120 55" style="Bgs1" substyle="BgDialogBlur" opacity="0.1"/>
+			<label pos="10 -11" z-index="30" size="100 35" text="{{{QuizCongratulationText}}}" textsize="5" textfont="Oswald" 						textcolor="FFFFFFFF" autonewline="1" id="Label_QuizCongratulations" />
+			<quad pos="0 -58" z-index="30" size="120 0.8" bgcolor="FFFA" style="Bgs1" substyle="BgWindow4"/>
+			<quad pos="105 -57.3" z-index="30" size="15 1.3" bgcolor="FFFA" style="Bgs1" substyle="BgWindow4"/>
+			<quad pos="0 -60" z-index="25" size="59.5 10" bgcolor="00000066" id="Quad_JoinBg"/>
+			<quad pos="0 -60" z-index="24" size="59.5 10" style="Bgs1" substyle="BgDialogBlur" opacity="0.1"/>
+			<label pos="11 -62.5" z-index="30" size="59.5 10" text="{{{QuitQuiz}}}" textfont="Oswald" 
+			textcolor="FFFFFFFF" textsize="4" id="Label_JoinText"/>
+			<label pos="0 -60" z-index="30" size="59.5 10" id="Button_Join"
+		  focusareacolor1="00000000" focusareacolor2="00000000" scriptevents="1"/>
+		</frame>
+	</frame>
+	</manialink>
+	""";
+	return ML;
+}
+// ---------------------------------- //
+/// Destroy the rules
+Void DestroyQuiz() {
+	if (G_LibQuizInterface_LayerQuizId != NullId && UIManager.UILayers.existskey(G_LibQuizInterface_LayerQuizId)) {
+		UIManager.UILayerDestroy(UIManager.UILayers[G_LibQuizInterface_LayerQuizId]);
+		G_LibQuizInterface_LayerQuizId = NullId;
+	}
+}
+
+// ---------------------------------- //
+/** Create the quiz 
+ *	@param	_StartHidden	Start with the quiz hidden
+ */
+Void CreateQuiz(Boolean _StartHidden) {
+	// Check if a quiz layer was already created and destroy it if it's the case
+	DestroyQuiz();
+	// Create and assign the layer
+	declare LayerQuiz <=> UIManager.UILayerCreate();
+	LayerQuiz.Type = CUILayer::EUILayerType::Normal;
+	LayerQuiz.ManialinkPage = Private_CreateLayerQuiz(_StartHidden);
+	G_LibQuizInterface_LayerQuizId = LayerQuiz.Id;
+	UIManager.UIAll.UILayers.add(LayerQuiz);
+	
+}
+
+//OVERLOAD
+Void CreateQuiz(){
+	CreateQuiz(True);
+}
+
+// ---------------------------------- //
+/// Attach the rules layer to all players
+Void AttachRules() {
+	if (UIManager.UIAll.UILayers.existskey(G_LibQuizInterface_LayerQuizId)) return;
+	if (!UIManager.UILayers.existskey(G_LibQuizInterface_LayerQuizId)) return;
+	
+	UIManager.UIAll.UILayers.add(UIManager.UILayers[G_LibQuizInterface_LayerQuizId]);
+}
+
+// ---------------------------------- //
+/// Detach the rules layer from all players
+Void DetachRules() {
+	if (!UIManager.UIAll.UILayers.existskey(G_LibQuizInterface_LayerQuizId)) return;
+	if (!UIManager.UILayers.existskey(G_LibQuizInterface_LayerQuizId)) return;
+	
+	declare Detached = UIManager.UIAll.UILayers.removekey(G_LibQuizInterface_LayerQuizId);
+}
+
+
+
+
+

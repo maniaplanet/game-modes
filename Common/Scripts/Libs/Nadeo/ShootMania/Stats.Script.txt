@@ -1,0 +1,290 @@
+/** 
+ *	Stats library
+ *	Collect stats about the players
+ */
+
+#Const Version		"2013-07-25"
+#Const ScriptName	"Stats.Script.txt"
+
+#Include "TextLib" as TL
+#Include "Libs/Nadeo/ShootMania/XmlRpc.Script.txt" as XmlRpc
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_SequenceServer		0
+#Const C_SequenceMatch		1
+#Const C_SequenceMap		2
+#Const C_SequenceSubmatch	3
+#Const C_SequenceRound		4
+#Const C_SequenceTurn		5
+#Const C_Sequences			[5,4,3,2,1,0]
+
+// ---------------------------------- //
+// Globales
+// ---------------------------------- //
+declare Integer[Integer] G_LibStats_DefaultSequenceInteger;
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+// Private
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Find the ::EWeapon from its name
+ *
+ *	@param	_WeaponName		The name of the weapon
+ *
+ *	@return		The weapon if found, ::EWeapon::Rocket otherwise
+ */
+CSmMode::EWeapon Private_GetWeaponFromName(Text _WeaponName) {
+	switch (_WeaponName) {
+		case "Rocket"	: return CSmMode::EWeapon::Rocket;
+		case "Laser"	: return CSmMode::EWeapon::Laser;
+		case "Nucleus"	: return CSmMode::EWeapon::Nucleus;
+		case "Arrow"	: return CSmMode::EWeapon::Arrow;
+	}
+	
+	return CSmMode::EWeapon::Rocket;
+}
+
+// ---------------------------------- //
+/** Find the sequence number from its name
+ *
+ *	@param	_SequenceName	The name of the sequence
+ *
+ *	@return		The sequence if found, C_SequenceServer otherwise
+ */
+Integer Private_GetSequenceFromName(Text _SequenceName) {
+	switch (_SequenceName) {
+		case "Server"	: return C_SequenceServer;
+		case "Match"	: return C_SequenceMatch;
+		case "Map"		: return C_SequenceMap;
+		case "Submatch"	: return C_SequenceSubmatch;
+		case "Round"	: return C_SequenceRound;
+		case "Turn"		: return C_SequenceTurn;
+	}
+	
+	return C_SequenceServer;
+}
+
+// ---------------------------------- //
+/** Send the number of hit made by the players with a weapon during a specific sequence
+ *
+ *	@param	_Weapon		The weapon to get
+ *	@param	_Sequence	The sequence to get
+ *	@param	_Logins		The players to get
+ */
+Void Private_SendWeaponsHasHit(CSmMode::EWeapon _Weapon, Integer _Sequence, Text[] _Logins) {
+	declare Response = Text[];
+	foreach (User in Users) {
+		if (_Logins.count > 0 && !_Logins.exists(User.Login)) continue;
+		
+		declare WeaponNum = GetWeaponNum(_Weapon);
+		declare WeaponsHasHit for User = Integer[Integer][Integer];
+		declare HasHit = 0;
+		if (WeaponsHasHit.existskey(WeaponNum)) HasHit = WeaponsHasHit[WeaponNum][_Sequence];
+		
+		Response.add(User.Login^":"^HasHit);
+	}
+	
+	if (XmlRpc::CallbackIsAllowed("Stats_WeaponsHasHit")) XmlRpc::SendCallbackArray("Stats_WeaponsHasHit", Response);
+}
+
+// ---------------------------------- //
+/** Reset the stats
+ *
+ *	@param	_Sequence	All stats under this sequence level will be reset
+ */
+Void Private_ResetStats(Integer _Sequence) {
+	foreach (User in Users) {
+		declare WeaponsHasHit for User = Integer[Integer][Integer];
+		foreach (Weapon => SequenceHits in WeaponsHasHit) {
+			foreach (Sequence in C_Sequences) {
+				if (Sequence < _Sequence) break;
+				WeaponsHasHit[Weapon][Sequence] = 0;
+			}
+		}
+		
+		declare WeaponsShoot for User = Integer[Integer][Integer];
+		foreach (Weapon => SequenceShoots in WeaponsShoot) {
+			foreach (Sequence in C_Sequences) {
+				if (Sequence < _Sequence) break;
+				WeaponsShoot[Weapon][Sequence] = 0;
+			}
+		}
+	}
+}
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Return the version number of the script
+ *
+ *	@return		The version number of the script
+ */
+Text GetScriptVersion() {
+	return Version;
+}
+
+// ---------------------------------- //
+/** Return the name of the script
+ *
+ *	@return		The name of the script
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+// ---------------------------------- //
+/// Unload the library
+Void Unload() {
+	foreach (User in Users) {
+		declare WeaponsHasHit for User = Integer[Integer][Integer];
+		WeaponsHasHit.clear();
+	}
+	
+	XmlRpc::UnregisterCallback("Stats_WeaponsHasHit");
+}
+
+// ---------------------------------- //
+/// Load the library
+Void Load() {
+	Unload();
+	
+	foreach (Sequence in C_Sequences) {
+		G_LibStats_DefaultSequenceInteger[Sequence] = 0;
+	}
+	
+	XmlRpc::RegisterCallback("Stats_WeaponsHasHit", "Hit statistic");
+}
+
+// ---------------------------------- //
+/// Start server
+Void StartServer() {
+	Private_ResetStats(C_SequenceServer);
+}
+
+// ---------------------------------- //
+/// Start match
+Void StartMatch() {
+	Private_ResetStats(C_SequenceMatch);
+}
+
+// ---------------------------------- //
+/// Start map
+Void StartMap() {
+	Private_ResetStats(C_SequenceMap);
+}
+
+// ---------------------------------- //
+/// Start submatch
+Void StartSubmatch() {
+	Private_ResetStats(C_SequenceSubmatch);
+}
+
+// ---------------------------------- //
+/// Start round
+Void StartRound() {
+	Private_ResetStats(C_SequenceRound);
+}
+
+// ---------------------------------- //
+/// Start turn
+Void StartTurn() {
+	Private_ResetStats(C_SequenceTurn);
+}
+
+// ---------------------------------- //
+/// End turn
+Void EndTurn() {
+	
+}
+
+// ---------------------------------- //
+/// End round
+Void EndRound() {
+	
+}
+
+// ---------------------------------- //
+/// End submatch
+Void EndSubmatch() {
+	
+}
+
+// ---------------------------------- //
+/// End map
+Void EndMap() {
+	
+}
+
+// ---------------------------------- //
+/// End match
+Void EndMatch() {
+	
+}
+
+// ---------------------------------- //
+/// End server
+Void EndServer() {
+	
+}
+
+// ---------------------------------- //
+/* Check OnHit event
+ *
+ *	@param	_Event		The OnHit event
+ */
+Void OnHit(CSmModeEvent _Event) {
+	if (_Event.Shooter != Null) {
+		declare WeaponsHasHit for _Event.Shooter.User = Integer[Integer][Integer];
+		if (!WeaponsHasHit.existskey(_Event.WeaponNum)) WeaponsHasHit[_Event.WeaponNum] = G_LibStats_DefaultSequenceInteger;
+		foreach (Sequence in C_Sequences) {
+			WeaponsHasHit[_Event.WeaponNum][Sequence] += 1;
+		}
+	}
+}
+
+// ---------------------------------- //
+/* Check OnShoot event
+ *
+ *	@param	_Event		The OnShoot event
+ */
+Void OnShoot(CSmModeEvent _Event) {
+	if (_Event.Shooter != Null) {
+		declare WeaponsShoot for _Event.Shooter.User = Integer[Integer][Integer];
+		if (!WeaponsShoot.existskey(_Event.WeaponNum)) WeaponsShoot[_Event.WeaponNum] = G_LibStats_DefaultSequenceInteger;
+		foreach (Sequence in C_Sequences) {
+			WeaponsShoot[_Event.WeaponNum][Sequence] += 1;
+		}
+	}
+}
+
+// ---------------------------------- //
+// Loop
+Void Loop() {
+	foreach (Event in XmlRpc.PendingEvents) {
+		switch (Event.Param1) {
+			case "LibStats_GetWeaponsHasHit": {
+				declare Params = TL::Split("|", Event.Param2);
+				if (Params.existskey(0) && Params.existskey(1)) {
+					declare Weapon = Private_GetWeaponFromName(Params[0]);
+					declare Sequence = Private_GetSequenceFromName(Params[1]);
+					declare Logins = Text[];
+					
+					if (Params.existskey(2)) {
+						declare Logins = TL::Split(",", Params[2]);
+					}
+					
+					Private_SendWeaponsHasHit(Weapon, Sequence, Logins);
+				}
+			}
+		} 
+	}
+}

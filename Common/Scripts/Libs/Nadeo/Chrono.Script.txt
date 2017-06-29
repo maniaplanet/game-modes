@@ -1,0 +1,382 @@
+/**
+ * Chrono library
+ */
+
+#Const Version		"2013-05-24"
+#Const ScriptName	"Chrono.Script.txt"
+
+#Const C_ChronoPosX 95.
+#Const C_ChronoPosY -88.
+// ---------------------------------- //
+// Globales
+// ---------------------------------- //
+declare Ident	G_LayerChronoId;
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+// Private
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Toggle the visibility of the chrono
+ *
+ *	@param	_PlayerId		The id of the timer owner, NullId for all players
+ *	@param	_Visible		The new visibility status of the chrono
+ */
+Void Private_ToggleVisibility(Ident _PlayerId, Boolean _Visible) {
+	if (_PlayerId == NullId) {
+		declare netwrite Integer Net_LibChrono_VisibilityAllUpdate for Teams[0];
+		declare netwrite Boolean Net_LibChrono_VisibilityAll for Teams[0];
+		Net_LibChrono_VisibilityAllUpdate = Now;
+		Net_LibChrono_VisibilityAll = _Visible;
+	} else {
+		if (!AllPlayers.existskey(_PlayerId)) return;
+		declare UI <=> UIManager.GetUI(AllPlayers[_PlayerId]);
+		if (UI == Null) return;
+		
+		declare netwrite Integer Net_LibChrono_VisibilityUpdate for UI;
+		declare netwrite Boolean Net_LibChrono_Visibility for UI;
+		Net_LibChrono_VisibilityUpdate = Now;
+		Net_LibChrono_Visibility = _Visible;
+	}
+}
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Return the version number of the script
+ *
+ *	@return		The version number of the script
+ */
+Text GetScriptVersion() {
+	return Version;
+}
+
+// ---------------------------------- //
+/** Return the name of the script
+ *
+ *	@return		The name of the script
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+// ---------------------------------- //
+/** Create the chrono manialink
+ *
+ * @return	The manialink Text
+ */
+Text CreateLayerChrono() {
+	return
+"""
+<manialink version="1" name="Lib_Chrono:Chrono">
+<script><!--
+	#Include "TextLib" as TextLib
+	
+	main() {
+		declare Label_Chrono <=> (Page.GetFirstChild("Chrono") as CMlLabel);
+		declare Frame_Chrono <=> (Page.GetFirstChild("FrameChrono") as CMlFrame);
+		declare netread ChronoNet_LayerUpdated for UI = 0;
+		declare netread ChronoNet_StartTime for UI = 0;
+		declare netread ChronoNet_StopTime for UI = 0;
+		declare netread ChronoNet_Reset for UI = False;
+		declare netread ChronoNet_PosX for UI = {{{C_ChronoPosX}}};
+		declare netread ChronoNet_PosY for UI = {{{C_ChronoPosY}}};
+		
+		declare netread Integer Net_LibChrono_VisibilityAllUpdate for Teams[0];
+		declare netread Integer Net_LibChrono_VisibilityUpdate for UI;
+		declare netread Boolean Net_LibChrono_VisibilityAll for Teams[0];
+		declare netread Boolean Net_LibChrono_Visibility for UI;
+		
+		declare LayerChronoUpdated = 0;
+		declare StartTime = 0;
+		declare StopTime = 0;
+		declare IsStop = False;
+		declare IsRun = False;
+		declare IsReset = True;
+		declare LastUpdate = 0;
+		
+		declare PrevVisibilityAllUpdate = 0;
+		declare PrevVisibilityUpdate = 0;
+		
+		while (True) {
+			yield;
+			if (LastUpdate + 25 > Now) continue;
+			LastUpdate = Now;
+			
+			if (PrevVisibilityAllUpdate != Net_LibChrono_VisibilityAllUpdate) {
+				PrevVisibilityAllUpdate = Net_LibChrono_VisibilityAllUpdate;
+				if (Net_LibChrono_VisibilityAll) {
+					Frame_Chrono.Show();
+				} else {
+					Frame_Chrono.Hide();
+				}
+			}
+			
+			if (PrevVisibilityUpdate != Net_LibChrono_VisibilityUpdate) {
+				PrevVisibilityUpdate = Net_LibChrono_VisibilityUpdate;
+				if (Net_LibChrono_Visibility) {
+					Frame_Chrono.Show();
+				} else {
+					Frame_Chrono.Hide();
+				}
+			}
+			
+			if (ChronoNet_LayerUpdated != LayerChronoUpdated) {
+				LayerChronoUpdated = ChronoNet_LayerUpdated;
+				
+				// Chrono position
+				Frame_Chrono.PosnX = ChronoNet_PosX;
+				Frame_Chrono.PosnY = ChronoNet_PosY;
+							
+				// Chrono stopped
+				if (ChronoNet_StopTime > 0) {
+					IsStop = True;
+					IsRun = False;
+					IsReset = False;
+					StopTime = ChronoNet_StopTime;
+					declare ChronoString = TextLib::TimeToText(StopTime - StartTime, True);
+					Label_Chrono.SetText(ChronoString);
+				}
+				// Chrono run
+				else if (ChronoNet_StartTime > 0) {
+					IsStop = False;
+					IsRun = True;
+					IsReset = False;
+					StartTime = ChronoNet_StartTime;
+				}
+				// Chrono reset
+				else if (!IsReset && ChronoNet_Reset) {
+					IsStop = False;
+					IsRun = False;
+					IsReset = True;
+					StartTime = 0;
+					StopTime = 0;
+					Label_Chrono.SetText("--:--.--");
+				}
+			}
+			
+			if (IsRun) {
+				declare ChronoString = TextLib::TimeToText(ArenaNow - StartTime, True);
+				Label_Chrono.SetText(ChronoString);
+			}
+		}
+	}
+--></script>
+<frame posn="{{{C_ChronoPosX}}} {{{C_ChronoPosY}}}" id="FrameChrono">
+	<label halign="center" valign="bottom" style="TextRaceChrono" id="Chrono" text="--:--.--" />
+	<quad posn="0 0.1" sizen="40 10" halign="center" valign="bottom" style="BgsPlayerCard" substyle="BgPlayerCard"/>
+</frame>
+</manialink>
+""";
+}
+
+// ---------------------------------- //
+/** Update the Net variables
+ *
+ *	@param	_PlayerId		Id of the player to update
+ *	@param	_StartTime		StartTime of the timer
+ *	@param	_StopTime		StopTime of the timer
+ *	@param	_Reset			Reset the timer
+ */
+Void UpdateNetVariables(Ident _PlayerId, Integer _StartTime, Integer _StopTime, Boolean _Reset) {
+	declare CUIConfig UI;
+	
+	if (Players.existskey(_PlayerId)) UI <=> UIManager.GetUI(Players[_PlayerId]);
+	else if(Spectators.existskey(_PlayerId)) UI <=> UIManager.GetUI(Spectators[_PlayerId]);
+	else return;
+	
+	if (UI == Null) return;
+	
+	declare netwrite ChronoNet_LayerUpdated for UI = 0;
+	declare netwrite ChronoNet_StartTime for UI = 0;
+	declare netwrite ChronoNet_StopTime for UI = 0;
+	declare netwrite ChronoNet_Reset for UI = False;
+	ChronoNet_LayerUpdated = Now;
+	ChronoNet_StartTime = _StartTime;
+	ChronoNet_StopTime = _StopTime;
+	ChronoNet_Reset = _Reset;
+}
+
+// ---------------------------------- //
+/** Update the position Net variables
+ *
+ *	@param	_PlayerId		Id of the player to update
+ *	@param	_PosX		Position in X
+ *	@param	_PosY		Position in Y
+ */
+Void UpdatePositionNetVariables(Ident _PlayerId, Real _PosX, Real _PosY) {
+	declare CUIConfig UI;
+	
+	if (Players.existskey(_PlayerId)) UI <=> UIManager.GetUI(Players[_PlayerId]);
+	else if(Spectators.existskey(_PlayerId)) UI <=> UIManager.GetUI(Spectators[_PlayerId]);
+	else return;
+	
+	if (UI == Null) return;
+	
+	declare netwrite ChronoNet_LayerUpdated for UI = 0;
+	declare netwrite ChronoNet_PosX for UI = C_ChronoPosX;
+	declare netwrite ChronoNet_PosY for UI = C_ChronoPosY;
+	ChronoNet_LayerUpdated = Now;
+	ChronoNet_PosX = _PosX;
+	ChronoNet_PosY = _PosY;
+}
+
+// ---------------------------------- //
+/** Set the position of the timer on the screen
+ *
+ *	@param	_PlayerId	Id of the timer owner
+ *	@param	_PosX		Position in X
+ *	@param	_PosY		Position in Y
+ */
+Void SetPosition(Ident _PlayerId, Real _PosX, Real _PosY) {
+	if (_PlayerId == NullId) {
+		foreach (Player in Players) UpdatePositionNetVariables(Player.Id, _PosX, _PosY);
+		foreach (Spectator in Spectators) UpdatePositionNetVariables(Spectator.Id, _PosX, _PosY);
+	} else {
+		UpdatePositionNetVariables(_PlayerId, _PosX, _PosY);
+	}
+}
+
+// ---------------------------------- //
+/** Start a timer
+ *
+ *	@param	_PlayerId		The id of the timer owner
+ *	@param	_Delay			A delay before the start of the timer
+ */
+Void Start(Ident _PlayerId, Integer _Delay) {
+	if (_PlayerId == NullId) {
+		foreach (Player in Players) UpdateNetVariables(Player.Id, Now + _Delay, 0, False);
+		foreach (Spectator in Spectators) UpdateNetVariables(Spectator.Id, Now + _Delay, 0, False);
+	} else {
+		UpdateNetVariables(_PlayerId, Now + _Delay, 0, False);
+	}
+}
+
+// ---------------------------------- //
+/** Stop a time
+ *
+ *	@param	_PlayerId		The id of the timer owner
+ */
+Void Stop(Ident _PlayerId) {
+	if (_PlayerId == NullId) {
+		foreach (Player in Players) UpdateNetVariables(Player.Id, 0, Now, False);
+		foreach (Spectator in Spectators) UpdateNetVariables(Spectator.Id, 0, Now, False);
+	} else {
+		UpdateNetVariables(_PlayerId, 0, Now, False);
+	}
+}
+
+// ---------------------------------- //
+/** Reset a timer
+ *
+ *	@param	_PlayerId		The id of the timer owner
+ */
+Void Reset(Ident _PlayerId) {
+	if (_PlayerId == NullId) {
+		foreach (Player in Players) UpdateNetVariables(Player.Id, 0, 0 , True);
+		foreach (Spectator in Spectators) UpdateNetVariables(Spectator.Id, 0, 0 , True);
+	} else {
+		UpdateNetVariables(_PlayerId, 0, 0 , True);
+	}
+}
+
+// ---------------------------------- //
+// Load the library
+Void StartServer() {
+	declare LayerChrono <=> UIManager.UILayerCreate();
+	LayerChrono.ManialinkPage = CreateLayerChrono();
+	G_LayerChronoId = LayerChrono.Id;
+	
+	declare netwrite Integer Net_LibChrono_VisibilityAllUpdate for Teams[0];
+	declare netwrite Boolean Net_LibChrono_VisibilityAll for Teams[0];
+	Net_LibChrono_VisibilityAllUpdate = Now;
+	Net_LibChrono_VisibilityAll = True;
+	
+	foreach (Player in AllPlayers) {
+		declare UI <=> UIManager.GetUI(Player);
+		if (UI == Null) return;
+		
+		declare netwrite Integer Net_LibChrono_VisibilityUpdate for UI;
+		declare netwrite Boolean Net_LibChrono_Visibility for UI;
+		Net_LibChrono_VisibilityUpdate = Now;
+		Net_LibChrono_Visibility = True;
+	}
+}
+Void Load() { StartServer(); }
+
+// ---------------------------------- //
+// Unload the library
+Void EndServer() {
+	if (UIManager.UILayers.existskey(G_LayerChronoId)) UIManager.UILayerDestroy(UIManager.UILayers[G_LayerChronoId]);
+}
+Void Unload() { EndServer(); }
+
+// ---------------------------------- //
+/** Create a timer
+ *
+ *	@param	_PlayerId		The id of the timer owner, NullId for all players
+ */
+Void Create(Ident _PlayerId) {
+	if (_PlayerId == NullId) {
+		if (UIManager.UIAll.UILayers.existskey(G_LayerChronoId)) return;
+		UIManager.UIAll.UILayers.add(UIManager.UILayers[G_LayerChronoId]);
+		Reset(_PlayerId);
+		SetPosition(_PlayerId, C_ChronoPosX, C_ChronoPosY);
+	} else {
+		declare CUIConfig UI;
+		
+		if (Players.existskey(_PlayerId)) UI <=> UIManager.GetUI(Players[_PlayerId]);
+		else if(Spectators.existskey(_PlayerId)) UI <=> UIManager.GetUI(Spectators[_PlayerId]);
+		else return;
+		
+		if (UI == Null) return;
+		if (UI.UILayers.existskey(G_LayerChronoId)) return;
+		UI.UILayers.add(UIManager.UILayers[G_LayerChronoId]);
+		Reset(_PlayerId);
+		SetPosition(_PlayerId, C_ChronoPosX, C_ChronoPosY);
+	}
+}
+
+// ---------------------------------- //
+/** Destroy a timer
+ *
+ *	@param	_PlayerId		The id of the timer owner, NullId for all players
+ */
+Void Destroy(Ident _PlayerId) {
+	if (_PlayerId == NullId) {
+		declare Removed = UIManager.UIAll.UILayers.removekey(G_LayerChronoId);
+	} else {
+		declare CUIConfig UI;
+		
+		if (Players.existskey(_PlayerId)) UI <=> UIManager.GetUI(Players[_PlayerId]);
+		else if(Spectators.existskey(_PlayerId)) UI <=> UIManager.GetUI(Spectators[_PlayerId]); 
+		else return;
+		
+		if (UI == Null) return;
+		declare Removed = UI.UILayers.removekey(G_LayerChronoId);
+	}
+}
+
+// ---------------------------------- //
+/** Show a timer
+ *
+ *	@param	_PlayerId		The id of the timer owner, NullId for all players
+ */
+Void Show(Ident _PlayerId) {
+	Private_ToggleVisibility(_PlayerId, True);
+}
+
+// ---------------------------------- //
+/** Hide a timer
+ *
+ *	@param	_PlayerId		The id of the timer owner, NullId for all players
+ */
+Void Hide(Ident _PlayerId) {
+	Private_ToggleVisibility(_PlayerId, False);
+}

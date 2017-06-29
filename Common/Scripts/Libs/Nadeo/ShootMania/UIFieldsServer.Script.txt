@@ -1,0 +1,112 @@
+// Helps handle player attributes displayed in a GUI
+
+#Const Version		"2012-12-17"
+#Const ScriptName	"UIFieldsServer.Script.txt"
+
+/* ------------------------------------- */
+/** Return the version number of the script
+ *
+ *	@return		The version number of the script
+ */
+Text GetScriptVersion() {
+	return Version;
+}
+
+/* ------------------------------------- */
+/** Return the name of the script
+ *
+ *	@return		The name of the script
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+/**
+ * Called by the server.
+ * Declare a field; so that it can be used in both server and UI.
+ */
+Void DeclareServerUIField(CSmPlayer Player, Integer FieldIndex) 
+{
+	declare _UI2ServerFieldsChangeStatus for Player.User = Integer[Integer];
+	if (!_UI2ServerFieldsChangeStatus.existskey(FieldIndex)) {
+		_UI2ServerFieldsChangeStatus[FieldIndex] = 0;
+	}
+	if (!_UI2ServerFieldsChangeStatus.existskey(-1)) {
+		_UI2ServerFieldsChangeStatus[-1] = 0;
+	}
+}
+
+
+Void LogEvents(CSmPlayer Player)
+{
+	declare UI <=> UIManager.GetUI(Player);
+	if (UI == Null) return;
+	
+	declare netread	Integer[Integer] 	_UI2ServerFieldsChangeRequest 	for UI;
+	declare 		Integer[Integer] 	_UI2ServerFieldsChangeStatus 	for Player.User;
+	
+	log("[UIFieldsServer] Request : "^_UI2ServerFieldsChangeRequest);
+	log("[UIFieldsServer] Status  : "^_UI2ServerFieldsChangeStatus);
+}
+
+
+/**
+ * Called by the server.
+ * @return The number of times the player has clicked on a UI button during the last UI step. 
+ * Thus, this value is > 0 iff the UI is asking for a value to change.
+ */
+Integer IsUIRequestingChange(CSmPlayer Player, CUIConfig UI, Integer FieldIndex)
+{
+	declare netread	Integer[Integer] 	_UI2ServerFieldsChangeRequest 	for UI;
+	declare 		Integer[Integer] 	_UI2ServerFieldsChangeStatus 	for Player.User;
+	
+	if (!_UI2ServerFieldsChangeRequest.existskey(FieldIndex)) {
+		//log("field "^FieldIndex^" not in _UI2ServerFieldsChangeRequest");
+		return 0;
+		//assert(False);
+	}
+	/*
+	if (!_UI2ServerFieldsChangeStatus.existskey(FieldIndex)) {
+		//log("field "^FieldIndex^" not in _UI2ServerFieldsChangeStatus");
+		//assert(False);
+		//return 0;
+	}*/
+	
+	declare UIRequest 		= _UI2ServerFieldsChangeRequest[FieldIndex];
+	declare ServerStatus 	= _UI2ServerFieldsChangeStatus[FieldIndex];
+	
+	return UIRequest - ServerStatus;
+}
+
+Boolean ButtonClicked(CSmPlayer Player, CUIConfig UI)
+{
+	return IsUIRequestingChange(Player, UI, -1) > 0;
+}
+
+Void FlushUIEvents(CSmPlayer Player)
+{
+	declare UI <=> UIManager.GetUI(Player);
+	if (UI == Null) return;
+	
+	declare netread	Integer[Integer] 	_UI2ServerFieldsChangeRequest 	for UI;
+	declare 		Integer[Integer] 	_UI2ServerFieldsChangeStatus 	for Player.User;
+	
+	declare nbFields = _UI2ServerFieldsChangeRequest.count;
+	foreach (FieldIndex => FieldValue in _UI2ServerFieldsChangeRequest) {
+		_UI2ServerFieldsChangeStatus[FieldIndex] = FieldValue;
+	}
+}
+
+
+/**
+ * Called by the server.
+ * @return A value set in the UI, presumably when IsUIRequestingChange() returned sthing > 0.
+ */
+Real GetNewValueFromUI(CSmPlayer Player, Integer FieldIndex)
+{
+	declare UI <=> UIManager.GetUI(Player);
+	if (UI == Null) return 0.0;
+	
+	declare netread	Real[Integer] 		_UI2ServerFieldsValueRequest 	for UI;
+	return _UI2ServerFieldsValueRequest[FieldIndex];
+}

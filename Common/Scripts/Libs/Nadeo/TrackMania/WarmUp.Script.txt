@@ -1,0 +1,335 @@
+/**
+ *	WarmUp lib
+ */
+#Const	Version		"2014-11-26"
+#Const	ScriptName	"WarmUp.Script.txt"
+
+#Include "Libs/Nadeo/TrackMania/TM2.Script.txt" as TM2
+
+// ---------------------------------- //
+// Constant
+// ---------------------------------- //
+#Const C_LibWarmUp2_LayerPosition <170., 27., 0.>
+
+// ---------------------------------- //
+// Globales
+// ---------------------------------- //
+declare Ident	G_LibWarmUp2_LayerWarmUpId;
+declare Integer	G_LibWU2_RoundStartTime;
+declare Boolean	G_LibWU2_StopWarmUp;
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+// Private
+// ---------------------------------- //
+// ---------------------------------- //
+/** Create the warm up manialink
+ *
+ *	@return		The warm up manialink
+ */
+Text Private_CreateLayerWarmUp() {
+	return """
+<manialink version="1" name="Lib_WarmUp:WarmUpInfo">
+<frame posn="{{{C_LibWarmUp2_LayerPosition.X}}} {{{C_LibWarmUp2_LayerPosition.Y}}} {{{C_LibWarmUp2_LayerPosition.Z}}}" id="Frame_WarmUp">
+	<format textemboss="1" textsize="2" textcolor="f90" />
+	<quad sizen="40 12" halign="right" style="Bgs1InRace" substyle="BgHealthBar" />
+	<frame posn="-10 -1 1">
+		<quad posn="-1 0" sizen="10 10" halign="right" style="BgRaceScore2" substyle="Warmup" />
+		<label posn="-12 -1" sizen="16 5" halign="right" text="{{{_("Warm up")}}}" />
+		<label posn="-20 -6" sizen="16 5" halign="center" text="0 / 0" id="Label_WarmUpProgression" />
+	</frame>
+</frame>
+<script><!--
+main() {
+	declare Frame_WarmUp <=> (Page.GetFirstChild("Frame_WarmUp") as CMlFrame);
+	declare Label_WarmUpProgression <=> (Page.GetFirstChild("Label_WarmUpProgression") as CMlLabel);
+	
+	declare netread Integer Net_LibWU2_WarmUpPlayedNb for Teams[0];
+	declare netread Integer Net_LibWU2_WarmUpDuration for Teams[0];
+	declare netread Integer Net_LibWU2_LayerPositionUpdate for Teams[0];
+	declare netread Vec3 Net_LibWU2_LayerPosition for Teams[0];
+	declare netread Boolean Net_LibWU2_LayerVisibility for Teams[0];
+	
+	declare PrevWarmUpPlayedNb = -1;
+	declare PrevWarmUpDuration = -1;
+	declare PrevLayerPositionUpdate = -1;
+	declare PrevLayerVisibility = True;
+	
+	while (True) {
+		yield;
+		
+		if (InputPlayer == Null) continue;
+		if (!PageIsVisible) continue;
+		
+		if (PrevWarmUpPlayedNb != Net_LibWU2_WarmUpPlayedNb || PrevWarmUpDuration != Net_LibWU2_WarmUpDuration) {
+			PrevWarmUpPlayedNb = Net_LibWU2_WarmUpPlayedNb;
+			PrevWarmUpDuration = Net_LibWU2_WarmUpDuration;
+			
+			Label_WarmUpProgression.Value = Net_LibWU2_WarmUpPlayedNb^" / "^Net_LibWU2_WarmUpDuration;
+		}
+		
+		if (PrevLayerVisibility != Net_LibWU2_LayerVisibility) {
+			PrevLayerVisibility = Net_LibWU2_LayerVisibility;
+			Frame_WarmUp.Visible = Net_LibWU2_LayerVisibility;
+		}
+		
+		if (PrevLayerPositionUpdate != Net_LibWU2_LayerPositionUpdate) {
+			PrevLayerPositionUpdate = Net_LibWU2_LayerPositionUpdate;
+			Frame_WarmUp.RelativePosition = Net_LibWU2_LayerPosition;
+		}
+	}
+}
+--></script>
+</manialink>
+""";
+}
+
+// ---------------------------------- //
+/** Get the time left to the players to finish the round after the first player
+ *
+ *	@return 		The time left in ms
+ */
+Integer Private_GetFinishTimeout() {
+	declare FinishTimeout = 5000;
+	if (Map.TMObjective_IsLapRace && NbLaps > 0 && Map.TMObjective_NbLaps > 0) {
+		FinishTimeout += ((Map.TMObjective_AuthorTime / Map.TMObjective_NbLaps) * NbLaps) / 6;
+	} else {
+		FinishTimeout += Map.TMObjective_AuthorTime / 6;
+	}
+    
+	return Now + FinishTimeout;
+}
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Return the version number of the script
+ *
+ *	@return		The version number of the script
+ */
+Text GetScriptVersion() {
+	return Version;
+}
+
+// ---------------------------------- //
+/** Return the name of the script
+ *
+ *	@return		The name of the script
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+// ---------------------------------- //
+/** Set the position of the layer on the screen
+ *
+ *	@param	_Pos		The new position
+ */
+Void SetLayerPosition(Vec3 _Pos) {
+	declare netwrite Integer Net_LibWU2_LayerPositionUpdate for Teams[0];
+	declare netwrite Vec3 Net_LibWU2_LayerPosition for Teams[0];
+	Net_LibWU2_LayerPosition = _Pos;
+	Net_LibWU2_LayerPositionUpdate = Now;
+}
+
+// ---------------------------------- //
+/** Get the position of the layer on the screen
+ *
+ *	@return		The position of the layer
+ */
+Vec3 GetLayerPosition() {
+	declare netwrite Integer Net_LibWU2_LayerPositionUpdate for Teams[0];
+	declare netwrite Vec3 Net_LibWU2_LayerPosition for Teams[0];
+	return Net_LibWU2_LayerPosition;
+}
+
+// ---------------------------------- //
+/** Set the visibility of the layer on the screen
+ *
+ *	@param	_Visibility		The new visibility
+ */
+Void SetLayerVisibility(Boolean _Visibility) {
+	declare netwrite Boolean Net_LibWU2_LayerVisibility for Teams[0];
+	Net_LibWU2_LayerVisibility = _Visibility;
+}
+
+// ---------------------------------- //
+/** Get the visibility of the layer on the screen
+ *
+ *	@return		The visibility of the layer
+ */
+Boolean GetLayerVisibility() {
+	declare netwrite Boolean Net_LibWU2_LayerVisibility for Teams[0];
+	return Net_LibWU2_LayerVisibility;
+}
+
+// ---------------------------------- //
+/// Unload the library
+Void Unload() {
+	if (UIManager.UILayers.existskey(G_LibWarmUp2_LayerWarmUpId)) {
+		UIManager.UILayerDestroy(UIManager.UILayers[G_LibWarmUp2_LayerWarmUpId]);
+		G_LibWarmUp2_LayerWarmUpId = NullId;
+	}
+	
+	declare netwrite Integer Net_LibWU2_WarmUpPlayedNb for Teams[0];
+	declare netwrite Integer Net_LibWU2_WarmUpDuration for Teams[0];
+	Net_LibWU2_WarmUpPlayedNb = 0;
+	Net_LibWU2_WarmUpDuration = 0;
+}
+
+// ---------------------------------- //
+/// Load the library
+Void Load() {
+	Unload();
+	
+	// Create and assign the layer
+	declare LayerWarmUp <=> UIManager.UILayerCreate();
+	LayerWarmUp.ManialinkPage = Private_CreateLayerWarmUp();
+	G_LibWarmUp2_LayerWarmUpId = LayerWarmUp.Id;
+	
+	G_LibWU2_RoundStartTime = -1;
+	G_LibWU2_StopWarmUp = False;
+	
+	SetLayerVisibility(True);
+	SetLayerPosition(C_LibWarmUp2_LayerPosition);
+}
+
+// ---------------------------------- //
+/** Set the progression of the warm up in the UI
+ *
+ *	@param	_WarmUpPlayedNb		The number of warm up played
+ *	@param	_WarmUpDuration		The number of warm up to play
+ */
+Void SetProgression(Integer _WarmUpPlayedNb, Integer  _WarmUpDuration) {
+	declare netwrite Integer Net_LibWU2_WarmUpPlayedNb for Teams[0];
+	declare netwrite Integer Net_LibWU2_WarmUpDuration for Teams[0];
+	Net_LibWU2_WarmUpPlayedNb = _WarmUpPlayedNb;
+	Net_LibWU2_WarmUpDuration = _WarmUpDuration;
+}
+
+// ---------------------------------- //
+/// Attach the warm up layer
+Void Attach() {
+	if (
+		UIManager.UILayers.existskey(G_LibWarmUp2_LayerWarmUpId) 
+		&& !UIManager.UIAll.UILayers.existskey(G_LibWarmUp2_LayerWarmUpId)
+	) {
+		UIManager.UIAll.UILayers.add(UIManager.UILayers[G_LibWarmUp2_LayerWarmUpId]);
+	}
+}
+
+// ---------------------------------- //
+/// Detach the warm up layer
+Void Detach() {
+	declare Removed = UIManager.UIAll.UILayers.removekey(G_LibWarmUp2_LayerWarmUpId);
+}
+
+// ---------------------------------- //
+/// Initialize the warm up
+Void Begin() {
+	Attach();
+	TM2::WaitRaceAll();
+	UIManager.UIAll.UIStatus	= CUIConfig::EUIStatus::Warning;
+	G_LibWU2_RoundStartTime		= Now + 3000;
+	G_LibWU2_StopWarmUp			= False;
+	CutOffTimeLimit				= -1;
+	
+	// ---------------------------------- //
+	// Initialize scores
+	foreach (Score in Scores) {
+		declare LibWU2_CanSpawn for Score = True;
+		LibWU2_CanSpawn = True;
+	}
+	
+	// ---------------------------------- //
+	// Spawn players for the race
+	foreach (Player in Players) {
+		if (Player.Score == Null) continue;
+		
+		declare LibWU2_CanSpawn for Player.Score = True;
+		if (LibWU2_CanSpawn) {
+			TM2::StartRace(Player, G_LibWU2_RoundStartTime);
+			LibWU2_CanSpawn = False;
+		} else {
+			TM2::WaitRace(Player);
+		}
+	}
+}
+
+// ---------------------------------- //
+/// Clean after the warm up
+Void End() {	
+	Detach();
+	TM2::WaitRaceAll();
+	UIManager.UIAll.UIStatus	= CUIConfig::EUIStatus::None;
+	G_LibWU2_RoundStartTime		= -1;
+	G_LibWU2_StopWarmUp			= False;
+	CutOffTimeLimit				= -1;
+}
+
+// ---------------------------------- //
+/** Return if the warm up is finished or not
+ *
+ *	@return		True if the warm up is finished, false otherwise
+ */
+Boolean Stop() {
+	return G_LibWU2_StopWarmUp;
+}
+
+// ---------------------------------- //
+/// Warm up loop
+Void Loop() {
+	// ---------------------------------- //
+	// Spawn players joining during the warm up
+	foreach (Player in Players) {
+		if (Player.Score == Null) continue;
+		
+		declare LibWU2_CanSpawn for Player.Score = True;
+		if (TM2::IsWaiting(Player) && LibWU2_CanSpawn) {
+			TM2::StartRace(Player, G_LibWU2_RoundStartTime);
+			LibWU2_CanSpawn = False;
+		}
+	}
+	
+	// ---------------------------------- //
+	// End the round 
+	// If All players finished
+	if (Players.count > 0 && PlayersRacing.count <= 0) G_LibWU2_StopWarmUp = True;
+	// If time limit is reached
+	if (CutOffTimeLimit > 0 && Now >= CutOffTimeLimit) G_LibWU2_StopWarmUp = True;
+}
+
+// ---------------------------------- //
+/// Default events management
+Void ManageEvents() {
+	// ---------------------------------- //
+	// Manage events
+	foreach (Event in PendingEvents) {
+		PassOn(Event);
+		
+		// ---------------------------------- //
+		// Waypoint
+		if (Event.Type == CTmModeEvent::EType::WayPoint) {
+			if (Event.IsEndRace) {
+				TM2::EndRace(Event.Player);
+				Event.Player.Score.PrevRace = Event.Player.CurRace;
+				
+				// ---------------------------------- //
+				// Start the countdown if it's the first player to finish
+				if (CutOffTimeLimit <= 0) {
+					CutOffTimeLimit = Private_GetFinishTimeout();
+				}
+			}
+		}
+		// ---------------------------------- //
+		// GiveUp
+		else if (Event.Type == CTmModeEvent::EType::GiveUp) {
+			TM2::WaitRace(Event.Player);
+		}
+	}
+}

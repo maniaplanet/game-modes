@@ -1,0 +1,132 @@
+#Include "Libs/Nadeo/Mode.Script.txt" as Rules
+
+// ==============================
+//  Infrastructure 
+// ==============================
+Void RunGame() {
+	yield;
+}
+
+// ==============================
+//  Ladder
+// ==============================
+Void Ladder_OpenMatch_All() 
+{
+	Rules::Ladder_OpenMatch_All();
+}
+
+Void Ladder_ComputeRankAndCloseMatch(CTmMode::ETmScoreSortOrder _Order) 
+{
+	Ladder_ComputeRank(_Order);	// will fillin the Scores[].LadderRankSortValue
+	Rules::Ladder_CloseMatch();
+}
+
+Void Ladder_CancelMatch()
+{
+	Rules::Ladder_CancelMatch();
+}
+
+// ==============================
+//  EndRaceSequence 
+// ==============================
+Boolean EndRaceSequence_PlayerHasUi(CTmPlayer _Player)	
+{							
+	return (UIManager.GetUI(_Player) != Null );							
+}
+
+Void EndRaceSequence_Add(CTmPlayer _Player, Text _Message)
+{
+	declare Integer EndRaceSequence_StartTime for _Player;
+	declare UI <=> UIManager.GetUI(_Player);
+	
+	if ( UI != Null ) {
+		UI.BigMessage = _Message;
+		UI.UISequence = CUIConfig::EUISequence::Outro;
+	}	
+	
+	EndRaceSequence_StartTime = Now;
+}
+
+Void EndRaceSequence_Remove(CTmPlayer _Player)
+{
+	declare Integer EndRaceSequence_StartTime for _Player;
+	EndRaceSequence_StartTime = 0;
+	declare UI <=> UIManager.GetUI(_Player);
+
+	if (EndRaceSequence_PlayerHasUi(_Player)) {
+		UI.BigMessage = "";
+		UI.UISequence = CUIConfig::EUISequence::None;
+	}
+}
+
+Void EndRaceSequence_Update()
+{
+	foreach(Player, Players) {
+		declare Integer EndRaceSequence_StartTime for Player;
+		declare StartTime = EndRaceSequence_StartTime;
+		if (StartTime != 0 && Now > StartTime + 3000)  {
+			EndRaceSequence_Remove(Player);
+			Player.RaceStartTime = 0;
+		}
+	}
+}
+
+
+// ==============================
+//  Players 
+// ==============================
+Void Players_UnspawnAll()
+{
+	foreach(Player, Players) {
+		EndRaceSequence_Remove(Player);
+		Player.RaceStartTime = 0;
+	}
+}
+
+Void Players_SpawnOne(CTmPlayer _Player, Integer _StartTime)
+{
+	declare StartTime = 0;
+	if (_StartTime == 0) {
+		StartTime = Now + 2500;
+	} else {
+		StartTime = _StartTime;
+	}
+	assert(StartTime > Now);
+	
+	EndRaceSequence_Remove(_Player);
+	_Player.RaceStartTime = StartTime;
+	if(_Player.Score != Null) Ladder_AddPlayer(_Player.Score);
+}
+
+Void Players_SpawnWaiting(Integer _StartTime)
+{
+	declare StartTime = 0;
+	if (_StartTime == 0) {
+		StartTime = Now + 2500;
+	} else {
+		StartTime = _StartTime;
+	}
+	assert(StartTime > Now);
+
+	foreach(Player, Players) {
+		if (Player.RaceStartTime != 0)
+			continue;
+		EndRaceSequence_Remove(Player);
+		Player.RaceStartTime = StartTime;
+		if(Player.Score != Null) Ladder_AddPlayer(Player.Score);
+	}	
+}
+
+Void Players_SpawnAll(Integer _StartTime)
+{
+	Players_UnspawnAll();
+	Players_SpawnWaiting(_StartTime);
+}
+
+// ==============================
+//  Scores 
+// ==============================
+Boolean Scores_AreNull()
+{
+	return (Scores.count == 0 || (Scores[0].Points == 0 && (Scores[0].BestRace.Time == -1 || Scores[0].BestRace.Time == 0)));
+}

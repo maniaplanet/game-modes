@@ -1,0 +1,195 @@
+/**
+ *	Exp library
+ */
+#Const	Version			"2016-10-12"
+#Const	ScriptName	"Libs/Nadeo/Exp.Script.txt"
+
+// ---------------------------------- //
+// Libraries
+// ---------------------------------- //
+#Include "Libs/Nadeo/Log.Script.txt" as Log
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_Default_SessionDuration	3600
+#Const C_Default_SessionsNumber	3
+
+// ---------------------------------- //
+// Globales
+// ---------------------------------- //
+declare Boolean G_Enabled;
+declare Integer G_Session_StartTime;
+declare Integer G_Session_EndTime;
+declare Integer G_Session_Duration;
+declare Integer G_Session_Number;
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+// ---------------------------------- //
+// Private
+// ---------------------------------- //
+// ---------------------------------- //
+/** Update the starttime and endtime
+ *
+ *	@param	_StartTime								The new session start time
+ *	@param	_Duration									The session duration
+ */
+Void Private_UpdateSessionTimer(Integer _StartTime, Integer _Duration) {
+	G_Session_StartTime = _StartTime;
+	G_Session_EndTime = _StartTime + (_Duration*1000);
+	if (G_Session_EndTime < G_Session_StartTime) G_Session_EndTime = G_Session_StartTime;
+	
+	declare netwrite LibExp_Session_EndTime for Teams[0] = -1;
+	LibExp_Session_EndTime = G_Session_EndTime;
+}
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+// ---------------------------------- //
+/**	Return the version number of the script
+ *
+ *	@return														The version number of the script
+ */
+Text GetScriptVersion() {
+	return Version;
+}
+
+// ---------------------------------- //
+/**	Return the name of the script
+ *
+ *	@return														The name of the script
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+// ---------------------------------- //
+/** Enable or disable the Exp mode
+ *
+ *	@param	_Enabled									True to enable, False to disable
+ */
+Void Enable(Boolean _Enabled) {
+	G_Enabled = _Enabled;
+}
+
+// ---------------------------------- //
+/** Check if the Exp mode is enabled or disabled
+ *
+ *	@return														True if the exp mode is enabled
+ *																		False otherwise
+ */
+Boolean Enabled() {
+	return G_Enabled;
+}
+
+// ---------------------------------- //
+/** Setup the game
+ *
+ *	@param	_SessionsNb 							The number of sessions in the game
+ *	@param	_SessionDuration					The durations of one session in seconds
+ */
+Void SetupGame(Integer _SessionsNb, Integer _SessionDuration) {
+	G_Session_Duration = _SessionDuration;
+	G_Session_Number = _SessionsNb;
+}
+
+// ---------------------------------- //
+/** Check if a session is opened and finished
+ *
+ *	@return														True if the session is opened and finished
+ *																		False otherwise
+ */
+Boolean IsFinishedSession() {
+	return G_Session_StartTime >= 0 && G_Session_EndTime >= 0 && Now >= G_Session_EndTime;
+}
+
+// ---------------------------------- //
+/** Open a session
+ *
+ *	@param	_Duration									The duration of the session in seconds
+ */
+Void OpenSession() {
+	Private_UpdateSessionTimer(Now, G_Session_Duration);
+	
+	// Start new session
+	declare persistent LibExp_CurrentSession for This = 1;
+	declare persistent LibExp_NextSession for This = 1;
+	LibExp_CurrentSession = LibExp_NextSession;
+	
+	// Start new game
+	if (LibExp_CurrentSession > G_Session_Number) {
+		LibExp_CurrentSession = 1;
+		LibExp_NextSession = 1;
+	}
+	
+	Log::Log("""[Exp] Open session {{{LibExp_CurrentSession}}}/{{{G_Session_Number}}}""");
+}
+
+// ---------------------------------- //
+/// Close a session
+Void CloseSession() {
+	Private_UpdateSessionTimer(-1, 0);
+	
+	declare persistent LibExp_CurrentSession for This = 1;
+	declare persistent LibExp_NextSession for This = 1;
+	LibExp_NextSession = LibExp_CurrentSession + 1;
+	
+	Log::Log("""[Exp] Close session {{{LibExp_CurrentSession}}}/{{{G_Session_Number}}}""");
+}
+
+// ---------------------------------- //
+/** Check if the current session is
+ *	the first one of a new game
+ *
+ *	@return														True if it is a new game
+ *																		False otherwise
+ */
+Boolean IsFirstSession() {
+	declare persistent LibExp_CurrentSession for This = 1;
+	return LibExp_CurrentSession == 1;
+}
+
+// ---------------------------------- //
+/** Check if the current session is
+ *	the last one of the game
+ *
+ *	@return														True if it is the last one
+ *																		False otherwise
+ */
+Boolean IsLastSession() {
+	declare persistent LibExp_CurrentSession for This = 1;
+	return LibExp_CurrentSession >= G_Session_Number;
+}
+
+// ---------------------------------- //
+/** Reset all the persisted data and
+ *	restart a new game
+ */
+Void Reset() {
+	declare persistent LibExp_CurrentSession for This = 1;
+	declare persistent LibExp_NextSession for This = 1;
+	LibExp_CurrentSession = 1;
+	LibExp_NextSession = 1;
+}
+
+// ---------------------------------- //
+/// Unload the library
+Void Unload() {
+	G_Enabled = False;
+	G_Session_StartTime = -1;
+	G_Session_EndTime = -1;
+	G_Session_Duration = C_Default_SessionDuration;
+	G_Session_Number = C_Default_SessionsNumber;
+	
+	declare netwrite LibExp_Session_EndTime for Teams[0] = -1;
+	LibExp_Session_EndTime = -1;
+}
+
+// ---------------------------------- //
+/// Load the library
+Void Load() {
+	Unload();
+}

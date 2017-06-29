@@ -1,0 +1,491 @@
+/**
+ * Message library
+ */
+#Const Version		"2016-04-26"
+#Const ScriptName	"Libs/Nadeo/Message.Script.txt"
+
+// ---------------------------------- //
+// Globales
+// ---------------------------------- //
+declare Text G_LibMessage_DefaultBigMessage;	///< Default general BigMessage
+declare Text G_LibMessage_DefaultStatusMessage;	///< Default general StatusMessage
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+// ---------------------------------- //
+// Private
+// ---------------------------------- //
+// ---------------------------------- //
+/** Send a big message to one player
+ *
+ *	@param	_UI				The UI who'll display the message
+ *	@param	_Level			The level of the message - 1: Big, 2: Status
+ *	@param	_Player			The id of the player who'll receive the message
+ *	@param	_Message		The message to display
+ *	@param	_Duration		The message to duration
+ *	@param	_Sound			The sound to play with the message
+ *	@param	_SoundVariant	The sound variant to play
+ */
+Void Private_DisplayMessage(
+	CUIConfig _UI, 
+	Integer _Level,
+	CPlayer _Player, 
+	Text _Message, 
+	Integer _Duration, 
+	CUIConfig::EUISound _Sound, 
+	Integer _SoundVariant
+) {
+	if (_Level == 1) {
+		_UI.BigMessageSound = CUIConfig::EUISound::Silence;
+		_UI.BigMessageSoundVariant = 0;
+		_UI.BigMessage = _Message;
+	} else if (_Level == 2) _UI.StatusMessage = _Message;
+	
+	if (_Sound != CUIConfig::EUISound::Silence) {
+		_UI.SendNotice(
+			"", 
+			CUIConfig::ENoticeLevel::PlayerInfo, 
+			Null, CUIConfig::EAvatarVariant::Default, 
+			_Sound, _SoundVariant
+		);
+	}
+	
+	declare LibMessage_MessageEndTime for _Player = [1 => -1, 2 => -1];
+	declare LibMessage_MessageActive for _Player = False;
+	LibMessage_MessageEndTime[_Level] = Now + _Duration;
+	LibMessage_MessageActive = True;
+}
+
+// ---------------------------------- //
+/** Send a big message to one player
+ *
+ *	@param	_Level			The level of the message - 1: Big, 2: Status
+ *	@param	_Player			The id of the player who'll receive the message
+ *	@param	_Message		The message to display
+ *	@param	_Duration		The message to duration
+ *	@param	_Priority		The message priority
+ *	@param	_Sound			The sound to play with the message
+ *	@param	_SoundVariant	The sound variant to play
+ */
+Void Private_SendMessageTo(
+	Integer _Level, 
+	CPlayer _Player, 
+	Text _Message, 
+	Integer _Duration, 
+	Integer _Priority,
+	CUIConfig::EUISound _Sound,
+	Integer _SoundVariant
+) {	
+	// Send message to all players (Players + Spectators)
+	if (_Player == Null) {			
+		foreach (Player in AllPlayers) {
+			/* Priority of the current message, 
+			 * a lower priority message can't overwrite it. 
+			 * It must be a positive value.
+			 */
+			declare Integer[Integer] LibMessage_Priority for Player;
+			if (!LibMessage_Priority.existskey(_Level)) LibMessage_Priority[_Level] = 0;
+			if (_Priority >= LibMessage_Priority[_Level]) {
+				LibMessage_Priority[_Level] = _Priority;
+				
+				declare UI <=> UIManager.GetUI(Player);
+				
+				if (UI != Null) {				
+					Private_DisplayMessage(UI, _Level, Player, _Message, _Duration, _Sound, _SoundVariant);
+				}
+			}
+		}
+	} 
+	// Send message to one player
+	else {
+		/* Priority of the current message, 
+		 * a lower priority message can't overwrite it. 
+		 * It must be a positive value.
+		 */
+		declare Integer[Integer] LibMessage_Priority for _Player;
+		if (!LibMessage_Priority.existskey(_Level)) LibMessage_Priority[_Level] = 0;
+		if (_Priority >= LibMessage_Priority[_Level]) {
+			LibMessage_Priority[_Level] = _Priority;
+			declare CUIConfig UI;
+			UI <=> UIManager.GetUI(_Player);
+			
+			if (UI != Null) {			
+				Private_DisplayMessage(UI, _Level, _Player, _Message, _Duration, _Sound, _SoundVariant);
+			}
+		}
+	}
+}
+
+
+//OVERLOAD Clean all messages for one player
+Void Private_CleanMessages(Integer _Level, CPlayer _Player) {
+	declare UI <=> UIManager.GetUI(_Player);
+	if (UI != Null) {
+		if (_Level != 2) UI.BigMessage = "";
+		if (_Level != 1) UI.StatusMessage = "";
+	}
+	declare LibMessage_MessageActive for _Player = False;
+	declare LibMessage_MessageEndTime for _Player = [1 => -1, 2 => -1];
+	declare LibMessage_Priority for _Player = [1 => 0, 2 => 0];
+	if (_Level != 2) {
+		LibMessage_MessageEndTime[1] = -1;
+		LibMessage_Priority[1] = 0;
+	}
+	if (_Level != 1) {
+		LibMessage_MessageEndTime[2] = -1;
+		LibMessage_Priority[2] = 0;
+	}
+	if (LibMessage_MessageEndTime[1] <= 0 && LibMessage_MessageEndTime[2] <= 0) {
+		LibMessage_MessageActive = False;
+	}	
+}
+
+// ---------------------------------- //
+/// Clean all messages
+Void Private_CleanMessages(Integer _Level) {
+	foreach (Player in AllPlayers) {
+		Private_CleanMessages(_Level, Player);
+	}
+}
+
+// ---------------------------------- //
+/** Set the default message to display when the player don't have any custom message
+ *
+ *	@param	_Message			The default message
+ */
+Void Private_SetDefaultMessage(Integer _Level, Text _Message) {
+	if (_Level != 1 && _Level != 2) return;
+
+	if (_Level == 1) {
+		G_LibMessage_DefaultBigMessage = _Message;
+	} else if (_Level == 2) {
+		G_LibMessage_DefaultStatusMessage = _Message;
+	}
+	
+	foreach (Player in AllPlayers) {
+		if (Player.User.IsFakeUser) continue;
+		
+		declare LibMessage_MessageEndTime for Player = [1 => -1, 2 => -1];
+		
+		if (LibMessage_MessageEndTime[_Level] <= 0) {
+			declare UI <=> UIManager.GetUI(Player);
+			if (UI != Null) {				
+				if (_Level == 1) UI.BigMessage = G_LibMessage_DefaultBigMessage;
+				else if (_Level == 2) UI.StatusMessage = G_LibMessage_DefaultStatusMessage;
+			}
+		}
+	}
+}
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Return the version number of the script
+ *
+ *	@return		The version number of the script
+ */
+Text GetScriptVersion() {
+	return Version;
+}
+
+// ---------------------------------- //
+/** Return the name of the script
+ *
+ *	@return		The name of the script
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+// ---------------------------------- //
+/** Send a big message to all players
+ *
+ *	@param	_Message	The message to display
+ *	@param	_Duration	The message to duration
+ *	@param	_Priority		The message priority
+ */
+Void SendBigMessage(Text _Message, Integer _Duration, Integer _Priority) {
+	Private_SendMessageTo(1, Null, _Message, _Duration, _Priority, CUIConfig::EUISound::Silence, 0);
+}
+
+// ---------------------------------- //
+/** Send a big message to one player
+ *
+ *	@param	_Player		The player who'll receive the message
+ *	@param	_Message	The message to display
+ *	@param	_Duration	The message to duration
+ *	@param	_Priority		The message priority
+ */
+Void SendBigMessage(CPlayer _Player, Text _Message, Integer _Duration, Integer _Priority) {
+	Private_SendMessageTo(1, _Player, _Message, _Duration, _Priority, CUIConfig::EUISound::Silence, 0);
+}
+
+// ---------------------------------- //
+/** Send a big message to all players of a clan
+ *
+ *	@param	_Clan		The clan who'll receive the message
+ *	@param	_Message	The message to display
+ *	@param	_Duration	The message to duration
+ *	@param	_Priority		The message priority
+ */
+Void SendBigMessage(Integer _Clan, Text _Message, Integer _Duration, Integer _Priority) {
+	foreach (Player in AllPlayers) {
+		if (Player.CurrentClan != _Clan) continue;
+		Private_SendMessageTo(1, Player, _Message, _Duration, _Priority, CUIConfig::EUISound::Silence, 0);
+	}
+}
+
+// ---------------------------------- //
+/** Send a big message with sound to all players
+ *
+ *	@param	_Message		The message to display
+ *	@param	_Duration		The message to duration
+ *	@param	_Priority		The message priority
+ *	@param	_Sound			The sound to play with the message
+ *	@param	_SoundVariant	The sound variant to play
+ */
+Void SendBigMessage(Text _Message, Integer _Duration, Integer _Priority, CUIConfig::EUISound _Sound, Integer _SoundVariant) {
+	Private_SendMessageTo(1, Null, _Message, _Duration, _Priority, _Sound, _SoundVariant);
+}
+
+// ---------------------------------- //
+/** Send a big message with sound to one player
+ *
+ *	@param	_Player			The player who'll receive the message
+ *	@param	_Message		The message to display
+ *	@param	_Duration		The message to duration
+ *	@param	_Priority		The message priority
+ *	@param	_Sound			The sound to play with the message
+ *	@param	_SoundVariant	The sound variant to play
+ */
+Void SendBigMessage(CPlayer _Player, Text _Message, Integer _Duration, Integer _Priority, CUIConfig::EUISound _Sound, Integer _SoundVariant) {
+	Private_SendMessageTo(1, _Player, _Message, _Duration, _Priority, _Sound, _SoundVariant);
+}
+
+// ---------------------------------- //
+/** Send a big message with sound to all players of a clan
+ *
+ *	@param	_Clan			The clan who'll receive the message
+ *	@param	_Message		The message to display
+ *	@param	_Duration		The message to duration
+ *	@param	_Priority		The message priority
+ *	@param	_Sound			The sound to play with the message
+ *	@param	_SoundVariant	The sound variant to play
+ */
+Void SendBigMessage(Integer _Clan, Text _Message, Integer _Duration, Integer _Priority, CUIConfig::EUISound _Sound, Integer _SoundVariant) {
+	foreach (Player in AllPlayers) {
+		if (Player.CurrentClan != _Clan) continue;
+		Private_SendMessageTo(1, Player, _Message, _Duration, _Priority, _Sound, _SoundVariant);
+	}
+}
+
+// ---------------------------------- //
+/** Send a status message to all players
+ *
+ *	@param	_Message	The message to display
+ *	@param	_Duration	The message to duration
+ *	@param	_Priority		The message priority
+ */
+Void SendStatusMessage(Text _Message, Integer _Duration, Integer _Priority) {
+	Private_SendMessageTo(2, Null, _Message, _Duration, _Priority, CUIConfig::EUISound::Silence, 0);
+}
+
+// ---------------------------------- //
+/** Send a status message to one player
+ *
+ *	@param	_Player		The player who'll receive the message
+ *	@param	_Message	The message to display
+ *	@param	_Duration	The message to duration
+ *	@param	_Priority		The message priority
+ */
+Void SendStatusMessage(CPlayer _Player, Text _Message, Integer _Duration, Integer _Priority) {
+	Private_SendMessageTo(2, _Player, _Message, _Duration, _Priority, CUIConfig::EUISound::Silence, 0);
+}
+
+// ---------------------------------- //
+/** Send a status message to all players of a clan
+ *
+ *	@param	_Clan		The clan who'll receive the message
+ *	@param	_Message	The message to display
+ *	@param	_Duration	The message to duration
+ *	@param	_Priority		The message priority
+ */
+Void SendStatusMessage(Integer _Clan, Text _Message, Integer _Duration, Integer _Priority) {
+	foreach (Player in Players) {
+		if (Player.CurrentClan != _Clan) continue;
+		Private_SendMessageTo(2, Player, _Message, _Duration, _Priority, CUIConfig::EUISound::Silence, 0);
+	}
+}
+
+// ---------------------------------- //
+/** Send a status message with sound to all players
+ *
+ *	@param	_Message		The message to display
+ *	@param	_Duration		The message to duration
+ *	@param	_Priority		The message priority
+ *	@param	_Sound			The sound to play with the message
+ *	@param	_SoundVariant	The sound variant to play
+ */
+Void SendStatusMessage(Text _Message, Integer _Duration, Integer _Priority, CUIConfig::EUISound _Sound, Integer _SoundVariant) {
+	Private_SendMessageTo(2, Null, _Message, _Duration, _Priority, _Sound, _SoundVariant);
+}
+
+// ---------------------------------- //
+/** Send a status message with sound to one player
+ *
+ *	@param	_Player			The player who'll receive the message
+ *	@param	_Message		The message to display
+ *	@param	_Duration		The message to duration
+ *	@param	_Priority		The message priority
+ *	@param	_Sound			The sound to play with the message
+ *	@param	_SoundVariant	The sound variant to play
+ */
+Void SendStatusMessage(CPlayer _Player, Text _Message, Integer _Duration, Integer _Priority, CUIConfig::EUISound _Sound, Integer _SoundVariant) {
+	Private_SendMessageTo(2, _Player, _Message, _Duration, _Priority, _Sound, _SoundVariant);
+}
+
+// ---------------------------------- //
+/** Send a status message with sound to all players
+ *
+ *	@param	_Clan			The clan who'll receive the message
+ *	@param	_Message		The message to display
+ *	@param	_Duration		The message to duration
+ *	@param	_Priority		The message priority
+ *	@param	_Sound			The sound to play with the message
+ *	@param	_SoundVariant	The sound variant to play
+ */
+Void SendStatusMessage(Integer _Clan, Text _Message, Integer _Duration, Integer _Priority, CUIConfig::EUISound _Sound, Integer _SoundVariant) {
+	foreach (Player in AllPlayers) {
+		if (Player.CurrentClan != _Clan) continue;
+		Private_SendMessageTo(2, Player, _Message, _Duration, _Priority, _Sound, _SoundVariant);
+	}
+}
+
+// ---------------------------------- //
+/** Set the default BigMessage to display when the player don't have any custom message
+ *
+ *	@param	_Message			The default BigMessage
+ */
+Void SetDefaultBigMessage(Text _Message) {
+	Private_SetDefaultMessage(1, _Message);
+}
+
+// ---------------------------------- //
+/** Set the default StatusMessage to display when the player don't have any custom message
+ *
+ *	@param	_Message			The default StatusMessage
+ */
+Void SetDefaultStatusMessage(Text _Message) {
+	Private_SetDefaultMessage(2, _Message);
+}
+
+// ---------------------------------- //
+/** Set the default BigMessage and StatusMessage to display when the player don't have any custom message
+ *
+ *	@param	_Message			The default BigMessage and StatusMessage
+ */
+Void SetDefaultAllMessages(Text _Message) {
+	for (I, 1, 2) {
+		Private_SetDefaultMessage(I, _Message);
+	}
+}
+
+// ---------------------------------- //
+/// Clean all big messages
+Void CleanBigMessages() {
+	Private_CleanMessages(1);
+}
+
+// ---------------------------------- //
+/// Clean all big messages
+Void CleanStatusMessages() {
+	Private_CleanMessages(2);
+}
+
+// ---------------------------------- //
+/// Clean all messages
+Void CleanAllMessages() {
+	Private_CleanMessages(0);
+}
+
+// ---------------------------------- //
+/// OVERLOAD Clean all big messages for one player
+/*
+ * @param _Player The player to clean
+ */
+Void CleanBigMessages(CPlayer _Player) {
+	Private_CleanMessages(1, _Player);
+}
+
+// ---------------------------------- //
+/// OVERLOAD Clean all big messages for one player
+/*
+ * @param _Player The player to clean
+ */
+Void CleanStatusMessages(CPlayer _Player) {
+	Private_CleanMessages(2, _Player);
+}
+
+// ---------------------------------- //
+/// OVERLOAD Clean all messages for one player
+/*
+ * @param _Player The player to clean
+ */
+Void CleanAllMessages(CPlayer _Player) {
+	Private_CleanMessages(0, _Player);
+}
+
+// ---------------------------------- //
+/// Main loop
+Void Loop() {
+	foreach (Player in AllPlayers) {
+		if (Player.User.IsFakeUser) continue;
+		
+		declare LibMessage_MessageActive for Player = False;
+		
+		if (LibMessage_MessageActive) {
+			declare LibMessage_MessageEndTime for Player = [1 => -1, 2 => -1];
+			for (I, 1, 2) {
+				if (Now >= LibMessage_MessageEndTime[I]) {
+					declare Integer[Integer] LibMessage_Priority for Player;
+					
+					LibMessage_Priority[I] = 0;
+					LibMessage_MessageEndTime[I] = -1;
+				
+					declare UI <=> UIManager.GetUI(Player);
+					if (UI != Null) {
+						if (I == 1) UI.BigMessage = G_LibMessage_DefaultBigMessage;
+						else if (I == 2) UI.StatusMessage = G_LibMessage_DefaultStatusMessage;
+					}
+					
+					if (LibMessage_MessageEndTime[1] <= 0 && LibMessage_MessageEndTime[2] <= 0) {
+						LibMessage_MessageActive = False;
+					}
+				}
+			}
+		}
+	}
+}
+
+// ---------------------------------- //
+/// Overload Loop() function
+Void Yield() {
+	Loop();
+}
+
+// ---------------------------------- //
+/// Unload the library
+Void Unload() {
+	G_LibMessage_DefaultBigMessage = "";
+	G_LibMessage_DefaultStatusMessage = "";
+	CleanAllMessages();
+}
+
+// ---------------------------------- //
+/// Load the library
+Void Load() {
+	Unload();
+}

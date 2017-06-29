@@ -1,0 +1,395 @@
+/**
+ *	Base for a standard Trackmania game mode
+ */
+#Extends "Modes/ModeMatchmaking2.Script.txt"
+
+#RequireContext CTmMode
+
+#Const MB_TM_Version			"2017-05-30"
+#Const MB_TM_ScriptName	"Modes/TrackMania/ModeBase2.Script.txt"
+
+// ---------------------------------- //
+// Libraries
+// ---------------------------------- //
+#Include "Libs/Nadeo/TrackMania/TM3.Script.txt" as TM
+#Include "Libs/Nadeo/TrackMania/Events.Script.txt" as Events
+#Include "Libs/Nadeo/TrackMania/WarmUp3.Script.txt" as WarmUp
+#Include "Libs/Nadeo/TrackMania/UI2.Script.txt" as UI
+#Include "ManiaApps/Nadeo/TrackMania/UI_Server.Script.txt" as UI_Server
+#Include "ManiaApps/Nadeo/TrackMania/UI_Common.Script.txt" as UIModules
+#Include "Libs/Nadeo/TrackMania/Scores.Script.txt" as Scores
+#Include "Libs/Nadeo/TrackMania/RespawnBehaviour.Script.txt" as RespawnBehaviour
+
+// ---------------------------------- //
+// Settings
+// ---------------------------------- //
+#Setting S_AllowRespawn							True	as _("Allow respawn :") ///< Allow the players to respawn or not
+#Setting S_UseLegacyXmlRpcCallbacks	True	as "<hidden>" ///< Turn on/off the legacy xmlrpc callbacks
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_DefaultHudModulePath "Nadeo/TrackMania/Default/Hud.Module.Gbx"
+
+// ---------------------------------- //
+// Globales
+// ---------------------------------- //
+declare Boolean MB_Settings_UseDefaultScores;
+declare Boolean MB_Settings_UseDefaultClansScoresUI;
+declare Boolean MB_Settings_UseDefaultSounds;
+
+// ---------------------------------- //
+// Extends
+// ---------------------------------- //
+***MB_Private_LogVersions***
+***
+Log::RegisterScript(MB_TM_ScriptName, MB_TM_Version);
+Log::RegisterScript(UI::GetScriptName(), UI::GetScriptVersion());
+Log::RegisterScript(TM::GetScriptName(), TM::GetScriptVersion());
+Log::RegisterScript(Events::GetScriptName(), Events::GetScriptVersion());
+Log::RegisterScript(Scores::GetScriptName(), Scores::GetScriptVersion());
+Log::RegisterScript(WarmUp::GetScriptName(), WarmUp::GetScriptVersion());
+***
+
+***MB_Private_Settings***
+***
+MB_Settings_UseDefaultScores = True;
+MB_Settings_UseDefaultClansScoresUI = True;
+MB_Settings_UseDefaultSounds = True;
+***
+
+***MB_Private_LoadLibraries***
+***
+Events::Load();
+Scores::Load();
+TM::Load();
+UI_Server::Load();
+UI::Load();
+WarmUp::Load();
+***
+
+***MB_Private_UnloadLibraries***
+***
+Events::Unload();
+Scores::Unload();
+TM::Unload();
+UI::Unload();
+UI_Server::Unload();
+WarmUp::Unload();
+***
+
+***MB_Private_Yield***
+***
+Events::Yield();
+Scores::Yield();
+UI::Yield();
+TM::Yield();
+WarmUp::Yield_XmlRpc();
+
+if (MB_Settings_UseDefaultRespawnBehaviour) {
+	RespawnBehaviour::Yield(S_AllowRespawn);
+}
+
+/// Check if the legacy XmlRpc callbacks must be enabled or disabled
+if (EnableLegacyXmlRpcCallbacks != S_UseLegacyXmlRpcCallbacks) {
+	EnableLegacyXmlRpcCallbacks = S_UseLegacyXmlRpcCallbacks;
+}
+***
+
+***MB_Private_StartServer***
+***
+if (MB_Settings_UseDefaultRespawnBehaviour) {
+	RespawnBehaviour::Set(CTmMode::ETMRespawnBehaviour::Normal);
+}
+
+if (MB_Settings_UseDefaultScores) {
+	Scores::SetDefaultLadderSort(Scores::C_Sort_BestRaceTime);
+}
+
+TM::SetupDefaultVisibility();
+***
+
+***MB_Private_InitMatch***
+***
+if (MB_Settings_UseDefaultScores) {
+	Scores::StartMatch();
+}
+***
+
+***MB_Private_BeforeIntroSequence***
+***
+if (MB_Settings_UseDefaultIntroSequence) {
+	foreach (Player in AllPlayers) {
+		declare MB_Private_InitIntro for Player = True;
+		MB_Private_InitIntro = True;
+	}
+}
+***
+
+***MB_Private_IntroSequenceYield***
+***
+foreach (Player in AllPlayers) {
+	declare MB_Private_InitIntro for Player = True;
+	if (MB_Private_InitIntro) {
+		MB_Private_InitIntro = False;
+		
+		declare MB_Private_IntroIsSpawned for Player = False;
+		declare MB_Private_IntroRaceStartTime for Player = -1;
+		MB_Private_IntroIsSpawned = Player.IsSpawned;
+		MB_Private_IntroRaceStartTime = Player.RaceStartTime;
+		
+		Player.IsSpawned = True;
+		Player.RaceStartTime = -1;
+	}
+}
+***
+
+***MB_Private_AfterIntroSequence***
+***
+if (MB_Settings_UseDefaultIntroSequence) {
+	foreach (Player in AllPlayers) {
+		declare MB_Private_InitIntro for Player = True;
+		if (!MB_Private_InitIntro) {
+			declare MB_Private_IntroIsSpawned for Player = False;
+			declare MB_Private_IntroRaceStartTime for Player = -1;
+			Player.IsSpawned = MB_Private_IntroIsSpawned;
+			Player.RaceStartTime = MB_Private_IntroRaceStartTime;
+		}
+	}
+}
+***
+					
+
+***MB_Private_InitMap***
+***
+if (MB_Settings_UseDefaultScores) {
+	Scores::StartMap();
+}
+***
+
+***MB_Private_StartMap***
+***
+if (MB_Settings_UseDefaultClansScoresUI) {
+	Scores::EnableClansScoresUI(UseClans);
+}
+***
+
+***MB_Private_InitRound***
+***
+if (MB_Settings_UseDefaultScores) {
+	Scores::StartRound();
+}
+***
+
+***MB_Private_StartPlayLoop***
+***
+if (MB_Settings_UseDefaultSounds) {
+	UIManager.UIAll.SendNotice("", CUIConfig::ENoticeLevel::MatchInfo, Null, CUIConfig::EAvatarVariant::Default, CUIConfig::EUISound::StartRound, 0);
+}
+***
+
+***MB_Private_AfterEndRound***
+***
+if (MB_Settings_UseDefaultScores) {
+	Scores::EndRound();
+}
+
+Scores::XmlRpc_SendScores(Scores::Section_EndRound(), "");
+***
+
+***MB_Private_EndMap***
+***
+if (MB_Settings_UseDefaultClansScoresUI) {
+	Scores::EnableClansScoresUI(False);
+}
+***
+
+***MB_Private_AfterEndMap***
+***
+if (MB_Settings_UseDefaultScores) {
+	Scores::EndMap();
+}
+
+Scores::XmlRpc_SendScores(Scores::Section_EndMap(), "");
+***
+
+***MB_Private_BeforeCloseLadder***
+***
+if (MB_Settings_UseDefaultScores) {
+	Scores::ComputeLadder();
+}
+
+if (MB_Settings_UseDefaultChannelProgression && ChannelProgression::IsEnabled()) {
+	declare SortCriteria = Scores::GetDefaultLadderSort();
+	declare RankingNames = Text[];
+	declare RankingScores = Integer[];
+	foreach (Rank => Score in Scores) {
+		RankingNames.add(Score.User.Name);
+		
+		switch (SortCriteria) {
+			case Scores::C_Sort_MatchPoints									: RankingScores.add(Scores::GetPlayerMatchPoints(Score));
+			case Scores::C_Sort_MapPoints										: RankingScores.add(Scores::GetPlayerMapPoints(Score));
+			case Scores::C_Sort_RoundPoints									: RankingScores.add(Scores::GetPlayerRoundPoints(Score));
+			case Scores::C_Sort_BestRaceTime									: RankingScores.add(Scores::GetPlayerBestRaceTime(Score));
+			case Scores::C_Sort_BestLapTime									: RankingScores.add(Scores::GetPlayerBestLapTime(Score));
+			case Scores::C_Sort_BestRaceStunts								: RankingScores.add(Scores::GetPlayerBestRaceStunts(Score));
+			case Scores::C_Sort_BestRaceNbRespawns						: RankingScores.add(Scores::GetPlayerBestRaceNbRespawns(Score));
+			case Scores::C_Sort_BestRaceCheckpointsProgress	: RankingScores.add(Scores::GetPlayerBestRaceCheckpointsProgress(Score));
+			case Scores::C_Sort_PrevRaceTime									: RankingScores.add(Scores::GetPlayerPrevRaceTime(Score));
+			default																						: RankingScores.add(0);
+		}
+		
+		ChannelProgression::SetRank(Score, Rank);
+	}
+	
+	ChannelProgression::SetRankingIsTime(False);
+	switch (SortCriteria) {
+		case Scores::C_Sort_BestRaceTime	: ChannelProgression::SetRankingIsTime(True);
+		case Scores::C_Sort_BestLapTime	: ChannelProgression::SetRankingIsTime(True);
+		case Scores::C_Sort_PrevRaceTime	: ChannelProgression::SetRankingIsTime(True);
+	}
+	
+	ChannelProgression::SetRanking(RankingNames, RankingScores);
+}
+***
+
+***MB_Private_BeforePodiumSequence***
+***
+if (MB_Settings_UseDefaultPodiumSequence && !MB_Private_SkipPodiumSequence) {
+	UIManager.UIAll.BigMessageSound = CUIConfig::EUISound::EndRound;
+	UIManager.UIAll.BigMessageSoundVariant = 0;
+	
+	declare MB_Private_Message = _("|Match|Draw");
+	if (UseClans) {
+		declare MB_Private_TeamId = Scores::GetClanWinner() - 1;
+		if (Teams.existskey(MB_Private_TeamId)) {
+			if (!MB_MatchIsRunning()) MB_Private_Message = MM_TL::Compose(_("$<%1$> wins the match!"), Teams[MB_Private_TeamId].ColorizedName);
+			else MB_Private_Message = MM_TL::Compose(_("$<%1$> wins the map!"), Teams[MB_Private_TeamId].ColorizedName);
+		}
+	} else {
+		declare MB_Private_Score <=> Scores::GetPlayerWinner();
+		if (MB_Private_Score != Null) {
+			if (!MB_MatchIsRunning()) MB_Private_Message = MM_TL::Compose(_("$<%1$> wins the match!"), MB_Private_Score.User.Name);
+			else MB_Private_Message = MM_TL::Compose(_("$<%1$> wins the map!"), MB_Private_Score.User.Name);
+		}
+	}
+	
+	UIManager.UIAll.BigMessage = MB_Private_Message;
+}
+***
+
+***MB_Private_AfterPodiumSequence***
+***
+if (MB_Settings_UseDefaultPodiumSequence && !MB_Private_SkipPodiumSequence) {
+	UIManager.UIAll.BigMessage = "";
+}
+***
+
+***MB_Private_AfterEndMatch***
+***
+if (MB_Settings_UseDefaultScores) {
+	Scores::EndMatch();
+}
+
+Scores::XmlRpc_SendScores(Scores::Section_EndMatch(), "");
+***
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+// ---------------------------------- //
+/** Launch a warm up phase
+ *
+ *	@param	_NbOfWarmUp								The number of warm up rounds to play
+ *	@param	_TimeLimit								The time limit of one warm up round in ms
+ *																		If it is negative, the warm up will be played in round mode. 
+ *																		If it is 0 the warm up will be played in time attack with a 
+ *																		time limit calculated automatically from the author time of the map. 
+ *																		If it is positive the warm up will be played in time attack
+ *																		with the given time limit.
+ */
+Void MB_Private_WarmUp(Integer _NbOfWarmUp, Integer _TimeLimit) {
+	if (_NbOfWarmUp <= 0) return;
+	
+	declare TimeLimit = _TimeLimit;
+	if (TimeLimit == 0) {
+		declare ObjectiveNbLaps = Map.TMObjective_NbLaps;
+		if (ObjectiveNbLaps <= 0 || !Map.TMObjective_IsLapRace) ObjectiveNbLaps = 1;
+		declare MaxTime = Map.TMObjective_AuthorTime / ObjectiveNbLaps;
+		TimeLimit = 5000 + MaxTime + (MaxTime / 6);
+	}
+	
+	declare PrevUISequence = UIManager.UIAll.UISequence;
+	
+	WarmUp::Start();
+	declare WarmUpPlayedNb = 0;
+	while (!WarmUp::Finished() && WarmUpPlayedNb < _NbOfWarmUp && !ServerShutdownRequested && !MatchEndRequested) {
+		WarmUp::StartRound(WarmUpPlayedNb + 1, _NbOfWarmUp, TimeLimit);
+		while (!WarmUp::Finished() && !WarmUp::RoundFinished() && !ServerShutdownRequested && !MatchEndRequested) {
+			MB_Private_Yield();
+			
+			foreach (Event in PendingEvents) {
+				Events::Valid(Event);
+			}
+			
+			WarmUp::Yield();
+		}
+		WarmUp::EndRound();
+		WarmUpPlayedNb += 1;
+		MB_Private_Yield(); //< Yield between XmlRpc EndRound and next StartRound callbacks
+	}
+	WarmUp::End();
+	
+	UIManager.UIAll.UISequence = CUIConfig::EUISequence::EndRound;
+	UIManager.UIAll.BigMessage = _("End of warmup, match starting...");
+	CutOffTimeLimit = Now + 4000;
+	while (Now < CutOffTimeLimit && !ServerShutdownRequested && !MatchEndRequested) {
+		MB_Private_Yield();
+	}
+	CutOffTimeLimit = -1;
+	UIManager.UIAll.BigMessage = "";
+	UIManager.UIAll.UISequence = PrevUISequence;
+}
+
+// ---------------------------------- //
+/** Select upon which criteria the scores
+ *	will be sorted
+ *
+ *	@param	_SortOrder								The sorting criteria
+ */
+Void MB_Private_SortScores(CTmMode::ETmScoreSortOrder _SortOrder) {
+	Scores_Sort(_SortOrder);
+	if (Hud != Null && Hud.ScoresTable != Null) {
+		declare ScoresTableSortOrder = CModulePlaygroundScoresTable::EScoreSortOrder::TMBestTime;
+		switch (_SortOrder) {
+			case CTmMode::ETmScoreSortOrder::TotalPoints: {
+				ScoresTableSortOrder = CModulePlaygroundScoresTable::EScoreSortOrder::TMPoints;
+			}
+			case CTmMode::ETmScoreSortOrder::BestRace_Time: {
+				ScoresTableSortOrder = CModulePlaygroundScoresTable::EScoreSortOrder::TMBestTime;
+			}
+			case CTmMode::ETmScoreSortOrder::BestRace_Stunts: {
+				ScoresTableSortOrder = CModulePlaygroundScoresTable::EScoreSortOrder::TMStunts;
+			}
+			case CTmMode::ETmScoreSortOrder::BestRace_NbRespawns: {
+				ScoresTableSortOrder = CModulePlaygroundScoresTable::EScoreSortOrder::TMRespawns;
+			}
+			case CTmMode::ETmScoreSortOrder::BestRace_CheckpointsProgress: {
+				ScoresTableSortOrder = CModulePlaygroundScoresTable::EScoreSortOrder::TMCheckpoints;
+			}
+			case CTmMode::ETmScoreSortOrder::PrevRace_Time: {
+				ScoresTableSortOrder = CModulePlaygroundScoresTable::EScoreSortOrder::TMPrevTime;
+			}
+			case CTmMode::ETmScoreSortOrder::Name: {
+				ScoresTableSortOrder = CModulePlaygroundScoresTable::EScoreSortOrder::Name;
+			}
+			case CTmMode::ETmScoreSortOrder::LadderRankSortValue: {
+				ScoresTableSortOrder = CModulePlaygroundScoresTable::EScoreSortOrder::LadderRanking;
+			}
+			default: {
+				ScoresTableSortOrder = CModulePlaygroundScoresTable::EScoreSortOrder::TMBestTime;
+			}
+		}
+		Hud.ScoresTable.Scores_Sort(ScoresTableSortOrder);
+	}
+}

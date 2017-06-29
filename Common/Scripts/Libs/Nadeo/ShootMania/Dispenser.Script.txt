@@ -1,0 +1,332 @@
+/**
+ *	Dispenser library
+ */
+#Const	Version			"2017-06-02"
+#Const	ScriptName	"Libs/Nadeo/ShootMania/Dispenser.Script.txt"
+
+// ---------------------------------- //
+// Libraries
+// ---------------------------------- //
+#Include "Libs/Nadeo/Log.Script.txt" 								as Log
+#Include "Libs/Nadeo/ShootMania/Objects.Script.txt" as Objects
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_DefaultRespawnTime 3000
+#Const C_BonusItem 						"""Nadeo\ShootMania\Fun\BonusBoxHologram_Box\BonusBoxHologram_Box.Item.gbx""" ///< Path to the box item
+#Const C_BonusEmptyItem 			"""Nadeo\ShootMania\Fun\BonusBoxHologram_Holo\BonusBoxHologram_Holo.Item.gbx""" ///< Path to the empty item
+// #Const C_BonusEmptyItem	
+
+// ---------------------------------- //
+// Globales
+// ---------------------------------- //
+declare Text[] 			G_AllowedItemNames;
+declare CSmObject[] G_AnchorsObjects;
+declare Integer 		G_RespawnTime;
+declare Boolean 		G_AutoPickUp;
+
+declare Text 				G_Name_DefaultObject;
+declare Text 				G_Name_DefaultEmptyObject;
+declare Ident				G_ItemId_DefaultObject;
+declare Ident				G_ItemId_DefaultEmptyObject;
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+// ---------------------------------- //
+/**	Return the version number of the script
+ *
+ *	@return														The version number of the script
+ */
+Text GetScriptVersion() {
+	return Version;
+}
+
+// ---------------------------------- //
+/**	Return the name of the script
+ *
+ *	@return														The name of the script
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+// ---------------------------------- //
+/**	Load bonus items
+ *
+ */
+Void LoadItems() {
+	G_ItemId_DefaultObject 				= ItemList_Add(G_Name_DefaultObject);
+	G_ItemId_DefaultEmptyObject 	= ItemList_Add(G_Name_DefaultEmptyObject);
+}
+
+// ---------------------------------- //
+/**	Use default library objects
+ *
+ */
+Void UseDefaultObjects() {
+	G_Name_DefaultObject 			= C_BonusItem;
+	G_Name_DefaultEmptyObject = C_BonusEmptyItem;
+}
+
+// ---------------------------------- //
+/** Set the name of an object
+ *
+ *	@param	_Object										The object to name
+ *	@param	_Name											The name of the object
+ */
+Void SetObjectName(CSmObject _Object, Text _Name) {
+	if (_Object == Null) return;
+	Objects::SetObjectName(_Object, _Name);
+	declare LibDispenser_Private_Name for _Object = "";
+	LibDispenser_Private_Name = _Name;
+}
+
+// ---------------------------------- //
+/** Get the name of an object
+ *
+ *	@param	_Object										The object to check
+ *
+ *	@return														The namer of the object
+ */
+Text GetObjectName(CSmObject _Object) {
+	if (_Object == Null) return "";
+	declare LibDispenser_Private_Name for _Object = "";
+	return LibDispenser_Private_Name;
+}
+
+Boolean IsObjectEmptyBonus(CSmObject _Object) {
+	if(_Object == Null) return False;
+	return GetObjectName(_Object) == G_Name_DefaultEmptyObject;
+}
+
+Boolean IsDispanserObject(CSmObject _Object) {
+	declare Ident LibDispenser_Private_AnchorId for _Object;
+	foreach (MapLandmark in MapLandmarks_ObjectAnchor) {
+		if(LibDispenser_Private_AnchorId == MapLandmark.Id) return True;
+	}
+	return False;
+}
+
+/*
+// ---------------------------------- //
+/** Set a list of objects allowed
+ *	to be spawned on the anchors
+ *	/!\ Call this function before
+ *	map load or it will be ignored /!\
+ */
+/*
+ Void SetAllowedObjects(Text[] _ItemNames) {
+	G_AllowedItemNames = _ItemNames;
+}
+*/
+
+// ---------------------------------- //
+/** Set the default object used by dispensers
+ *
+ *	@param	_ItemName									The name of the item
+ *  @param	_ModelId									The modelId of the item
+*/
+Void SetDefaultObject(Text _ItemName, Ident _ModelId) {
+	G_Name_DefaultObject 		= _ItemName;
+	G_ItemId_DefaultObject	= _ModelId;
+}
+
+// ---------------------------------- //
+/** Set the default empty object used by dispensers
+ *
+ *	@param	_ItemName									The name of the item
+ *  @param	_ModelId									The modelId of the item
+*/
+Void SetDefaultEmptyObject(Text _ItemName, Ident _ModelId) {
+	G_Name_DefaultEmptyObject 	= _ItemName;
+	G_ItemId_DefaultEmptyObject = _ModelId;
+}
+
+// ---------------------------------- //
+/// Destroy all existing anchor object
+Void DestroyAnchorsObjects() {
+	foreach (Object in G_AnchorsObjects) {
+		ObjectDestroy(Object);
+	}
+	G_AnchorsObjects.clear();
+}
+
+Void CreateObjects(Ident _ItemId, CSmMapLandmark _Landmark, Text _Name) {
+	declare Object <=> ObjectCreate(_ItemId);
+	if (Object != Null) {
+		G_AnchorsObjects.add(Object);
+		declare CSmMapObjectAnchor 	LibDispenser_Private_Anchor 					for Object;
+		declare Ident 							LibDispenser_Private_AnchorId 				for Object;
+
+		LibDispenser_Private_Anchor <=> _Landmark.ObjectAnchor;
+		LibDispenser_Private_AnchorId	 = _Landmark.Id;
+		SetObjectName(Object, _Name);
+	}
+}
+
+// ---------------------------------- //
+/// Create all objects associated to an anchor
+Void CreateAnchorsObjects() {
+	DestroyAnchorsObjects();
+	foreach (MapLandmark in MapLandmarks_ObjectAnchor) {
+			// For the moment we create one bonus and the empty one by dispenser
+		if(MapLandmark.ObjectAnchor.ItemModelId == NullId && MapLandmark.ObjectAnchor.ItemName == "" && G_ItemId_DefaultObject != NullId && G_ItemId_DefaultEmptyObject != NullId) {
+			CreateObjects(G_ItemId_DefaultObject, MapLandmark, G_Name_DefaultObject);
+			CreateObjects(G_ItemId_DefaultEmptyObject, MapLandmark, G_Name_DefaultEmptyObject);
+		}
+	}
+}
+
+// ---------------------------------- //
+/** Spawn or unspawned the empty version of the object
+ *
+ *	@param	_AnchorPosition						Anchor position to find the object
+ *  @param	_Spawn								    Boolean saying if the object must be spawned or unspawned
+*/
+Void SpawnAnchorEmptyObject(Ident _AnchorId, Boolean _Spawn) {
+	foreach (Object in G_AnchorsObjects) {
+		if(GetObjectName(Object) == G_Name_DefaultEmptyObject) {
+			// declare Vec3 LibDispenser_Private_AnchorPosition 	for Object;
+			declare Ident LibDispenser_Private_AnchorId for Object;
+			if(LibDispenser_Private_AnchorId == _AnchorId) {				
+				declare CSmMapObjectAnchor LibDispenser_Private_Anchor for Object;
+				if(_Spawn) {
+					Object.SetAnchor(LibDispenser_Private_Anchor);
+				} else {
+					Object.SetUnspawned();
+				}
+			}
+		}
+	}
+}
+
+// ---------------------------------- //
+/// Spawn all objects on their anchors
+Void SpawnAnchorsObjects() {
+	foreach (Object in G_AnchorsObjects) {
+		declare CSmMapObjectAnchor LibDispenser_Private_Anchor 					for Object;
+		if (LibDispenser_Private_Anchor != Null && GetObjectName(Object) == G_Name_DefaultObject) {
+			Object.SetAnchor(LibDispenser_Private_Anchor);
+		
+		}
+		declare Integer LibDispenser_Private_RespawnTime for Object;
+		LibDispenser_Private_RespawnTime = -1;
+	}
+}
+
+// ---------------------------------- //
+/// Unspawn all objects from their anchors
+Void UnspawnAnchorsObjects() {
+	foreach (Object in G_AnchorsObjects) {
+		Object.SetUnspawned();
+	}
+}
+
+// ---------------------------------- //
+/** Get the anchor used by the library
+ *	to spawn the object
+ *
+ *	@param	_Object										The object to check
+ *
+ *	@return														The anchor if found,
+ *																		Null otherwise
+ */
+CSmMapObjectAnchor GetSpawnAnchor(CSmObject _Object) {
+	if (_Object == Null) return Null;
+	declare CSmMapObjectAnchor LibDispenser_Private_Anchor for _Object;
+	return LibDispenser_Private_Anchor;
+}
+
+// ---------------------------------- //
+/** Update the respawn time of object
+ *	automatically spawned on anchors
+ *
+ *	@param	_Time											The new respawn time
+ */
+Void SetAnchorsObjectsRespawnTime(Integer _Time) {
+	G_RespawnTime = _Time;
+}
+
+// ---------------------------------- //
+/** Enable of disable the auto pick up
+ *	of object spawned on anchors by the
+ *	library
+ *
+ *	@param	_AutoPickUp								True to enable
+ *																		False to disable
+ */
+Void SetAutoPickUp(Boolean _AutoPickUp) {
+	G_AutoPickUp = _AutoPickUp;
+	Log::Log("""[Objects] Set auto pick up : {{{G_AutoPickUp}}}""");
+}
+
+// ---------------------------------- //
+/** Pick up an object and mark it for
+ *	respawn if necessary. Spawn the empty version of the item
+ *
+ *	@param	_Object										The object to pick up
+ */
+Void PickUp(CSmObject _Object) {
+	if (_Object == Null) return;
+	
+	declare LibDispenser_Private_Name for _Object = "";
+	if(LibDispenser_Private_Name == C_BonusEmptyItem) return;
+	_Object.SetUnspawned();
+	declare Ident LibDispenser_Private_AnchorId for _Object;
+	SpawnAnchorEmptyObject(LibDispenser_Private_AnchorId, True);
+	if (G_AnchorsObjects.exists(_Object)) {
+		declare LibDispenser_Private_RespawnTime for _Object = -1;
+		LibDispenser_Private_RespawnTime = Now + G_RespawnTime;
+	}
+}
+
+// ---------------------------------- //
+/// Update the library
+Void Yield() {
+	// Pick up objects
+	if (G_AutoPickUp) {
+		foreach (Event in PendingEvents) {
+			if (Event.Type == CSmModeEvent::EType::OnPlayerTouchesObject && G_AnchorsObjects.exists(Event.Object)) {
+				Event.Object.SetUnspawned();
+				declare LibDispenser_Private_RespawnTime for Event.Object = -1;
+				LibDispenser_Private_RespawnTime = Now + G_RespawnTime;
+			}
+		}
+	}
+	// Respawn objects
+	foreach (Object in G_AnchorsObjects) {
+		declare LibDispenser_Private_RespawnTime for Object = -1;
+		if(GetObjectName(Object) == G_Name_DefaultObject) {
+			if (LibDispenser_Private_RespawnTime >= 0 && LibDispenser_Private_RespawnTime <= Now) {
+				declare CSmMapObjectAnchor LibDispenser_Private_Anchor for Object;
+				if (LibDispenser_Private_Anchor != Null) {
+					Object.SetAnchor(LibDispenser_Private_Anchor);
+					declare Ident LibDispenser_Private_AnchorId 	for Object;
+					
+					SpawnAnchorEmptyObject(LibDispenser_Private_AnchorId, False);
+				}
+				LibDispenser_Private_RespawnTime = -1;
+			}
+		}
+	}
+}
+
+// ---------------------------------- //
+/// Unload the library
+Void Unload() {
+	DestroyAnchorsObjects();
+	// G_AllowedItemNames.clear();
+	G_RespawnTime = C_DefaultRespawnTime;
+	G_AutoPickUp = False;
+}
+
+// ---------------------------------- //
+/// Load the library
+Void Load() {
+	Unload();
+}

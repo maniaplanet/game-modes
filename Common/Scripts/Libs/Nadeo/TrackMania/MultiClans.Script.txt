@@ -1,0 +1,288 @@
+/**
+ *	Multi clans library
+ *
+ *	The default clan of the players is 0 and 0 is not considered as a valid clan.
+ *	So the 0 clan is not taken into account in the different counting method like:
+ *	GetClanNbTotal(), GetClanNbPlayers(), etc
+ */
+
+#Const Version		"2014-01-08"
+#Const ScriptName	"MultiClans.Script.txt"
+
+#Const C_DefaultColor <0., 0., 0.>
+// ---------------------------------- //
+// Globales
+// ---------------------------------- //
+declare Vec3[Integer] G_ClansColors;
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+// ---------------------------------- //
+// Private
+// ---------------------------------- //
+// ---------------------------------- //
+/** Initialize a player
+ *
+ *	@param	_Player		The player to initialize
+ */
+Void Private_InitPlayer(CTmPlayer _Player) {
+	if (_Player == Null) return;
+	
+	declare LibMultiClans_RequestedClan for _Player = 0;
+	declare LibMultiClans_CurrentClan for _Player = 0;
+	LibMultiClans_RequestedClan = 0;
+	LibMultiClans_CurrentClan = 0;
+}
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+// ---------------------------------- //
+/** Return the version number of the script
+ *
+ *	@return		The version number of the script
+ */
+Text GetScriptVersion() {
+	return Version;
+}
+
+// ---------------------------------- //
+/** Return the name of the script
+ *
+ *	@return		The name of the script
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+// ---------------------------------- //
+/// Unload the library
+Void Unload() {
+	foreach (Player in AllPlayers) {
+		Private_InitPlayer(Player);
+	}
+	
+	G_ClansColors.clear();
+}
+
+// ---------------------------------- //
+/// Load the library
+Void Load() {
+	Unload();
+}
+
+// ---------------------------------- //
+/** Get the current clan of a player
+ *
+ *	@param	_Player		The player to check
+ *
+ *	@return				The clan of the player
+ */
+Integer GetPlayerClan(CTmPlayer _Player) {
+	if (_Player == Null) return 0;
+	declare LibMultiClans_CurrentClan for _Player = 0;
+	return LibMultiClans_CurrentClan;
+}
+
+// ---------------------------------- //
+/** Set the current clan of a player
+ *
+ *	@param	_Player		The player to update
+ *	@param	_ClanNb		The clan number to set
+ */
+Void SetPlayerClan(CTmPlayer _Player, Integer _ClanNb) {
+	if (_Player == Null) return;
+	declare LibMultiClans_CurrentClan for _Player = 0;
+	LibMultiClans_CurrentClan = _ClanNb;
+}
+
+// ---------------------------------- //
+/**	Check if a clan exists
+ *
+ *	@return		True if the clan exists, False otherwise
+ */
+Boolean ClanExists(Integer _ClanNb) {
+	foreach (Player in AllPlayers) {
+		if (GetPlayerClan(Player) == _ClanNb) return True;
+	}
+	return False;
+}
+
+// ---------------------------------- //
+/// Remove the unexisting clans from the clans colors array
+Void CleanClansColors() {
+	declare ToRemove = Integer[];
+	foreach (ClanNb => Color in G_ClansColors) {
+		if (!ClanExists(ClanNb)) ToRemove.add(ClanNb);
+	}
+	foreach (ClanNb in ToRemove) {
+		declare Removed = G_ClansColors.removekey(ClanNb);
+	}
+}
+
+// ---------------------------------- //
+/// Clear the clans colors array
+Void ClearClansColors() {
+	G_ClansColors.clear();
+}
+
+// ---------------------------------- //
+/** Get the current color of a clan
+ *
+ *	@param	_ClanNb		The clan to get
+ *
+ *	@return				The color of the clan in RGB, if not found return a black color
+ */
+Vec3 GetClanColor(Integer _ClanNb) {
+	if (G_ClansColors.existskey(_ClanNb)) return G_ClansColors[_ClanNb];
+	return C_DefaultColor;
+}
+
+// ---------------------------------- //
+/** Get the color of each clan
+ *
+ *	@param	_ClanNb		The clan to get
+ */
+Vec3[Integer] GetClansColor() {	
+	return G_ClansColors;
+}
+
+// ---------------------------------- //
+/** Set the color of a clan
+ *
+ *	@param	_ClanNb		The number of the clan to update
+ *	@param	_Color		The color to set
+ */
+Void SetClanColor(Integer _ClanNb, Vec3 _Color) {
+	G_ClansColors[_ClanNb] = _Color;
+}
+
+// ---------------------------------- //
+/** Get the list of the existing clans
+ *
+ *	@return		An array containing the numbers of the existing clans
+ */
+Integer[] GetClans() {
+	declare ClansList = Integer[];
+	foreach (Player in AllPlayers) {
+		declare Clan = GetPlayerClan(Player);
+		if (Clan != 0 && !ClansList.exists(Clan)) ClansList.add(Clan);
+	}
+	return ClansList;
+}
+
+// ---------------------------------- //
+/** Get the total number of clans
+ *
+ *	@return		The total number of clans
+ */
+Integer GetClansNbTotal() {
+	return GetClans().count;
+}
+
+// ---------------------------------- //
+/** Get the number of clans racing (at least one player inside is racing)
+ *
+ *	@return		The number of clans racing
+ */
+Integer GetClansNbRacing() {
+	declare ClansList = Integer[];
+	foreach (Player in AllPlayers) {
+		if (!Player.IsSpawned || Player.RaceStartTime < 0) continue;
+		declare Clan = GetPlayerClan(Player);
+		if (Clan != 0 && !ClansList.exists(Clan)) ClansList.add(Clan);
+	}
+	return ClansList.count;
+}
+
+// ---------------------------------- //
+/** Get the number of clans waiting (all players inside are not racing (waiting/spectating/...)
+ *
+ *	@return		The number of clans waiting
+ */
+Integer GetClansNbWaiting() {
+	return GetClansNbTotal() - GetClansNbRacing();
+}
+
+// ---------------------------------- //
+/** Get the players of all clans
+ *
+ *	@return				The players of the clans
+ */
+CTmPlayer[][Integer] GetClansPlayers() {
+	declare ClansList = CTmPlayer[][Integer];
+	foreach (Player in AllPlayers) {
+		declare Clan = GetPlayerClan(Player);
+		if (!ClansList.existskey(Clan)) ClansList[Clan] = CTmPlayer[];
+		ClansList[Clan].add(Player);
+	}
+	return ClansList;
+}
+
+// ---------------------------------- //
+/** Get the players of a clan
+ *
+ *	@param	_ClanNb		The clan to get
+ *
+ *	@return				The players of the requested clan
+ */
+CTmPlayer[] GetClanPlayers(Integer _ClanNb) {
+	declare ClansList = CTmPlayer[];
+	foreach (Player in AllPlayers) {
+		declare Clan = GetPlayerClan(Player);
+		if (Clan != _ClanNb) continue;
+		ClansList.add(Player);
+	}
+	return ClansList;
+}
+
+// ---------------------------------- //
+/** Get the number of players in a clan
+ *
+ *	@param	_ClanNb		The clan to check
+ *
+ *	@return				The number of players in the clan
+ */
+Integer GetClanNbPlayers(Integer _ClanNb) {
+	declare Count = 0;
+	foreach (Player in AllPlayers) {
+		declare Clan = GetPlayerClan(Player);
+		if (Clan == _ClanNb) Count += 1;
+	}
+	return Count;
+}
+
+// ---------------------------------- //
+/** Get the number of racing players in a clan
+ *
+ *	@param	_ClanNb		The clan to check
+ *
+ *	@return				The number of players racing in the clan
+ */
+Integer GetClanNbPlayersRacing(Integer _ClanNb) {
+	declare Count = 0;
+	foreach (Player in AllPlayers) {
+		if (!Player.IsSpawned || Player.RaceStartTime < 0) continue;
+		declare Clan = GetPlayerClan(Player);
+		if (Clan == _ClanNb) Count += 1;
+	}
+	return Count;
+}
+
+// ---------------------------------- //
+/** Get the number of waiting players in a clan
+ *
+ *	@param	_ClanNb		The clan to check
+ *
+ *	@return				The number of players waiting in the clan
+ */
+Integer GetClanNbPlayersWaiting(Integer _ClanNb) {
+	declare Count = 0;
+	foreach (Player in AllPlayers) {
+		if (Player.IsSpawned && Player.RaceStartTime >= 0) continue;
+		declare Clan = GetPlayerClan(Player);
+		if (Clan == _ClanNb) Count += 1;
+	}
+	return Count;
+}

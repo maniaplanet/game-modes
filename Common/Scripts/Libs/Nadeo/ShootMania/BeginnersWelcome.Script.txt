@@ -1,0 +1,374 @@
+#Const Version		"2013-03-04"
+#Const ScriptName	"BeginnersWelcome.Script.txt"
+
+#Include "TextLib" as TextLib
+#Include "Libs/Nadeo/Message.Script.txt" as Message
+
+#Const C_BeginnerLPLimit			1000	///< Max nb of ladder points to be considered a beginner.
+#Const C_BeginnerMinHits			10		///< Min nb of hits not to be considered a beginner.
+#Const C_BeginnerMaxHits			100		///< Max nb of hits to be considered a beginner.
+#Const C_BeginnersAmmoGainBonus		0.15	///< Extra AmmoGain bonus given to a beginner each time he/she performs badly during a round
+#Const C_BeginnersMaxAmmoGain		1.75	///< Max ammo gain for a beginner
+#Const C_BeginnersDefaultAmmoGain	1.3		///< Default ammo gain for a beginner
+#Const C_WelcomeWindowMaxTime		35000
+
+declare Text G_Lib_BW_ModeName;
+declare CUILayer G_Lib_BW_WelcomeLayer;
+
+// Persistant traits declared for Users in this lib :
+// 		Boolean[Text] Lib_BW_IsRegularPlayer
+// 		Integer[Text] Lib_BW_TotalHits
+// 		Integer[Text] Lib_BW_TotalEliminations
+
+/* ------------------------------------- */
+/** Return the version number of the script
+ *
+ *	@return		The version number of the script
+ */
+Text GetScriptVersion() {
+	return Version;
+}
+
+/* ------------------------------------- */
+/** Return the name of the script
+ *
+ *	@return		The name of the script
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+/**
+ * Load the library by giving the name of the mode. 
+ * Without this information, the lib will not update players status and intentionnaly crash (assertion).
+ * 
+ * @param _ModeName	should be a unique name given to that mode, in order to tell wether a player is beginner into this mode.
+ * As a convention, every official mode created by Nadeo starts with the prefix "Nadeo_".
+ * A mode created by a user should start with an identifier of this user.
+ */
+Void Load(Text _ModeName) {
+	G_Lib_BW_ModeName = _ModeName;
+	G_Lib_BW_WelcomeLayer = Null;
+}
+
+/**
+ * Specifies wether a user should be considered as a beginner regarding to his/her ladder points.
+ */
+Boolean IsLadderBeginner(CSmPlayer _Player) {
+	declare UserLP = _Player.User.LadderPoints;
+	return UserLP < C_BeginnerLPLimit;
+}
+
+/**
+ * Specifies wether a user is currently considered as a beginner.
+ */
+Boolean IsBeginner(CSmPlayer _Player) {
+	declare persistent Boolean[Text] Lib_BW_IsRegularPlayer for _Player.User;
+	if(!Lib_BW_IsRegularPlayer.existskey(G_Lib_BW_ModeName)) {
+		declare persistent Integer[Text] Lib_BW_TotalHits 			for _Player.User;
+		declare persistent Integer[Text] Lib_BW_TotalEliminations	for _Player.User;
+		
+		Lib_BW_IsRegularPlayer[G_Lib_BW_ModeName] 	= False;
+		Lib_BW_TotalHits[G_Lib_BW_ModeName] 		= 0;
+		Lib_BW_TotalEliminations[G_Lib_BW_ModeName] = 0;
+	}
+	return ! Lib_BW_IsRegularPlayer[G_Lib_BW_ModeName];
+}
+
+
+/**
+ * Give extra advantages to a player if he/she does not perform well during last round.
+ * @param _Beginner			The affected player.
+							Wether this player is a beginner or not will not be tested. 
+							You should not call this function with a regular player.
+ * @param _NbHitsLastRound	Number of hits performed during last round.
+ */
+Void BalanceBeginner(CSmPlayer _Beginner, Integer _NbHitsLastRound) {
+	declare Real AutoBalance_ReloadSpeedBonus for _Beginner.User = 1.;
+	if(_NbHitsLastRound <= 1) {
+		if((AutoBalance_ReloadSpeedBonus + C_BeginnersAmmoGainBonus) < C_BeginnersMaxAmmoGain) {
+			AutoBalance_ReloadSpeedBonus += C_BeginnersAmmoGainBonus;
+		} else {
+			AutoBalance_ReloadSpeedBonus = C_BeginnersMaxAmmoGain;
+		}
+	} else AutoBalance_ReloadSpeedBonus = C_BeginnersDefaultAmmoGain;
+	//log("AutoBalance_ReloadSpeedBonus: "^AutoBalance_ReloadSpeedBonus);
+}
+
+
+/**
+ * Highlight or unhighlight a player.
+ */
+Void SetPlayerHighlight(CSmPlayer _Player, Boolean Highlight) {
+	if(Highlight) {
+		_Player.IsHighlighted 	= True;
+		_Player.EnergyLevel 	= 1.;
+		// _Player.UseAlternateWeaponVisual = False;
+	} else {
+		_Player.IsHighlighted 	= False;
+		_Player.EnergyLevel 	= 0.;
+		// _Player.UseAlternateWeaponVisual = True; // white rocket
+	}
+}
+
+/**
+ * Highlight a player if he/she is not a beginner - unhighlight him/her otherwise.
+ */
+Void HighlightPlayer(CSmPlayer _Player) {
+	SetPlayerHighlight(_Player, ! IsBeginner(_Player));
+}
+
+/**
+ * Remove extra power from a Player.
+ * @param _Beginner	The affected player.
+					Wether this player is a beginner or not will not be tested.
+ */
+Void UnPowerUpFormerBeginner(CSmPlayer _Player) {
+	declare Real AutoBalance_ReloadSpeedBonus for _Player.User = 1.;
+	AutoBalance_ReloadSpeedBonus = 1.;
+	_Player.ArmorMax	= 200;
+	_Player.Armor 		= 200;
+	_Player.AmmoGain 	= 1.;
+}
+
+/**
+ * Give extra power to a Player.
+ * @param _Beginner	The affected player.
+					Wether this player is a beginner or not will not be tested. 
+					You should not call this function with a regular player.
+ */
+Void PowerUpBeginner(CSmPlayer _Beginner) {
+	// _Beginner.ForceColor = <1., 1., 1.>;
+	_Beginner.ArmorMax	= 300;
+	_Beginner.Armor 	= 300;
+	
+	declare Real AutoBalance_ReloadSpeedBonus for _Beginner.User = 1.;
+	//log("AutoBalance_ReloadSpeedBonus: "^AutoBalance_ReloadSpeedBonus);
+	_Beginner.AmmoGain = AutoBalance_ReloadSpeedBonus;
+}
+
+/**
+ * @return the damage that should be dealt if the player _Shooter hits the player _Victim, regarding their 
+ * beginner status.
+ * A beginner will presumably deal a larger amount of damage to a regular player.
+ * @param _Shooter			The player who performed the hit.
+ * @param _Victim			The poor player who received the hit.
+ * @param _DefaultDamage	A default amount of damage suggested if both players have the same status.
+ *							Allows direct assignment, like "Event.Damage = BW::GetDamage(Shooter, Victim, Event.Damage);"
+ */
+Integer GetDamage(CSmPlayer _Shooter, CSmPlayer _Victim, Integer _DefaultDamage) {
+	return _DefaultDamage;
+	
+	// previous behavior
+	/*
+	declare persistent Boolean[Text] Lib_BW_IsRegularPlayer as IsShooterRegular for _Shooter.User;
+	declare persistent Boolean[Text] Lib_BW_IsRegularPlayer as IsVictimRegular  for _Victim.User;
+	
+	if(! IsShooterRegular[G_Lib_BW_ModeName]) { // Beginner
+		if( IsVictimRegular[G_Lib_BW_ModeName] ) {
+			return _Victim.ArmorMax;
+		}
+	}
+	
+	return _DefaultDamage;
+	*/
+}
+
+/**
+ * A regular player should not be given round points when hitting a beginner.
+ * @Return True iff the library considers that _Shooter should receive points for having _Victim hit.
+ */
+Boolean ShouldGivePoints(CSmPlayer _Shooter, CSmPlayer _Victim) {
+	declare persistent Boolean[Text] Lib_BW_IsRegularPlayer as IsShooterRegular for _Shooter.User;
+	declare persistent Boolean[Text] Lib_BW_IsRegularPlayer as IsVictimRegular  for _Victim.User;
+	
+	return IsVictimRegular[G_Lib_BW_ModeName] || (! IsShooterRegular[G_Lib_BW_ModeName]);
+}
+
+/**
+ * Notify the library that _Player performed a hit, so that extra bonus and Hit/Elim ratio can be computed to determine wether this 
+ * player is a beginner or not.
+ */ 
+Void NotifyHit(CSmPlayer _Player) {
+	declare persistent Integer[Text] Lib_BW_TotalHits for _Player.User;
+	Lib_BW_TotalHits[G_Lib_BW_ModeName] += 1;
+}
+
+/**
+ * Compute the beginner status of a player, so that the function IsBeginner() will return wether a given player is a beginner or not.
+ * In case of turning a beginner player into a regular one, this function also sends a message to the player.
+ * If the player is still considered a beginner, the function grants him/her with bonuses (see function PowerUpBeginner()).
+ */
+Void UpdateBeginnerStatus(CSmPlayer _Player) {
+
+	// assert(G_ModeName != "");
+	if(G_Lib_BW_ModeName == "") {
+		log("You must set the name of the mode when loading the library with ::Load(_ModeName)");
+		assert(False);
+	}
+	
+	declare CUser User <=> _Player.User;
+
+	declare persistent Boolean[Text] Lib_BW_IsRegularPlayer 	for User;
+	declare persistent Integer[Text] Lib_BW_TotalHits 			for User;
+	declare persistent Integer[Text] Lib_BW_TotalEliminations	for User;
+	
+	if(!Lib_BW_IsRegularPlayer.existskey(G_Lib_BW_ModeName)) {
+		Lib_BW_IsRegularPlayer[G_Lib_BW_ModeName] 	= False;
+		Lib_BW_TotalHits[G_Lib_BW_ModeName] 		= 0;
+		Lib_BW_TotalEliminations[G_Lib_BW_ModeName] = 0;
+	}
+	
+	// If the user has been tagged as "not a beginner" once, he/she cannot be a beginner anymore.
+	if(Lib_BW_IsRegularPlayer[G_Lib_BW_ModeName]) return;
+
+	if(! IsLadderBeginner(_Player)) 
+	{
+		// If the user has enough ladder points, he/she is not a beginner anymore.
+		Lib_BW_IsRegularPlayer[G_Lib_BW_ModeName] = True;
+	} else {
+		declare Integer TotalHits 			= Lib_BW_TotalHits[G_Lib_BW_ModeName];
+		declare Integer TotalEliminations 	= Lib_BW_TotalEliminations[G_Lib_BW_ModeName];
+		
+		if(TotalHits < C_BeginnerMinHits) 		Lib_BW_IsRegularPlayer[G_Lib_BW_ModeName] = False;
+		else if(TotalHits > C_BeginnerMaxHits) 	Lib_BW_IsRegularPlayer[G_Lib_BW_ModeName] = True;
+		else {
+			declare Real KillDeathRatio = (100. * TotalHits) / (1. * TotalEliminations + TotalHits);
+			Lib_BW_IsRegularPlayer[G_Lib_BW_ModeName] = (KillDeathRatio >= (100. - TotalHits));
+		}
+	}
+	
+	if(Lib_BW_IsRegularPlayer[G_Lib_BW_ModeName]) {
+		// The player was a beginner, and is not anymore
+		// _Player.ForceColor = <1., 0., 0.>;
+		UnPowerUpFormerBeginner(_Player);
+		
+		// HACK
+		//Message::SendStatusMessage(_Player, _("Congratulations, you are not a beginner anymore!"), 3000, 2);
+		
+	} else {
+		// The player is still a beginner
+		PowerUpBeginner(_Player);
+	}
+}
+
+/**
+ *
+ */
+Void CreateWelcomeWindow(Text _WelcomeTitle, Text _WelcomeText) {
+	G_Lib_BW_WelcomeLayer = UIManager.UILayerCreate();
+	
+	declare Text BgImage = "file://Media/Manialinks/ShootMania/Common/TopsBg.dds";
+	
+	declare Integer WindowWidth		= 180;
+	declare Integer WindowHeight	= 60;
+	declare Integer BigTextSize 	= 5;
+	declare Text EncodedTitle 		= TextLib::MLEncode(_WelcomeTitle);
+	declare Text EncodedText 		= TextLib::MLEncode(_WelcomeText);
+	declare Text MLPage = """
+		<manialink version="1" name="Lib_BeginnersWelcome:WelcomeWindow">
+		<script><!--
+			main() {
+				declare Boolean DisplayWindow 	= True;
+				declare Integer AutoHideTime	= Now + {{{C_WelcomeWindowMaxTime}}};
+				declare FrameWelcomeText <=> (Page.GetFirstChild("FrameWelcomeText") as CMlFrame);
+				
+				while(DisplayWindow) {
+					yield;
+					foreach(Event in PendingEvents)	{
+						switch(Event.Type){
+							case CMlEvent::Type::KeyPress: {
+								if(Event.KeyName == "F1" ) { // F1
+									FrameWelcomeText.Hide();
+									DisplayWindow = False;
+								}
+							}
+						}
+					}
+					
+					if(Now > AutoHideTime) {
+						FrameWelcomeText.Hide();
+						DisplayWindow = False;
+					}
+				}
+			}
+		--></script>
+		<frame id="FrameWelcomeText" hidden="0">
+			<!--<quad  halign="center" 	valign="center" posn="0  0" sizen="{{{WindowWidth}}} {{{WindowHeight}}}" bgcolor="000c" />-->
+			<quad  halign="center" 	valign="center" posn="0 7" sizen="195 122" image="{{{BgImage}}}" />
+			<label halign="center"	valign="top" 	posn="2  {{{(WindowHeight/2)-2}}}" text="{{{EncodedTitle}}}" textsize="{{{BigTextSize}}}"/>
+			<label halign="left" 	valign="bottom"	posn="{{{-(WindowWidth/2)+2}}} {{{-(WindowHeight/2)+20}}}"  text="{{{
+				_("You are currently a $<$0f0beginner$>.")}}}" />
+			<label halign="left" 	valign="bottom"	posn="{{{-(WindowWidth/2)+2}}} {{{-(WindowHeight/2)+15}}}"  text="{{{
+				_("You have more $<$0f0 Armor Points$>.")}}}" />
+			<label halign="left" 	valign="bottom"	posn="{{{-(WindowWidth/2)+2}}} {{{-(WindowHeight/2)+10}}}"  text="{{{
+				_("Other players do not win points when they hit you.")}}}" />
+			<label halign="center" 	valign="bottom"	posn="0 {{{-(WindowHeight/2)}}}"  text="{{{
+				_("Press $<$o$f00F1$> to close this window.")}}}" />
+			<label halign="left" 	valign="top" 	posn="{{{-(WindowWidth/2)+2}}} {{{(WindowHeight/2)-(2*BigTextSize)}}}" 	text="{{{EncodedText}}}" />
+		</frame>
+		</manialink>
+	""";
+	
+	//WelcomeLayer.ManialinkPage = MLPage;
+	G_Lib_BW_WelcomeLayer.ManialinkPage = MLPage;
+}
+
+/**
+ * To be called inside of the +OnNewPlayer+ tag
+ */
+Void NotifyNewPlayer(CSmPlayer _Player) {
+	declare Boolean[Text] Lib_BW_FirstTimeOnTheServer for _Player.User;
+	if(! Lib_BW_FirstTimeOnTheServer.existskey(G_Lib_BW_ModeName)) {
+		Lib_BW_FirstTimeOnTheServer[G_Lib_BW_ModeName] = True;
+	}
+		
+	declare persistent Boolean[Text] Lib_BW_IsRegularPlayer 	for _Player.User;
+	declare persistent Integer[Text] Lib_BW_TotalHits 			for _Player.User;
+	declare persistent Integer[Text] Lib_BW_TotalEliminations	for _Player.User;
+	if(!Lib_BW_IsRegularPlayer.existskey(G_Lib_BW_ModeName)) {
+		Lib_BW_IsRegularPlayer[G_Lib_BW_ModeName] 	= False;
+		Lib_BW_TotalHits[G_Lib_BW_ModeName] 		= 0;
+		Lib_BW_TotalEliminations[G_Lib_BW_ModeName] = 0;
+	}
+	
+	if(Lib_BW_FirstTimeOnTheServer[G_Lib_BW_ModeName]) {
+		Lib_BW_FirstTimeOnTheServer[G_Lib_BW_ModeName] = False;
+		UpdateBeginnerStatus(_Player);
+		if(IsBeginner(_Player)){
+			// log("new beginner: "^_Player.Name);
+			/*
+			if(G_Lib_BW_WelcomeLayer != Null) {
+				declare UI <=> UIManager.GetUI(_Player);
+				if(UI != Null) UI.UILayers.add(G_Lib_BW_WelcomeLayer);
+			}
+			*/
+			BalanceBeginner(_Player, 65535); // Max hits
+		}
+	} else {
+		if(G_Lib_BW_WelcomeLayer == Null) return;
+		
+		/*
+		declare UI <=> UIManager.GetUI(_Player);
+		if (UI != Null && UI.UILayers.exists(G_Lib_BW_WelcomeLayer)) {
+			declare Removed = UI.UILayers.remove(G_Lib_BW_WelcomeLayer);
+		}
+		*/
+	}
+}
+
+/**
+ * Reset all players to default, without caring about their beginner status.
+ */
+Void ResetPlayers() {
+	foreach(Player in Players) {
+		UnPowerUpFormerBeginner(Player);
+		SetPlayerHighlight(Player, True);
+		declare persistent Boolean[Text] Lib_BW_FirstTimeOnTheServer for Player.User;
+		Lib_BW_FirstTimeOnTheServer[G_Lib_BW_ModeName] = True;
+		declare UI <=> UIManager.GetUI(Player);
+		if (UI != Null && UI.UILayers.exists(G_Lib_BW_WelcomeLayer)) {
+			declare Removed = UI.UILayers.remove(G_Lib_BW_WelcomeLayer);
+		}
+	}
+}

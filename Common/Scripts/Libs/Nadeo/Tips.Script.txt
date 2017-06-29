@@ -1,0 +1,167 @@
+/** 
+ * library to handle Tips for the player
+ */
+#Const Version		"2013-07-02"
+#Const ScriptName	"Tips.Script.txt"
+
+#Const	C_TipsLayerName	"G_LibTips_TipsLayer"
+#Const	C_LibTips_AutoSwitchTime 0
+
+#Include "Libs/Nadeo/Layers.Script.txt" as Layers
+
+declare Text G_LibTips_ModeName;
+declare Text[] G_LibTips_TipText;
+declare Ident G_LibTips_TipsLayerId;
+declare Integer G_LibTips_AutoSwitchTime;
+
+/* ------------------------------------- */
+/** Return the version number of the script
+ *
+ *	@return		The version number of the script
+ */
+Text GetScriptVersion() {
+	return Version;
+}
+
+/* ------------------------------------- */
+/** Return the name of the script
+ *
+ *	@return		The name of the script
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+
+/**
+ * Unload the library. Presumably called when the server ends.
+ */
+Void UnLoad() {
+	Layers::Destroy(C_TipsLayerName);
+}
+
+/** 
+ * Load the library.
+ * @param _ModeName	The name of the mode. Used to store current index of tips in a persistant array (local for the player).
+ */
+Void Load(Text _ModeName) {
+	UnLoad();
+	G_LibTips_ModeName = _ModeName;
+	G_LibTips_TipsLayerId = Layers::Create(C_TipsLayerName);
+	G_LibTips_AutoSwitchTime = C_LibTips_AutoSwitchTime;
+}
+
+/**
+ * Build the tips by taking all parameters into account.
+ * @param _Position	Position of the tips frame
+ */
+Void Build(Vec3 _Position) {
+	assert(G_LibTips_ModeName != "", "Tips.Script.txt > You must call Load(ModeName) before building the Tips layer.");
+	declare Text Align = """ halign="left" """;
+
+	declare MLText = """
+	<frame id="TipsFrame" posn="{{{_Position.X}}} {{{_Position.Y}}} {{{_Position.Z}}}">
+		<format textemboss="true" />
+		<quad  {{{Align}}} posn="-2 2" sizen="120 27" bgcolor="0007" />
+		<label {{{Align}}} textsize="5" text="{{{_("Tip")}}}"/>
+		<label {{{Align}}} textsize="4" posn="0 -6" id="Label_TipText"/>
+	</frame>
+	<script><!--
+		main() {
+			declare Text[] TipText;
+			""";
+			
+			foreach(TipText in G_LibTips_TipText) {
+				MLText ^="""
+				TipText.add("{{{TipText}}}");""";
+			}
+			
+			MLText ^= """
+			declare Integer NbTips = TipText.count;
+			if(NbTips <= 0) return;
+					
+			declare persistent Integer[Text] NadeoTips_PersistentTipsIndex for This = Integer[Text];
+			declare Integer TipIndex;
+			if (! NadeoTips_PersistentTipsIndex.existskey("{{{G_LibTips_ModeName}}}")) {
+				NadeoTips_PersistentTipsIndex["{{{G_LibTips_ModeName}}}"] = 0;
+				TipIndex = 0;
+			} else {
+				TipIndex = NadeoTips_PersistentTipsIndex["{{{G_LibTips_ModeName}}}"];
+			}
+			
+			if(TipIndex >= NbTips) {
+				TipIndex = 0;
+			}
+			
+			declare CMlLabel Label_TipText <=> (Page.GetFirstChild("Label_TipText") as CMlLabel);
+			Label_TipText.SetText(TipText[TipIndex]);
+			
+			NadeoTips_PersistentTipsIndex["{{{G_LibTips_ModeName}}}"] = TipIndex + 1;
+			
+			declare AutoSwitchTime = {{{G_LibTips_AutoSwitchTime}}};
+			if(AutoSwitchTime > 0) {
+				declare Integer NextTipSwitch = Now + AutoSwitchTime;
+				while(True) {
+					sleep(200);
+					if(Now > NextTipSwitch) {
+						NextTipSwitch = Now + AutoSwitchTime;
+						
+						TipIndex = (TipIndex + 1) % NbTips;
+						NadeoTips_PersistentTipsIndex["{{{G_LibTips_ModeName}}}"] = TipIndex;
+						
+						Label_TipText.SetText(TipText[TipIndex]);
+					}
+				}
+			}
+		}
+	--></script>
+	""";
+	
+	declare CUILayer TipsLayer = Layers::GetFromName(C_TipsLayerName);
+	if(TipsLayer != Null) TipsLayer.ManialinkPage = MLText;
+}
+
+/**
+ * Build the tips by taking all parameters into account, using the default position.
+ */
+Void Build() {
+	Build(<-150., -40., 5.>);
+}
+
+/**
+ * Add a tip to the library of displayed tips
+ */
+Void AddTip(Text TipText) {
+	G_LibTips_TipText.add(TipText);
+}
+
+/**
+ * Show the tips to all players, then sets current tips to the next one in the library for future calls.
+ */
+Void ShowTips() {
+	declare Boolean Attached = Layers::Attach(C_TipsLayerName, NullId);
+}
+
+/**
+ * Hide tips to all players.
+ */
+Void HideTips() {
+	declare Boolean Detached = Layers::Detach(C_TipsLayerName, NullId);
+}
+
+/**
+ * Set the display duration of tips.
+ * @param _AutoSwitchTime	In milliseconds, period of time before a tips is replaced by the next one. 
+ *							Tips are not switched iff _AutoSwitchTime <= 0.
+ */
+Void SetAutoSwitchTime(Integer _AutoSwitchTime) {
+	G_LibTips_AutoSwitchTime = _AutoSwitchTime;
+}
+
+// TODO LATER
+Void SetSwitchOnKeyPressed(Integer _KeyCode, Text _KeyName) {
+	assert(False, "Not Implemented");
+}
+Void SetSwitchOnF1Pressed() {
+	SetSwitchOnKeyPressed(2424832, "F1");
+}

@@ -1,0 +1,146 @@
+#RequireContext CPlugin
+
+Text CreateManialink()
+{
+	declare Integer MaxBlocksCount for ManialinkPage;
+	declare Ident[Integer] BlockModelIds for ManialinkPage;
+	declare Text[Integer] BlockModelNames for ManialinkPage;
+	declare MLText =
+	"""
+		<script><!--
+			Void UpdateValues()
+			{
+				declare Integer MaxBlocksCount for Page;
+				declare Ident[Integer] BlockModelIds for Page;
+				declare Text[Integer] BlockModelNames for Page;
+				declare Ident LatestBlockId for Page;
+				for(I,0,MaxBlocksCount-1)
+				{
+					if(BlockModelIds[I] == LatestBlockId)
+						(Page.GetFirstChild("BlockIdCtrl" ^I) as CGameManialinkLabel).SetText("* " ^ BlockModelNames[I]);
+					else
+						(Page.GetFirstChild("BlockIdCtrl" ^I) as CGameManialinkLabel).SetText(BlockModelNames[I]);
+				}
+			}
+			
+			Void OnBlockIdClicked(Integer Index)
+			{
+				declare Ident[Integer] BlockModelIds for Page;
+				declare Text[Integer] BlockModelNames for Page;
+				log("Click on " ^ BlockModelNames[Index]);
+				declare Ident BlockIdClicked for Page;
+				BlockIdClicked = BlockModelIds[Index];
+			}
+			
+			main()
+			{
+				while(True)
+				{
+					yield;
+					UpdateValues();
+					
+					declare Integer MaxBlocksCount for Page;
+					declare Ident[Integer] BlockModelIds for Page;
+					foreach(Event in PendingEvents)
+					{
+						if(Event.Type == CMlEvent::Type::MouseClick)
+						{
+							for(I,0,MaxBlocksCount-1)
+							{
+								if(Event.ControlId == "BlockIdCtrl" ^ I) 	OnBlockIdClicked(I);
+							}
+						}
+					}
+				}
+			}
+		--></script>
+		<frame>
+			<quad id="PluginTitleQuad" posn="-130 74" z-index="-1" sizen="55 15" halign="center" valign="center" style="Bgs1InRace" substyle="BgTitle3_1"/>
+			<label id="PluginTitleLabel" text="Latest Blocks" posn="-130 74" halign="center" valign="center" style="TextTitle3"/>
+			<quad id="PluginQuad" posn="-160 67" z-index="-2" sizen="60 {{{4+5*MaxBlocksCount}}}" style="Bgs1" substyle="BgList" ScriptEvents="1"/>
+	""";
+	for(I,0,MaxBlocksCount-1)
+	{
+		MLText ^=
+		"""
+				<label id="BlockIdCtrl{{{I}}}" text="{{{BlockModelNames[I]}}}" posn="-158 {{{65-5*I}}}" sizen="56 5" ScriptEvents="1"/>
+		""";
+	}
+	MLText ^=
+	"""
+		</frame>
+	""";
+	return MLText;
+}
+
+Void AddId(Ident NewId)
+{
+	declare Ident[Integer] BlockModelIds for ManialinkPage;
+	declare Text[Integer] BlockModelNames for ManialinkPage;
+	declare Integer MaxBlocksCount for ManialinkPage = 5;
+	
+	declare Index = MaxBlocksCount-1;
+	for(I,2,MaxBlocksCount)
+	{
+		declare J = MaxBlocksCount-I;
+		if(BlockModelIds[J] == NewId)
+		{
+			// Block already in the list
+			Index = J;
+			break;
+		}
+	}
+	for(I,0,Index-1)
+	{
+		declare J = Index-I;
+		BlockModelIds[J] = BlockModelIds[J-1];
+		BlockModelNames[J] = BlockModelNames[J-1];
+	}
+	BlockModelIds[0] = NewId;
+	BlockModelNames[0] = BlockModels[NewId].Name;
+}
+/////////////////////////////////////
+// Main
+/////////////////////////////////////
+
+main()
+{
+	log("LatestBlocks.Script starts");		
+	
+	LayersDefaultManialinkVersion = 3;
+	
+	declare EmptyText = "Empty";
+	
+	declare MaxBlocksCount for ManialinkPage = 5;
+	declare Ident[Integer] BlockModelIds for ManialinkPage;
+	declare Text[Integer] BlockModelNames for ManialinkPage;
+	for(I,0,MaxBlocksCount-1)
+	{
+		BlockModelIds[I] = NullId;
+		BlockModelNames[I] = EmptyText;
+	}
+	declare BlockIdClicked for ManialinkPage = NullId;
+	declare LatestBlockId for ManialinkPage = NullId;
+	
+	ManialinkText = CreateManialink();		
+
+	while(True) {
+		yield;
+		// Change cursor when click on history
+		if(BlockIdClicked != NullId)
+		{
+			CursorBlockModel = BlockModels[BlockIdClicked];
+			LatestBlockId = CursorBlockModel.Id;
+			BlockIdClicked = NullId;
+		}
+		// Update history when cursor changed
+		if(CursorBlockModel != Null)
+		{
+			if(CursorBlockModel.Id != LatestBlockId)
+			{
+				LatestBlockId = CursorBlockModel.Id;
+				AddId(CursorBlockModel.Id);
+			}
+		}
+	}
+}

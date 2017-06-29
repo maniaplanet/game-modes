@@ -1,0 +1,989 @@
+/**
+ *	XmlRpc lib for Trackmania
+ *	Simple commons callbacks
+ *	And mode specific callbacks
+ */
+#Const	Version		"2015-08-20"
+#Const	ScriptName	"XmlRpc.Script.txt"
+
+#Include "TextLib" as TL
+#Include "Libs/Nadeo/XmlRpcCommon.Script.txt" as XmlRpc
+
+// ---------------------------------- //
+// Globales
+// ---------------------------------- //
+declare Boolean G_IsInWarmUp;
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+// ---------------------------------- //
+// Private
+// ---------------------------------- //
+// ---------------------------------- //
+/** Find a player from his login
+ *	
+ *	@param	_Login	The login of the player to find
+ *
+ *	@return			The player if found, null otherwise
+ */
+CTmPlayer Private_FindPlayer(Text _Login) {
+	foreach (Player in AllPlayers) {
+		if (Player.User.Login == _Login) return Player;
+	}
+	return Null;
+}
+
+// ---------------------------------- //
+/** Find a score from its login
+ *	
+ *	@param	_Login	The login of the score to find
+ *
+ *	@return			The score if found, null otherwise
+ */
+CTmScore Private_FindScore(Text _Login) {
+	foreach (Score in Scores) {
+		if (Score.User.Login == _Login) return Score;
+	}
+	return Null;
+}
+
+// ---------------------------------- //
+/**	Force the clans scores
+ *
+ *	@param	_ClanScore1		Score of the clan 1
+ *	@param	_ClanScore2		Score of the clan 2
+ */
+Void Private_SetTeamsScores(Integer _ClanScore1, Integer _ClanScore2) {
+	ClanScores[1] = _ClanScore1;
+	ClanScores[2] = _ClanScore2;
+}
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Return the version number of the script
+ *
+ *	@return		The version number of the script
+ */
+Text GetScriptVersion() {
+	return Version;
+}
+
+// ---------------------------------- //
+/** Return the name of the script
+ *
+ *	@return		The name of the script
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+// ---------------------------------- //
+/** Check the base XmlRpc library for the documentation
+ *	of the following functions
+ */
+Void Enable() {
+	XmlRpc::Enable();
+}
+Void Disable() {
+	XmlRpc::Disable();
+}
+Boolean IsEnabled() {
+	return XmlRpc::IsEnabled();
+}
+Void SendCallbackArray(Text _Name, Text[] _Data) {
+	XmlRpc::SendCallbackArray(_Name, _Data);
+}
+Void SendCallback(Text _Name, Text _Data) {
+	XmlRpc::SendCallback(_Name, _Data);
+}
+Void RegisterCallback(Text _Name, Text _Doc) {
+	XmlRpc::RegisterCallback(_Name, _Doc);
+}
+Void UnregisterCallback(Text _Name) {
+	XmlRpc::UnregisterCallback(_Name);
+}
+Boolean CallbackIsBlocked(Text _Name) {
+	return XmlRpc::CallbackIsBlocked(_Name);
+}
+Boolean CallbackIsAllowed(Text _Name) {
+	return XmlRpc::CallbackIsAllowed(_Name);
+}
+Text[] ListCallbacks(Boolean _SendCallback) {
+	return XmlRpc::ListCallbacks(_SendCallback);
+}
+Text CallbackHelp(Text _Name, Boolean _SendCallback) {
+	return XmlRpc::CallbackHelp(_Name, _SendCallback);
+}
+Void BlockCallback(Text _Name) {
+	XmlRpc::BlockCallback(_Name);
+}
+Void BlockAllCallbacks() {
+	XmlRpc::BlockAllCallbacks();
+}
+Void UnblockCallback(Text _Name) {
+	XmlRpc::UnblockCallback(_Name);
+}
+Void UnblockAllCallbacks() {
+	XmlRpc::UnblockAllCallbacks();
+}
+Text[] GetBlockedCallbacks(Boolean _SendCallback) {
+	return XmlRpc::GetBlockedCallbacks(_SendCallback);
+}
+
+// ---------------------------------- //
+/// Unload the library
+Void Unload() {
+	UnregisterCallback("LibXmlRpc_PlayerRanking");
+	UnregisterCallback("LibXmlRpc_PlayersRanking");
+	UnregisterCallback("LibXmlRpc_PlayersScores");
+	UnregisterCallback("LibXmlRpc_PlayersTimes");
+	UnregisterCallback("LibXmlRpc_Scores");
+	UnregisterCallback("LibXmlRpc_TeamsScores");
+	UnregisterCallback("LibXmlRpc_WarmUp");
+	UnregisterCallback("LibXmlRpc_TeamsMode");
+	UnregisterCallback("LibXmlRpc_OnStartCountdown");
+	UnregisterCallback("LibXmlRpc_OnStartLine");
+	UnregisterCallback("LibXmlRpc_OnWayPoint");
+	UnregisterCallback("LibXmlRpc_OnPlayerFinish");
+	UnregisterCallback("LibXmlRpc_OnGiveUp");
+	UnregisterCallback("LibXmlRpc_OnRespawn");
+	UnregisterCallback("LibXmlRpc_OnStunt");
+	
+	foreach (Player in AllPlayers) {
+		declare LibXmlRpc_CanRespawn for Player = False;
+		LibXmlRpc_CanRespawn = False;
+	}
+	
+	XmlRpc::Unload();
+}
+
+// ---------------------------------- //
+/// Load the library
+Void Load() {
+	Unload();
+	
+	XmlRpc::Load();
+
+RegisterCallback("LibXmlRpc_PlayerRanking", """
+* Data : An array with the current rank in the scores, login, nickname, team id, spectator status, away status, points and zone of a player
+* Example : ["1", "eole", "b`Side.Eole", "0", "False", "False", "10", "World|Europe|France|Outre-Mer|Reunion"]
+* Note : [Rank, Login, NickName, TeamId, IsSpectator, IsAway, CurrentPoints, Zone]
+""");
+
+RegisterCallback("LibXmlRpc_PlayersRanking", """
+* Data : An array with the login, current rank in the scores, best checkpoints times, team id, spectator status, away status, best time, zone, points and total score of a player.
+* Example : ["eole:1:123,456,789:-1:False:False:789:World|Europe|France|Outre-mer|Reunion:0:0", "eole2:1:-1:-1:False:False:-1:World|Europe|France|Outre-mer|Reunion:0:0"]
+* Note : ["Login:Rank:BestCheckpoints:TeamId:IsSpectator:IsAway:BestTime:Zone:Points:TotalScore"]
+the login, rank, best checkpoints, team id, spectator status, away status, best time, zone, points and total points of the players are separated by a colon. The best checkpoint times are separated by a comma. This callback is sent when the script receives the `LibXmlRpc_GetPlayersRanking` trigger.
+""");
+
+RegisterCallback("LibXmlRpc_PlayersScores", """
+* Data : An array with the current score and login of the players.
+* Example : ["login1:45", "login19:29", "login48:18", "login7:9"]
+* Note : the login and the score of the players are separated by a colon. This callback is sent when the script receives the `LibXmlRpc_GetPlayersScores` trigger.
+""");
+
+RegisterCallback("LibXmlRpc_PlayersTimes", """
+* Data : An array with the best time and login of the players.
+* Example : ["login1:12654", "login19:15684", "login48:25964", "login7:-1"]
+* Note : the login and the best time of the players are separated by a colon. This callback is sent when the script receives the `LibXmlRpc_GetPlayersTimes` trigger.
+""");
+
+RegisterCallback("LibXmlRpc_Scores", """
+* Data : An array with the match and map scores in team modes
+* Example : ["1", "0", "5", "6"]
+* Note : ["MatchScoreClan1", "MatchScoreClan2", "MapScoreClan1", "MapScoreClan2"]
+""");
+
+RegisterCallback("LibXmlRpc_TeamsScores", """
+* Data : An array with the current and total scores of the teams.
+* Example : ["1", "5", "2", "5"]
+* Note : [ScoreTeam1, ScoreTeam2, TotalScoreTeam1, TotalScoreTeam2]. This callback is sent when the script receives the `LibXmlRpc_GetTeamsScores` trigger.
+""");
+
+RegisterCallback("LibXmlRpc_WarmUp", """
+* Data : An array with a boolean to indicate if the mode is in warm up or not.
+* Example : ["True"]
+* Note : This callback is sent when the script receives the `LibXmlRpc_GetWarmUp` trigger.
+""");
+
+RegisterCallback("LibXmlRpc_TeamsMode", """
+* Data : An array with a boolean to indicate if the mode use teams or not.
+* Example : ["True"]
+* Note : This callback is sent when the script receives the `LibXmlRpc_GetTeamsMode` trigger.
+""");
+
+RegisterCallback("LibXmlRpc_OnStartCountdown", """
+* Data : An array with the login of the starting player
+* Example : ["Login"]
+* Note : This callback is sent when a player is spawned on the track before the 3,2,1,Go! countdown.
+""");
+
+RegisterCallback("LibXmlRpc_OnStartLine", """
+* Data : An array with the login of the starting player
+* Example : ["Login"]
+* Note : This callback is sent when a player starts a race.
+""");
+
+RegisterCallback("LibXmlRpc_OnWayPoint", """
+* Data : An array with the login of the player crossing the waypoint, the id of the waypoint block, the current race time, the waypoint number in the race, if the waypoint is the end of the race, the current lap time, the waypoint number in the lap and if the waypoint is the end of the lap.
+* Example : ["Login", "#123456", "21723", "7", "False", "6164", "1", "False"]
+* Note : This callback is sent when a player crosses a waypoint (checkpoint, finish, multilap, ...).
+""");
+
+RegisterCallback("LibXmlRpc_OnPlayerFinish", """
+* Data : An array with the login of the player crossing the finish, the id of the finish block and the race time.
+* Example : ["Login", "#123456", "21723"]
+* Note : This callback is sent when a player crosses the finish.
+""");
+
+RegisterCallback("LibXmlRpc_OnGiveUp", """
+* Data : An array with the login of the restarting player
+* Example : ["Login"]
+* Note : This callback is sent when a player restarts.
+""");
+
+RegisterCallback("LibXmlRpc_OnRespawn", """
+* Data : An array with the login of the player respawning, the id of the waypoint block, the waypoint number in the race, the waypoint number in the lap and the number of respawns since the beginning of the race.
+* Example : ["Login", "#123456", "1", "0", "5"]
+* Note : This callback is sent when a player respawns at a waypoint (checkpoint, multilap, ...).
+""");
+
+RegisterCallback("LibXmlRpc_OnStunt", """
+* Data : An array with the player login, the stunt points, the combo, the total stunts score, the factor, the stunt name, the angle, if the stunt is straight, if the stunt is reversed, if the stunt is a master jump
+* Example : ["Login", "25", "1", "0", "1.2", "::EStuntFigure::Spin", "180", "False", "False", "False"]
+* Note : This callback is sent when a player does a stunt. The stunts names are: None, StraightJump, Flip, BackFlip, Spin, Aerial, AlleyOop, Roll, Corkscrew, SpinOff, Rodeo, FlipFlap, Twister, FreeStyle, SpinningMix, FlippingChaos, RollingMadness, WreckNone, WreckStraightJump, WreckFlip, WreckBackFlip, WreckSpin, WreckAerial, WreckAlleyOop, WreckRoll, WreckCorkscrew, WreckSpinOff, WreckRodeo, WreckFlipFlap, WreckTwister, WreckFreeStyle, WreckSpinningMix, WreckFlippingChaos, WreckRollingMadness, TimePenalty, RespawnPenalty, Grind, Reset.
+""");
+}
+
+// ---------------------------------- //
+/**	Force the scores of the players
+ *
+ *	@param	_Scores		The scores to update : ["login" => points, "login" => points, ...]
+ */
+Void Private_SetPlayersScores(Integer[Text] _Scores) {
+	if (!IsEnabled()) return;
+	
+	foreach (Login => Points in _Scores) {
+		declare Score = Private_FindScore(Login);
+		if (Score == Null) continue;
+		Score.Points = Points;
+	}
+}
+
+// ---------------------------------- //
+/** Send the player ranking
+ *	Data:
+ *	[Rank, Login, NickName, TeamId, IsSpectator, IsAway, CurrentScore, Zone, Points]
+ *
+ *	@param	_Login		The login of the player to get
+ */
+Void SendPlayerRanking(Text _Login) {
+	if (!CallbackIsAllowed("LibXmlRpc_PlayerRanking")) return;
+	
+	declare Text[] PlayerRanking;
+	declare CTmScore PlayerScore;
+	declare Rank = 0;
+	declare PlayerRequestsSpectate = False;
+	foreach (Score in Scores) {
+		Rank += 1;
+		if (Score.User.Login == _Login) {
+			PlayerScore <=> Score;
+			break;
+		}
+	}
+	foreach (Player in AllPlayers) {
+		if (Player.User.Login == _Login) {
+			PlayerRequestsSpectate = Player.RequestsSpectate;
+			break;
+		}
+	}
+	
+	if (PlayerScore != Null) {
+		declare IsAway = False;
+		if (Private_FindPlayer(PlayerScore.User.Login) == Null) IsAway = True;
+		
+		declare BestTime = -1;
+		if (PlayerScore.BestRace != Null) BestTime = PlayerScore.BestRace.Time;
+		
+		declare TeamNum = -1;
+		if (UseClans) TeamNum = PlayerScore.TeamNum - 1;
+		
+		declare BestCheckpoints = "";
+		if (PlayerScore.BestRace != Null) {
+			foreach (CheckpointTime in PlayerScore.BestRace.Checkpoints) {
+				if (BestCheckpoints != "") BestCheckpoints ^= ",";
+				BestCheckpoints ^= CheckpointTime;
+			}
+		}
+		if (BestCheckpoints == "") BestCheckpoints = "-1";
+		
+		PlayerRanking = [
+			TL::ToText(Rank),
+			PlayerScore.User.Login,
+			PlayerScore.User.Name,
+			TL::ToText(TeamNum),
+			TL::ToText(PlayerRequestsSpectate),
+			TL::ToText(IsAway),
+			TL::ToText(BestTime),
+			PlayerScore.User.ZonePath,
+			TL::ToText(PlayerScore.Points),
+			BestCheckpoints,
+			TL::ToText(PlayerScore.Points + PlayerScore.PrevRaceDeltaPoints)
+		];
+	}
+	
+	SendCallbackArray("LibXmlRpc_PlayerRanking", PlayerRanking);
+}
+
+// ---------------------------------- //
+/** Send the players ranking
+ *	Data:
+ *	["login:rank", "login:rank", ...]
+ *
+ *	@param	_Range		Maximum number of infos to return
+ *	@param	_Start		Starting index of the ranking
+ */
+Void SendPlayersRanking(Integer _Range, Integer _Start) {
+	if (!CallbackIsAllowed("LibXmlRpc_PlayersRanking")) return;
+	
+	declare Rank = 0;
+	declare Count = 0;
+	declare PlayersRanking = Text[];
+	foreach (Score in Scores) {
+		Rank += 1;
+		if (Rank >= _Start) {
+			declare IsAway = False;
+			declare PlayerRequestsSpectate = False;
+			declare Player <=> Private_FindPlayer(Score.User.Login);
+			if (Player == Null) {
+				IsAway = True;
+			} else {
+				PlayerRequestsSpectate = Player.RequestsSpectate;
+			}
+			
+		
+			declare BestTime = -1;
+			if (Score.BestRace != Null) BestTime = Score.BestRace.Time;
+			
+			declare TeamNum = -1;
+			if (UseClans) TeamNum = Score.TeamNum - 1;
+		
+			declare BestCheckpoints = "";
+			if (Score.BestRace != Null) {
+				foreach (CheckpointTime in Score.BestRace.Checkpoints) {
+					if (BestCheckpoints != "") BestCheckpoints ^= ",";
+					BestCheckpoints ^= CheckpointTime;
+				}
+			}
+			if (BestCheckpoints == "") BestCheckpoints = "-1";
+			
+			PlayersRanking.add(Score.User.Login^":"^Rank^":"^BestCheckpoints^":"^TeamNum^":"^PlayerRequestsSpectate^":"^IsAway^":"^BestTime^":"^Score.User.ZonePath^":"^Score.Points^":"^(Score.Points+Score.PrevRaceDeltaPoints));
+			
+			Count += 1;
+			if (_Range >= 0 && Count >= _Range) break;
+		}
+	}
+	
+	SendCallbackArray("LibXmlRpc_PlayersRanking", PlayersRanking);
+}
+
+// ---------------------------------- //
+/** Send the players scores
+ *	Data:
+ *	[Player1:45, Player2:56, Player3:89, ...]
+ */
+Void SendPlayersScores() {
+	if (!CallbackIsAllowed("LibXmlRpc_PlayersScores")) return;
+	
+	declare PlayersScores = Text[];
+	foreach (Score in Scores) {
+		PlayersScores.add(Score.User.Login^":"^Score.Points);
+	}
+	
+	SendCallbackArray("LibXmlRpc_PlayersScores", PlayersScores);
+}
+
+// ---------------------------------- //
+/** Send the players best time
+ *	Data:
+ *	[Player1:12520, Player2:45985, Player3:95614, ...]
+ */
+Void SendPlayersTimes() {
+	if (!CallbackIsAllowed("LibXmlRpc_PlayersTimes")) return;
+	
+	declare PlayersTimes = Text[];
+	foreach (Score in Scores) {
+		declare BestTime = "-1";
+		if (Score.BestRace != Null) BestTime = TL::ToText(Score.BestRace.Time);
+		PlayersTimes.add(Score.User.Login^":"^BestTime);
+	}
+	
+	SendCallbackArray("LibXmlRpc_PlayersTimes", PlayersTimes);
+}
+
+// ---------------------------------- //
+/** Send the current rankings
+ *	Data:
+ *	[Match Team 1, Match Team 2, Map Team 1, Map Team 2]
+ */
+Void SendScores() {
+	if (!CallbackIsAllowed("LibXmlRpc_Scores")) return;
+	
+	SendCallbackArray("LibXmlRpc_Scores", [
+		TL::ToText(0),
+		TL::ToText(0),
+		TL::ToText(ClanScores[1]), 
+		TL::ToText(ClanScores[2])
+	]);
+}
+
+// ---------------------------------- //
+/** Send the teams scores
+ *	Data:
+ *	[ScoreClan1, ScoreClan2]
+ */
+Void SendTeamsScores() {
+	if (!CallbackIsAllowed("LibXmlRpc_TeamsScores")) return;
+	
+	declare PrevRaceDeltaPoints as ScoreTeam0 for Teams[0] = 0;
+	declare PrevRaceDeltaPoints as ScoreTeam1 for Teams[1] = 0;
+	SendCallbackArray("LibXmlRpc_TeamsScores", [
+		TL::ToText(ClanScores[1]), 
+		TL::ToText(ClanScores[2]), 
+		TL::ToText(ClanScores[1]+ScoreTeam0),
+		TL::ToText(ClanScores[2]+ScoreTeam1)
+	]);
+}
+
+// ---------------------------------- //
+/** Send the warm up status
+ *	Data:
+ *	[IsInWarmUp]
+ */
+Void SendIsInWarmUp() {
+	if (!CallbackIsAllowed("LibXmlRpc_WarmUp")) return;
+	
+	declare IsInWarmUp = "False";
+	if (G_IsInWarmUp) IsInWarmUp = "True";
+	SendCallbackArray("LibXmlRpc_WarmUp", [IsInWarmUp]);
+}
+
+// ---------------------------------- //
+/** Send if the mode is team based or not
+ *	Data:
+ *	[IsTeamMode]
+ */
+Void SendIsTeamMode() {
+	if (!CallbackIsAllowed("LibXmlRpc_TeamsMode")) return;
+	
+	declare IsTeamMode = "False";
+	if (UseClans) IsTeamMode = "True";
+	SendCallbackArray("LibXmlRpc_TeamsMode", [IsTeamMode]);
+}
+
+// ---------------------------------- //
+/** Callback sent when starting to load the map
+ *	Data:
+ *	[Number of the map]
+ */
+Void LoadingMap(Integer _Number, Boolean _Restarted) {
+	XmlRpc::LoadingMap(_Number, _Restarted);
+}
+
+// ---------------------------------- //
+/** Callback sent when starting to load the map
+ *	Data:
+ *	[Number of the map]
+ */
+Void LoadingMap(Integer _Number) {
+	XmlRpc::LoadingMap(_Number, False);
+}
+
+// ---------------------------------- //
+/** Callback sent when starting to unload the map
+ *	Data:
+ *	[Number of the map]
+ */
+Void UnloadingMap(Integer _Number) {
+	XmlRpc::UnloadingMap(_Number);
+}
+
+// ---------------------------------- //
+/** Callback sent before the beginning of the server
+ *	Data:
+ *	[]
+ */
+Void BeginServer() {
+	XmlRpc::BeginServer();
+}
+
+// ---------------------------------- //
+/** Callback sent after the beginning of the server
+ *	Data:
+ *	[]
+ */
+Void BeginServerStop() {
+	XmlRpc::BeginServerStop();
+}
+
+// ---------------------------------- //
+/** Callback sent before the beginning of the match
+ *	Data:
+ *	[Number of the match, Script restarted]
+ */
+Void BeginMatch(Integer _Number, Boolean _Restarted) {
+	XmlRpc::BeginMatch(_Number, _Restarted);
+}
+
+// ---------------------------------- //
+/// BeginMatch() overload
+Void BeginMatch(Integer _Number) {
+	BeginMatch(_Number, False);
+}
+
+// ---------------------------------- //
+/** Callback sent after the beginning of the match
+ *	Data:
+ *	[Number of the match, Map restarted]
+ */
+Void BeginMatchStop(Integer _Number, Boolean _Restarted) {
+	XmlRpc::BeginMatchStop(_Number, _Restarted);
+}
+
+// ---------------------------------- //
+/** Callback sent before the beginning of the map
+ *	Data:
+ *	[Number of the map, Map UID, Map restarted]
+ */
+Void BeginMap(Integer _Number, Boolean _Restarted) {
+	XmlRpc::BeginMap(_Number, _Restarted);
+}
+
+// ---------------------------------- //
+/** Callback sent after the beginning of the map
+ *	Data:
+ *	[Number of the map, Map UID, Map restarted]
+ */
+Void BeginMapStop(Integer _Number, Boolean _Restarted) {
+	XmlRpc::BeginMapStop(_Number, _Restarted);
+}
+
+// ---------------------------------- //
+/** Callback sent before the beginning of the submatch
+ *	Data:
+ *	[Number of the submatch]
+ */
+Void BeginSubmatch(Integer _Number) {
+	XmlRpc::BeginSubmatch(_Number);
+}
+
+// ---------------------------------- //
+/** Callback sent after the beginning of the submatch
+ *	Data:
+ *	[Number of the submatch]
+ */
+Void BeginSubmatchStop(Integer _Number) {
+	XmlRpc::BeginSubmatchStop(_Number);
+}
+
+// ---------------------------------- //
+/** Callback sent before the beginning of the round
+ *	Data:
+ *	[Number of the round]
+ */
+Void BeginRound(Integer _Number) {
+	XmlRpc::BeginRound(_Number);
+}
+
+// ---------------------------------- //
+/** Callback sent after the beginning of the round
+ *	Data:
+ *	[Number of the round]
+ */
+Void BeginRoundStop(Integer _Number) {
+	XmlRpc::BeginRoundStop(_Number);
+}
+
+// ---------------------------------- //
+/** Callback sent before the beginning of the turn
+ *	Data:
+ *	[Number of the turn]
+ */
+Void BeginTurn(Integer _Number) {
+	XmlRpc::BeginTurn(_Number);
+}
+
+// ---------------------------------- //
+/** Callback sent after the beginning of the turn
+ *	Data:
+ *	[Number of the turn]
+ */
+Void BeginTurnStop(Integer _Number) {
+	XmlRpc::BeginTurnStop(_Number);
+}
+
+// ---------------------------------- //
+/** Callback sent at the beginning of the play loop
+ *	Data:
+ *	[]
+ */
+Void BeginPlaying() {
+	XmlRpc::BeginPlaying();
+}
+
+// ---------------------------------- //
+/** Callback sent at the end of the play loop
+ *	Data:
+ *	[]
+ */
+Void EndPlaying() {
+	XmlRpc::EndPlaying();
+}
+
+// ---------------------------------- //
+/** Callback sent before the end of the turn
+ *	Data:
+ *	[Number of the turn]
+ */
+Void EndTurn(Integer _Number) {
+	XmlRpc::EndTurn(_Number);
+}
+
+// ---------------------------------- //
+/** Callback sent after the end of the turn
+ *	Data:
+ *	[Number of the turn]
+ */
+Void EndTurnStop(Integer _Number) {
+	XmlRpc::EndTurnStop(_Number);
+}
+
+// ---------------------------------- //
+/** Callback sent before the end of the round
+ *	Data:
+ *	[Number of the round]
+ */
+Void EndRound(Integer _Number) {
+	XmlRpc::EndRound(_Number);
+}
+
+// ---------------------------------- //
+/** Callback sent after the end of the round
+ *	Data:
+ *	[Number of the round]
+ */
+Void EndRoundStop(Integer _Number) {
+	XmlRpc::EndRoundStop(_Number);
+}
+
+// ---------------------------------- //
+/** Callback sent before the end of the submatch
+ *	Data:
+ *	[Number of the submatch]
+ */
+Void EndSubmatch(Integer _Number) {
+	XmlRpc::EndSubmatch(_Number);
+}
+
+// ---------------------------------- //
+/** Callback sent after the end of the submatch
+ *	Data:
+ *	[Number of the submatch]
+ */
+Void EndSubmatchStop(Integer _Number) {
+	XmlRpc::EndSubmatchStop(_Number);
+}
+
+// ---------------------------------- //
+/** Callback sent before the end of the map
+ *	Data:
+ *	[Number of the map, Map UID]
+ */
+Void EndMap(Integer _Number) {
+	XmlRpc::EndMap(_Number);
+}
+
+// ---------------------------------- //
+/** Callback sent after the end of the map
+ *	Data:
+ *	[Number of the map, Map UID]
+ */
+Void EndMapStop(Integer _Number) {
+	XmlRpc::EndMapStop(_Number);
+}
+
+// ---------------------------------- //
+/** Callback sent before the end of the match
+ *	Data:
+ *	[Number of the match]
+ */
+Void EndMatch(Integer _Number) {
+	XmlRpc::EndMatch(_Number);
+}
+
+// ---------------------------------- //
+/** Callback sent after the end of the match
+ *	Data:
+ *	[Number of the match]
+ */
+Void EndMatchStop(Integer _Number) {
+	XmlRpc::EndMatchStop(_Number);
+}
+
+// ---------------------------------- //
+/** Callback sent before the end of the server
+ *	Data:
+ *	[]
+ */
+Void EndServer() {
+	XmlRpc::EndServer();
+}
+
+// ---------------------------------- //
+/** Callback sent after the end of the server
+ *	Data:
+ *	[]
+ */
+Void EndServerStop() {
+	XmlRpc::EndServerStop();
+}
+
+// ---------------------------------- //
+/// Callback sent at the beginning of the podium sequence
+Void BeginPodium() {
+	XmlRpc::BeginPodium();
+}
+
+// ---------------------------------- //
+/// Callback sent at the end of the podium
+Void EndPodium() {
+	XmlRpc::EndPodium();
+}
+
+// ---------------------------------- //
+/// Callback sent at the beginning of the warmup
+Void BeginWarmUp() {
+	G_IsInWarmUp = True;
+	XmlRpc::BeginWarmUp();
+}
+
+// ---------------------------------- //
+/// Callback sent at the end of the warmup
+Void EndWarmUp() {
+	G_IsInWarmUp = False;
+	XmlRpc::EndWarmUp();
+}
+
+// ---------------------------------- //
+/// Callback sent at the beginning of the pause
+Void BeginPause() {
+	XmlRpc::BeginPause();
+}
+
+// ---------------------------------- //
+/// Callback sent at the end of the pause
+Void EndPause() {
+	XmlRpc::EndPause();
+}
+
+// ---------------------------------- //
+/** Check if a pause is requested
+ *
+ *	@return		True if a pause is requested, False otherwise
+ */
+Boolean PauseRequested() {
+	return XmlRpc::PauseRequested();
+}
+
+// ---------------------------------- //
+/// Callback sent when the scores are ready to be used
+Void ScoresReady() {
+	XmlRpc::ScoresReady();
+}
+
+// ---------------------------------- //
+/// Callback sent when the countdown start
+Void OnStartCountdown(CTmPlayer _Player) {
+	// Allow the respawn and giveup callback
+	declare LibXmlRpc_CanRespawn for _Player = False;
+	LibXmlRpc_CanRespawn = True;
+		
+	if (!CallbackIsAllowed("LibXmlRpc_OnStartCountdown")) return;
+	
+	SendCallbackArray("LibXmlRpc_OnStartCountdown", [_Player.User.Login]);
+}
+
+// ---------------------------------- //
+/** Callback sent when a player starts a race
+ *	Data:
+ *	[Player login]
+ *
+ *	@param	_Event		The event to handle
+ */
+Void OnStartLine(CTmModeEvent _Event) {
+	// Allow the respawn and giveup callback
+	declare LibXmlRpc_CanRespawn for _Event.Player = False;
+	LibXmlRpc_CanRespawn = True;
+		
+	if (!CallbackIsAllowed("LibXmlRpc_OnStartLine")) return;
+	
+	SendCallbackArray("LibXmlRpc_OnStartLine", [_Event.Player.User.Login]);
+}
+
+// ---------------------------------- //
+/** Callback sent when a player crosses the finish
+ *	Data:
+ *	[Player login, id of the waypoint block, current race time]
+ *
+ *	@param	_Event		The event to handle
+ */
+Void OnPlayerFinish(CTmModeEvent _Event) {
+	if (!_Event.IsEndRace && !(IndependantLaps && _Event.IsEndLap)) return;
+	
+	// Disallow the respawn and giveup callback
+	declare LibXmlRpc_CanRespawn for _Event.Player = False;
+	LibXmlRpc_CanRespawn = False;
+		
+	if (!CallbackIsAllowed("LibXmlRpc_OnPlayerFinish")) return;
+	
+	declare RaceTime = _Event.RaceTime;
+	if (IndependantLaps) RaceTime = _Event.LapTime;
+	
+	SendCallbackArray("LibXmlRpc_OnPlayerFinish", [_Event.Player.User.Login, ""^_Event.BlockId, TL::ToText(RaceTime)]);
+}
+
+// ---------------------------------- //
+/** Callback sent when a player crosses a waypoint (checkpoint or finish)
+ *	Data:
+ *	[Player login, id of the waypoint block, current race time, the checkpoint number in the race, is the end of the race, current lap time, the checkpoint number in the lap, is the end of the lap]
+ *
+ *	@param	_Event		The event to handle
+ */
+Void OnWayPoint(CTmModeEvent _Event) {
+	if (CallbackIsAllowed("LibXmlRpc_OnWayPoint")) {
+		SendCallbackArray("LibXmlRpc_OnWayPoint", [_Event.Player.User.Login, ""^_Event.BlockId, TL::ToText(_Event.RaceTime), TL::ToText(_Event.CheckpointInRace), TL::ToText(_Event.IsEndRace), TL::ToText(_Event.LapTime), TL::ToText(_Event.CheckpointInLap), TL::ToText(_Event.IsEndLap)]);
+	}
+	
+	OnPlayerFinish(_Event);
+}
+
+// ---------------------------------- //
+/** Callback sent when a player restarts
+ *	Data:
+ *	[Player login]
+ *
+ *	@param	_Event		The event to handle
+ */
+Void OnGiveUp(CTmModeEvent _Event) {
+	// Check if we can send the callback
+	declare LibXmlRpc_CanRespawn for _Event.Player = False;
+	if (!LibXmlRpc_CanRespawn || !_Event.Player.IsSpawned) {
+		LibXmlRpc_CanRespawn = False;
+		return;
+	}
+	LibXmlRpc_CanRespawn = False;
+	
+	if (!CallbackIsAllowed("LibXmlRpc_OnGiveUp")) return;
+	
+	SendCallbackArray("LibXmlRpc_OnGiveUp", [_Event.Player.User.Login]);
+}
+
+// ---------------------------------- //
+/** Callback sent when a player respawns
+ *	Data:
+ *	[Player login]
+ *
+ *	@param	_Event		The event to handle
+ */
+Void OnRespawn(CTmModeEvent _Event) {
+	// Check if we can send the callback
+	declare LibXmlRpc_CanRespawn for _Event.Player = False;
+	if (!LibXmlRpc_CanRespawn || !_Event.Player.IsSpawned) return;
+	
+	if (!CallbackIsAllowed("LibXmlRpc_OnRespawn")) return;
+	
+	SendCallbackArray("LibXmlRpc_OnRespawn", [_Event.Player.User.Login, ""^_Event.BlockId, TL::ToText(_Event.CheckpointInRace), TL::ToText(_Event.CheckpointInLap), TL::ToText(_Event.NbRespawns)]);
+}
+
+// ---------------------------------- //
+/** Callback sent when a player does a stunt
+ *	Data:
+ *	[Player login, the stunt points, the combo, the total stunts score, the factor, the stunt name, the angle, if the stunt is straight, if the stunt is reversed, if the stunt is a master jump]
+ *
+ *	@param	_Event		The event to handle
+ */
+Void OnStunt(CTmModeEvent _Event) {
+	if (!CallbackIsAllowed("LibXmlRpc_OnStunt")) return;
+	
+	SendCallbackArray("LibXmlRpc_OnStunt", [_Event.Player.User.Login, TL::ToText(_Event.Points), TL::ToText(_Event.Combo), TL::ToText(_Event.StuntsScore), TL::ToText(_Event.Factor), ""^_Event.StuntFigure, TL::ToText(_Event.Angle), TL::ToText(_Event.IsStraight), TL::ToText(_Event.IsReverse), TL::ToText(_Event.IsMasterJump)]);
+}
+
+// ---------------------------------- //
+/** Automatically handle the event
+ *
+ *	@param	_Event		The event to handle
+ */
+Void PassOn(CTmModeEvent _Event) {
+	switch (_Event.Type) {
+		case CTmModeEvent::EType::StartLine: OnStartLine(_Event);
+		case CTmModeEvent::EType::WayPoint	: OnWayPoint(_Event);
+		case CTmModeEvent::EType::GiveUp		: OnGiveUp(_Event);
+		case CTmModeEvent::EType::Respawn	: OnRespawn(_Event);
+		case CTmModeEvent::EType::Stunt		: OnStunt(_Event);
+	}
+}
+
+// ---------------------------------- //
+// Listening on XmlRpc port
+// ---------------------------------- //
+// ---------------------------------- //
+/// Wait for XmlRpc callbacks
+Void Loop() {
+	if (!IsEnabled()) return;
+	
+	XmlRpc::Loop();
+	
+	foreach (Event in XmlRpc.PendingEvents) {
+		if (Event.Type == CXmlRpcEvent::EType::Callback) {
+			switch (Event.Param1) {
+				case "LibXmlRpc_GetPlayerRanking"			: SendPlayerRanking(Event.Param2);
+				case "LibXmlRpc_GetPlayersScores"			: SendPlayersScores();
+				case "LibXmlRpc_GetPlayersTimes"			: SendPlayersTimes();
+				case "LibXmlRpc_GetTeamsScores"				: SendTeamsScores();
+				case "LibXmlRpc_GetTeamsMode"				: SendIsTeamMode();
+				case "LibXmlRpc_GetWarmUp"					: SendIsInWarmUp();
+			}
+		} else if (Event.Type == CXmlRpcEvent::EType::CallbackArray) {
+			switch (Event.ParamArray1) {
+				case "LibXmlRpc_GetPlayersRanking" : {
+					if (Event.ParamArray2.count >= 2) {
+						SendPlayersRanking(TL::ToInteger(Event.ParamArray2[0]), TL::ToInteger(Event.ParamArray2[1]));
+					}
+				}
+				case "LibXmlRpc_SetPlayersScores" : {
+					declare ForcedScores = Integer[Text];
+					foreach (LoginPoints in Event.ParamArray2) {
+						declare Split = TL::Split(":", LoginPoints);
+						if (Split.count < 2) continue;
+						ForcedScores[Split[0]] = TL::ToInteger(Split[1]);
+					}
+					Private_SetPlayersScores(ForcedScores);
+				}
+				case "LibXmlRpc_SetTeamsScores" : {
+					if (Event.ParamArray2.count >= 2) {
+						Private_SetTeamsScores(TL::ToInteger(Event.ParamArray2[0]), TL::ToInteger(Event.ParamArray2[1]));
+					}
+				}
+			}
+		}
+	}
+}
+
+// ---------------------------------- //
+// Mode dependent callbacks
+// ---------------------------------- //

@@ -1,0 +1,1319 @@
+/**
+ * Mode Matchmaking
+ *
+ * Add matchmaking functionnalities to your mode
+ */
+#Extends "Modes/ShootMania/Base/ModeBase.Script.txt"
+
+#Const ModeMatchmakingVersion		"2017-05-03"
+#Const ModeMatchmakingScriptName	"ModeMatchmaking.Script.txt"
+
+#Include "TextLib" as TL
+#Include "MathLib" as ML
+#Include "Libs/Nadeo/Layers2.Script.txt" as Layers
+#Include "Libs/Nadeo/Message.Script.txt" as Message
+#Include "Libs/Nadeo/VoteMap.Script.txt" as VoteMap
+#Include "Libs/Nadeo/Manialink.Script.txt" as Manialink
+#Include "Libs/Nadeo/ShootMania/SM.Script.txt" as SM
+#Include "Libs/Nadeo/ShootMania/SpawnScreen.Script.txt" as SpawnScreen
+#Include "Libs/Nadeo/MatchmakingCommon.Script.txt" as MMCommon
+#Include "Libs/Nadeo/MatchmakingLobby.Script.txt" as MMLobby
+#Include "Libs/Nadeo/MatchmakingMatch.Script.txt" as MMMatch
+
+// ---------------------------------- //
+// Settings
+// ---------------------------------- //
+#Setting S_MatchmakingAPIUrl		"https://v4.live.maniaplanet.com/ingame/public/matchmaking"	as "<hidden>"	///< URL of the matchmaking API
+#Setting S_MatchmakingMatchServers	""			as "<hidden>" ///< A comma separated list of match servers logins
+#Setting S_MatchmakingMode			0			as "<hidden>"	///< 0 = Off, 1 = Lobby, 2 = Match, 3 = Universal lobby, 4 = Universal match
+#Setting S_MatchmakingRematchRatio	-1.			as "<hidden>"	///< Minimum ratio of players agreeing for a rematch to occur
+#Setting S_MatchmakingRematchNbMax	2			as "<hidden>"	///< Maxium number of consecutive rematch
+#Setting S_MatchmakingVoteForMap	False		as "<hidden>"	///< Allow players to vote for the next played map
+#Setting S_MatchmakingProgressive	False		as "<hidden>"	///< Can start a match with less players than the required number
+#Setting S_MatchmakingWaitingTime	20			as "<hidden>"	///< Waiting time at the beginning of the matches
+#Setting S_LobbyRoundPerMap  		60			as "<hidden>"	///< "Nb of rounds per map in lobby mode")
+#Setting S_LobbyMatchmakerPerRound	6			as "<hidden>"	///< Number of matchmaker call in a "King of the Lobby" round
+#Setting S_LobbyMatchmakerWait		2			as "<hidden>"	///< Waiting time before the next call to the matchmaking function
+#Setting S_LobbyMatchmakerTime		8			as "<hidden>"	///< Time allocated to the matchmaking (seconds)
+#Setting S_LobbyInstagib  			False		as "<hidden>"	///< Laser mode in lobby
+#Setting S_LobbyDisplayMasters		True		as "<hidden>"	///< Display the masters list
+#Setting S_LobbyDisableUI			False		as "<hidden>"	///< Disable lobby UI
+#Setting S_KickTimedOutPlayers		True		as "<hidden>"	///< Kick timed out players
+#Setting S_MatchmakingErrorMessage	_("An error occured in the matchmaking API. If the problem persist please try to contact this server administrator.") as "<hidden>" ///< Send a message in the chat if an error occured
+#Setting S_MatchmakingLogAPIError	False		as "<hidden>"	///< Log the API requests errors
+#Setting S_MatchmakingLogAPIDebug	False		as "<hidden>"	///< Log all the api requests and responses
+#Setting S_MatchmakingLogMiscDebug	False		as "<hidden>"	///< Log different kinds of debug info
+
+#Setting S_ProgressiveActivation_WaitingTime	180000	as "<hidden>"	///< Average waiting time before progressive matchmaking activate
+#Setting S_ProgressiveActivation_PlayersNbRatio	1		as "<hidden>"	///< Multiply the required players nb by this, if there's less player in the lobby activate progressive
+
+// ---------------------------------- //
+// Constant
+// ---------------------------------- //
+#Const C_Lobby_BotsNb	0	///< Number of bots in the lobby
+
+// ---------------------------------- //
+// Globales
+// ---------------------------------- //
+declare Integer	G_MMLobby_BestCombo;	///< Current best combo in lobby
+declare Ident	G_MMLobby_WinnerId;		///< Current round winner
+
+// ---------------------------------- //
+// Extend
+// ---------------------------------- //
+***LogVersion***
+***
+MB_LogVersion(ModeMatchmakingScriptName, ModeMatchmakingVersion);
+MB_LogVersion(Layers::GetScriptName(), Layers::GetScriptVersion());
+MB_LogVersion(Message::GetScriptName(), Message::GetScriptVersion());
+MB_LogVersion(VoteMap::GetScriptName(), VoteMap::GetScriptVersion());
+MB_LogVersion(SpawnScreen::GetScriptName(), SpawnScreen::GetScriptVersion());
+MB_LogVersion(MMLobby::GetScriptName(), MMLobby::GetScriptVersion());
+MB_LogVersion(MMMatch::GetScriptName(), MMMatch::GetScriptVersion());
+MB_LogVersion(MMCommon::GetScriptName(), MMCommon::GetScriptVersion());
+***
+
+// ---------------------------------- //
+// Matchmaking
+// ---------------------------------- //
+***InitServer***
+***
+MMMatch::Load();
+***
+
+***StartServer***
+***
+Layers::Create("StartingMatch", MMMatch::GetMLStartingMatch());
+Layers::Create("RematchVote", MMMatch::GetMLRematchVote());
+Layers::SetType("StartingMatch", CUILayer::EUILayerType::CutScene);
+
+VoteMap::Load();
+MMMatch::ForceAllowSubstitutes(True);
+
+// @Debug
+foreach (Player in AllPlayers) {
+	declare Matchmaking_PlayerStatus for Player = MMMatch::PlayerStatus_Waiting();
+	Matchmaking_PlayerStatus = MMMatch::PlayerStatus_Waiting();
+}
+***
+
+***InitMap***
+***
+// Matchmaking already have an intro, skip the default one
+if (MM_IsMatchServer()) MB_UseIntro = False;
+else MB_UseIntro = True;
+***
+
+***EndServer***
+***
+Layers::Destroy("StartingMatch");
+Layers::Destroy("RematchVote");
+
+VoteMap::Unload();
+MMMatch::Unload();
+MMCommon::Unload();
+***
+
+***Matchmaking***
+***
+// Initialize matchmaking common library
+MMCommon::Load();
+MMCommon::SetLogDisplay("APIError", S_MatchmakingLogAPIError);
+MMCommon::SetLogDisplay("APIDebug", S_MatchmakingLogAPIDebug);
+MMCommon::SetLogDisplay("MiscDebug", S_MatchmakingLogMiscDebug);
+MMCommon::SetApiUrl(S_MatchmakingAPIUrl);
+MMCommon::SetMode(S_MatchmakingMode);
+MMCommon::SetProgressiveMatchmaking(S_MatchmakingProgressive);
+MMCommon::SetErrorMessage(S_MatchmakingErrorMessage);
+MMCommon::SetChannelServer(S_IsChannelServer);
+
+if (MM_IsLobbyServer()) {
+	Admin_SetLobbyInfo(True, AllPlayers.count, 255, 0.);
+	---Lobby---
+} else {
+	Admin_SetLobbyInfo(False, AllPlayers.count, 0, 0.);
+}
+***
+
+// ---------------------------------- //
+// Lobby
+// ---------------------------------- //
+***Lobby***
+***
+MMLobby::Load();
+MMLobby::SetMatchServers(S_MatchmakingMatchServers);
+
++++LobbyInitServer+++
+XmlRpc::BeginServer();
++++LobbyStartServer+++
+XmlRpc::BeginServerStop();
+Clublink::Load(MB_UsePlayerClublinks);
+
+// ---------------------------------- //
+// Match sequence start
+// ---------------------------------- //
+while (
+	!ServerShutdownRequested
+	&& !MB_StopServer
+) {
+	// Match initialization
+	MB_CurrentSection = "LobbyStartMatch";
+	MB_SectionMatchNb	+= 1;
+	MB_SectionMapNb		= 0;
+	MB_StopMatch		= False;
+	MM_RestartMatchmaking	= False;
+	MB_XmlRpcCheck();
+	MB_NeutralEmblemUpdate();
+	
+	if (MB_UseLogging) MB_Log("LobbyStartMatch");
+	
+	+++LobbyInitMatch+++
+	
+	// Check for map restart
+	declare persistent MB_MapRestarted = False;
+	XmlRpc::BeginMatch(MB_SectionMatchNb, MB_MapRestarted);
+		
+	+++LobbyStartMatch+++
+	XmlRpc::BeginMatchStop(MB_SectionMatchNb, MB_MapRestarted);
+	Clublink::Update();
+
+// ---------------------------------- //
+// Map sequence start
+// ---------------------------------- //
+	while (
+		!ServerShutdownRequested
+		&& !MB_StopServer
+		&& !MB_StopMatch
+		&& !MM_RestartMatchmaking
+	) {
+		// Map initialization
+		MB_CurrentSection = "LobbyStartMap";
+		MB_SectionMapNb += 1;
+		MB_SectionRoundNb = 0;
+		MB_StopMap = False;
+		MatchEndRequested = False;
+		MB_XmlRpcCheck();
+		MB_NeutralEmblemUpdate();
+		MMLobby::Synchro();
+		
+		+++LobbyBeforeLoadMap+++
+		
+		// Load map
+		XmlRpc::LoadingMap(MB_SectionMapNb, MB_MapRestarted);
+		MB_LoadMap();
+		
+		if (MB_UseLogging) MB_Log("LobbyStartMap");
+
+		+++LobbyInitMap+++
+		
+		// Check for map restart
+		XmlRpc::BeginMap(MB_SectionMapNb, MB_MapRestarted);
+		
+		MB_Synchro_DoBarrier();
+		
+		// Play mediatracker intro
+		if (MB_UseIntro) {
+			---MapIntro---
+		}
+		
+		+++LobbyStartMap+++
+		XmlRpc::BeginMapStop(MB_SectionMapNb, MB_MapRestarted);
+		Clublink::Update();
+		MB_MapRestarted = True;
+		
+// ---------------------------------- //
+// Round sequence start
+// ---------------------------------- //				
+		while (!ServerShutdownRequested
+			&& !MB_StopServer
+			&& !MatchEndRequested
+			&& !MB_StopMatch
+			&& !MM_RestartMatchmaking
+			&& !MB_StopMap
+			&& !MB_StopSubmatch
+		) {
+			// Round initialization
+			MB_CurrentSection = "LobbyStartRound";
+			MB_XmlRpcCheck();
+			MB_NeutralEmblemUpdate();
+			+++LobbyInitRound+++
+			MB_StopRound = False;
+			if (MB_UseSectionRound) {
+				MB_SectionRoundNb += 1;
+				if (MB_UseLogging) MB_Log("LobbyStartRound");
+				
+				XmlRpc::BeginRound(MB_SectionRoundNb);
+				+++LobbyStartRound+++
+				XmlRpc::BeginRoundStop(MB_SectionRoundNb);
+				Clublink::Update();
+			}
+			MB_SectionTurnNb = 0;
+			MB_StopTurn = False;
+
+			MB_CurrentSection = "LobbyPlayLoop";
+			XmlRpc::BeginPlaying();
+
+// ---------------------------------- //
+// Play loop
+// ---------------------------------- //					
+			while (!ServerShutdownRequested
+				&& !MB_StopServer
+				&& !MatchEndRequested
+				&& !MB_StopMatch
+				&& !MM_RestartMatchmaking
+				&& !MB_StopMap
+				&& !MB_StopSubmatch
+				&& !MB_StopRound
+				&& !MB_StopTurn
+			) {
+				MB_Yield();
+				+++LobbyPlayLoop+++
+			}
+// ---------------------------------- //
+// Round end
+// ---------------------------------- //
+			XmlRpc::EndPlaying();
+			
+			MB_CurrentSection = "LobbyEndRound";
+			MB_XmlRpcCheck();
+			MB_NeutralEmblemUpdate();
+			if (MB_UseSectionRound) {
+				if (MB_UseLogging) MB_Log("LobbyEndRound");
+				
+				XmlRpc::EndRound(MB_SectionRoundNb);
+				+++LobbyEndRound+++
+				XmlRpc::SendScores();
+				XmlRpc::EndRoundStop(MB_SectionRoundNb);
+			}
+		}
+// ---------------------------------- //
+// Map end
+// ---------------------------------- //
+		MB_CurrentSection = "LobbyEndMap";
+		MB_XmlRpcCheck();
+		MB_NeutralEmblemUpdate();
+		if (MB_UseLogging) MB_Log("LobbyEndMap");
+		
+		XmlRpc::EndMap(MB_SectionMapNb);
+		
+		// Play mediatracker outro
+		if (MB_UseOutro) {
+			---MapOutro---
+		}
+		
+		+++LobbyEndMap+++
+		XmlRpc::SendScores();
+		XmlRpc::UnloadingMap(MB_SectionMapNb);
+		MB_MapRestarted = False;
+		MB_UnloadMap();
+		
+		+++LobbyAfterUnloadMap+++
+		XmlRpc::EndMapStop(MB_SectionMapNb);
+	}
+// ---------------------------------- //
+// Match end
+// ---------------------------------- //
+	MB_CurrentSection = "LobbyEndMatch";
+	MB_XmlRpcCheck();
+	MB_NeutralEmblemUpdate();
+	if (MB_UseLogging) MB_Log("LobbyEndMatch");
+	
+	XmlRpc::EndMatch(MB_SectionMatchNb);
+	+++LobbyEndMatch+++
+	XmlRpc::SendScores();
+	MB_MapRestarted = False;
+	XmlRpc::EndMatchStop(MB_SectionMatchNb);
+}
+
+Clublink::Unload();
+XmlRpc::EndServer();
++++LobbyEndServer+++
+XmlRpc::EndServerStop();
+
+MMLobby::Unload();
+***
+
+***LobbyStartServer***
+***
+// ---------------------------------- //
+// Check settings
+if (MMCommon::GetApiUrl() == "") MB_Log("[ERROR] You must set a matchmaking API URL in your settings.");
+assert(MMCommon::GetApiUrl() != "", "You must set a matchmaking API URL in your settings.");
+
+// ---------------------------------- //
+// Config lobby
+UseAllies = True;
+UseClans = False;
+MB_UseIntro = False;
+MB_UseOutro = False;
+MB_UseSectionRound = True;
+declare PrevLobbyDisplayMasters = True;
+MMLobby::MM_StartServer(S_LobbyDisableUI, S_KickTimedOutPlayers);
+
+// ---------------------------------- //
+// Load rules manialink
+declare MLRules = Private_Lobby_GetMLRules();
+declare DisplayRules = True;
+if (MLRules == "") DisplayRules = False;
+
+// ---------------------------------- //
+// Create UI
+Layers::Create("RulesReminder", Private_Lobby_GetMLRulesReminder());
+Layers::Create("GaugeTimer", MMLobby::GetMLGaugeTimer());
+Layers::Create("LobbyScreen", MMLobby::GetMLLobbyScreen(DisplayRules));
+Layers::Create("PlayersList", MMLobby::GetMLPlayersList());
+Layers::Create("MastersList", MMLobby::GetMLMastersList());
+Layers::Create("Header", MMLobby::GetMLHeader());
+Layers::Create("Rules", MLRules);
+Layers::Create("Versus", MMLobby::GetMLVersus());
+Layers::Create("Substitute", MMLobby::GetMLSubstitute());
+Layers::Create("Reconnect", MMLobby::GetMLReconnect());
+Layers::Attach("RulesReminder");
+Layers::Attach("GaugeTimer");
+Layers::Attach("LobbyScreen");
+Layers::Attach("PlayersList");
+Layers::Attach("MastersList");
+Layers::Attach("Header");
+Layers::Attach("Rules");
+Layers::Attach("Versus");
+Layers::Attach("Substitute");
+Layers::Attach("Reconnect");
+Layers::SetType("RulesReminder", CUILayer::EUILayerType::CutScene);
+Layers::SetType("GaugeTimer", CUILayer::EUILayerType::CutScene);
+Layers::SetType("LobbyScreen", CUILayer::EUILayerType::CutScene);
+Layers::SetType("PlayersList", CUILayer::EUILayerType::CutScene);
+Layers::SetType("MastersList", CUILayer::EUILayerType::CutScene);
+Layers::SetType("Header", CUILayer::EUILayerType::CutScene);
+Layers::SetType("Rules", CUILayer::EUILayerType::CutScene);
+Layers::SetType("Versus", CUILayer::EUILayerType::CutScene);
+Layers::SetType("Substitute", CUILayer::EUILayerType::CutScene);
+Layers::SetType("Reconnect", CUILayer::EUILayerType::CutScene);
+***
+
+***LobbyStartMap***
+***
+MMLobby::MM_StartMap();
+
+// ---------------------------------- //
+// Initialize bots
+Users_SetNbFakeUsers(C_Lobby_BotsNb, 0);
+
+// ---------------------------------- //
+// Initialize rules
+declare ModeName = _("Lobby");
+SpawnScreen::ResetRulesSection();
+SpawnScreen::AddSubsection(
+	_("Objectives"),
+	TL::Compose("$<%1%2$>\n\n%3\n$<%11. $>%4\n$<%12. $>%5", "$"^SpawnScreen::GetModeColor(), _("You will soon be redirected to a match server."), _("While waiting, try to become the King Of The Lobby!"), _("Perform as many hits as possible: the points you earn for each one will increase."), _("Your combo falls back to 1 when you are eliminated.")),
+	0.
+);
+SpawnScreen::AddSubsection(_("Type"), _("Free for all"), 60.);
+SpawnScreen::CreatePrettyRules(ModeName, False);
+
+// ---------------------------------- //
+// Initialize timers
+StartTime = Now + 3000;
+EndTime = -1;
+***
+
+***LobbyInitRound***
+***
+declare MatchmakingRunNb = 0;
+***
+
+***LobbyStartRound***
+***
+MMLobby::MM_StartRound(S_LobbyMatchmakerWait, S_LobbyMatchmakerTime, S_LobbyRoundPerMap);
+
+// ---------------------------------- //
+// Initialize scores
+G_MMLobby_BestCombo = 0;
+G_MMLobby_WinnerId = NullId;
+ClearScores();
+foreach (Score in Scores) {
+	Score.Points = 0;
+	Score.RoundPoints = 0;
+}
+***
+
+***LobbyPlayLoop***
+***
+MMLobby::UpdateUI();
+Private_Lobby_SpawnPlayers();
+
+// ---------------------------------- //
+// Display masters
+if (PrevLobbyDisplayMasters != S_LobbyDisplayMasters) {
+	PrevLobbyDisplayMasters = S_LobbyDisplayMasters;
+	Layers::SetVisibility("MastersList", S_LobbyDisplayMasters);
+}
+
+// ---------------------------------- //
+// Manage events
+foreach (Event in PendingEvents) {
+	if (Event.Type == CSmModeEvent::EType::OnHit) {
+		if (Event.Shooter != Null && Event.Victim != Null && Event.Shooter != Event.Victim) {
+			declare PointsEarned = Private_Lobby_NotifyHit(Event.Shooter);
+			Event.ShooterPoints = PointsEarned;
+			PassOn(Event);
+		} else {
+			Discard(Event);
+		}
+	} else if (Event.Type == CSmModeEvent::EType::OnArmorEmpty) {
+		if (Event.Victim != Null) {
+			Private_Lobby_ResetPlayer(Event.Victim);
+		}
+		PassOn(Event);
+	} else if (Event.Type == CSmModeEvent::EType::OnPlayerRequestRespawn) {
+		if (Event.Player != Null) {
+			Private_Lobby_ResetPlayer(Event.Player);
+		}
+		PassOn(Event);
+	} else {
+		PassOn(Event);
+	}
+}
+
+// ---------------------------------- //
+// Manage XmlRpc events
+declare ActionsToExecute = MMLobby::MM_ManageXmlRpcEvents();
+foreach (Action in ActionsToExecute) {
+	switch (Action) {
+		case "StartMatchmaker": Private_Lobby_MatchMakerStart();
+	}
+}
+
+// ---------------------------------- //
+// Change phase
+switch (MMLobby::GetLobbyPhase()) {
+	// ---------------------------------- //
+	// Start Matchmaking
+	case MMLobby::LobbyPhase_Playing(): {
+		if (MMLobby::GetLobbyEndTime() > 0 && Now > MMLobby::GetLobbyEndTime()) {
+			MMLobby::SetLobbyPhase(MMLobby::LobbyPhase_Matchmaking());
+			Message::CleanAllMessages();
+			Private_Lobby_InitPlayers();
+			MatchmakingRunNb += 1;
+			
+			if (MatchmakingRunNb >= S_LobbyMatchmakerPerRound) {
+				// ---------------------------------- //
+				// Find the winner
+				declare BestScore = G_MMLobby_BestCombo;
+				if (G_MMLobby_WinnerId == NullId || !Users.existskey(G_MMLobby_WinnerId)) {
+					// Recompute the winner
+					G_MMLobby_WinnerId = NullId;
+					BestScore = 0;
+					foreach (Score in Scores) {
+						if (Score.Points > BestScore) {
+							BestScore = Score.Points;
+							G_MMLobby_WinnerId = Score.User.Id;
+						}
+					}
+				}
+				
+				// ---------------------------------- //
+				// Announce the winner
+				if (G_MMLobby_WinnerId != NullId && Users.existskey(G_MMLobby_WinnerId)) {
+					Message::SendBigMessage(
+						TL::Compose(_("$<%1$> is King of the Lobby!"), Users[G_MMLobby_WinnerId].Name),
+						5000,
+						3
+					);
+				} else {
+					Message::SendBigMessage(
+						_("|Match|Draw"),
+						5000,
+						3
+					);
+				}
+				Mode::PlaySound(CUIConfig::EUISound::EndRound, 0);
+			}
+			
+			// ---------------------------------- //
+			// Start matchmaking
+			if (!S_LobbyDisableUI) {
+				declare Message = _("Matchmaking in progress...");
+				if (!MMLobby::MatchmakingIsEnabled()) Message = _("Matchmaking disabled.");
+				Message::SendStatusMessage(
+					Message,
+					S_LobbyMatchmakerTime * 1000,
+					1
+				);
+			}
+			
+			MMLobby::SetTimersAutoDown(S_LobbyMatchmakerTime * 1000);
+			MMLobby::SetLobbyEndTime(Now + (S_LobbyMatchmakerTime * 1000));
+			
+			MMLobby::ComputeAllies();
+			Private_Lobby_MatchMakerStart();
+		}
+	}
+	// ---------------------------------- //
+	// Start playing
+	case MMLobby::LobbyPhase_Matchmaking(): {
+		Private_Lobby_MatchMakerRun();
+			
+		if (MMLobby::GetLobbyEndTime() > 0 && Now > MMLobby::GetLobbyEndTime()) {
+			Private_Lobby_MatchMakerStop();
+			Message::CleanAllMessages();
+			
+			if (MatchmakingRunNb >= S_LobbyMatchmakerPerRound) {
+				if (MB_SectionRoundNb >= S_LobbyRoundPerMap) {
+					MB_StopMap();
+				} else {
+					MB_StopRound();
+				}
+			} else {
+				MMLobby::SetLobbyPhase(MMLobby::LobbyPhase_Playing());
+				MMLobby::SetLobbyStartTime(Now);
+				MMLobby::SetLobbyEndTime(MMLobby::GetLobbyStartTime() + (S_LobbyMatchmakerWait * 1000));
+				MMLobby::UpdateTimers();
+			}
+		}
+	}
+}
+***
+
+***LobbyEndRound***
+***
+MMLobby::MM_EndRound();
+***
+
+***LobbyEndMap***
+***
+MMLobby::MM_EndMap();
+
+SM::UnspawnAllPlayers();
+Message::SendBigMessage(_("Going to next map"), 3000, 1, CUIConfig::EUISound::EndMatch, 0);
+MB_Sleep(3000);
+Message::CleanAllMessages();
+MB_Sleep(500);
+***
+
+***LobbyEndServer***
+***
+MMLobby::MM_EndServer();
+UseAllies = False;
+
+Layers::Destroy("RulesReminder");
+Layers::Destroy("GaugeTimer");
+Layers::Destroy("LobbyScreen");
+Layers::Destroy("PlayersList");
+Layers::Destroy("MastersList");
+Layers::Destroy("Header");
+Layers::Destroy("Rules");
+Layers::Destroy("Versus");
+Layers::Destroy("Substitute");
+Layers::Destroy("Reconnect");
+***
+
+***MatchMakerStart***
+***
+MMLobby::MatchmakerStart(S_ProgressiveActivation_WaitingTime, S_ProgressiveActivation_PlayersNbRatio);
+***
+
+***MatchMakerRun***
+***
+MMLobby::MatchmakerRun();
+***
+
+***MatchMakerStop***
+***
+MMLobby::MatchmakerStop();
+***
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+// ---------------------------------- //
+// Lobby private functions
+// ---------------------------------- //
+// ---------------------------------- //
+/// Start the MatchMaker
+Void Private_Lobby_MatchMakerStart() {
+	---MatchMakerStart---
+}
+
+// ---------------------------------- //
+/// Run the MatchMaker
+Void Private_Lobby_MatchMakerRun() {
+	---MatchMakerRun---
+}
+
+// ---------------------------------- //
+/// Stop the MatchMaker
+Void Private_Lobby_MatchMakerStop() {
+	---MatchMakerStop---
+}
+
+// ---------------------------------- //
+/** Reset the combo of a player
+ *
+ *	@param	_Player		The player to reset
+ */
+Void Private_Lobby_ResetPlayer(CPlayer _Player) {
+	if (_Player == Null) return;
+	declare Integer Lobby_CurrentCombo for _Player = 0;
+	Lobby_CurrentCombo  = 0;
+}
+
+// ---------------------------------- //
+/// Reinitialize all the players
+Void Private_Lobby_InitPlayers() {
+	foreach (Player in AllPlayers) {
+		Private_Lobby_ResetPlayer(Player);
+		Player.Armor = Player.ArmorMax;
+	}
+}
+
+// ---------------------------------- //
+/// Spawn the players
+Void Private_Lobby_SpawnPlayers() {
+	if (MapLandmarks_PlayerSpawn.count <= 0) return;
+	
+	foreach (Player in Players) {
+		// Spawn ready players
+		if (Player.SpawnStatus == CSmPlayer::ESpawnStatus::NotSpawned && MMLobby::IsReady(Player.User)) {
+			declare Boolean SpawnThePlayer = True;
+			
+			declare UI <=> UIManager.GetUI(Player);
+			if (UI != Null) {
+				declare netread Boolean Net_Lobby_RollingIntro for UI;				
+				SpawnThePlayer = !Net_Lobby_RollingIntro;
+			}
+			
+			declare Lobby_OnVersusScreen for Player = False;
+			SpawnThePlayer = !Lobby_OnVersusScreen;
+			
+			if (SpawnThePlayer || UI == Null) {
+				if (S_LobbyInstagib) {
+					SetPlayerWeapon(Player, CSmMode::EWeapon::Laser, False);
+				} else {
+					SetPlayerWeapon(Player, CSmMode::EWeapon::Rocket, True);
+				}
+				SM::SpawnPlayer(Player, 0, MapLandmarks_PlayerSpawn[ML::Rand(0, MapLandmarks_PlayerSpawn.count - 1)].PlayerSpawn, Now);
+				Private_Lobby_ResetPlayer(Player);
+			}
+		} 
+		// Unspawn unready players
+		else if (Player.SpawnStatus == CSmPlayer::ESpawnStatus::Spawned && !MMLobby::IsReady(Player.User)) {
+			UnspawnPlayer(Player);
+		}
+	}
+}
+
+// ---------------------------------- //
+/** Display a message to a player when he beats his best combo
+ *
+ *	@param	_Player		The player who'll receive the message
+ */
+Void Private_Lobby_ShowScore(CSmPlayer _Player) {
+	if (_Player == Null || _Player.Score == Null) return;
+
+	declare Message = "";
+	if (_Player.Score.Points <= 1) {
+		Message = TL::Compose( _("%1 point (Best score: %2)"), TL::ToText(_Player.Score.Points), ""^G_MMLobby_BestCombo);
+	} else {
+		Message = TL::Compose( _("%1 points (Best score: %2)"), TL::ToText(_Player.Score.Points), ""^G_MMLobby_BestCombo);
+	}
+	
+	Message::SendStatusMessage(_Player, Message, 3000, 2);
+}
+
+// ---------------------------------- //
+/** Count points and display an hit notice to the shooter
+ *
+ *	@param	_Shooter	The player who shot and hit
+ *
+ *	@return		The number of points earned on this hit
+ */
+Integer Private_Lobby_NotifyHit(CSmPlayer _Shooter)  {
+	if (_Shooter == Null || _Shooter.Score == Null) return 0;
+	
+	declare Lobby_CurrentCombo for _Shooter = 0;
+	declare PointsEarned = 1 + (Lobby_CurrentCombo / 2);
+	_Shooter.Score.Points += PointsEarned;
+	Lobby_CurrentCombo += 1;
+	
+	if (_Shooter.Score.Points > G_MMLobby_BestCombo) {
+		G_MMLobby_BestCombo = _Shooter.Score.Points;
+		G_MMLobby_WinnerId = _Shooter.User.Id;
+	}
+	
+	Private_Lobby_ShowScore(_Shooter);
+	
+	return PointsEarned;
+}
+
+// ---------------------------------- //
+/** Create the rules manialink
+ *
+ *	@return		The manialink
+ */
+Text Private_Lobby_GetMLRules() {
+	declare ManialinkRules = "";
+	---ManialinkRules---
+	
+	return MMLobby::GetMLRules(ManialinkRules);
+}
+
+// ---------------------------------- //
+/** Create the rules reminder manialink
+ *
+ *	@return		The manialink
+ */
+Text Private_Lobby_GetMLRulesReminder() {
+	declare Text ImgBaseDir			= "file://Media/Manialinks/Shootmania/Common/";
+	declare Text WelcomeBgImage		= ImgBaseDir^"WelcomeBg.dds";
+
+	declare Text TitleText			= _("Waiting for your match to start");
+	
+	declare Text RulesReminder1		= TL::Compose("$<%1%2$>", "$"^SpawnScreen::GetModeColor(), _("You will soon be redirected to a match server."));
+	declare Text RulesReminder2		= TL::Compose("%1", _("While waiting, try to become the King Of The Lobby!"));
+	declare Text RulesReminder3		= TL::Compose("$<%11. $>%2", "$"^SpawnScreen::GetModeColor(), _("Perform as many hits as possible: the points you earn for each one will increase."));
+	declare Text RulesReminder4		= TL::Compose("$<%12. $>%2", "$"^SpawnScreen::GetModeColor(), _("Your combo falls back to 1 when you are eliminated."));
+	
+	
+	declare Text DoNotShowAgain		= _("Do Not Show Again");
+	declare Text Close				= _("Close");
+	
+	declare Integer	WindowWidth		= 192;
+	declare Integer	WindowHeight	= 38;
+	declare Real	WindowX			= 0.;
+	declare Real	WindowY			= 5.;
+	
+	return """
+<manialink version="1" name="ModeMatchmaking:RulesReminder">
+<frame id="RulesReminderMainFrame" posn="{{{WindowX}}} {{{WindowY}}} 0" hidden="true" >
+	<format  textemboss="1" />
+	<quad posn="0 -2" sizen="210 65" halign="center" valign="center" image="{{{WelcomeBgImage}}}" />
+	<label posn="0 {{{(WindowHeight/2)-3}}}" sizen="{{{WindowWidth-4}}} 4" halign="center" valign="center" text="{{{TitleText}}}" textsize="5" />
+	<label posn="{{{-(WindowWidth/2)+2}}} {{{(WindowHeight/2)-12}}}" sizen="{{{WindowWidth-4}}} 4" valign="center" text="{{{RulesReminder1}}}" textsize="2"/>
+	<label posn="{{{-(WindowWidth/2)+2}}} {{{(WindowHeight/2)-20}}}" sizen="{{{WindowWidth-4}}} 4" valign="center" text="{{{RulesReminder2}}}" textsize="2"/>
+	<label posn="{{{-(WindowWidth/2)+2}}} {{{(WindowHeight/2)-24}}}" sizen="{{{WindowWidth-4}}} 4" valign="center" text="{{{RulesReminder3}}}" textsize="2"/>
+	<label posn="{{{-(WindowWidth/2)+2}}} {{{(WindowHeight/2)-28}}}" sizen="{{{WindowWidth-4}}} 4" valign="center" text="{{{RulesReminder4}}}" textsize="2"/>
+	<label posn="{{{(WindowWidth/2)-2}}} {{{-(WindowHeight/2)+2}}}" halign="right" valign="center" text="{{{DoNotShowAgain}}}" style="CardButtonSmall" ScriptEvents="true" id="Button_DoNotShowAgain" />
+	<label posn="{{{(WindowWidth/2)-42}}} {{{-(WindowHeight/2)+2}}}" halign="right" valign="center" text="{{{Close}}}" style="CardButtonSmall" ScriptEvents="true" id="Button_Close" />
+</frame>
+<script><!--
+main() {
+	while (InputPlayer == Null) yield;
+	
+	// for the "do not show again" feature
+	declare persistent Boolean NadeoKoL_PersistentShowRulesReminder for This = True;
+	//NadeoKoL_PersistentShowRulesReminder = True;
+	
+	declare netwrite Boolean Net_Lobby_RollingIntro for UI;
+	declare netread Boolean Net_Lobby_ShowRules for UI;
+	declare netread Boolean Net_Lobby_ShowSubstituteML for UI;
+	declare netread Boolean Net_Lobby_ShowVersusML for UI;
+	declare netread Text Net_Lobby_ReconnectToServer for UI;
+	
+	if (!NadeoKoL_PersistentShowRulesReminder) {
+		Net_Lobby_RollingIntro = False;
+		return;
+	}
+	Net_Lobby_RollingIntro = True;
+	
+	declare Button_DoNotShowAgain <=> (Page.GetFirstChild("Button_DoNotShowAgain") as CMlLabel);
+	declare Button_Close <=> (Page.GetFirstChild("Button_Close") as CMlLabel);
+	declare RulesReminderMainFrame <=> (Page.GetFirstChild("RulesReminderMainFrame") as CMlFrame);
+
+	while (True) {
+		yield;
+		
+		if (Net_Lobby_ShowRules && !Net_Lobby_ShowVersusML && !Net_Lobby_ShowSubstituteML && Net_Lobby_ReconnectToServer == "") {
+			RulesReminderMainFrame.Show();
+		} else {
+			RulesReminderMainFrame.Hide();
+		}
+
+		foreach (Event in PendingEvents) {
+			switch (Event.Type){
+				case CMlEvent::Type::MouseClick: {
+					if (Event.ControlId == "Button_DoNotShowAgain") {
+						NadeoKoL_PersistentShowRulesReminder = False;
+						Net_Lobby_RollingIntro = False;
+					}
+					if (Event.ControlId == "Button_Close") {
+						Net_Lobby_RollingIntro = False;
+					}
+				}
+			}
+		}
+	}
+}
+--></script>
+</manialink>
+""";
+}
+
+// ---------------------------------- //
+// Private matchmaking functions
+// ---------------------------------- //
+// ---------------------------------- //
+/** Set the maximum number of players in a clan
+ *
+ *	@param	_MaxPlayers		Players max number
+ */
+Void Private_MM_SetMaxPlayers(Integer _MaxPlayers) {
+	MMCommon::MM_SetMaxPlayers(_MaxPlayers);
+	MMLobby::MM_UpdateMaxPlayers(MMCommon::GetMaxPlayers());
+}
+
+// ---------------------------------- //
+// Public matchmaking functions
+// ---------------------------------- //
+// ---------------------------------- //
+/** Set the new matchmaking format on this server
+ *
+ *	@param	_NewFormat		The new format
+ */
+Void MM_SetFormat(Integer[] _NewFormat) {
+	MMCommon::SetMatchFormat(_NewFormat);
+	MMCommon::SetCurrentMatchFormat(_NewFormat);
+	
+	declare Max = 0;
+	declare MatchFormat = MMCommon::GetMatchFormat();
+	if (MMCommon::IsUniversalServer()) {
+		foreach (PlayersNb in MatchFormat) {
+			Max += PlayersNb;
+		}
+	} else {
+		foreach (PlayersNb in MatchFormat) {
+			if (PlayersNb > Max) Max = PlayersNb;
+		}
+	}
+	
+	Private_MM_SetMaxPlayers(Max);
+	MMLobby::UpdateMatchFormat(MatchFormat);
+	Layers::Update("StartingMatch", MMMatch::GetMLStartingMatch());
+}
+
+// ---------------------------------- //
+/** Set the progressive matchmaking formats on this server
+ *
+ *	@param	_AvailableFormats		List of available progressive formats
+ */
+Void MM_SetProgressiveFormats(Integer[][] _ProgressiveFormats) {
+	MMCommon::SetProgressiveMatchFormats(_ProgressiveFormats);
+}
+
+// ---------------------------------- //
+/** Initialize the match server for matchmaking
+ *
+ *	@param	_Format		The  match format
+ */
+Void MM_Init(Integer[] _Format) {
+	MM_SetFormat(_Format);
+	UseForcedClans = True;
+}
+
+***Yield***
+***
+// Skip yield if we're not on a matchmaking server
+if (MMCommon::IsMatchmakingServer()) {
+	// Lobby
+	if (MMCommon::IsLobbyServer()) {
+		Message::Loop();
+		
+		declare NeedAlliesUpdate = MMLobby::MM_PlayLoop();
+		declare NeedLoadAllies = False;
+		
+		foreach (Event in PendingEvents) {
+			if (Event.Type == CSmModeEvent::EType::OnPlayerRemoved) {
+				NeedAlliesUpdate = True;
+				MMLobby::SaveAllies(Event.User);
+				MMLobby::UpdatePlayersList();
+				MMLobby::CancelMatch(Event.User);
+			} else if (Event.Type == CSmModeEvent::EType::OnPlayerAdded) {
+				NeedAlliesUpdate = True;
+				NeedLoadAllies = True;
+				MMLobby::UpdatePlayersList();
+			}
+		}
+		
+		if (NeedLoadAllies) {
+			MMLobby::LoadAllies();
+		}
+		if (NeedAlliesUpdate || NeedLoadAllies) {
+			MMLobby::ComputeAllies();
+		}
+	}
+	// Match
+	else if (MMCommon::IsMatchServer()) {
+		foreach (Event in PendingEvents) {
+			if (Event.Type == CSmModeEvent::EType::OnPlayerRemoved) {
+				if (!Event.PlayerWasInLadderMatch) {
+					MMMatch::AddKickedPlayer(Event.User.Login);
+				}
+			}
+		}
+		MMMatch::Ping(False);
+		MMMatch::ManagePlayers();
+		
+		// ---------------------------------- //
+		// Check the number of players on the match server
+		// If there's not any players left on the server, restart the matchmaking
+		declare Restart = MMMatch::MM_CheckPlayersNumbers();
+		if (Restart) {
+			MM_RestartMatchmaking = True;
+			MatchEndRequested = True;
+		}
+	}
+	
+	// ---------------------------------- //
+	// Manage the HTTP response from the API
+	declare Ident[] ToRemove;
+	foreach (Request in Http.Requests) {
+		if (!MMCommon::IsInPendingRequests(Request.Id)) continue;
+		
+		if (Request.IsCompleted) {
+			ToRemove.add(Request.Id);
+		}
+	}
+	
+	// Destroy the completed requests
+	foreach (RequestId in ToRemove) {
+		if (!Http.Requests.existskey(RequestId)) continue;
+		declare Request <=> Http.Requests[RequestId];
+		
+		// Success
+		if (Request.StatusCode == 200) {
+			declare RequestType = MMCommon::GetPendingRequestType(Request.Id);
+			switch (RequestType) {
+				case MMCommon::RequestType_GetPlayers(): {
+					MMLobby::SetupPlayer(Request.Result);
+				}
+				case MMCommon::RequestType_GetMatches(): {
+					if (MMMatch::GetMatchStatus() == MMMatch::MatchStatus_Waiting()) {
+						MMMatch::SetupMatch(Request.Result);
+					} else {
+						MMMatch::SetupSubstitute(Request.Result);
+					}
+				}
+				default: {
+					if (MMCommon::GetLogDisplay("APIDebug")) {
+						MB_Log("[API] Response: "^Request.Url^"\nStatus : "^Request.StatusCode^"\nResult : "^Request.Result);
+					}
+				}
+			}
+		}
+		// Fail
+		else {
+			if (MMCommon::GetLogDisplay("APIError")) {
+				if (Request.StatusCode == 401) {
+					MB_Log("[ERROR] Matchmaking HTTP API Error 401. Waiting for your server to register on Nadeo master server.");
+				} else if (Request.StatusCode == 404) {
+					MB_Log("[ERROR] Matchmaking HTTP API Error 404. Maybe the URL in the setting is wrong.");
+				} else {
+					MB_Log("[ERROR] Matchmaking HTTP Error "^Request.StatusCode^".");
+				}
+			}
+			if (MMCommon::GetErrorMessage() != "") UIManager.UIAll.SendChat(TL::Compose("%1 %2", MMCommon::GetMessagePrefix(), MMCommon::GetErrorMessage()));
+		}
+			
+		MMCommon::RemovePendingRequest(RequestId);
+		Http.Destroy(Http.Requests[RequestId]);
+	}
+	
+	+++MatchmakingYield+++
+}
+***
+
+// ---------------------------------- //
+// Public match functions
+// ---------------------------------- //
+// ---------------------------------- //
+/** Check if a server is in match mode
+ *
+ *	@return		True if it's a match server, false otherwise
+ */
+Boolean MM_IsMatchServer() {
+	return MMCommon::IsMatchServer();
+}
+
+// ---------------------------------- //
+/** Check if a server is in lobby mode
+ *
+ *	@return		True if it's a lobby server, false otherwise
+ */
+Boolean MM_IsLobbyServer() {
+	return MMCommon::IsLobbyServer();
+}
+
+// ---------------------------------- //
+/** Check if we are in universal mode
+ *
+ *	@return		True if it's an universal server, false otherwise
+ */
+Boolean MM_IsUniversalServer() {
+	return MMCommon::IsUniversalServer();
+}
+
+// ---------------------------------- //
+/** Check if we are on a matchmaking server
+ *
+ *	@return		True if it's a matchmaking server, false otherwise
+ */
+Boolean MM_IsMatchmakingServer() {
+	return MMCommon::IsMatchmakingServer();
+}
+
+// ---------------------------------- //
+/** Check if the matchmaking is progressive
+ *
+ *	@return		True if the matchmaking is progressive, False otherwise
+ */
+Boolean MM_MatchmakingIsProgressive() {
+	return MMCommon::IsProgressiveMatchmaking();
+}
+
+// ---------------------------------- //
+/** Get the match id
+ *
+ *	@return		The match id
+ */
+Text MM_GetMatchId() {
+	return MMMatch::GetMatchId();
+}
+
+// ---------------------------------- //
+/** Set the scores to send to the api
+ *
+ *	@param	_Scores		The scores to send
+ */
+Void MM_SetScores(Integer[] _Scores) {
+	MMMatch::SetScores(_Scores);
+}
+
+// ---------------------------------- //
+/// Send the match id to the ladder server to validate 100K matches
+Void MM_SetLadderMatchId() {
+	declare MatchId = MMMatch::GetMatchIdInteger();
+	if (MatchId < 0) return;
+	
+	Ladder_SetMatchMakingMatchId(MatchId);
+}
+
+// ---------------------------------- //
+/** Check if a player is allowed to play by the matchmaking
+ *
+ *	@param	_Player		The player to check
+ *
+ *	@return			True if the player is allowed to play, false otherwise
+ */
+Boolean MM_PlayerIsValid(CPlayer _Player) {
+	return MMMatch::PlayerIsValid(_Player);
+}
+
+// ---------------------------------- //
+/** Allow or not the mode to request substitutes
+ *
+ *	@param	_AllowSubstitutes		True to allow, false otherwise
+ */
+Void MM_AllowSubstitutes(Boolean _AllowSubstitutes) {
+	MMMatch::SetAllowSubstitutes(_AllowSubstitutes);
+}
+
+// ---------------------------------- //
+/** Get the slot selected by the matchmaking for the player
+ *
+ *	@param	_Player		The player to check
+ *
+ *	@return		The matchmaking slot of the player if found, -1 otherwise
+ */
+Integer MM_GetRequestedSlot(CPlayer _Player) {
+	return MMMatch::GetMatchPlayerSlot(_Player);
+}
+
+// ---------------------------------- //
+/** Get the clan selected by the matchmaking for the player
+ *	If the server is not in matchmaking mode, return the default requested clan
+ *
+ *	@param	_Player		The player to check
+ *
+ *	@return		The matchmaking clan of the player
+ */
+Integer MM_GetRequestedClan(CPlayer _Player) {
+	return MMMatch::GetMatchPlayerClan(_Player);
+}
+
+// ---------------------------------- //
+/** Get the clan selected by the matchmaking for a login
+ *
+ *	@param	_Login		The login to check
+ *
+ *	@return		The matchmaking clan of the login
+ */
+Integer MM_GetAssignedClan(Text _Login) {
+	return MMMatch::GetPlayerClan(_Login);
+}
+
+// ---------------------------------- //
+/** Vote to select the next map
+ *
+ *	@param	_ForceLoadMap		If True, load the selected map after the vote.
+ *								If False, only modify the NextMapIndex variable.
+ */
+Void MM_VoteForNextMap(Boolean _ForceLoadMap) {
+	if (!S_MatchmakingVoteForMap) return;
+	
+	VoteMap::Begin();
+	
+	while (!VoteMap::CanStop()) {
+		MB_Yield();
+		VoteMap::Loop();
+		
+		+++MatchmakingMatchVoteForNextMap+++
+	}
+	
+	VoteMap::End();
+	
+	if (_ForceLoadMap) {
+		declare NextMapInfo <=> VoteMap::GetNextMapInfo();
+		if (NextMapInfo != Null && NextMapInfo.Id != Map.MapInfo.Id) {
+			MB_UnloadMap();
+			MB_LoadMap();
+			MB_Synchro_DoBarrier();
+		}
+	}
+}
+
+// ---------------------------------- //
+/** Wait for all players to be ready on the server
+ *
+ *	@param	_MaxDuration	Maximum duration of the synchro (ms)
+ */
+Void MM_WaitPlayers(Integer _MaxDuration) {
+	StartTime = Now;
+	UIManager.UIAll.CountdownEndTime = -1;
+	MB_Synchro_DoBarrier();	
+	MMMatch::WaitPlayers_Begin(StartTime, _MaxDuration);
+	Layers::Attach("StartingMatch");
+	
+	while (MMMatch::WaitPlayers_IsRunning()) {
+		MB_Yield();
+		
+		+++MatchmakingWaitPlayers+++
+		
+		declare WaitPlayersEndTime = MMMatch::WaitPlayers_Loop();
+		if (WaitPlayersEndTime >= 0) {
+			UIManager.UIAll.CountdownEndTime = WaitPlayersEndTime;
+		}
+	}
+	
+	MMMatch::WaitPlayers_End();
+	Layers::Detach("StartingMatch");
+	StartTime = -1;
+	UIManager.UIAll.CountdownEndTime = -1;
+}
+
+// ---------------------------------- //
+/// Prepare a new match
+Void Private_MM_PrepareMatch() {
+	StartTime = Now;
+	UIManager.UIAll.CountdownEndTime = MMMatch::PrepareMatch_Begin(StartTime, S_MatchmakingWaitingTime);
+	Layers::Attach("StartingMatch");
+	
+	while (MMMatch::PrepareMatch_IsRunning()) {
+		MB_Yield();
+		
+		+++MatchmakingMatchPrepare+++
+		
+		MMMatch::PrepareMatch_Loop();
+	}
+	
+	MMMatch::PrepareMatch_End();
+	Layers::Detach("StartingMatch");
+	StartTime = -1;
+	UIManager.UIAll.CountdownEndTime = -1;
+}
+
+// ---------------------------------- //
+/// Wait for a new match
+Void MM_MatchWait() {
+	MMMatch::MM_MatchWait();
+	
+	// Waiting to get a match
+	while (!MMMatch::CanStartMatch()) {
+		MB_Yield();
+		
+		+++MatchmakingMatchWait+++
+	}
+	
+	// Got a match, now prepare it
+	Private_MM_PrepareMatch();
+}
+
+// ---------------------------------- //
+/** Launch a vote to see if the players want a rematch
+ *
+ *	@return		True if the players want a rematch, False otherwise
+ */
+Boolean MM_VoteForRematch() {
+	if (S_MatchmakingRematchRatio < 0.) return False;
+	
+	Layers::Attach("RematchVote");
+	Layers::Create("RematchVoteResults");
+	Layers::Attach("RematchVoteResults");
+	
+	MMMatch::VoteForRematch_Begin(S_MatchmakingRematchRatio);
+	
+	MMMatch::AnimRematchVote("SlideIn");
+	MB_Sleep(300);
+	
+	while (MMMatch::VoteForRematch_IsRunning()) {
+		MB_Yield();
+		
+		+++MatchmakingMatchVoteForRematch+++
+		
+		declare LoginsList = MMMatch::VoteForRematch_Loop();
+		if (LoginsList != "") Layers::Update("RematchVoteResults", LoginsList);
+	}
+	
+	MMMatch::AnimRematchVote("SlideOut");
+	MB_Sleep(300);
+	
+	Layers::Detach("RematchVoteResults");
+	Layers::Destroy("RematchVoteResults");
+	Layers::Detach("RematchVote");
+	
+	declare Result = MMMatch::VoteForRematch_End();
+	
+	declare End = Now + 3000;
+	while (Now < End) {
+		MB_Yield();
+		+++MatchmakingMatchVoteForRematch+++
+	}
+	
+	Message::CleanAllMessages();
+	
+	return Result;
+}
+
+// ---------------------------------- //
+/** Send the result to the API
+ *
+ *	@param	_Master		The master of the match
+ */
+Void MM_MatchEnd(Text _MasterLogin) {
+	MMMatch::MatchEnd(_MasterLogin);
+}
+
+// ---------------------------------- //
+/// End a match
+Void MM_MatchToLobby() {
+	StartTime = Now;
+	UIManager.UIAll.CountdownEndTime = MMMatch::MatchToLobby_Begin(StartTime);
+	
+	while (MMMatch::MatchToLobby_IsRunning()) {
+		MB_Yield();
+		MMMatch::MatchToLobby_Loop();
+	}
+	
+	StartTime = -1;
+	UIManager.UIAll.CountdownEndTime = -1;
+	
+	MMMatch::MatchToLobby_End();
+}

@@ -1,0 +1,308 @@
+/**
+ *	Multi clans library
+ *
+ *	The default clan of the players is 0 and 0 is not considered as a valid clan.
+ *	So the 0 clan is not taken into account in the different counting method like:
+ *	GetClanNbTotal(), GetClanNbPlayers(), etc
+ */
+
+#Const Version		"2013-11-29"
+#Const ScriptName	"Libs/Nadeo/ShootMania/MultiClans.Script.txt"
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_DefaultColor <0., 0., 0.>
+
+// ---------------------------------- //
+// Globales
+// ---------------------------------- //
+declare Vec3[Integer] G_ClansColors;
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+// ---------------------------------- //
+// Private
+// ---------------------------------- //
+// ---------------------------------- //
+/** Initialize a player
+ *
+ *	@param	_Player		The player to initialize
+ */
+Void Private_InitPlayer(CSmPlayer _Player) {
+	if (_Player == Null) return;
+	
+	declare LibMultiClans_RequestedClan for _Player = 0;
+	declare LibMultiClans_CurrentClan for _Player = 0;
+	LibMultiClans_RequestedClan = 0;
+	LibMultiClans_CurrentClan = 0;
+}
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+// ---------------------------------- //
+/** Return the version number of the script
+ *
+ *	@return		The version number of the script
+ */
+Text GetScriptVersion() {
+	return Version;
+}
+
+// ---------------------------------- //
+/** Return the name of the script
+ *
+ *	@return		The name of the script
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+// ---------------------------------- //
+/** Get the current clan of a player
+ *
+ *	@param	_Player		The player to check
+ *
+ *	@return				The clan of the player
+ */
+Integer GetClan(CSmPlayer _Player) {
+	if (_Player == Null) return 0;
+	declare LibMultiClans_CurrentClan for _Player = 0;
+	return LibMultiClans_CurrentClan;
+}
+
+// ---------------------------------- //
+/** Set the current clan of a player
+ *
+ *	@param	_Player		The player to update
+ *	@param	_ClanNb		The clan number to set
+ */
+Void SetClan(CSmPlayer _Player, Integer _ClanNb) {
+	if (_Player == Null) return;
+	declare LibMultiClans_CurrentClan for _Player = 0;
+	LibMultiClans_CurrentClan = _ClanNb;
+	
+	// Set the clan color
+	if (!G_ClansColors.existskey(_ClanNb) && _ClanNb != 0) {
+		G_ClansColors[_ClanNb] = _Player.User.Color;
+	}
+	if (_ClanNb != 0) _Player.ForceColor = G_ClansColors[_ClanNb];
+	else _Player.ForceColor = C_DefaultColor;
+}
+
+// ---------------------------------- //
+/**	Check if a clan exists
+ *
+ *	@return		True if the clan exists, False otherwise
+ */
+Boolean ClanExists(Integer _ClanNb) {
+	foreach (Player in AllPlayers) {
+		if (GetClan(Player) == _ClanNb) return True;
+	}
+	return False;
+}
+
+// ---------------------------------- //
+/// Remove the unexisting clans from the clans colors array
+Void CleanClansColors() {
+	declare ToRemove = Integer[];
+	foreach (ClanNb => Color in G_ClansColors) {
+		if (!ClanExists(ClanNb)) ToRemove.add(ClanNb);
+	}
+	foreach (ClanNb in ToRemove) {
+		declare Removed = G_ClansColors.removekey(ClanNb);
+	}
+}
+
+// ---------------------------------- //
+/// Clear the clans colors array
+Void ClearClansColors() {
+	G_ClansColors.clear();
+	foreach (Player in AllPlayers) {
+		declare Clan = GetClan(Player);
+		Player.ForceColor = C_DefaultColor;
+	}
+}
+
+// ---------------------------------- //
+/** Get the current color of a clan
+ *
+ *	@param	_ClanNb		The clan to get
+ *
+ *	@return				The color of the clan in RGB, if not found return a black color
+ */
+Vec3 GetClanColor(Integer _ClanNb) {
+	if (G_ClansColors.existskey(_ClanNb)) return G_ClansColors[_ClanNb];
+	return C_DefaultColor;
+}
+
+// ---------------------------------- //
+/** Get the color of each clan
+ *
+ *	@param	_ClanNb		The clan to get
+ */
+Vec3[Integer] GetClansColor() {	
+	return G_ClansColors;
+}
+
+// ---------------------------------- //
+/** Set the color of a clan
+ *
+ *	@param	_ClanNb		The number of the clan to update
+ *	@param	_Color		The color to set
+ */
+Void SetClanColor(Integer _ClanNb, Vec3 _Color) {
+	G_ClansColors[_ClanNb] = _Color;
+	
+	foreach (Player in AllPlayers) {
+		declare Clan = GetClan(Player);
+		if (Clan == _ClanNb) Player.ForceColor = _Color;
+	}
+}
+
+// ---------------------------------- //
+/** Get the list of the existing clans
+ *
+ *	@return		An array containing the numbers of the existing clans
+ */
+Integer[] GetClans() {
+	declare ClansList = Integer[];
+	foreach (Player in AllPlayers) {
+		declare Clan = GetClan(Player);
+		if (Clan != 0 && !ClansList.exists(Clan)) ClansList.add(Clan);
+	}
+	return ClansList;
+}
+
+// ---------------------------------- //
+/** Get the total number of clans
+ *
+ *	@return		The total number of clans
+ */
+Integer GetClansNbTotal() {
+	return GetClans().count;
+}
+
+// ---------------------------------- //
+/** Get the number of clans alive (at least one player inside is alive)
+ *
+ *	@return		The number of clans alive
+ */
+Integer GetClansNbAlive() {
+	declare ClansList = Integer[];
+	foreach (Player in AllPlayers) {
+		if (Player.SpawnStatus == CSmPlayer::ESpawnStatus::NotSpawned) continue;
+		declare Clan = GetClan(Player);
+		if (Clan != 0 && !ClansList.exists(Clan)) ClansList.add(Clan);
+	}
+	return ClansList.count;
+}
+
+// ---------------------------------- //
+/** Get the number of clans eliminated (all players inside are eliminated)
+ *
+ *	@return		The number of clans eliminated
+ */
+Integer GetClansNbEliminated() {
+	return GetClansNbTotal() - GetClansNbAlive();
+}
+
+// ---------------------------------- //
+/** Get the players of all clans
+ *
+ *	@return				The players of the clans
+ */
+CSmPlayer[][Integer] GetClansPlayers() {
+	declare ClansList = CSmPlayer[][Integer];
+	foreach (Player in AllPlayers) {
+		declare Clan = GetClan(Player);
+		if (!ClansList.existskey(Clan)) ClansList[Clan] = CSmPlayer[];
+		ClansList[Clan].add(Player);
+	}
+	return ClansList;
+}
+
+// ---------------------------------- //
+/** Get the players of a clan
+ *
+ *	@param	_ClanNb		The clan to get
+ *
+ *	@return				The players of the requested clan
+ */
+CSmPlayer[] GetClanPlayers(Integer _ClanNb) {
+	declare ClansList = CSmPlayer[];
+	foreach (Player in AllPlayers) {
+		declare Clan = GetClan(Player);
+		if (Clan != _ClanNb) continue;
+		ClansList.add(Player);
+	}
+	return ClansList;
+}
+
+// ---------------------------------- //
+/** Get the number of players in a clan
+ *
+ *	@param	_ClanNb		The clan to check
+ *
+ *	@return				The number of players in the clan
+ */
+Integer GetClanNbPlayers(Integer _ClanNb) {
+	declare Count = 0;
+	foreach (Player in AllPlayers) {
+		declare Clan = GetClan(Player);
+		if (Clan == _ClanNb) Count += 1;
+	}
+	return Count;
+}
+
+// ---------------------------------- //
+/** Get the number of alive players in a clan
+ *
+ *	@param	_ClanNb		The clan to check
+ *
+ *	@return				The number of players alive in the clan
+ */
+Integer GetClanNbPlayersAlive(Integer _ClanNb) {
+	declare Count = 0;
+	foreach (Player in AllPlayers) {
+		if (Player.SpawnStatus == CSmPlayer::ESpawnStatus::NotSpawned) continue;
+		declare Clan = GetClan(Player);
+		if (Clan == _ClanNb) Count += 1;
+	}
+	return Count;
+}
+
+// ---------------------------------- //
+/** Get the number of eliminated players in a clan
+ *
+ *	@param	_ClanNb		The clan to check
+ *
+ *	@return				The number of players eliminated in the clan
+ */
+Integer GetClanNbPlayersEliminated(Integer _ClanNb) {
+	declare Count = 0;
+	foreach (Player in AllPlayers) {
+		if (Player.SpawnStatus != CSmPlayer::ESpawnStatus::NotSpawned) continue;
+		declare Clan = GetClan(Player);
+		if (Clan == _ClanNb) Count += 1;
+	}
+	return Count;
+}
+
+// ---------------------------------- //
+/// Unload the library
+Void Unload() {
+	foreach (Player in AllPlayers) {
+		Private_InitPlayer(Player);
+	}
+	
+	G_ClansColors.clear();
+}
+
+// ---------------------------------- //
+/// Load the library
+Void Load() {
+	Unload();
+}

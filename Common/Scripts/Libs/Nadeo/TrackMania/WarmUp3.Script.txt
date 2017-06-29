@@ -1,0 +1,688 @@
+/**
+ *	WarmUp library
+ */
+#Const	Version		"2017-06-13"
+#Const	ScriptName	"Libs/Nadeo/TrackMania/WarmUp3.Script.txt"
+
+// ---------------------------------- //
+// Libraries
+// ---------------------------------- //
+#Include "TextLib" as TL
+#Include "Libs/Nadeo/XmlRpc2.Script.txt" as XmlRpc
+#Include "Libs/Nadeo/TrackMania/TM3.Script.txt" as TM
+#Include "Libs/Nadeo/TrackMania/Events.Script.txt" as Events
+
+// ---------------------------------- //
+// Constant
+// ---------------------------------- //
+#Const C_LibWU3_LayerPosition <153., 13., 0.>
+// XmlRpc
+#Const C_Callback_WarmUpStart			"Trackmania.WarmUp.Start"
+#Const C_Callback_WarmUpStartRound	"Trackmania.WarmUp.StartRound"
+#Const C_Callback_WarmUpEnd				"Trackmania.WarmUp.End"
+#Const C_Callback_WarmUpEndRound		"Trackmania.WarmUp.EndRound"
+#Const C_Callback_WarmUpStatus			"Trackmania.WarmUp.Status"
+#Const C_Method_WarmUpStop					"Trackmania.WarmUp.ForceStop"
+#Const C_Method_WarmUpStopRound		"Trackmania.WarmUp.ForceStopRound"
+#Const C_Method_WarmUpGetStatus		"Trackmania.WarmUp.GetStatus"
+// Manialinks
+#Const C_ImgPath "file://Media/Manialinks/Nadeo/TrackMania/Ingame/"
+#Const C_Font "Oswald"
+
+// ---------------------------------- //
+// Globales
+// ---------------------------------- //
+declare Ident	G_LibWU3_LayerWarmUpId;
+declare Integer G_LibWU3_MessageEndTime;
+declare Integer	G_LibWU3_RoundStartTime;
+declare Boolean	G_LibWU3_WarmUpFinished;
+declare Boolean	G_LibWU3_WarmUpRoundFinished;
+declare CUIConfig::EUIStatus G_LibWU3_PrevUIStatus;
+declare Boolean G_LibWU3_TimeLimited;
+declare Boolean G_LibWU3_IsAvailable;
+declare Boolean G_LibWU3_IsActive;
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+// ---------------------------------- //
+// Private
+// ---------------------------------- //
+// ---------------------------------- //
+/** Create the warm up manialink
+ *
+ *	@return														The warm up manialink
+ */
+Text Private_CreateLayerWarmUp() {
+	declare Img_FootLine_WarmUp = "FootLine_RemainingTime.dds";
+	
+	// L16 [Trackmania UI] Legend displayed above the label indicating the remaining number of warm up race
+	declare Text_WarmUp = TL::ToUpperCase(_("Warm up"));
+	
+	return """
+<manialink version="3" name="Lib_WarmUp:WarmUpInfo">
+<stylesheet>
+	<style class="text-default" textfont="{{{C_Font}}}" textemboss="1" textcolor="ffffff" textsize="2" />
+</stylesheet>
+<frame pos="{{{C_LibWU3_LayerPosition.X}}} {{{C_LibWU3_LayerPosition.Y}}}" z-index="{{{C_LibWU3_LayerPosition.Z}}}" id="Frame_WarmUp">
+	<frame pos="-7.5 1" z-index="0">
+		<quad pos="0.1 -3" z-index="0" size="23 24" halign="center" valign="center" opacity="0.3" keepratio="Fit" image="{{{C_ImgPath^Img_FootLine_WarmUp}}}" />
+		<quad size="23 5" z-index="1" halign="center" valign="center" style="Bgs1" substyle="BgDialogBlur" opacity="0.1" bluramount="0.1" />
+		<quad size="23 5" z-index="2" halign="center" valign="center" bgcolor="fff" opacity="0.3"/>
+		<label z-index="3" size="22 5" halign="center" valign="center2" text="{{{Text_WarmUp}}}" class="text-default" />
+	</frame>
+	<label pos="4 -4.2" z-index="1" size="40 6" halign="right" textsize="8" textcolor="f90" text="0 / 0" class="text-default" id="Label_WarmUpProgression" />
+</frame>
+<script><!--
+main() {
+	declare Frame_WarmUp <=> (Page.GetFirstChild("Frame_WarmUp") as CMlFrame);
+	declare Label_WarmUpProgression <=> (Page.GetFirstChild("Label_WarmUpProgression") as CMlLabel);
+	
+	declare netread Integer Net_LibWU3_WarmUpPlayedNb for Teams[0];
+	declare netread Integer Net_LibWU3_WarmUpDuration for Teams[0];
+	declare netread Integer Net_LibWU3_LayerPositionUpdate for Teams[0];
+	declare netread Vec3 Net_LibWU3_LayerPosition for Teams[0];
+	declare netread Boolean Net_LibWU3_LayerVisibility for Teams[0];
+	
+	declare PrevWarmUpPlayedNb = -1;
+	declare PrevWarmUpDuration = -1;
+	declare PrevLayerPositionUpdate = -1;
+	declare PrevLayerVisibility = True;
+	
+	while (True) {
+		yield;
+		
+		if (InputPlayer == Null) continue;
+		if (!PageIsVisible) continue;
+		
+		if (PrevWarmUpPlayedNb != Net_LibWU3_WarmUpPlayedNb || PrevWarmUpDuration != Net_LibWU3_WarmUpDuration) {
+			PrevWarmUpPlayedNb = Net_LibWU3_WarmUpPlayedNb;
+			PrevWarmUpDuration = Net_LibWU3_WarmUpDuration;
+			
+			Label_WarmUpProgression.Value = Net_LibWU3_WarmUpPlayedNb^" / "^Net_LibWU3_WarmUpDuration;
+		}
+		
+		if (PrevLayerVisibility != Net_LibWU3_LayerVisibility) {
+			PrevLayerVisibility = Net_LibWU3_LayerVisibility;
+			Frame_WarmUp.Visible = Net_LibWU3_LayerVisibility;
+		}
+		
+		if (PrevLayerPositionUpdate != Net_LibWU3_LayerPositionUpdate) {
+			PrevLayerPositionUpdate = Net_LibWU3_LayerPositionUpdate;
+			Frame_WarmUp.RelativePosition_V3 = <Net_LibWU3_LayerPosition.X, Net_LibWU3_LayerPosition.Y>;
+			Frame_WarmUp.ZIndex = Net_LibWU3_LayerPosition.Z;
+		}
+	}
+}
+--></script>
+</manialink>
+""";
+}
+
+// ---------------------------------- //
+/** Get the time left to the players to finish the round after the first player
+ *
+ *	@return 													The time left in ms
+ */
+Integer Private_GetFinishTimeout() {
+	declare FinishTimeout = 5000;
+	if (Map.TMObjective_IsLapRace && NbLaps > 0 && Map.TMObjective_NbLaps > 0) {
+		FinishTimeout += ((Map.TMObjective_AuthorTime / Map.TMObjective_NbLaps) * NbLaps) / 6;
+	} else {
+		FinishTimeout += Map.TMObjective_AuthorTime / 6;
+	}
+    
+	return Now + FinishTimeout;
+}
+
+// ---------------------------------- //
+/// Send a callback at the beginning of the warm  up
+Void Private_XmlRpc_SendStart() {
+	XmlRpc::SendCallback(C_Callback_WarmUpStart, ["{}"]);
+}
+
+// ---------------------------------- //
+/** Send a callback at the beginning of the warm up round
+ *
+ *	@param	_RoundsPlayed							The number of warm up rounds played
+ *	@param	_RoundsToPlay							The number of warm up rounds to play
+ */
+Void Private_XmlRpc_SendStartRound(Integer _RoundsPlayed, Integer  _RoundsToPlay) {
+	declare JSON = """{
+	"current": {{{dump(_RoundsPlayed)}}},
+	"total": {{{dump(_RoundsToPlay)}}}
+}""";
+	XmlRpc::SendCallback(C_Callback_WarmUpStartRound, [JSON]);
+}
+
+// ---------------------------------- //
+/** Send a callback at the end of the warm up round
+ *
+ *	@param	_RoundsPlayed							The number of warm up rounds played
+ *	@param	_RoundsToPlay							The number of warm up rounds to play
+ */
+Void Private_XmlRpc_SendEndRound(Integer _RoundsPlayed, Integer  _RoundsToPlay) {
+	declare JSON = """{
+	"current": {{{dump(_RoundsPlayed)}}},
+	"total": {{{dump(_RoundsToPlay)}}}
+}""";
+	XmlRpc::SendCallback(C_Callback_WarmUpEndRound, [JSON]);
+}
+
+// ---------------------------------- //
+/// Send a callback at the end of the warm  up
+Void Private_XmlRpc_SendEnd() {
+	XmlRpc::SendCallback(C_Callback_WarmUpEnd, ["{}"]);
+}
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+// ---------------------------------- //
+/** Return the version number of the script
+ *
+ *	@return														The version number of the script
+ */
+Text GetScriptVersion() {
+	return Version;
+}
+
+// ---------------------------------- //
+/** Return the name of the script
+ *
+ *	@return														The name of the script
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+// ---------------------------------- //
+/// Attach the warm up layer
+Void AttachUI() {
+	if (
+		UIManager.UILayers.existskey(G_LibWU3_LayerWarmUpId) 
+		&& !UIManager.UIAll.UILayers.existskey(G_LibWU3_LayerWarmUpId)
+	) {
+		UIManager.UIAll.UILayers.add(UIManager.UILayers[G_LibWU3_LayerWarmUpId]);
+	}
+}
+
+// ---------------------------------- //
+/// Detach the warm up layer
+Void DetachUI() {
+	declare Removed = UIManager.UIAll.UILayers.removekey(G_LibWU3_LayerWarmUpId);
+}
+
+// ---------------------------------- //
+/** Set the visibility of the layer on the screen
+ *
+ *	@param	_Visibility								The new visibility
+ */
+Void SetUIVisibility(Boolean _Visibility) {
+	declare netwrite Boolean Net_LibWU3_LayerVisibility for Teams[0];
+	Net_LibWU3_LayerVisibility = _Visibility;
+}
+
+// ---------------------------------- //
+/** Get the visibility of the layer on the screen
+ *
+ *	@return														The visibility of the layer
+ */
+Boolean GetUIVisibility() {
+	declare netwrite Boolean Net_LibWU3_LayerVisibility for Teams[0];
+	return Net_LibWU3_LayerVisibility;
+}
+
+// ---------------------------------- //
+/** Set the position of the layer on the screen
+ *
+ *	@param	_Pos											The new position
+ */
+Void SetUIPosition(Vec3 _Pos) {
+	declare netwrite Integer Net_LibWU3_LayerPositionUpdate for Teams[0];
+	declare netwrite Vec3 Net_LibWU3_LayerPosition for Teams[0];
+	Net_LibWU3_LayerPosition = _Pos;
+	Net_LibWU3_LayerPositionUpdate = Now;
+}
+
+// ---------------------------------- //
+/** Get the position of the layer on the screen
+ *
+ *	@return														The position of the layer
+ */
+Vec3 GetUIPosition() {
+	declare netwrite Integer Net_LibWU3_LayerPositionUpdate for Teams[0];
+	declare netwrite Vec3 Net_LibWU3_LayerPosition for Teams[0];
+	return Net_LibWU3_LayerPosition;
+}
+
+// ---------------------------------- //
+/** Decide if a player can play during
+ *	the warm up or not
+ *
+ *	@param	_Score										The player's score
+ *	@param	_CanPlay									True if the player can play
+ *																		False otherwise
+ */
+Void CanPlay(CTmScore _Score, Boolean _CanPlay) {
+	if (_Score == Null) return;
+	
+	declare LibWU3_CanPlay for _Score = True;
+	LibWU3_CanPlay = _CanPlay;
+}
+
+// ---------------------------------- //
+/** Check if a player can play during
+ *	the warm up
+ *
+ *	@param	_Score										The player's score
+ *
+ *	@return														True if the player can play
+ *																		False otherwise
+ */
+Boolean CanPlay(CTmScore _Score) {
+	if (_Score == Null) return False;
+	
+	declare LibWU3_CanPlay for _Score = True;
+	return LibWU3_CanPlay;
+}
+
+// ---------------------------------- //
+/// Start the warm up sequence
+Void Start() {
+	Private_XmlRpc_SendStart();
+	AttachUI();
+	G_LibWU3_WarmUpFinished = False;
+	G_LibWU3_IsActive = True;
+}
+
+// ---------------------------------- //
+/** Return if the warm up is finished or not
+ *
+ *	@return		True if the warm up is finished, false otherwise
+ */
+Boolean Finished() {
+	return G_LibWU3_WarmUpFinished;
+}
+
+// ---------------------------------- //
+/** Initialize the warm up round
+ *
+ *	@param	_RoundsPlayed							The number of warm up rounds played
+ *	@param	_RoundsToPlay							The number of warm up rounds to play
+ *	@param	_TimeLimit								Time limit of the round in milliseconds
+ */
+Void StartRound(Integer _RoundsPlayed, Integer  _RoundsToPlay, Integer _TimeLimit) {
+	Private_XmlRpc_SendStartRound(_RoundsPlayed, _RoundsToPlay);
+	TM::WaitRaceAll();
+	G_LibWU3_PrevUIStatus = UIManager.UIAll.UIStatus;
+	UIManager.UIAll.UIStatus = CUIConfig::EUIStatus::Warning;
+	
+	G_LibWU3_MessageEndTime = Now + 3000;
+	//L16N This message is displayed at the beginning of each warmup. %1 is the number of the current warmup and %2 is the total number of warmup to do.
+	UIManager.UIAll.BigMessage = TL::Compose(_("Warmup: %1/%2"), TL::ToText(_RoundsPlayed), TL::ToText(_RoundsToPlay));
+	UIManager.UIAll.UISequence = CUIConfig::EUISequence::EndRound;
+		
+	G_LibWU3_RoundStartTime = G_LibWU3_MessageEndTime + 3000;
+	G_LibWU3_WarmUpRoundFinished = False;
+	if (_TimeLimit >= 0) {
+		CutOffTimeLimit = G_LibWU3_RoundStartTime + _TimeLimit + 1000;
+		G_LibWU3_TimeLimited = True;
+	} else {
+		CutOffTimeLimit = -1;
+		G_LibWU3_TimeLimited = False;
+	}
+	
+	// Update UI
+	declare netwrite Integer Net_LibWU3_WarmUpPlayedNb for Teams[0];
+	declare netwrite Integer Net_LibWU3_WarmUpDuration for Teams[0];
+	Net_LibWU3_WarmUpPlayedNb = _RoundsPlayed;
+	Net_LibWU3_WarmUpDuration = _RoundsToPlay;
+	
+	// Initialize scores
+	foreach (Score in Scores) {
+		declare LibWU3_CanSpawn for Score = True;
+		LibWU3_CanSpawn = True;
+	}
+	
+	// Spawn players for the race
+	foreach (Player in Players) {
+		if (Player.Score == Null) continue;
+		
+		declare LibWU3_CanPlay for Player.Score = True;
+		if (LibWU3_CanPlay) {
+			if (G_LibWU3_TimeLimited) {
+				TM::StartRace(Player, G_LibWU3_RoundStartTime);
+			} else {
+				declare LibWU3_CanSpawn for Player.Score = True;
+				if (LibWU3_CanSpawn) {
+					TM::StartRace(Player, G_LibWU3_RoundStartTime);
+					LibWU3_CanSpawn = False;
+				} else {
+					TM::WaitRace(Player);
+				}
+			}
+		}
+	}
+}
+
+// ---------------------------------- //
+/** Return if the warm up round is finished or not
+ *
+ *	@return		True if the warm up round is finished, false otherwise
+ */
+Boolean RoundFinished() {
+	return G_LibWU3_WarmUpRoundFinished;
+}
+
+// ---------------------------------- //
+/// Warm up yield;
+Void Yield() {
+	// Hide message
+	if (Now >= G_LibWU3_MessageEndTime) {
+		UIManager.UIAll.BigMessage = "";
+		UIManager.UIAll.UISequence = CUIConfig::EUISequence::Playing;
+	}
+	
+	// Spawn players joining during the warm up
+	foreach (Player in Players) {
+		if (Player.Score == Null) continue;
+		
+		declare LibWU3_CanPlay for Player.Score = True;
+		if (LibWU3_CanPlay) {
+			if (G_LibWU3_TimeLimited) {
+				if (TM::IsWaiting(Player)) {
+					TM::StartRace(Player);
+				}
+			} else {
+				declare LibWU3_CanSpawn for Player.Score = True;
+				if (TM::IsWaiting(Player) && LibWU3_CanSpawn) {
+					TM::StartRace(Player, G_LibWU3_RoundStartTime);
+					LibWU3_CanSpawn = False;
+				}
+			}
+		}
+	}
+	
+	// Manage events
+	foreach (Event in PendingEvents) {
+		// Waypoint
+		if (Event.Type == CTmModeEvent::EType::WayPoint) {
+			if (Event.IsEndRace) {
+				TM::EndRace(Event.Player);
+				
+				// Start the countdown if it's the first player to finish
+				if (CutOffTimeLimit <= 0) {
+					CutOffTimeLimit = Private_GetFinishTimeout();
+				}
+			}
+		}
+		// GiveUp
+		else if (Event.Type == CTmModeEvent::EType::GiveUp) {
+			TM::WaitRace(Event.Player);
+		}
+	}
+	
+	// Manage XmlRpc events
+	foreach (Event in XmlRpc.PendingEvents) {
+		if (Event.Type == CXmlRpcEvent::EType::CallbackArray) {
+			switch (Event.ParamArray1) {
+				case C_Method_WarmUpStop: {
+					G_LibWU3_WarmUpFinished = True;
+				}
+				case C_Method_WarmUpStopRound: {
+					G_LibWU3_WarmUpRoundFinished = True;
+				}
+			}
+		}
+	}
+	
+	// End the round 
+	// If All players finished
+	if (!G_LibWU3_TimeLimited && Players.count > 0 && PlayersRacing.count <= 0) G_LibWU3_WarmUpRoundFinished = True;
+	// If time limit is reached
+	if (CutOffTimeLimit > 0 && Now >= CutOffTimeLimit) G_LibWU3_WarmUpRoundFinished = True;
+}
+
+// ---------------------------------- //
+/// Clean after the warm up round
+Void EndRound() {
+	TM::WaitRaceAll();
+	UIManager.UIAll.UIStatus = G_LibWU3_PrevUIStatus;
+	G_LibWU3_MessageEndTime = -1;
+	G_LibWU3_RoundStartTime = -1;
+	G_LibWU3_WarmUpRoundFinished = False;
+	CutOffTimeLimit = -1;
+	
+	declare netwrite Integer Net_LibWU3_WarmUpPlayedNb for Teams[0];
+	declare netwrite Integer Net_LibWU3_WarmUpDuration for Teams[0];
+	Private_XmlRpc_SendEndRound(Net_LibWU3_WarmUpPlayedNb, Net_LibWU3_WarmUpDuration);
+}
+
+// ---------------------------------- //
+/// End the warm up sequence
+Void End() {
+	DetachUI();
+	Private_XmlRpc_SendEnd();
+	G_LibWU3_IsActive = False;
+}
+
+// ---------------------------------- //
+/** Send a callback with the warm up status
+ *
+ *	@param	_ResponseId								The responseid of the callback
+ *	@param	_IsLoaded									Is the warm up available or not
+ *	@param	_IsActive									Is there an ongoing warm up or not
+ */
+Void SendStatusCallback(Text _ResponseId, Boolean _IsLoaded, Boolean _IsActive) {
+	XmlRpc::SendCallback(C_Callback_WarmUpStatus, ["""{
+	"responseid": {{{XmlRpc::JsonGetText(_ResponseId)}}},
+	"available": {{{XmlRpc::JsonGetBoolean(_IsLoaded)}}},
+	"active": {{{XmlRpc::JsonGetBoolean(_IsActive)}}}
+}"""]);
+}
+
+// ---------------------------------- //
+/** Set the availabality of the warmup
+ *	in the game mode
+ *
+ *	@param	_IsAvailable							True if the warmup is available
+ *																		False otherwise
+ */
+Void SetAvailability(Boolean _IsAvailable) {
+	G_LibWU3_IsAvailable = _IsAvailable;
+}
+
+// ---------------------------------- //
+/** Check if the warmup is available
+ *
+ *	@return														True if the warmup is available
+ *																		False otherwise
+ */
+Boolean IsAvailable() {
+	return G_LibWU3_IsAvailable;
+}
+
+// ---------------------------------- //
+/** Check if there is an active pause
+ *
+ *	@return														True if the pause is active
+ *																		False otherwise
+ */
+Boolean IsActive() {
+	return G_LibWU3_IsActive;
+}
+
+// ---------------------------------- //
+/// Catch XmlRpc methods call
+Void Yield_XmlRpc() {
+	foreach (Event in XmlRpc.PendingEvents) {
+		if (Event.Type == CXmlRpcEvent::EType::CallbackArray) {
+			switch (Event.ParamArray1) {
+				case C_Method_WarmUpGetStatus: {
+					declare ResponseId = "";
+					if (Event.ParamArray2.existskey(0)) ResponseId = Event.ParamArray2[0];
+					SendStatusCallback(ResponseId, G_LibWU3_IsAvailable, G_LibWU3_IsActive);
+				}
+			}
+		}
+	}
+}
+
+// ---------------------------------- //
+/// Unload the library
+Void Unload() {
+	if (UIManager.UILayers.existskey(G_LibWU3_LayerWarmUpId)) {
+		UIManager.UILayerDestroy(UIManager.UILayers[G_LibWU3_LayerWarmUpId]);
+		G_LibWU3_LayerWarmUpId = NullId;
+	}
+	
+	declare netwrite Integer Net_LibWU3_WarmUpPlayedNb for Teams[0];
+	declare netwrite Integer Net_LibWU3_WarmUpDuration for Teams[0];
+	Net_LibWU3_WarmUpPlayedNb = 0;
+	Net_LibWU3_WarmUpDuration = 0;
+	
+	G_LibWU3_IsAvailable = False;
+	G_LibWU3_IsActive = False;
+	
+	foreach (Score in Scores) {
+		CanPlay(Score, True);
+	}
+	
+	// Unregister callbacks
+	XmlRpc::UnregisterCallback(C_Callback_WarmUpStart);
+	XmlRpc::UnregisterCallback(C_Callback_WarmUpStartRound);
+	XmlRpc::UnregisterCallback(C_Callback_WarmUpEnd);
+	XmlRpc::UnregisterCallback(C_Callback_WarmUpEndRound);
+	XmlRpc::UnregisterCallback(C_Callback_WarmUpStatus);
+	// Unregister methods
+	XmlRpc::UnregisterMethod(C_Method_WarmUpStop);
+	XmlRpc::UnregisterMethod(C_Method_WarmUpStopRound);
+	XmlRpc::UnregisterMethod(C_Method_WarmUpGetStatus);
+}
+
+// ---------------------------------- //
+/// Load the library
+Void Load() {
+	Unload();
+	
+	// Create and assign the layer
+	declare LayerWarmUp <=> UIManager.UILayerCreate();
+	LayerWarmUp.ManialinkPage = Private_CreateLayerWarmUp();
+	G_LibWU3_LayerWarmUpId = LayerWarmUp.Id;
+	
+	G_LibWU3_MessageEndTime = -1;
+	G_LibWU3_RoundStartTime = -1;
+	G_LibWU3_WarmUpFinished = False;
+	G_LibWU3_WarmUpRoundFinished = False;
+	G_LibWU3_PrevUIStatus = UIManager.UIAll.UIStatus;
+	
+	SetUIVisibility(True);
+	SetUIPosition(C_LibWU3_LayerPosition);
+	
+	// Register callbacks
+	XmlRpc::RegisterCallback(C_Callback_WarmUpStart, """
+* Name: {{{C_Callback_WarmUpStart}}}
+* Type: CallbackArray
+* Description: Callback sent when the warm up sequence start.
+* Data:
+	- Version >=2.0.0:
+	```
+	[
+		"{}"
+	]
+	```
+	""");
+	XmlRpc::RegisterCallback(C_Callback_WarmUpStartRound, """
+* Name: {{{C_Callback_WarmUpStartRound}}}
+* Type: CallbackArray
+* Description: Callback sent when a warm up round start.
+* Data:
+	- Version >=2.0.0:
+	```
+	[
+		"{
+			"current": 2,	//< The number of the current round
+			"total": 3 //< The total number of warm up rounds
+		}"
+	]
+	```
+	""");
+	XmlRpc::RegisterCallback(C_Callback_WarmUpEndRound, """
+* Name: {{{C_Callback_WarmUpEndRound}}}
+* Type: CallbackArray
+* Description: Callback sent when a warm up round end.
+* Data:
+	- Version >=2.0.0:
+	```
+	[
+		"{
+			"current": 2,	//< The number of the current round
+			"total": 3 //< The total number of warm up rounds
+		}"
+	]
+	```
+	""");
+	XmlRpc::RegisterCallback(C_Callback_WarmUpEnd, """
+* Name: {{{C_Callback_WarmUpEnd}}}
+* Type: CallbackArray
+* Description: Callback sent when the warm up sequence end.
+* Data:
+	- Version >=2.0.0:
+	```
+	[
+		"{}"
+	]
+	```
+	""");
+	XmlRpc::RegisterCallback(C_Callback_WarmUpStatus, """
+* Name: {{{C_Callback_WarmUpStatus}}}
+* Type: CallbackArray
+* Description: The status of Trackmania's the warmup.
+* Data:
+  - Version >=2.0.0:
+  ```
+  [
+    "{
+      "responseid": "xyz", //< Facultative id passed by a script event
+      "available": true, //< true if a warmup is available in the game mode, false otherwise
+      "active": true //< true if a warmup is ongoing, false otherwise
+    }"
+  ]
+  ```
+""");
+	
+	// Register methods
+	XmlRpc::RegisterMethod(C_Method_WarmUpStop, """
+* Name: {{{C_Method_WarmUpStop}}}
+* Type: TriggerModeScriptEventArray
+* Description: Stop the whole warm up sequence.
+* Data:
+	- Version >=2.0.0:
+	```
+	[]
+	```
+	""");
+	XmlRpc::RegisterMethod(C_Method_WarmUpStopRound, """
+* Name: {{{C_Method_WarmUpStopRound}}}
+* Type: TriggerModeScriptEventArray
+* Description: Stop the current warm up round.
+* Data:
+	- Version >=2.0.0:
+	```
+	[]
+	```
+	""");
+	XmlRpc::RegisterMethod(C_Method_WarmUpGetStatus, """
+* Name: {{{C_Method_WarmUpGetStatus}}}
+* Type: TriggerModeScriptEventArray
+* Description: Get the status of the trackmania's warmup.
+* Data:
+  - Version >=2.0.0:
+  ```
+  [
+    "responseid" //< Facultative id that will be passed to the "{{{C_Callback_WarmUpStatus}}}" callback.
+  ]
+  ```
+""");
+}

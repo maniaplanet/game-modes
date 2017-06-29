@@ -1,0 +1,131 @@
+/**
+ * Trackmania UI server library
+ */
+#Const Version    "2017-05-08"
+#Const ScriptName "ManiaApps/Nadeo/TrackMania/Common/UI_Server.Script.txt"
+
+// ---------------------------------- //
+// Libraries
+// ---------------------------------- //
+#Include "ManiaApps/Nadeo/TrackMania/UI_Common.Script.txt" as UI_Common
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+// ---------------------------------- //
+/** Return the version number of the script
+ *
+ *  @return   The version number of the script
+ */
+Text GetScriptVersion() {
+  return Version;
+}
+
+// ---------------------------------- //
+/** Return the name of the script
+ *
+ *  @return   The name of the script
+ */
+Text GetScriptName() {
+  return ScriptName;
+}
+
+// ---------------------------------- //
+/** Create the given module in the mania app
+ *
+ *	@param	_ModuleId									The id of the module to create
+ */
+Void LoadModule(Text _ModuleId) {
+	declare netwrite AppTMUI_ModulesUpdate for Teams[0] = -1;
+	declare netwrite AppTMUI_Modules for Teams[0] = Text[];
+	if (!AppTMUI_Modules.exists(_ModuleId)) {
+		AppTMUI_Modules.add(_ModuleId);
+	}
+	AppTMUI_ModulesUpdate = Now;
+}
+
+// ---------------------------------- //
+/** Destroy the given module in the mania app
+ *
+ *	@param	_ModuleId									The id of the module to destroy
+ */
+Void UnloadModule(Text _ModuleId) {
+	declare netwrite AppTMUI_ModulesUpdate for Teams[0] = -1;
+	declare netwrite AppTMUI_Modules for Teams[0] = Text[];
+	declare Removed = AppTMUI_Modules.remove(_ModuleId);
+	AppTMUI_ModulesUpdate = Now;
+}
+
+// ---------------------------------- //
+/** Update the settings for a module
+ *
+ *	@param	_Name											The name of the setting
+ *	@param	_Value										The value of the setting
+ */
+Void UpdateSetting(Text _Name, Text _Value) {
+	declare netwrite Net_LibUI_SettingsUpdate for Teams[0] = 0;
+	declare netwrite Net_LibUI_Settings for Teams[0] = Text[Text];
+	Net_LibUI_SettingsUpdate = Now;
+	Net_LibUI_Settings[_Name] = _Value;
+}
+
+// ---------------------------------- //
+/** Send a live event to a player
+ *
+ *	@param	_Player										The receiver of the live event
+ *	@param	_Message									The message
+ *	@param	_Image										The path to the image
+ */
+Void SendLiveEvent(CPlayer _Player, Text _Message, Text _Image) {
+	if (_Player == Null) return;
+	declare UI <=> UIManager.GetUI(_Player);
+	if (UI == Null) return;
+	
+	declare netwrite Net_LibUI_LiveEvent for UI = Text[Integer][Integer];
+	declare netwrite Net_LibUI_LiveEventUpdate for UI = Now;
+	declare netread Net_LibUI_LiveEventRead for UI = Integer[];
+	
+	foreach (Key in Net_LibUI_LiveEventRead) {
+		declare Removed = Net_LibUI_LiveEvent.removekey(Key);
+	}
+	
+	declare MessageKey = -1;
+	for (Key, 0, 100) {
+		if (!Net_LibUI_LiveEvent.existskey(Key) && !Net_LibUI_LiveEventRead.exists(Key)) {
+			MessageKey = Key;
+			break;
+		}
+	}
+	
+	if (MessageKey >= 0) {
+		Net_LibUI_LiveEvent[MessageKey] = [
+			UI_Common::C_Message_Message => _Message, 
+			UI_Common::C_Message_Image => _Image
+		];
+	}
+	
+	Net_LibUI_LiveEventUpdate = Now;
+}
+
+// ---------------------------------- //
+/// Unload the library
+Void Unload() {
+	declare netwrite AppTMUI_ModulesUpdate for Teams[0] = -1;
+	declare netwrite AppTMUI_Modules for Teams[0] = Text[];
+	AppTMUI_Modules.clear();
+	AppTMUI_ModulesUpdate = Now;
+	
+	declare netwrite Net_LibUI_SettingsUpdate for Teams[0] = 0;
+	declare netwrite Net_LibUI_Settings for Teams[0] = Text[Text];
+	Net_LibUI_SettingsUpdate = 0;
+	Net_LibUI_Settings.clear();
+}
+
+// ---------------------------------- //
+/// Load the library
+Void Load() {
+  Unload();
+}

@@ -1,0 +1,167 @@
+#RequireContext CPlugin
+
+Text CreateManialink(CBlockModelVariant Variant, Text BlockModelName, Text BlockType)
+{
+	declare Int3[] BlockUnitOffsets;
+	foreach(BlockUnitModel in Variant.BlockUnitModels)
+	{
+		BlockUnitOffsets.add(BlockUnitModel.Offset);
+	}
+	declare BlockUnitsCount = BlockUnitOffsets.count;
+	declare MLText =
+	"""
+		<frame>
+			<quad id="CursorCoordBox" posn="70 70" z-index="-1" sizen="90 {{{3+5*(4+BlockUnitsCount)}}}" style="Bgs1" substyle="BgList" ScriptEvents="1"/>
+			<label id="NameLabel" text="Name" posn="72 68"/>
+				<label id="NameValue" text="{{{BlockModelName}}}" posn="110 68" sizen="48 5"/>
+			<label id="VariantLabel" text="Variant" posn="72 63"/>
+				<label id="VariantValue" text="{{{Variant.Name}}}" posn="110 63"/>
+			<label id="TypeLabel" text="Type" posn="72 58"/>
+				<label id="TypeValue" text="{{{BlockType}}}" posn="110 58"/>
+	""";
+	
+	MLText ^=
+	"""
+			<label id="UndergroundLabel" text="Underground" posn="72 53"/>
+	""";
+	if(Variant.IsAllUnderground)
+		MLText ^=
+		"""
+				<label id="UndergroundValue" text="Entirely" posn="110 53"/>
+		""";
+	else if(Variant.IsPartUnderground)
+		MLText ^=
+		"""
+				<label id="UndergroundValue" text="Partially" posn="110 53"/>
+		""";
+	else
+		MLText ^=
+		"""
+				<label id="UndergroundValue" text="No" posn="110 53"/>
+		""";
+		
+	for(I, 0, BlockUnitOffsets.count-1)
+	{
+		MLText ^= 
+		"""
+			<label id="Offset{{{I}}}Label" text="Offset[{{{I}}}]" posn="72 {{{48 - 5*I}}}"/>
+				<label id="Offset{{{I}}}XValue" text="{{{BlockUnitOffsets[I][0]}}}" posn="110 {{{48 - 5*I}}}"/>
+				<label id="Offset{{{I}}}YValue" text="{{{BlockUnitOffsets[I][1]}}}" posn="118 {{{48 - 5*I}}}"/>
+				<label id="Offset{{{I}}}ZValue" text="{{{BlockUnitOffsets[I][2]}}}" posn="126 {{{48 - 5*I}}}"/>
+		""";
+	}
+	
+	MLText ^=
+	"""
+		</frame>
+	""";
+	return MLText;
+}
+
+/////////////////////////////////////
+// Main
+/////////////////////////////////////
+
+main()
+{
+	log("BlockModelInCursor.Script starts");
+	
+	LayersDefaultManialinkVersion = 3;
+	
+	declare CBlockModelVariant Variant;
+	declare OldBlockModelId = NullId;
+	declare BlockType = "";
+	declare OldOnGround = False;
+	
+	while(True) {
+		yield;
+		if(PlaceMode == ::PlaceMode::Block)
+		{
+			if(CursorBlockModel != Null)
+			{
+				declare Boolean OnGround;
+				declare Integer VariantIndex; // not used
+				declare CanPlaceResult = CanPlaceBlock(CursorBlockModel, CursorCoord, CursorDir, OnGround, VariantIndex);
+				if(OnGround)
+					Variant <=> CursorBlockModel.VariantGround;
+				else
+					Variant <=> CursorBlockModel.VariantAir;
+				if(CursorBlockModel.Id != OldBlockModelId || OnGround != OldOnGround)
+				{
+					OldBlockModelId = CursorBlockModel.Id;
+					OldOnGround = OnGround;
+					if(CursorBlockModel.IsRoad)
+						BlockType = "Road";
+					else
+						BlockType = "Classic";
+					if(Variant != Null)
+						ManialinkText = CreateManialink(Variant, CursorBlockModel.Name, BlockType);
+					else
+					{
+						log("Variant not found");
+						ManialinkText = "";
+					}
+				}
+			}
+			else if(OldBlockModelId != NullId)
+			{
+				OldBlockModelId = NullId;
+				log("No BlockModel in cursor");
+				ManialinkText = "";
+			}
+		}
+		else if(PlaceMode == ::PlaceMode::Terraform)
+		{
+			if(CursorBlockModel != Null)
+			{
+				Variant <=> CursorTerrainBlockModel.VariantGround;
+				if(CursorTerrainBlockModel.Id != OldBlockModelId)
+				{
+					OldBlockModelId = CursorTerrainBlockModel.Id;
+					BlockType = "Terrain";
+					if(Variant != Null)
+						ManialinkText = CreateManialink(Variant, CursorTerrainBlockModel.Name, BlockType);
+					else
+					{
+						log("Variant not found");
+						ManialinkText = "";
+					}
+				}
+			}
+			else if(OldBlockModelId != NullId)
+			{
+				OldBlockModelId = NullId;
+				log("No BlockModel in cursor");
+				ManialinkText = "";
+			}
+		}
+		else if(PlaceMode == ::PlaceMode::Macroblock)
+		{
+			if(CursorMacroblockModel != Null)
+			{
+				if(CursorMacroblockModel.IsGround)
+					Variant <=> CursorMacroblockModel.GeneratedBlockModel.VariantGround;
+				else
+					Variant <=> CursorMacroblockModel.GeneratedBlockModel.VariantAir;
+				if(CursorMacroblockModel.Id != OldBlockModelId)
+				{
+					OldBlockModelId = CursorMacroblockModel.Id;
+					BlockType = "Macroblock";
+					if(Variant != Null)
+						ManialinkText = CreateManialink(Variant, CursorMacroblockModel.Name, BlockType);
+					else
+					{
+						log("Variant not found");
+						ManialinkText = "";
+					}
+				}
+			}
+			else if(OldBlockModelId != NullId)
+			{
+				OldBlockModelId = NullId;
+				log("No BlockModel in cursor");
+				ManialinkText = "";
+			}
+		}
+	}
+}

@@ -1,0 +1,1191 @@
+/**
+ *	XmlRpc lib for Shootmania
+ *	Simple commons callbacks
+ *	And mode specific callbacks
+ */
+#Const	Version		"2015-03-05"
+#Const	ScriptName	"XmlRpc.Script.txt"
+
+#Include "TextLib" as TL
+#Include "MathLib" as ML
+#Include "Libs/Nadeo/XmlRpcCommon.Script.txt" as XmlRpc
+
+// ---------------------------------- //
+// Globales
+// ---------------------------------- //
+declare Boolean G_IsInWarmUp;
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+// ---------------------------------- //
+// Private
+// ---------------------------------- //
+// ---------------------------------- //
+/** Get the current rankings of the players
+ *	Format:
+ *	Login1:Score1;Login2:Score2;Login3:Score3
+ *
+ *	@return		The rankings of the player;
+ */
+Text Private_GetRankings() {
+	declare Rankings = "";
+	declare Total = 0;
+	foreach (Score in Scores) {
+		Total += 1;
+		Rankings ^= Score.User.Login^":"^Score.RoundPoints+Score.Points;
+		if (Total < Scores.count) Rankings ^= ";";
+	}
+	return Rankings;
+}
+
+// ---------------------------------- //
+/** Find a player from his login
+ *	
+ *	@param	_Login	The login of the player to find
+ *
+ *	@return			The player if found, null otherwise
+ */
+CSmPlayer Private_FindPlayer(Text _Login) {
+	foreach (Player in AllPlayers) {
+		if (Player.User.Login == _Login) return Player;
+	}
+	return Null;
+}
+
+// ---------------------------------- //
+/** Hide/Show the alt layers when pressing the alt key
+ *
+ *	@param	_Action		True -> show, False -> hide
+ *	@param	_Login		Login of the player to update
+ */
+Void Private_ToggleAltMenu(Boolean _Action, Text _Login) {
+	declare Player <=> Private_FindPlayer(_Login);
+	if (Player == Null) return;
+	
+	declare UI <=> UIManager.GetUI(Player);
+	if (UI == Null) return;
+	
+	UI.AltMenuNoDefaultScores = !_Action;
+	UI.AltMenuNoCustomScores = !_Action;
+}
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+// ---------------------------------- //
+/** Return the version number of the script
+ *
+ *	@return		The version number of the script
+ */
+Text GetScriptVersion() {
+	return Version;
+}
+
+// ---------------------------------- //
+/** Return the name of the script
+ *
+ *	@return		The name of the script
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+// ---------------------------------- //
+/** Check the base XmlRpc library for the documentation
+ *	of the following functions
+ */
+Void Enable() {
+	XmlRpc::Enable();
+}
+Void Disable() {
+	XmlRpc::Disable();
+}
+Boolean IsEnabled() {
+	return XmlRpc::IsEnabled();
+}
+Void SendCallbackArray(Text _Name, Text[] _Data) {
+	XmlRpc::SendCallbackArray(_Name, _Data);
+}
+Void SendCallback(Text _Name, Text _Data) {
+	XmlRpc::SendCallback(_Name, _Data);
+}
+Void RegisterCallback(Text _Name, Text _Doc) {
+	XmlRpc::RegisterCallback(_Name, _Doc);
+}
+Void UnregisterCallback(Text _Name) {
+	XmlRpc::UnregisterCallback(_Name);
+}
+Boolean CallbackIsBlocked(Text _Name) {
+	return XmlRpc::CallbackIsBlocked(_Name);
+}
+Boolean CallbackIsAllowed(Text _Name) {
+	return XmlRpc::CallbackIsAllowed(_Name);
+}
+Text[] ListCallbacks(Boolean _SendCallback) {
+	return XmlRpc::ListCallbacks(_SendCallback);
+}
+Text CallbackHelp(Text _Name, Boolean _SendCallback) {
+	return XmlRpc::CallbackHelp(_Name, _SendCallback);
+}
+Void BlockCallback(Text _Name) {
+	XmlRpc::BlockCallback(_Name);
+}
+Void BlockAllCallbacks() {
+	XmlRpc::BlockAllCallbacks();
+}
+Void UnblockCallback(Text _Name) {
+	XmlRpc::UnblockCallback(_Name);
+}
+Void UnblockAllCallbacks() {
+	XmlRpc::UnblockAllCallbacks();
+}
+Text[] GetBlockedCallbacks(Boolean _SendCallback) {
+	return XmlRpc::GetBlockedCallbacks(_SendCallback);
+}
+
+// ---------------------------------- //
+/// Unload the library
+Void Unload() {
+	UnregisterCallback("LibXmlRpc_Rankings");
+	UnregisterCallback("LibXmlRpc_PlayerRanking");
+	UnregisterCallback("LibXmlRpc_Scores");
+	UnregisterCallback("LibXmlRpc_OnShoot");
+	UnregisterCallback("LibXmlRpc_OnHit");
+	UnregisterCallback("LibXmlRpc_OnNearMiss");
+	UnregisterCallback("LibXmlRpc_OnArmorEmpty");
+	UnregisterCallback("LibXmlRpc_OnCapture");
+	UnregisterCallback("LibXmlRpc_OnPlayerRequestRespawn");
+	UnregisterCallback("WarmUp_Status");
+	UnregisterCallback("LibXmlRpc_WarmUp");
+	UnregisterCallback("Royal_UpdatePoints");
+	UnregisterCallback("Royal_SpawnPlayer");
+	UnregisterCallback("Royal_RoundWinner");
+	UnregisterCallback("TimeAttack_OnStart");
+	UnregisterCallback("TimeAttack_OnCheckpoint");
+	UnregisterCallback("TimeAttack_OnFinish");
+	UnregisterCallback("TimeAttack_OnRestart");
+	UnregisterCallback("Joust_OnReload");
+	UnregisterCallback("Joust_SelectedPlayers");
+	UnregisterCallback("Joust_RoundResult");
+	UnregisterCallback("Elite_BeginTurn");
+	UnregisterCallback("Elite_EndTurn");
+	
+	XmlRpc::Unload();
+}
+
+// ---------------------------------- //
+/// Load the library
+Void Load() {
+	Unload();
+	
+	XmlRpc::Load();
+
+RegisterCallback("LibXmlRpc_Rankings", """
+* Data : An array with a list of players with their scores
+* Example : ["Login1:Score1;Login2:Score2;Login3:Score3;LoginN:ScoreN"]
+* Note : This callback is sent just before `LibXmlRpc_EndTurn`, `LibXmlRpc_EndRound`, `LibXmlRpc_EndSubmatch`, `LibXmlRpc_EndMap` and `LibXmlRpc_EndMatch`
+""");
+
+RegisterCallback("LibXmlRpc_PlayerRanking", """
+* Data : An array with the current rank in the scores, login, nickname, team id, spectator status, away status, points and zone of a player
+* Example : ["1", "eole", "b`Side.Eole", "0", "False", "False", "10", "World|Europe|France|Outre-Mer|Reunion"]
+* Note : [Rank, Login, NickName, TeamId, IsSpectator, IsAway, CurrentPoints, Zone]
+""");
+
+RegisterCallback("LibXmlRpc_Scores", """
+* Data : An array with the match and map scores in team modes
+* Example : ["1", "0", "5", "6"]
+* Note : ["MatchScoreClan1", "MatchScoreClan2", "MapScoreClan1", "MapScoreClan2"]
+""");
+
+RegisterCallback("LibXmlRpc_OnShoot", """
+* Data : An array with the login of the shooter and the number of the weapon used
+* Example : ["ShooterLogin", "1"]
+* Note : This callback is sent when a player shoots.
+Weapon number -> 1: Laser, 2: Rocket, 3: Nucleus, 5: Arrow
+""");
+
+RegisterCallback("LibXmlRpc_OnHit", """
+* Data : An array with the login of the shooter, the login of the victim, the amount of damage, the weapon number, the shooter points (the +1, +2, etc displayed in game when you hit someone) and the hit distance.
+* Example : ["ShooterLogin", "VictimLogin", "200", "1", "2", "45."]
+* Note : This callback is sent when a player is hit.
+One armor point = 100 damage. Weapon number -> 1: Laser, 2: Rocket, 3: Nucleus, 5: Arrow. The hit distance is calculated with the position of the payers when the projectile hit, so it's not really accurate for weapons with a travel time.
+""");
+
+RegisterCallback("LibXmlRpc_OnNearMiss", """
+* Data : An array with the login of the shooter, the login of the victim, the weapon number and the distance of the miss
+* Example : ["ShoterLogin", "VictimLogin", "1", "0.05"]
+* Note : This callback is sent when a player shot a Laser near another player without hitting him.
+The distance is in meter.
+""");
+
+RegisterCallback("LibXmlRpc_OnArmorEmpty", """
+* Data : An array with the login of the shooter, the login of the victim, the amount of damage, the weapon number and the shooter points (the +1, +2, etc displayed in game when you hit someone)
+* Example : ["ShooterLogin", "VictimLogin", "100", "3", "1"]
+* Note : This callback is sent when a player has 0 armor (hit by a player, fall in an offzone, ...)
+One armor point = 100 damage, Weapon number -> 1: Laser, 2: Rocket, 3: Nucleus, 5: Arrow
+""");
+
+RegisterCallback("LibXmlRpc_OnCapture", """
+* Data : An array with the login of the players who were on the pole plate when it was captured
+* Example : ["Login1;Login2;Login3;LoginN"]
+* Note : This callback is sent when a pole is captured.
+""");
+
+RegisterCallback("LibXmlRpc_OnPlayerRequestRespawn", """
+* Data : An array with the login of the player requesting the respawn
+* Example : ["Login"]
+* Note : This callback is sent when a player requests a respawn.
+""");
+
+RegisterCallback("WarmUp_Status", """
+* Data : An array with one value saying if the mode use a warm up or not
+* Example : ["True"]
+* Note : This callback is sent after using the `WarmUp_GetStatus` method
+""");
+
+RegisterCallback("LibXmlRpc_WarmUp", """
+* Data : An array with a boolean to indicate if the mode is in warm up or not.
+* Example : ["True"]
+* Note : This callback is sent when the script receives the `LibXmlRpc_GetWarmUp` trigger.
+""");
+
+RegisterCallback("Royal_UpdatePoints", """
+* Data : An array with the login of the player scoring the point, the type of points and the number of points
+* Example : ["Login", "Pole", "10"]
+* Note : This callback is sent when a player scores points.
+The points can be of three types: Hit, Pole or Survival
+""");
+
+RegisterCallback("Royal_SpawnPlayer", """
+* Data : An array with the login of the player spawning and the type of spawn
+* Example : ["Login", "1"]
+* Note : This callback is sent when a player spawns or respawns.
+Two type of spawn -> 0: normal, 1: early . The normal spawn is the first spawn of the player, while an early respawn is when a player respawn during a round before the pole is captured.
+""");
+
+RegisterCallback("Royal_RoundWinner", """
+* Data : An array with the login of the player who won the round
+* Example : ["Login"]
+* Note : This callback is sent at the end of the round.
+""");
+
+RegisterCallback("TimeAttack_OnStart", """
+* Data : An array with the login of the player
+* Example : ["Login"]
+* Note : This callback is sent when a player starts a run.
+""");
+
+RegisterCallback("TimeAttack_OnCheckpoint", """
+* Data : An array with the login of the player and its time at the checkpoint
+* Example : ["Login", "37840"]
+* Note : This callback is sent when a player crosses a checkpoint.
+The time is in milliseconds.
+""");
+
+RegisterCallback("TimeAttack_OnFinish", """
+* Data : An array with the login of the player and its time at the finish
+* Example : ["Login", "149890"]
+* Note : This callback is sent when a player crosses the finish line.
+The time is in milliseconds.
+""");
+
+RegisterCallback("TimeAttack_OnRestart", """
+* Data : An array with the login of the player and its time at the time of the restart
+* Example : ["Login", "3540"]
+* Note : This callback is sent when a player asks to respawn or is eliminated.
+The time is in milliseconds.
+""");
+
+RegisterCallback("Joust_OnReload", """
+* Data : An array with the login of the player reloading
+* Example : ["Login"]
+* Note : This callback is sent when a player touches a pole to reload.
+""");
+
+RegisterCallback("Joust_SelectedPlayers", """
+* Data : An array with the logins of the two players who'll play the round.
+* Example : ["LoginPlayer1", "LoginPlayer2"]
+* Note : This callback is sent at the beginning of the round to announce the two opponents.
+""");
+
+RegisterCallback("Joust_RoundResult", """
+* Data : An array with the logins and score of each player of the round
+* Example : ["LoginPlayer1:ScorePlayer1", "LoginPlayer2:ScorePlayer2"]
+* Note : This callback is sent at the end of the round.
+""");
+
+RegisterCallback("Elite_BeginTurn", """
+* Data : An array with the logins of the attacker and defenders
+* Example : ["attackerlogin", "defenderlogin1;defenderlogin2;defenderlogin3"]
+* Note : This callback is sent after LibXmlRpc_BeginTurn.
+* Version : available since ModeSport.Script.txt_v2014-10-13
+""");
+
+RegisterCallback("Elite_EndTurn", """
+* Data : An array with the type of victory for the round
+* Example : [1]
+* Note : 1 -> Time limit, 2 -> Capture, 3 -> Attacker eliminated, 4-> Defenders eliminated
+* Version : available since ModeSport.Script.txt_v2014-10-13
+""");
+}
+
+// ---------------------------------- //
+/** Send the current rankings
+ *	Data:
+ *	[Rankings]
+ */
+Void SendRankings() {
+	if (!CallbackIsAllowed("LibXmlRpc_Rankings")) return;
+	
+	SendCallbackArray("LibXmlRpc_Rankings", [Private_GetRankings()]);
+}
+
+// ---------------------------------- //
+/** Send the player ranking
+ *	Data:
+ *	[Rank, Login, NickName, TeamId, IsSpectator, IsAway, CurrentScore, Zone]
+ *
+ *	@param	_Login		The login of the player to get
+ */
+Void SendPlayerRanking(Text _Login) {
+	if (!CallbackIsAllowed("LibXmlRpc_PlayerRanking")) return;
+	
+	declare Text[] PlayerRanking;
+	declare CSmScore PlayerScore;
+	declare Rank = 0;
+	foreach (Score in Scores) {
+		Rank += 1;
+		if (Score.User.Login == _Login) {
+			PlayerScore <=> Score;
+			break;
+		}
+	}
+	
+	if (PlayerScore != Null) {
+		declare IsAway = False;
+		declare Player <=> Private_FindPlayer(PlayerScore.User.Login);
+		if (Player == Null) IsAway = True;
+		declare RequestsSpectate = False;
+		if (Player != Null) RequestsSpectate = Player.RequestsSpectate;
+		
+		declare TeamNum = -1;
+		if (UseClans) TeamNum = PlayerScore.TeamNum - 1;
+		
+		PlayerRanking = [
+			TL::ToText(Rank),
+			PlayerScore.User.Login,
+			PlayerScore.User.Name,
+			TL::ToText(TeamNum),
+			TL::ToText(RequestsSpectate),
+			TL::ToText(IsAway),
+			TL::ToText(PlayerScore.RoundPoints+PlayerScore.Points),
+			PlayerScore.User.ZonePath
+		];
+	}
+	
+	SendCallbackArray("LibXmlRpc_PlayerRanking", PlayerRanking);
+}
+
+// ---------------------------------- //
+/** Send the current rankings
+ *	Data:
+ *	[Match Team 1, Match Team 2, Map Team 1, Map Team 2]
+ */
+Void SendScores() {
+	if (!CallbackIsAllowed("LibXmlRpc_Scores")) return;
+	
+	declare MapPoints1 = UIManager.UIAll.ScoreSummary_Points1;
+	declare MapPoints2 = UIManager.UIAll.ScoreSummary_Points2;
+	if (MapPoints1 == -1 && MapPoints2 == -1) {
+		MapPoints1 = UIManager.UIAll.ScoreSummary_RoundPoints1;
+		MapPoints2 = UIManager.UIAll.ScoreSummary_RoundPoints2;
+	}
+	SendCallbackArray("LibXmlRpc_Scores", [
+		TL::ToText(UIManager.UIAll.ScoreSummary_MatchPoints1),
+		TL::ToText(UIManager.UIAll.ScoreSummary_MatchPoints2),
+		TL::ToText(MapPoints1), 
+		TL::ToText(MapPoints2)
+	]);
+}
+
+// ---------------------------------- //
+/** Send the warm up status
+ *	Data:
+ *	[IsInWarmUp]
+ */
+Void SendIsInWarmUp() {
+	if (!CallbackIsAllowed("LibXmlRpc_WarmUp")) return;
+	
+	declare IsInWarmUp = "False";
+	if (G_IsInWarmUp) IsInWarmUp = "True";
+	SendCallbackArray("LibXmlRpc_WarmUp", [IsInWarmUp]);
+}
+
+// ---------------------------------- //
+/** Callback sent when starting to load the map
+ *	Data:
+ *	[Number of the map]
+ */
+Void LoadingMap(Integer _Number, Boolean _Restarted) {
+	XmlRpc::LoadingMap(_Number, _Restarted);
+}
+
+// ---------------------------------- //
+/** Callback sent when starting to load the map
+ *	Data:
+ *	[Number of the map]
+ */
+Void LoadingMap(Integer _Number) {
+	XmlRpc::LoadingMap(_Number, False);
+}
+
+// ---------------------------------- //
+/** Callback sent when starting to unload the map
+ *	Data:
+ *	[Number of the map]
+ */
+Void UnloadingMap(Integer _Number) {
+	XmlRpc::UnloadingMap(_Number);
+}
+
+// ---------------------------------- //
+/** Callback sent before the beginning of the server
+ *	Data:
+ *	[]
+ */
+Void BeginServer() {
+	XmlRpc::BeginServer();
+}
+
+// ---------------------------------- //
+/** Callback sent after the beginning of the server
+ *	Data:
+ *	[]
+ */
+Void BeginServerStop() {
+	XmlRpc::BeginServerStop();
+}
+
+// ---------------------------------- //
+/** Callback sent before the beginning of the match
+ *	Data:
+ *	[Number of the match, Map restarted]
+ */
+Void BeginMatch(Integer _Number, Boolean _Restarted) {
+	XmlRpc::BeginMatch(_Number, _Restarted);
+}
+
+// ---------------------------------- //
+/// BeginMatch() overload
+Void BeginMatch(Integer _Number) {
+	BeginMatch(_Number, False);
+}
+
+// ---------------------------------- //
+/** Callback sent after the beginning of the match
+ *	Data:
+ *	[Number of the match, Map restarted]
+ */
+Void BeginMatchStop(Integer _Number, Boolean _Restarted) {
+	XmlRpc::BeginMatchStop(_Number, _Restarted);
+}
+
+// ---------------------------------- //
+/** Callback sent before the beginning of the map
+ *	Data:
+ *	[Number of the map, Map UID, Map restarted]
+ */
+Void BeginMap(Integer _Number, Boolean _Restarted) {
+	XmlRpc::BeginMap(_Number, _Restarted);
+}
+
+// ---------------------------------- //
+/** Callback sent after the beginning of the map
+ *	Data:
+ *	[Number of the map, Map UID, Map restarted]
+ */
+Void BeginMapStop(Integer _Number, Boolean _Restarted) {
+	XmlRpc::BeginMapStop(_Number, _Restarted);
+}
+
+// ---------------------------------- //
+/** Callback sent before the beginning of the submatch
+ *	Data:
+ *	[Number of the submatch]
+ */
+Void BeginSubmatch(Integer _Number) {
+	XmlRpc::BeginSubmatch(_Number);
+}
+
+// ---------------------------------- //
+/** Callback sent after the beginning of the submatch
+ *	Data:
+ *	[Number of the submatch]
+ */
+Void BeginSubmatchStop(Integer _Number) {
+	XmlRpc::BeginSubmatchStop(_Number);
+}
+
+// ---------------------------------- //
+/** Callback sent before the beginning of the round
+ *	Data:
+ *	[Number of the round]
+ */
+Void BeginRound(Integer _Number) {
+	XmlRpc::BeginRound(_Number);
+}
+
+// ---------------------------------- //
+/** Callback sent after the beginning of the round
+ *	Data:
+ *	[Number of the round]
+ */
+Void BeginRoundStop(Integer _Number) {
+	XmlRpc::BeginRoundStop(_Number);
+}
+
+// ---------------------------------- //
+/** Callback sent before the beginning of the turn
+ *	Data:
+ *	[Number of the turn]
+ */
+Void BeginTurn(Integer _Number) {
+	XmlRpc::BeginTurn(_Number);
+}
+
+// ---------------------------------- //
+/** Callback sent after the beginning of the turn
+ *	Data:
+ *	[Number of the turn]
+ */
+Void BeginTurnStop(Integer _Number) {
+	XmlRpc::BeginTurnStop(_Number);
+}
+
+// ---------------------------------- //
+/** Callback sent at the beginning of the play loop
+ *	Data:
+ *	[]
+ */
+Void BeginPlaying() {
+	XmlRpc::BeginPlaying();
+}
+
+// ---------------------------------- //
+/** Callback sent at the end of the play loop
+ *	Data:
+ *	[]
+ */
+Void EndPlaying() {
+	XmlRpc::EndPlaying();
+}
+
+// ---------------------------------- //
+/** Callback sent before the end of the turn
+ *	Data:
+ *	[Number of the turn]
+ */
+Void EndTurn(Integer _Number) {
+	SendRankings();
+	XmlRpc::EndTurn(_Number);
+}
+
+// ---------------------------------- //
+/** Callback sent after the end of the turn
+ *	Data:
+ *	[Number of the turn]
+ */
+Void EndTurnStop(Integer _Number) {
+	SendRankings();
+	XmlRpc::EndTurnStop(_Number);
+}
+
+// ---------------------------------- //
+/** Callback sent before the end of the round
+ *	Data:
+ *	[Number of the round]
+ */
+Void EndRound(Integer _Number) {
+	SendRankings();
+	XmlRpc::EndRound(_Number);
+}
+
+// ---------------------------------- //
+/** Callback sent after the end of the round
+ *	Data:
+ *	[Number of the round]
+ */
+Void EndRoundStop(Integer _Number) {
+	SendRankings();
+	XmlRpc::EndRoundStop(_Number);
+}
+
+// ---------------------------------- //
+/** Callback sent before the end of the submatch
+ *	Data:
+ *	[Number of the submatch]
+ */
+Void EndSubmatch(Integer _Number) {
+	SendRankings();
+	XmlRpc::EndSubmatch(_Number);
+}
+
+// ---------------------------------- //
+/** Callback sent after the end of the submatch
+ *	Data:
+ *	[Number of the submatch]
+ */
+Void EndSubmatchStop(Integer _Number) {
+	SendRankings();
+	XmlRpc::EndSubmatchStop(_Number);
+}
+
+// ---------------------------------- //
+/** Callback sent before the end of the map
+ *	Data:
+ *	[Number of the map, Map UID]
+ */
+Void EndMap(Integer _Number) {
+	SendRankings();
+	XmlRpc::EndMap(_Number);
+}
+
+// ---------------------------------- //
+/** Callback sent after the end of the map
+ *	Data:
+ *	[Number of the map, Map UID]
+ */
+Void EndMapStop(Integer _Number) {
+	SendRankings();
+	XmlRpc::EndMapStop(_Number);
+}
+
+// ---------------------------------- //
+/** Callback before the end of the match
+ *	Data:
+ *	[Number of the match]
+ */
+Void EndMatch(Integer _Number) {
+	SendRankings();
+	XmlRpc::EndMatch(_Number);
+}
+
+// ---------------------------------- //
+/** Callback sent after the end of the match
+ *	Data:
+ *	[Number of the match]
+ */
+Void EndMatchStop(Integer _Number) {
+	SendRankings();
+	XmlRpc::EndMatchStop(_Number);
+}
+
+// ---------------------------------- //
+/** Callback sent before the end of the server
+ *	Data:
+ *	[]
+ */
+Void EndServer() {
+	XmlRpc::EndServer();
+}
+
+// ---------------------------------- //
+/** Callback sent after the end of the server
+ *	Data:
+ *	[]
+ */
+Void EndServerStop() {
+	XmlRpc::EndServerStop();
+}
+
+// ---------------------------------- //
+/// Callback sent at the beginning of the podium sequence
+Void BeginPodium() {
+	XmlRpc::BeginPodium();
+}
+
+// ---------------------------------- //
+/// Callback sent at the end of the podium
+Void EndPodium() {
+	XmlRpc::EndPodium();
+}
+
+// ---------------------------------- //
+/// Callback sent at the beginning of the warmup
+Void BeginWarmUp() {
+	G_IsInWarmUp = True;
+	XmlRpc::BeginWarmUp();
+}
+
+// ---------------------------------- //
+/// Callback sent at the end of the warmup
+Void EndWarmUp() {
+	G_IsInWarmUp = False;
+	XmlRpc::EndWarmUp();
+}
+
+// ---------------------------------- //
+/// Callback sent at the beginning of the pause
+Void BeginPause() {
+	XmlRpc::BeginPause();
+}
+
+// ---------------------------------- //
+/// Callback sent at the end of the pause
+Void EndPause() {
+	XmlRpc::EndPause();
+}
+
+// ---------------------------------- //
+/** Check if a pause is requested
+ *
+ *	@return		True if a pause is requested, False otherwise
+ */
+Boolean PauseRequested() {
+	return XmlRpc::PauseRequested();
+}
+
+// ---------------------------------- //
+/// Callback sent when the scores are ready to be used
+Void ScoresReady() {
+	XmlRpc::ScoresReady();
+}
+
+// ---------------------------------- //
+/** Callback sent when a player shoot
+ *	Data:
+ *	[Shooter login, Weapon number]
+ *
+ *	Weapon number: 1 -> Laser, 2 -> Rocket, 3 -> Nucleus
+ */
+Void OnShoot(CSmModeEvent _Event) {
+	if (!CallbackIsAllowed("LibXmlRpc_OnShoot")) return;
+	
+	declare ShooterLogin = "Null";
+	if (_Event.Shooter != Null) ShooterLogin = _Event.Shooter.User.Login;
+	declare Data = [ShooterLogin, TL::ToText(_Event.WeaponNum)];
+	SendCallbackArray("LibXmlRpc_OnShoot", Data);
+}
+
+// ---------------------------------- //
+/** Callback sent when a player is hit
+ *	Data:
+ *	[Shooter login, Victim login, Damage, Weapon number, Shooter points, Distance, Shooter position, Victim position, Shooter aim direction, Victim aim direction]
+ *
+ *	Damage: the total damage inflicted to the victim on hit
+ *	Weapon number: 1 -> Laser, 2 -> Rocket, 3 -> Nucleus
+ *	Shooter points: the number of points scored by the shooter on this hit
+ */
+Void OnHit(CSmModeEvent _Event) {
+	if (!CallbackIsAllowed("LibXmlRpc_OnHit")) return;
+	
+	declare ShooterLogin = "Null";
+	declare VictimLogin = "Null";
+	declare Distance = "0.";
+	declare ShooterPosition = "0.,0.,0.";
+	declare VictimPosition = "0.,0.,0.";
+	declare ShooterAimDirection = "0.,0.,0.";
+	declare VictimAimDirection = "0.,0.,0.";
+	if (_Event.Shooter != Null) {
+		ShooterLogin = _Event.Shooter.User.Login;
+		ShooterPosition = _Event.Shooter.Position.X^","^_Event.Shooter.Position.Y^","^_Event.Shooter.Position.Z;
+		ShooterAimDirection = _Event.Shooter.AimDirection.X^","^_Event.Shooter.AimDirection.Y^","^_Event.Shooter.AimDirection.Z;
+	}
+	if (_Event.Victim != Null) {
+		VictimLogin = _Event.Victim.User.Login;
+		VictimPosition = _Event.Victim.Position.X^","^_Event.Victim.Position.Y^","^_Event.Victim.Position.Z;
+		VictimAimDirection = _Event.Victim.AimDirection.X^","^_Event.Victim.AimDirection.Y^","^_Event.Victim.AimDirection.Z;
+	}
+	if (_Event.Shooter != Null && _Event.Victim != Null) {
+		Distance = TL::ToText(ML::Distance(_Event.Victim.Position, _Event.Shooter.Position));
+	}
+	declare Data = [ShooterLogin, VictimLogin, TL::ToText(_Event.Damage), TL::ToText(_Event.WeaponNum), TL::ToText(_Event.ShooterPoints), Distance, ShooterPosition, VictimPosition, ShooterAimDirection, VictimAimDirection];
+	SendCallbackArray("LibXmlRpc_OnHit", Data);
+}
+
+// ---------------------------------- //
+/** Callback when a shot missed from a few cm a player
+ *	Data:
+ *	[Shooter login, Victim login, Weapon number, Near miss distance]
+ *
+ *	Weapon number: 1 -> Laser, 2 -> Rocket, 3 -> Nucleus
+ *	Near miss distance: in centimeters
+ */
+Void OnNearMiss(CSmModeEvent _Event) {
+	if (!CallbackIsAllowed("LibXmlRpc_OnNearMiss")) return;
+	
+	declare ShooterLogin = "Null";
+	declare VictimLogin = "Null";
+	if (_Event.Shooter != Null) ShooterLogin = _Event.Shooter.User.Login;
+	if (_Event.Victim != Null) VictimLogin = _Event.Victim.User.Login;
+	declare Data = [ShooterLogin, VictimLogin, TL::ToText(_Event.WeaponNum), TL::ToText(_Event.MissDist)];
+	SendCallbackArray("LibXmlRpc_OnNearMiss", Data);
+}
+
+// ---------------------------------- //
+/** Callback sent when a player armor is empty (hit, offzone, storm, ...)
+ *	Data:
+ *	[Shooter login, Victim login, Damage, Weapon number, Shooter points]
+ *
+ *	Damage: the total damage inflicted to the victim on hit
+ *	Weapon number: 1 -> Laser, 2 -> Rocket, 3 -> Nucleus
+ *	Shooter points: the number of points scored by the shooter on this elimination
+ */
+Void OnArmorEmpty(CSmModeEvent _Event) {
+	if (!CallbackIsAllowed("LibXmlRpc_OnArmorEmpty")) return;
+	
+	declare ShooterLogin = "Null";
+	declare VictimLogin = "Null";
+	if (_Event.Shooter != Null) ShooterLogin = _Event.Shooter.User.Login;
+	if (_Event.Victim != Null) VictimLogin = _Event.Victim.User.Login;
+	declare Data = [ShooterLogin, VictimLogin, TL::ToText(_Event.Damage), TL::ToText(_Event.WeaponNum), TL::ToText(_Event.ShooterPoints)];
+	SendCallbackArray("LibXmlRpc_OnArmorEmpty", Data);
+}
+
+// ---------------------------------- //
+/** Callback sent when a pole is captured
+ *	Data:
+ *	[List of players on pole at the capture]
+ *
+ *	List of players: login1;login2;login3;login4
+ */
+Void OnCapture(CSmModeEvent _Event) {
+	if (!CallbackIsAllowed("LibXmlRpc_OnCapture")) return;
+	
+	declare PlayersList = "";
+	if (_Event.Landmark != Null && _Event.Landmark.Sector != Null) {
+		declare Total = 0;
+		foreach (PlayerId in _Event.Landmark.Sector.PlayersIds) {
+			Total += 1;
+			PlayersList ^= Players[PlayerId].User.Login;
+			if (Total < _Event.Landmark.Sector.PlayersIds.count) PlayersList ^= ";";
+		}
+	}
+	declare Data = [PlayersList];
+	SendCallbackArray("LibXmlRpc_OnCapture", Data);
+}
+
+// ---------------------------------- //
+/** Callback sent when a player press the respawn button
+ *	Data:
+ *	[Player login]
+ */
+Void OnPlayerRequestRespawn(CSmModeEvent _Event) {
+	if (!CallbackIsAllowed("LibXmlRpc_OnPlayerRequestRespawn")) return;
+	
+	declare PlayerLogin = "Null";
+	if (_Event.Player != Null) PlayerLogin = _Event.Player.User.Login;
+	declare Data = [PlayerLogin];
+	SendCallbackArray("LibXmlRpc_OnPlayerRequestRespawn", Data);
+}
+
+// ---------------------------------- //
+/** Send the current warm up status
+ *	Data:
+ *	[True]
+ *
+ *	True if the warm up is loaded, False otherwise
+ */
+Void SendWarmUpStatus() {
+	if (!CallbackIsAllowed("WarmUp_Status")) return;
+	
+	declare LibXmlRpc_LibWarmUp2Loaded for XmlRpc = False;
+	SendCallbackArray("WarmUp_Status", [TL::ToText(LibXmlRpc_LibWarmUp2Loaded)]);
+}
+
+// ---------------------------------- //
+// Listening on XmlRpc port
+// ---------------------------------- //
+
+// ---------------------------------- //
+/// Wait for XmlRpc callbacks
+Void Loop() {
+	if (!IsEnabled()) return;
+	
+	XmlRpc::Loop();
+	
+	foreach (Event in XmlRpc.PendingEvents) {
+		if (Event.Type == CXmlRpcEvent::EType::Callback) {
+			switch (Event.Param1) {
+				case "LibXmlRpc_GetRankings"		: SendRankings();
+				case "LibXmlRpc_GetPlayerRanking"	: SendPlayerRanking(Event.Param2);
+				case "LibXmlRpc_GetScores"			: SendScores();
+				case "LibXmlRpc_DisableAltMenu"		: Private_ToggleAltMenu(False, Event.Param2);
+				case "LibXmlRpc_EnableAltMenu"		: Private_ToggleAltMenu(True, Event.Param2);
+				case "WarmUp_GetStatus"				: SendWarmUpStatus();
+				case "LibXmlRpc_GetWarmUp"			: SendIsInWarmUp();
+			}
+		}
+	}
+}
+
+// ---------------------------------- //
+// Mode dependent callbacks
+// ---------------------------------- //
+
+// ---------------------------------- //
+/// Royal
+
+// ---------------------------------- //
+/**	Send a callback on points update in royal
+ *	Data:
+ *	[Player login, Type of points, number of points]
+ *	
+ *	Type of points: Hit, Pole, Survival
+ *
+ *	@param	_Player		The player who'll receive the points
+ *	@param	_Type		The type of points received
+ *	@param	_Points		The number of points received
+ */
+Void Royal_UpdatePoints(CSmPlayer _Player, Text _Type, Integer _Points) {
+	if (!CallbackIsAllowed("Royal_UpdatePoints")) return;
+	
+	declare PlayerLogin = "Null";
+	if (_Player != Null) PlayerLogin = _Player.User.Login;
+	if (_Type == "") return;
+	
+	declare Data = [PlayerLogin, _Type, TL::ToText(_Points)];
+	SendCallbackArray("Royal_UpdatePoints", Data);
+}
+
+// ---------------------------------- //
+/** Send a callback on player spawn
+ *	Data:
+ *	[Player login, Type of spawn]
+ *
+ *	Type of spawn: 0 -> normal, 1 -> early
+ *
+ *	@param	_Player		The spawned player
+ *	@param	_Type		The type of spawn
+ */
+Void Royal_SpawnPlayer(CSmPlayer _Player, Integer _Type) {
+	if (!CallbackIsAllowed("Royal_SpawnPlayer")) return;
+	
+	declare PlayerLogin = "Null";
+	if (_Player != Null) PlayerLogin = _Player.User.Login;
+	
+	declare Data = [PlayerLogin, TL::ToText(_Type)];
+	SendCallbackArray("Royal_SpawnPlayer", Data);
+}
+
+// ---------------------------------- //
+/** Send a callback with the login of the winner
+ *	Data:
+ *	[Player login]
+ *
+ *	@param	_UserId		The id of the user who won the round
+ */
+Void Royal_RoundWinner(Ident _UserId) {
+	if (!CallbackIsAllowed("Royal_RoundWinner")) return;
+	if (!Users.existskey(_UserId)) return;
+	
+	declare Data = [Users[_UserId].Login];
+	SendCallbackArray("Royal_RoundWinner", Data);
+}
+
+// ---------------------------------- //
+/// Time attack
+
+// ---------------------------------- //
+/** Send a callback on player start
+ *	Data:
+ *	[Player login]
+ *
+ *	@param	_Player		The starting player
+ */
+Void TimeAttack_OnStart(CSmPlayer _Player) {
+	if (!CallbackIsAllowed("TimeAttack_OnStart")) return;
+	
+	declare PlayerLogin = "Null";
+	if (_Player != Null) PlayerLogin = _Player.User.Login;
+	declare Data = [PlayerLogin];
+	SendCallbackArray("TimeAttack_OnStart", Data);
+}
+
+// ---------------------------------- //
+/** Send a callback when a player cross a checkpoint
+ *	Data:
+ *	[Player login, time on checkpoint]
+ *
+ *	@param	_Player		The player crossing the checkpoint
+ *	@param	_Time		The time at the checkpoint
+ */
+Void TimeAttack_OnCheckpoint(CSmPlayer _Player, Integer _Time) {
+	if (!CallbackIsAllowed("TimeAttack_OnCheckpoint")) return;
+	
+	declare PlayerLogin = "Null";
+	if (_Player != Null) PlayerLogin = _Player.User.Login;
+	declare Data = [PlayerLogin, TL::ToText(_Time)];
+	SendCallbackArray("TimeAttack_OnCheckpoint", Data);
+}
+
+// ---------------------------------- //
+/** Send a callback when a player cross the finish line
+ *	Data:
+ *	[Player login, time at finish]
+ *
+ *	@param	_Player		The player crossing the finsih line
+ *	@param	_Time		The time at the finish
+ */
+Void TimeAttack_OnFinish(CSmPlayer _Player, Integer _Time) {
+	if (!CallbackIsAllowed("TimeAttack_OnFinish")) return;
+	
+	declare PlayerLogin = "Null";
+	if (_Player != Null) PlayerLogin = _Player.User.Login;
+	declare Data = [PlayerLogin, TL::ToText(_Time)];
+	SendCallbackArray("TimeAttack_OnFinish", Data);
+}
+
+// ---------------------------------- //
+/** Send a callback when a player want to restart (respawn, elimination)
+ *	Data:
+ *	[Player login, time of restart]
+ *
+ *	@param	_Player		The restarting player
+ *	@param	_Time		The time of the restart
+ */
+Void TimeAttack_OnRestart(CSmPlayer _Player, Integer _Time) {
+	if (!CallbackIsAllowed("TimeAttack_OnRestart")) return;
+	
+	declare PlayerLogin = "Null";
+	if (_Player != Null) PlayerLogin = _Player.User.Login;
+	declare Data = [PlayerLogin, TL::ToText(_Time)];
+	SendCallbackArray("TimeAttack_OnRestart", Data);
+}
+
+// ---------------------------------- //
+/// Joust
+
+// ---------------------------------- //
+/** Send a callback when a player touch a pole to reload
+ *	Data:
+ *	[Player login}
+ *
+ *	@param	_Player		The player who reloaded
+ */
+Void Joust_OnReload(CSmPlayer _Player) {
+	if (!CallbackIsAllowed("Joust_OnReload")) return;
+	
+	declare PlayerLogin = "Null";
+	if (_Player != Null) PlayerLogin = _Player.User.Login;
+	declare Data = [PlayerLogin];
+	SendCallbackArray("Joust_OnReload", Data);
+}
+
+// ---------------------------------- //
+/** Send a callback with the two selected players for the round
+ *	Data:
+ *	[Player login 1, Player login 2]
+ *
+ *	@param	_Player1	The first player
+ *	@param	_Player2	The second player
+ */
+Void Joust_SelectedPlayers(CSmPlayer _Player1, CSmPlayer _Player2) {
+	if (!CallbackIsAllowed("Joust_SelectedPlayers")) return;
+	
+	declare Player1Login = "Null";
+	if (_Player1 != Null) Player1Login = _Player1.User.Login;
+	declare Player2Login = "Null";
+	if (_Player2 != Null) Player2Login = _Player2.User.Login;
+	declare Data = [Player1Login, Player2Login];
+	SendCallbackArray("Joust_SelectedPlayers", Data);
+}
+
+// ---------------------------------- //
+/** Send a callback with the result of the round
+ *	Data:
+ *	[Result player 1, Result player 2]
+ *
+ *	Result player format: login:score
+ *
+ *	@param	_Player1	The first player
+ *	@param	_Score1		The score of the first player
+ *	@param	_Player2	The second player
+ *	@param	_Score2		The score of the second player
+ */
+Void Joust_RoundResult(CSmPlayer _Player1, Integer _Score1, CSmPlayer _Player2, Integer _Score2) {
+	if (!CallbackIsAllowed("Joust_RoundResult")) return;
+	
+	declare Player1Login = "Null";
+	if (_Player1 != Null) Player1Login = _Player1.User.Login;
+	declare Player2Login = "Null";
+	if (_Player2 != Null) Player2Login = _Player2.User.Login;
+	declare Data = [Player1Login^":"^_Score1, Player2Login^":"^_Score2];
+	SendCallbackArray("Joust_RoundResult", Data);
+}
+
+// ---------------------------------- //
+/// Siege
+
+// ---------------------------------- //
+/** Callback sent when a checkpoint is captured
+ *	It's a copy of the OnCapture() function
+ *	Data:
+ *	[List of players on checkpoint at the capture]
+ *
+ *	List of players: login1;login2;login3;login4
+ *
+ *	@param _MapLandmark		The checkpoint that was activated
+ */
+Void Siege_OnCapture(CSmMapLandmark _MapLandmark) {
+	if (!CallbackIsAllowed("LibXmlRpc_OnCapture")) return;
+	
+	declare PlayersList = "";
+	if (_MapLandmark != Null && _MapLandmark.Sector != Null) {
+		declare Total = 0;
+		foreach (PlayerId in _MapLandmark.Sector.PlayersIds) {
+			Total += 1;
+			PlayersList ^= Players[PlayerId].User.Login;
+			if (Total < _MapLandmark.Sector.PlayersIds.count) PlayersList ^= ";";
+		}
+	}
+	declare Data = [PlayersList];
+	SendCallbackArray("LibXmlRpc_OnCapture", Data);
+}
+
+// ---------------------------------- //
+/// Elite
+
+// ---------------------------------- //
+/** Callback sent at the beginning of the turn in Elite 
+ *	Data : 
+ *	[attackerlogin, defenderlogin1, defenderloginx, ...]
+ *
+ *	@param	_Players		The players to send
+ */
+Void Elite_BeginTurn(CSmPlayer[] _AtkPlayers, CSmPlayer[] _DefPlayers) {
+	if (!CallbackIsAllowed("Elite_BeginTurn")) return;
+	
+	declare AttackersList = "";
+	foreach (Player in _AtkPlayers) {
+		if (AttackersList != "") AttackersList ^= ";";
+		if (Player != Null) AttackersList ^= Player.User.Login;
+	}
+	
+	declare DefendersList = "";
+	foreach (Player in _DefPlayers) {
+		if (DefendersList != "") DefendersList ^= ";";
+		if (Player != Null) DefendersList ^= Player.User.Login;
+	}
+	
+	SendCallbackArray("Elite_BeginTurn", [AttackersList, DefendersList]);
+}
+
+// ---------------------------------- //
+/** Callback sent at the end of the turn in Elite 
+ *	Data : 
+ *	[1]
+ *	1 -> Time limit
+ *	2 -> Capture
+ *	3 -> Attacker eliminated
+ *	4 -> Defenders eliminated
+ *
+ *	@param	_WinType		The type of win
+ */
+Void Elite_EndTurn(Integer _WinType) {
+	if (!CallbackIsAllowed("Elite_EndTurn")) return;
+	
+	SendCallbackArray("Elite_EndTurn", [TL::ToText(_WinType)]);
+}

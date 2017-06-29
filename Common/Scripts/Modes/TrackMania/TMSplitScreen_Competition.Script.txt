@@ -1,0 +1,281 @@
+// *********************** ** ** *   *
+// *    SplitScreen competition
+// ******************* ** ** *   *
+
+#RequireContext CTmMode
+
+#Include "TextLib" as TextLib
+#Include "Libs/Nadeo/Mode.Script.txt"
+#Include "Libs/Nadeo/TrackMania/TM.Script.txt" as TM
+
+
+#Setting PointsLimit 10
+#Const RoundPoints [10,6,4,3,2,1]
+
+
+// === Scores ===
+Boolean IsRaceBetter(CTmResult _Race1, CTmResult _Race2)
+{
+	declare Comp = _Race1.Compare(_Race2, CTmResult::ETmRaceResultCriteria::Time);
+	return Comp > 0;
+}
+
+Text GetFrameMapTimes()
+{
+	declare Integer[Text] Times;
+	Times["Gold"] = Map.TMObjective_GoldTime;
+	foreach (Score in Scores) {
+		if (Score.BestRace.Time != -1)
+			Times[Score.User.Name] = Score.BestRace.Time;
+	}
+	Times = Times.sort();
+	
+	declare Legend = _("$oBest times:");
+	declare Frame = """	<frame posn="-160 86">
+						<label posn="1 3" 	style="TextRaceStaticSmall" sizen="50 2" halign="left" text="{{{Legend}}}"  />""";
+	declare Line = 0;
+	foreach (Name => Time in Times) {
+		Frame ^= """<label posn="2 {{{-3*Line}}}" 	style="TextRaceStaticSmall" sizen="25 3" halign="left" text="{{{Name}}}"  />
+				   	<label posn="30 {{{-3*Line}}}" 	style="TextPlayerCardScore" sizen="25 3" halign="left" text="$fff{{{TextLib::TimeToText(Time, True)}}}"  />""";
+		Line += 1;
+	}
+	
+	Frame ^=  """</frame>""" ;
+	
+	return Frame;
+}
+
+declare CUILayer UILayerScores;
+
+// === Race rounds ==
+Void Race_DoRound()
+{
+	UIManager.UIAll.UISequence = CUIConfig::EUISequence::Playing;
+	
+	CutOffTimeLimit = 0;
+	TM::Players_SpawnAll(Now + 2000);
+	foreach(Score, Scores) {
+		Score.PrevRaceDeltaPoints = 0;
+	}
+	sleep(500);	
+	Synchro_DoBarrier();
+
+	declare RoundArrivalOrder = Integer[Ident];
+	declare RoundArrivalOrderDirty = True; 
+	declare MatchBestTime for Map = -1;
+	
+	UILayerScores.ManialinkPage = GetFrameMapTimes();
+	
+	declare NbContestants = Players.count;
+	while(  PlayersRacing.count > 0) {
+		TM::RunGame();
+		TM::EndRaceSequence_Update();
+		
+		if (MatchEndRequested)
+			return;
+
+		// Process events queue
+		foreach(Event, PendingEvents) {	
+			PassOn(Event);
+
+			if (Event.Type == CTmModeEvent::EType::WayPoint && Event.IsEndRace) {
+				declare Player <=> Event.Player;
+				
+				assert(Player.CurRace.Time == Event.RaceTime);
+				Player.Score.PrevRace = Player.CurRace;
+				if (IsRaceBetter(Player.CurRace, Player.Score.BestRace)) {
+					Player.Score.BestRace = Player.CurRace;
+					declare TimeText = "$o$EA2" ^ TextLib::TimeToText(Event.RaceTime, True);
+					if (MatchBestTime == -1 || MatchBestTime > Event.RaceTime) {
+						MatchBestTime = Event.RaceTime;
+						
+						TM::EndRaceSequence_Add(Player, TextLib::Compose(_("New match record! %1"), TimeText));
+					} else {
+						TM::EndRaceSequence_Add(Player, TextLib::Compose(_("Personal record! %1"), TimeText));
+					}
+				} else {
+					TM::EndRaceSequence_Add(Player, "");
+				}
+				
+				assert(!RoundArrivalOrder.existskey(Player.Id));
+				RoundArrivalOrder[Player.Id] = Event.RaceTime;
+				RoundArrivalOrderDirty = True;
+				if (CutOffTimeLimit == 0) {		// grace preiod for the others to finish
+					CutOffTimeLimit = Now + 5000 + Map.TMObjective_GoldTime/6;
+				}
+			}
+		}
+		
+		// Refresh score table.		
+		if (RoundArrivalOrderDirty) {
+			RoundArrivalOrderDirty = False;
+			RoundArrivalOrder = RoundArrivalOrder.sort();
+			
+			declare Index = 0;
+			declare Table = """<scoretable type="time">""";
+			foreach (PlayerId => Time in RoundArrivalOrder) {
+				declare Player <=> Players[PlayerId];		// faut le PlayerInfo
+				declare ScoreInc = 0;
+				if (Index < RoundPoints.count)
+					ScoreInc = RoundPoints[Index];
+				else
+					ScoreInc = 1;
+				Index += 1;
+				if (Index == NbContestants)		// last players gets no points.
+					ScoreInc = 0;				
+				
+				Table ^= """<score login="{{{Player.User.Login}}}" value="{{{Time}}}" inc="{{{ScoreInc}}}"/>""";		
+			}
+			Table ^= """</scoretable>""";
+			UIManager.UIAll.SmallScoreTable = Table;
+			
+			UILayerScores.ManialinkPage = GetFrameMapTimes();		// refresh scores...
+		}
+		
+		// end grace period if needed
+		if (CutOffTimeLimit != 0 && Now > CutOffTimeLimit) {
+			TM::Players_UnspawnAll();
+		}
+	}
+	
+	Synchro_DoBarrier();
+
+	// endround sequence
+	sleep(1000);
+	UIManager.UIAll.UISequence = CUIConfig::EUISequence::EndRound;
+	UIManager.UIAll.ScoreTableVisibility = CUIConfig::EVisibility::ForcedVisible;
+	
+	// Compute result  (TODO: not duplicate the ScoreInc computation)
+	declare Index = 0;
+	foreach (PlayerId => Time in RoundArrivalOrder) {
+		declare Player <=> Players[PlayerId];
+		declare ScoreInc = 0;
+		if (Index < RoundPoints.count)
+			ScoreInc = RoundPoints[Index];
+		else
+			ScoreInc = 1;
+		Index += 1;
+		if (Index == NbContestants)		// last players gets no points.
+			ScoreInc = 0;				
+
+		Player.Score.PrevRaceDeltaPoints = ScoreInc;
+	}
+
+	sleep(2000);
+
+	foreach(Score, Scores) {
+		Score.Points += Score.PrevRaceDeltaPoints;
+		Score.PrevRaceDeltaPoints = 0;
+	}
+	Scores_Sort(::ETmScoreSortOrder::TotalPoints);	
+
+	sleep(2500);
+	UIManager.UIAll.SmallScoreTable = "";
+	UIManager.UIAll.ScoreTableVisibility = CUIConfig::EVisibility::Normal;
+	
+	sleep(500);	
+	Synchro_DoBarrier();
+}
+
+// === Main ===
+main() 
+{
+	UIManager.ResetAll();
+	log("restart...");
+	
+	IndependantLaps = False;
+	UiRounds = True;
+	RespawnBehaviour = ::ETMRespawnBehaviour::Normal;
+
+	declare UILayerWinner <=> UIManager.UILayerCreate();
+	UILayerScores <=> UIManager.UILayerCreate();
+
+	// loop on the playlist
+	while( !ServerShutdownRequested ) {
+		UIManager.UIAll.ScoreTableVisibility = CUIConfig::EVisibility::ForcedVisible;
+		UIManager.UIAll.UISequence = CUIConfig::EUISequence::Intro;
+		LoadMap();
+		
+		TM::Players_UnspawnAll();
+		Scores_Clear();
+		
+		
+		//  ============ Séquence d'intro:
+		{
+			sleep(0);	// flush loading lag.
+			UILayerScores.ManialinkPage = GetFrameMapTimes();
+			UIManager.UIAll.UILayers.clear();
+			UIManager.UIAll.UILayers.add(UILayerScores);
+
+	
+			UIManager.UIAll.ScoreTableVisibility = CUIConfig::EVisibility::ForcedVisible;
+			UIManager.UIAll.UISequence = CUIConfig::EUISequence::Intro;
+			sleep(4000);	// HACK; should be "wait(sequences over)"
+			
+			UIManager.UIAll.ScoreTableVisibility = CUIConfig::EVisibility::Normal;
+			UIManager.UIAll.UISequence = CUIConfig::EUISequence::Playing;
+			foreach(Player, Players) {
+				declare UI <=> UIManager.UI[Player];
+				UI.BigMessage = Player.User.Name;
+				UI.BigMessageAvatarLogin = Player.User.Login;
+				UI.BigMessageAvatarVariant = CUIConfig::EAvatarVariant::Default;
+				Player.RaceStartTime = Now + 100000;			// spawn the cars.
+			}
+			sleep(3000);
+			
+			UIManager.UIAll.BigMessage = "";
+			UIManager.UIAll.StatusMessage = "";
+			foreach(Player, Players) {
+				declare UI <=> UIManager.UI[Player];
+				UI.BigMessage = "";
+				UI.BigMessageAvatarLogin = "";
+				UI.StatusMessage = "";
+			}
+		}
+
+		// ============ Play the rounds until the ending condition is reached.:
+		while( !MatchEndRequested ) {
+			Race_DoRound();
+			
+			declare BestScore = 0;
+			if (Scores.count > 0 && Scores[0].Points >= PointsLimit)
+				break; 		// score limit reached.
+		}
+		
+		// ============ Séquence de fin:
+		TM::Players_UnspawnAll();
+		if (Scores.count > 0 && Scores[0].Points > 0 && !ServerShutdownRequested) {
+			UILayerScores.ManialinkPage = GetFrameMapTimes();
+			UIManager.UIAll.UISequence = CUIConfig::EUISequence::Podium;
+			sleep(2500);
+			
+			declare VictoryText = TextLib::Compose(_("$<%1$> wins the match!"), Scores[0].User.Name);
+			UILayerScores.ManialinkPage = GetFrameMapTimes();
+			UILayerWinner.ManialinkPage ^= 
+				"""<frame posn="0 60">
+				<quad  posn="0 3 -1"	sizen="130 14"	halign="center"	style="Bgs1InRace" substyle="BgTitle3"  />
+				<label posn="0 0"						halign="center" scale="2" text="{{{VictoryText}}}" />
+				</frame>""";
+
+			UIManager.UIAll.UILayers.clear();
+			UIManager.UIAll.UILayers.add(UILayerScores);
+			UIManager.UIAll.UILayers.add(UILayerWinner);
+
+			sleep(3000);
+			UIManager.UIAll.ScoreTableVisibility = CUIConfig::EVisibility::ForcedVisible;
+			sleep(5000);
+		}
+		
+		Synchro_DoBarrier();
+
+		UIManager.UIAll.ScoreTableVisibility = CUIConfig::EVisibility::Normal;
+		UIManager.UIAll.UILayers.clear();
+		Scores_Clear();
+		
+		MatchEndRequested = False;		// taken into account.
+
+		UnloadMap();
+	}
+	
+	UIManager.UILayerDestroy(UILayerScores);
+}

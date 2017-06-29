@@ -1,0 +1,142 @@
+/**
+ * Manage a solo waiting list
+ */
+
+#Const Version		"2012-07-20"
+#Const ScriptName	"WaitingListSolo.Script.txt"
+
+/* ------------------------------------- */
+// Settings
+/* ------------------------------------- */
+#Const C_Debug	False	///< Active debug mode
+
+/* ------------------------------------- */
+// Globales
+/* ------------------------------------- */
+declare Integer[Ident]	G_WaitingList;
+declare Integer[Ident]	G_PlayingList;
+declare Integer			G_LastLogTime;
+
+/* ------------------------------------- */
+// Functions
+/* ------------------------------------- */
+
+/* ------------------------------------- */
+/** Return the version number of the script
+ *
+ *	@return		The version number of the script
+ */
+Text GetScriptVersion() {
+	return Version;
+}
+
+/* ------------------------------------- */
+/** Return the name of the script
+ *
+ *	@return		The name of the script
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+// _PlayerId Player to replace
+Ident SubstitutePlayer(Ident _PlayerId, Integer _ClanNb) {
+	declare NewPlayerId = NullId;
+	G_WaitingList = G_WaitingList.sort();
+	
+	foreach (WaitingPlayerId => WaitingSince in G_WaitingList) {
+		if (Players.existskey(WaitingPlayerId)) {
+			if (_ClanNb != 1 && _ClanNb != 2) {
+				NewPlayerId = WaitingPlayerId;
+				break;
+			} else if (Players[WaitingPlayerId].RequestedClan == _ClanNb) {
+				NewPlayerId = WaitingPlayerId;
+				break;
+			} else {
+				continue;
+			}
+		} else {
+			continue;
+		}
+	}
+	
+	if (NewPlayerId != NullId) {
+		G_WaitingList.removekey(NewPlayerId);
+		G_PlayingList[NewPlayerId] = Now;
+	}
+	if (_PlayerId != NullId) {
+		G_PlayingList.removekey(_PlayerId);
+		if (Players.existskey(_PlayerId)) {
+			G_WaitingList[_PlayerId] = Now;
+		}
+	}
+	
+	return NewPlayerId;
+}
+
+Void AddWaiting(Ident _PlayerId) {
+	if (_PlayerId != NullId && Players.existskey(_PlayerId)) {
+		G_WaitingList[_PlayerId] = Now;
+		G_PlayingList.removekey(_PlayerId);
+	}
+}
+
+Void AddPlaying(Ident _PlayerId) {
+	if (_PlayerId != NullId && Players.existskey(_PlayerId)) {
+		G_PlayingList[_PlayerId] = Now;
+		G_WaitingList.removekey(_PlayerId);
+	}
+}
+
+Void ClearPlayingList() {
+	G_PlayingList.clear();
+}
+
+Void ClearWaitingList() {
+	G_WaitingList.clear();
+}
+
+Integer WaitingNb() {
+	return G_WaitingList.count;
+}
+
+Integer PlayingNb() {
+	return G_PlayingList.count;
+}
+
+Void Update() {
+	declare RemoveFromWaiting = Ident[];
+	declare RemoveFromPlaying = Ident[];
+	
+	// Add players to waiting list
+	foreach (Player in Players) {
+		if (!G_WaitingList.existskey(Player.Id) && !G_PlayingList.existskey(Player.Id)) {
+			G_WaitingList[Player.Id] = Now;
+		}
+	}
+	
+	// Remove missing players from waiting/playing list
+	foreach (PlayerId => WaitingSince in G_WaitingList) {
+		if (!Players.existskey(PlayerId)) {
+			RemoveFromWaiting.add(PlayerId);
+			continue;
+		}
+	}
+	foreach (PlayerId => PlayingSince in G_PlayingList) {
+		if (!Players.existskey(PlayerId)) {
+			RemoveFromPlaying.add(PlayerId);
+			continue;
+		}
+	}
+	foreach (PlayerId in RemoveFromWaiting) {
+		G_WaitingList.removekey(PlayerId);
+	}
+	foreach (PlayerId in RemoveFromPlaying) {
+		G_PlayingList.removekey(PlayerId);
+	}
+	
+	if (C_Debug && G_LastLogTime + 5000 < Now) {
+		log(Now^"> G_WaitingList: "^G_WaitingList^" | G_PlayingList: "^G_PlayingList);
+		G_LastLogTime = Now;
+	}
+}

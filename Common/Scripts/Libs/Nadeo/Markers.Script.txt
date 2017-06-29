@@ -1,0 +1,652 @@
+/** 
+ * Markers library
+ */
+
+#Const Version		"2015-11-17"
+#Const ScriptName	"Markers.Script.txt"
+
+#Include "TextLib" as TL
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_LibMarkers_ValidAttributes ["label", "pos", "playerlogin", "box", "gauge", "imageurl", "distmax", "isturning", "visibility", "minimapvisibility", "objectid", "color", "manialinkframeid", "class", "id", "minimapid", "minimapclass"]
+#Const C_LibMarkers_MiniMapDot		"file://Media/Manialinks/Common/SmallDisc.dds"
+#Const C_LibMarkers_MiniMapPointer	"file://Media/Manialinks/Common/Pointer.dds"
+
+// ---------------------------------- //
+// Globales
+// ---------------------------------- //
+declare Text[] G_LibMarkers_ValidAttributes;	///< List of attributes authorized in the markers
+declare Ident G_LibMarkers_LayerMarkersId;		///< Id of the layer Markers
+declare Text[Text] G_LibMarkers_Manialinks;		///< Manialinks to add in the layer Markers page
+declare Text G_LibMarkers_ManialinkScript;		///< Script to add in the layer Markers page
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+// ---------------------------------- //
+// Private
+// ---------------------------------- //
+// ---------------------------------- //
+/** Get the XML document associated with the UI
+ *
+ *	@param	_UI		The UI to search
+ *
+ *	@return		The XML document if found
+ */
+CXmlDocument Private_GetXmlDoc(CUIConfig _UI) {
+	if (_UI == Null) return Null;
+	declare Ident LibMarkers_XmlDocId for _UI;
+	if (LibMarkers_XmlDocId != NullId && Xml.Documents.existskey(LibMarkers_XmlDocId)) return Xml.Documents[LibMarkers_XmlDocId];
+	
+	return Null;
+}
+
+// ---------------------------------- //
+/** Convert a marker CXmlNode to a Text
+ *
+ *	@param	_Node		The node to convert
+ *
+ *	@return			The resultant Text
+ */
+Text Private_ToText(CXmlNode _Node) {
+	if (_Node == Null) return "";
+	
+	declare XmlText = "<marker ";
+		
+	foreach (Attribute in G_LibMarkers_ValidAttributes) {
+		declare AttributeValue = _Node.GetAttributeText(Attribute, "");
+		if (AttributeValue != "") {
+			XmlText ^= Attribute^"""="{{{AttributeValue}}}" """;
+		}
+	}
+	
+	XmlText ^= "/>";
+	
+	return XmlText;
+}
+
+// ---------------------------------- //
+/** Parse the markers xml of an UI
+ *
+ *	@param	_UI		The UI to parse
+ *
+ *	@return			The XML document if created successfully, Null otherwise
+ */
+CXmlDocument Private_ParseMarkers(CUIConfig _UI) {
+	if (_UI == Null) return Null;
+	
+	declare XmlDoc <=> Private_GetXmlDoc(_UI);
+	
+	// Check cached XmlDoc
+	if (XmlDoc != Null) {
+		if (XmlDoc.TextContents != "<libmarkers>"^_UI.MarkersXML^"</libmarkers>") {
+			Xml.Destroy(XmlDoc);
+			XmlDoc = Null;
+		}
+	}
+	
+	// Create a new XmlDoc when necessary
+	if (XmlDoc == Null) {
+		XmlDoc = Xml.Create("<libmarkers>"^_UI.MarkersXML^"</libmarkers>");
+		if (XmlDoc == Null) return XmlDoc;
+		declare Ident LibMarkers_XmlDocId for _UI;
+		LibMarkers_XmlDocId = XmlDoc.Id;
+	}
+	
+	// Sanitize markers
+	declare Text[Ident] LibMarkers_Markers for _UI;
+	LibMarkers_Markers.clear();
+	foreach (Node in XmlDoc.Root.Children) {
+		if (Node.Name != "marker") continue;
+		
+		LibMarkers_Markers[Node.Id] = Private_ToText(Node);
+	}
+	
+	return XmlDoc;
+}
+
+// ---------------------------------- //
+/** Generate the markers text from the Xml document
+ *
+ *	@param	_UI		The UI for which the markers will be generated
+ */
+Void Private_GenerateMarkers(CUIConfig _UI) {
+	if (_UI == Null) return;
+	
+	_UI.MarkersXML = "";
+	declare Text[Ident] LibMarkers_Markers for _UI;
+	foreach (Marker in LibMarkers_Markers) {
+		_UI.MarkersXML ^= Marker;
+	}
+}
+
+// ---------------------------------- //
+/** Get the layer Markers
+ *
+ *	@return		The layer Markers if found, Null otherwise
+ */
+CUILayer Private_GetLayerMarkers() {
+	if (!UIManager.UILayers.existskey(G_LibMarkers_LayerMarkersId)) return Null;
+	
+	return UIManager.UILayers[G_LibMarkers_LayerMarkersId];
+}
+
+// ---------------------------------- //
+/// Generate the manialink for the layer Markers
+Void Private_GenerateManialink() {
+	declare LayerMarkers = Private_GetLayerMarkers();
+	if (LayerMarkers == Null) return;
+	
+	declare ML = "";
+	foreach (ManialinkFrameId => Manialink in G_LibMarkers_Manialinks) {
+		ML ^= Manialink;
+	}
+	
+	LayerMarkers.ManialinkPage = """
+<manialink version="1" name="Lib_Markers:Markers">
+<frame id="Frame_Global">
+	{{{ML}}}
+</frame>""";
+	
+	LayerMarkers.ManialinkPage ^= """
+<script><!--
+{{{G_LibMarkers_ManialinkScript}}}
+--></script>
+</manialink>""";
+}
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+// ---------------------------------- //
+/** Return the version number of the script
+ *
+ *	@return		The version number of the script
+ */
+Text GetScriptVersion() {
+	return Version;
+}
+
+// ---------------------------------- //
+/** Return the name of the script
+ *
+ *	@return		The name of the script
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+// ---------------------------------- //
+/// Unload the library
+Void Unload() {
+	UIManager.UIAll.MarkersXML = "";
+	
+	declare Ident LibMarkers_XmlDocId for UIManager.UIAll;
+	if (LibMarkers_XmlDocId != NullId && Xml.Documents.existskey(LibMarkers_XmlDocId)) Xml.Destroy(Xml.Documents[LibMarkers_XmlDocId]);
+	LibMarkers_XmlDocId = NullId;
+	
+	foreach (UI in UIManager.UI) {
+		UI.MarkersXML = "";
+		
+		declare Ident LibMarkers_XmlDocId for UI;
+		if (LibMarkers_XmlDocId != NullId && Xml.Documents.existskey(LibMarkers_XmlDocId)) Xml.Destroy(Xml.Documents[LibMarkers_XmlDocId]);
+		LibMarkers_XmlDocId = NullId;
+	}
+	
+	if (UIManager.UILayers.existskey(G_LibMarkers_LayerMarkersId)) {
+		declare Removed = UIManager.UIAll.UILayers.removekey(G_LibMarkers_LayerMarkersId);
+		UIManager.UILayerDestroy(UIManager.UILayers[G_LibMarkers_LayerMarkersId]);
+	}
+	G_LibMarkers_LayerMarkersId = NullId;
+	
+	G_LibMarkers_ValidAttributes.clear();
+	G_LibMarkers_Manialinks.clear();
+	G_LibMarkers_ManialinkScript = "";
+}
+
+// ---------------------------------- //
+/// Load the library
+Void Load() {
+	Unload();
+	
+	declare LayerMarkers = UIManager.UILayerCreate();
+	LayerMarkers.Type = CUILayer::EUILayerType::Markers;
+	G_LibMarkers_LayerMarkersId = LayerMarkers.Id;
+	UIManager.UIAll.UILayers.add(LayerMarkers);
+	
+	G_LibMarkers_ValidAttributes = C_LibMarkers_ValidAttributes;
+}
+
+// ---------------------------------- //
+/** Add a marker to an UI
+ *
+ *	@param	_Marker		The marker to add
+ *	@param	_UI			The UI that will receive the marker
+ */
+Void Add(Text _Marker, CUIConfig _UI) {
+	if (_UI == Null) return;
+	
+	_UI.MarkersXML ^= _Marker;
+	declare XmlDoc = Private_ParseMarkers(_UI);
+	Xml.Destroy(XmlDoc);
+}
+
+// ---------------------------------- //
+/** Add a marker to the global UI
+ *
+ *	@param	_Marker		The marker to add
+ */
+Void Add(Text _Marker) {
+	Add(_Marker, UIManager.UIAll);
+}
+
+// ---------------------------------- //
+/** Add a marker to a player
+ *
+ *	@param	_Marker		The marker to add
+ *	@param	_Player		The player that will receive the marker
+ */
+Void Add(Text _Marker, CPlayer _Player) {
+	if (_Player == Null) return;
+	Add(_Marker, UIManager.GetUI(_Player));
+}
+
+// ---------------------------------- //
+/** Create a marker associated with a manialink from the Markers layer
+ *	The <marker /> must contain a valid "manialinkframeid" parameter
+ *	as well as the manialink.
+ *
+ *	@param	_Marker		The marker to add
+ *	@param	_Manialink	The manialink to associate
+ */
+Void Add(Text _Marker, Text _Manialink) {
+	declare XmlDoc <=> Xml.Create(_Marker);
+	if (XmlDoc == Null) return;
+	
+	declare ManialinkFrameId = XmlDoc.Root.GetAttributeText("manialinkframeid", "");
+	if (ManialinkFrameId == "") return;
+	
+	Xml.Destroy(XmlDoc);
+	
+	G_LibMarkers_Manialinks[ManialinkFrameId] = _Manialink;
+	Private_GenerateManialink();
+	
+	Add(_Marker);
+}
+
+// ---------------------------------- //
+/** Add a manialink in the layer Markers with the given manialinkframeid
+ *
+ *	@param	_Id				The manialinkframeid
+ *	@param	_Manialink		The manialink to add
+ */
+Void AddManialink(Text _Id, Text _Manialink) {
+	G_LibMarkers_Manialinks[_Id] = _Manialink;
+	Private_GenerateManialink();
+}
+
+// ---------------------------------- //
+/** Remove a marker from an UI
+ *
+ *	@param	_Marker		The marker to remove
+ *	@param	_UI			The UI from which the marker will be removed
+ */
+Void Remove(Text _Marker, CUIConfig _UI) {
+	if (_UI == Null) return;
+	
+	declare XmlDoc <=> Xml.Create(_Marker);
+	if (XmlDoc == Null) return;
+	
+	declare Text[Ident] LibMarkers_Markers for _UI;
+	declare Marker = Private_ToText(XmlDoc.Root);
+	declare Removed = True;
+	while (Removed) Removed = LibMarkers_Markers.remove(Marker);
+	
+	Xml.Destroy(XmlDoc);
+	
+	Private_GenerateMarkers(_UI);
+}
+
+// ---------------------------------- //
+/**	Remove a marker from the global UI
+ *
+ *	@param	_Marker		The marker to remove
+ */
+Void Remove(Text _Marker) {
+	Remove(_Marker, UIManager.UIAll);
+}
+
+// ---------------------------------- //
+/**	Remove a marker from a player
+ *
+ *	@param	_Marker		The marker to remove
+ *	@param	_Player		The player from which the marker will be removed
+ */
+Void Remove(Text _Marker, CPlayer _Player) {
+	if (_Player == Null) return;
+	Remove(_Marker, UIManager.GetUI(_Player));
+}
+
+// ---------------------------------- //
+/** Remove all markers containing an attribute with the specified value from an UI
+ *
+ *	@param	_Attribute		The attribute to scan
+ *	@param	_Value			The value to remove
+ *	@param	_UI				The UI from which the markers will be removed
+ */
+Void Remove(Text _Attribute, Text _Value, CUIConfig _UI) {
+	if (_UI == Null) return;
+	
+	declare XmlDoc = Private_ParseMarkers(_UI);
+	if (XmlDoc == Null) return;
+	
+	declare Text[Ident] LibMarkers_Markers for _UI;
+	foreach (Node in XmlDoc.Root.Children) {
+		declare AttributeValue = Node.GetAttributeText(_Attribute, "");
+		if (AttributeValue == _Value) {
+			declare Removed = LibMarkers_Markers.removekey(Node.Id);
+		}
+	}
+	
+	Xml.Destroy(XmlDoc);
+
+	Private_GenerateMarkers(_UI);
+}
+
+// ---------------------------------- //
+/** Remove all markers containing an attribute with the specified value from the global UI
+ *
+ *	@param	_Attribute		The attribute to scan
+ *	@param	_Value			The value to remove
+ */
+Void Remove(Text _Attribute, Text _Value) {
+	Remove(_Attribute, _Value, UIManager.UIAll);
+}
+
+// ---------------------------------- //
+/** Remove all markers containing an attribute with the specified value from a player
+ *
+ *	@param	_Attribute		The attribute to scan
+ *	@param	_Value			The value to remove
+ *	@param	_Player			The player from which the markers will be removed
+ */
+Void Remove(Text _Attribute, Text _Value, CPlayer _Player) {
+	if (_Player == Null) return;
+	Remove(_Attribute, _Value, UIManager.GetUI(_Player));
+}
+
+// ---------------------------------- //
+/** Remove a manialink from the layer Markers with the given manialinkframeid
+ *
+ *	@param	_Id		The manialinkframeid to remove
+ */
+Void RemoveManialink(Text _Id) {
+	declare Removed = G_LibMarkers_Manialinks.removekey(_Id);
+}
+
+// ---------------------------------- //
+/** Remove all markers from an UI
+ *
+ *	@param	_UI		The UI from which the markers will be removed
+ */
+Void Clear(CUIConfig _UI) {
+	if (_UI == Null) return;
+	
+	_UI.MarkersXML = "";
+	
+	declare Ident LibMarkers_XmlDocId for _UI;
+	if (LibMarkers_XmlDocId != NullId && Xml.Documents.existskey(LibMarkers_XmlDocId)) Xml.Destroy(Xml.Documents[LibMarkers_XmlDocId]);
+	LibMarkers_XmlDocId = NullId;
+	
+	declare Text[Ident] LibMarkers_Markers for _UI;
+	LibMarkers_Markers.clear();
+	
+	G_LibMarkers_Manialinks.clear();
+	G_LibMarkers_ManialinkScript = "";
+	
+	Private_GenerateManialink();
+}
+
+// ---------------------------------- //
+/// Remove all markers from the global UI
+Void Clear() {
+	Clear(UIManager.UIAll);
+}
+
+// ---------------------------------- //
+/** Remove all markers from a player
+ *
+ *	@param	_Player		The player from which the markers will be removed
+ */
+Void Clear(CPlayer _Player) {
+	if (_Player == Null) return;
+	
+	Clear(UIManager.GetUI(_Player));
+}
+
+// ---------------------------------- //
+/** Set the manialink script of the marker layer
+ *
+ *	@param	_Script		The script to set in the manialink
+ */
+Void SetManialinkScript(Text _Script) {
+	G_LibMarkers_ManialinkScript = _Script;
+	
+	Private_GenerateManialink();
+}
+
+// ---------------------------------- //
+/**	Add an attribute to the valid attributes array
+ *	Any attribute not present in this array will be removed from the marker
+ *
+ *	@param	_Attribute		The attribute to add
+ */
+Void AddAttribute(Text _Attribute) {
+	if (!G_LibMarkers_ValidAttributes.exists(_Attribute)) G_LibMarkers_ValidAttributes.add(_Attribute);
+}
+
+// ---------------------------------- //
+/** Add several attributes to the valid attributes array
+ *
+ *	@param	_Attributes		The attributes to add
+ */
+Void AddAttributes(Text[] _Attributes) {
+	foreach (Attribute in _Attributes) AddAttribute(Attribute);
+}
+
+// ---------------------------------- //
+/** Remove an attribute from the valid attributes array
+ *
+ *	@param	_Attribute		The attribute to remove
+ */
+Void RemoveAttribute(Text _Attribute) {
+	declare Removed = G_LibMarkers_ValidAttributes.remove(_Attribute);
+}
+
+// ---------------------------------- //
+/** Remove several attributes from the valid attributes array
+ *
+ *	@param	_Attributes		The attributes to remove
+ */
+Void RemoveAttributes(Text[] _Attributes) {
+	foreach (Attribute in _Attributes) RemoveAttribute(Attribute);
+}
+
+// ---------------------------------- //
+/** Get the valid attributes
+ *
+ *	@return		The valid attributes array
+ */
+Text[] GetAttributes() {
+	return G_LibMarkers_ValidAttributes;
+}
+
+// ---------------------------------- //
+// Helpers for minimap markers
+// ---------------------------------- //
+// ---------------------------------- //
+// Private
+// ---------------------------------- //
+// ---------------------------------- //
+/** Sanitize the MiniMapVisibility value
+ *
+ *	@param	_MiniMapVisibility		The value to sanitize
+ *
+ *	@return		The sanitized value
+ */
+Text Private_SanitizeMiniMapVisibility(Text _MiniMapVisibility) {
+	switch (_MiniMapVisibility) {
+		case "Always"		: return "Always";
+		case "Never"		: return "Never";
+		case "WhenInFrame"	: return "WhenInFrame";
+	}
+	
+	return "Always";
+}
+
+// ---------------------------------- //
+/** Sanitize the Visibility value
+ *
+ *	@param	_Visibility		The value to sanitize
+ *
+ *	@return		The sanitized value
+ */
+Text Private_SanitizeVisibility(Text _Visibility) {
+	switch (_Visibility) {
+		case "None"					: return "None";
+		case "Never"				: return "Never";
+		case "Always"				: return "Always";
+		case "WhenInFrustum"		: return "WhenInFrustum";
+		case "WhenVisible"			: return "WhenVisible";
+		case "WhenInMiddleOfScreen"	: return "WhenInMiddleOfScreen";
+	}
+	
+	return "Always";
+}
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+// ---------------------------------- //
+/** Display an image at a given position
+ *
+ *	@param	_Id					Id of this point
+ *	@param	_Pos				Position of the point on the minimap
+ *	@param	_HudVisibility		Visibility of the point on the HUD
+ *	@param	_MiniMapVisibility	Visibility of the point on the minimap
+ *	@param	_ImgUrl				URL to the point image
+ *	@param	_Player				The player who'll see the point (if null, global UI)
+ */
+Void MiniMap_Add(Text _Id, Vec3 _Pos, Text _HudVisibility, Text _MiniMapVisibility, Text _ImgUrl, CPlayer _Player) {
+	declare CUIConfig UI;
+	if (_Player == Null) UI <=> UIManager.UIAll;
+	else UI <=> UIManager.GetUI(_Player);
+	
+	declare Visibility = Private_SanitizeVisibility(_HudVisibility);
+	declare MiniMapVisibility = Private_SanitizeMiniMapVisibility(_MiniMapVisibility);
+	Add("""<marker pos="{{{_Pos.X}}} {{{_Pos.Y}}} {{{_Pos.Z}}}" imageurl="{{{_ImgUrl}}}" visibility="{{{Visibility}}}" minimapvisibility="{{{MiniMapVisibility}}}" minimapclass="true" minimapid="{{{_Id}}}" />""", UI);
+}
+
+// ---------------------------------- //
+/** Display an image at a given position
+ *
+ *	@param	_Id			Id of this point
+ *	@param	_Pos		Position of the point on the minimap
+ *	@param	_Player		The player who'll see the point (if null, global UI)
+ */
+Void MiniMap_Add(Text _Id, Vec3 _Pos, CPlayer _Player) {
+	MiniMap_Add(_Id, _Pos, "Always", "Always", C_LibMarkers_MiniMapDot, _Player);
+}
+
+// ---------------------------------- //
+/** Display an image at a given position
+ *
+ *	@param	_Id		Id of this point
+ *	@param	_Pos	Position of the point on the minimap
+ */
+Void MiniMap_Add(Text _Id, Vec3 _Pos) {
+	MiniMap_Add(_Id, _Pos, "Always", "Always", C_LibMarkers_MiniMapDot, Null);
+}
+
+// ---------------------------------- //
+/** Display an image following a player
+ *
+ *	@param	_Id					Id of this point
+ *	@param	_PlayerOnMiniMap	The player to follow
+ *	@param	_ShowDir			Show the orientation of the player
+ *	@param	_HudVisibility		Visibility of the point on the HUD (Never, Always, WhenInFrustum, WhenVisible or WhenInMiddleOfScreen)
+ *	@param	_MiniMapVisibility	Visibility of the point on the minimap (Never, Always or WhenInFrame)
+ *	@param	_ImgUrl				URL to the point image
+ *	@param	_Player				The player who'll see the point (if null, global UI)
+ */
+Void MiniMap_Add(Text _Id, CPlayer _PlayerOnMiniMap, Boolean _ShowDir, Text _HudVisibility, Text _MiniMapVisibility, Text _ImgUrl, CPlayer _Player) {
+	if (_PlayerOnMiniMap == Null) return;
+	
+	declare CUIConfig UI;
+	if (_Player == Null) UI <=> UIManager.UIAll;
+	else UI <=> UIManager.GetUI(_Player);
+	
+	declare IsTurning = 0;
+	if (_ShowDir) IsTurning = 1;
+	declare Visibility = Private_SanitizeVisibility(_HudVisibility);
+	declare MiniMapVisibility = Private_SanitizeMiniMapVisibility(_MiniMapVisibility);
+	
+	Add("""<marker playerlogin="{{{_PlayerOnMiniMap.User.Login}}}" imageurl="{{{_ImgUrl}}}" isturning="{{{IsTurning}}}" visibility="{{{Visibility}}}" minimapvisibility="{{{MiniMapVisibility}}}" minimapclass="true" minimapid="{{{_Id}}}" />""", UI);
+}
+
+// ---------------------------------- //
+/** Display an image following a player
+ *
+ *	@param	_Id					Id of this point
+ *	@param	_PlayerOnMiniMap	The player to follow
+ *	@param	_Player				The player who'll see the point (if null, global UI)
+ */
+Void MiniMap_Add(Text _Id, CPlayer _PlayerOnMiniMap, CPlayer _Player) {
+	MiniMap_Add(_Id, _PlayerOnMiniMap, True, "Never", "Always", C_LibMarkers_MiniMapPointer, _Player);
+}
+
+// ---------------------------------- //
+/** Display an image following a player
+ *
+ *	@param	_Id					Id of this point
+ *	@param	_PlayerOnMiniMap	The player to follow
+ */
+Void MiniMap_Add(Text _Id, CPlayer _PlayerOnMiniMap) {
+	MiniMap_Add(_Id, _PlayerOnMiniMap, True, "Never", "Always", C_LibMarkers_MiniMapPointer, Null);
+}
+
+// ---------------------------------- //
+/** Remove one minimap point
+ *
+ *	@param	_Id		Id of the point to remove
+ */
+Void MiniMap_Remove(Text _Id) {
+	Remove("minimapid", _Id);
+}
+
+// ---------------------------------- //
+/** Remove one minimap point from a player
+ *
+ *	@param	_Id			Id of the point to remove
+ *	@param	_Player		The player who'll loose the point
+ */
+Void MiniMap_Remove(Text _Id, CPlayer _Player) {
+	Remove("minimapid", _Id, _Player);
+}
+
+// ---------------------------------- //
+/// Remove all minimap points
+Void MiniMap_Clear() {
+	Remove("minimapclass", "true");
+}
+
+// ---------------------------------- //
+/** Remove all minimap points from a player
+ *
+ *	@param	_Player		The player who'll loose the points
+ */
+Void MiniMap_Clear(CPlayer _Player) {
+	Remove("minimapclass", "true", _Player);
+}

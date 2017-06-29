@@ -1,0 +1,529 @@
+/**
+ *	Exp Attributes
+ *
+ *	Manage players' attributes
+ */
+#Const Version    "2016-12-23"
+#Const ScriptName "Libs/Nadeo/ShootMania/Exp/Attributes.Script.txt"
+
+// ---------------------------------- //
+// Libraries
+// ---------------------------------- //
+#Include "MathLib" as ML
+#Include "Libs/Nadeo/Log.Script.txt" as Log
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+// Base attributes values
+#Const C_Base_ArmorMax 200.
+#Const C_Base_StaminaMax 1.
+#Const C_Base_ArmorReplenishGain 0.
+#Const C_Base_ArmorGain 25.
+#Const C_Base_JumpPower 1.
+#Const C_Base_SpeedPower 1.
+#Const C_Base_VampirePower 0.
+#Const C_Base_DamagePower 1.
+#Const C_Base_AmmoGain 1.
+#Const C_Base_CaptureSpeed 1.
+#Const C_Base_RocketAmmoMax 4.
+#Const C_Base_LaserAmmoMax 1.
+#Const C_Base_ArrowAmmoMax 3.
+#Const C_Base_NucleusAmmoMax 2.
+#Const C_Base_ScoutAmmoMax 2.
+#Const C_Base_HunterAmmoMax 2.
+#Const C_Base_MissileAmmoMax 4.
+#Const C_Base_ShieldArmorMax 300.
+// Attributes
+#Const C_Attribute_ArmorMax 0
+#Const C_Attribute_StaminaMax 1
+#Const C_Attribute_ArmorReplenishGain 2
+#Const C_Attribute_ArmorGain 3
+#Const C_Attribute_JumpPower 4
+#Const C_Attribute_SpeedPower 5
+#Const C_Attribute_VampirePower 6
+#Const C_Attribute_DamagePower 7
+#Const C_Attribute_AmmoGain 8
+#Const C_Attribute_CaptureSpeed 9
+#Const C_Attribute_RocketAmmoMax 10
+#Const C_Attribute_LaserAmmoMax 11
+#Const C_Attribute_ArrowAmmoMax 12
+#Const C_Attribute_NucleusAmmoMax 13
+#Const C_Attribute_ScoutAmmoMax 14
+#Const C_Attribute_HunterAmmoMax 15
+#Const C_Attribute_MissileAmmoMax 16
+#Const C_Attribute_ShieldArmorMax 17
+
+// ---------------------------------- //
+// Globales
+// ---------------------------------- //
+declare Real[Integer] G_BaseAttributes;
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+// ---------------------------------- //
+// Private
+// ---------------------------------- //
+// ---------------------------------- //
+/** Update the value of a player's attribute
+ *
+ *	@param	_Player										The player to update
+ *	@param	_Attribute								The attribute to update
+ *	@param	_Value										The value of the attribute
+ */
+Void Private_ApplyAttribute(CSmPlayer _Player, Integer _Attribute, Real _Value) {
+	if (_Player == Null) return;
+	
+	declare Value = _Value;
+		
+	// Attribute is locked
+	declare LibExpAttributes_Lock for _Player = Real[Text][Integer];
+	if (LibExpAttributes_Lock.existskey(_Attribute) && LibExpAttributes_Lock[_Attribute].count > 0) {
+		declare Locks = LibExpAttributes_Lock[_Attribute];
+		foreach (Lock in Locks) {
+			Value = Lock;
+		}
+	} 
+	// Attribut is free
+	else {
+		declare LibExpAttributes_Bonus for _Player = Real[Text][Integer];
+		declare LibExpAttributes_Ratio for _Player = Real[Text][Integer];
+		declare LibExpAttributes_Min for _Player = Real[Text][Integer];
+		declare LibExpAttributes_Max for _Player = Real[Text][Integer];
+		
+		// Apply bonus/malus first
+		if (LibExpAttributes_Bonus.existskey(_Attribute)) {
+			declare Bonuses = LibExpAttributes_Bonus[_Attribute];
+			foreach (Bonus in Bonuses) {
+				Value += Bonus;
+			}
+		}
+		// Then apply ratio
+		if (LibExpAttributes_Ratio.existskey(_Attribute)) {
+			declare Ratios = LibExpAttributes_Ratio[_Attribute];
+			foreach (Ratio in Ratios) {
+				Value *= Ratio;
+			}
+		}
+		// Then apply min value
+		if (LibExpAttributes_Min.existskey(_Attribute)) {
+			declare Mins = LibExpAttributes_Min[_Attribute];
+			foreach (Min in Mins) {
+				if (Value < Min) Value = Min;
+			}
+		}
+		// Then apply max value
+		if (LibExpAttributes_Max.existskey(_Attribute)) {
+			declare Maxes = LibExpAttributes_Max[_Attribute];
+			foreach (Max in Maxes) {
+				if (Value > Max) Value = Max;
+			}
+		}
+	}
+		
+	switch (_Attribute) {
+		case C_Attribute_ArmorMax: {
+			declare ArmorMax = ML::NearestInteger(Value);
+			_Player.ArmorMax = ArmorMax;
+		}
+		case C_Attribute_StaminaMax: {
+			declare StaminaMax = Value;
+			if (StaminaMax < 0.1) StaminaMax = 0.1;
+			else if (StaminaMax > 3.) StaminaMax = 3.;
+			_Player.StaminaMax = StaminaMax;
+		}
+		case C_Attribute_ArmorReplenishGain: {
+			declare ArmorReplenishGain = ML::NearestInteger(Value);
+			_Player.ArmorReplenishGain = ArmorReplenishGain;
+		}
+		case C_Attribute_ArmorGain: {
+			declare ArmorGain = ML::NearestInteger(Value);
+			_Player.ArmorGain = ArmorGain;
+		}
+		case C_Attribute_JumpPower: {
+			declare JumpPower = Value;
+			if (JumpPower < 0.1) JumpPower = 0.1;
+			else if (JumpPower > 1.) JumpPower = 1.;
+			_Player.JumpPower = JumpPower;
+		}
+		case C_Attribute_SpeedPower: {
+			declare SpeedPower = Value;
+			if (SpeedPower < 0.1) SpeedPower = 0.1;
+			else if (SpeedPower > 1.) SpeedPower = 1.;
+			_Player.SpeedPower = SpeedPower;
+		}
+		case C_Attribute_VampirePower: {
+			declare LibExpAttributes_VampirePower for _Player = C_Base_VampirePower;
+			LibExpAttributes_VampirePower = Value;
+		}
+		case C_Attribute_DamagePower: {
+			declare LibExpAttributes_DamagePower for _Player = C_Base_DamagePower;
+			LibExpAttributes_DamagePower = Value;
+		}
+		case C_Attribute_AmmoGain: {
+			declare AmmoGain = Value;
+			if (AmmoGain < 0.) AmmoGain = 0.;
+			else if (AmmoGain > 10.) AmmoGain = 10.;
+			_Player.AmmoGain = AmmoGain;
+		}
+		case C_Attribute_CaptureSpeed: {
+			declare LibExpAttributes_CaptureSpeed for _Player = C_Base_CaptureSpeed;
+			LibExpAttributes_CaptureSpeed = Value;
+		}
+		case C_Attribute_RocketAmmoMax: {
+			declare RocketAmmo = ML::NearestInteger(Value);
+			SetPlayerAmmoMax(_Player, CSmMode::EWeapon::Rocket, RocketAmmo);
+		}
+		case C_Attribute_LaserAmmoMax: {
+			declare LaserAmmo = ML::NearestInteger(Value);
+			SetPlayerAmmoMax(_Player, CSmMode::EWeapon::Laser, LaserAmmo);
+		}
+		case C_Attribute_ArrowAmmoMax: {
+			declare ArrowAmmo = ML::NearestInteger(Value);
+			SetPlayerAmmoMax(_Player, CSmMode::EWeapon::Arrow, ArrowAmmo);
+		}
+		case C_Attribute_NucleusAmmoMax: {
+			declare NucleusAmmo = ML::NearestInteger(Value);
+			SetPlayerAmmoMax(_Player, CSmMode::EWeapon::Nucleus, NucleusAmmo);
+		}
+		/*case C_Attribute_HunterAmmoMax: {
+			declare HunterAmmo = ML::NearestInteger(Value);
+			SetPlayerAmmoMax(_Player, CSmMode::EWeapon::Hunter, HunterAmmo);
+		}
+		case C_Attribute_ScoutAmmoMax: {
+			declare ScoutAmmo = ML::NearestInteger(Value);
+			SetPlayerAmmoMax(_Player, CSmMode::EWeapon::Scout, ScoutAmmo);
+		}*/
+		case C_Attribute_MissileAmmoMax: {
+			declare MissileAmmo = ML::NearestInteger(Value);
+			SetPlayerAmmoMax(_Player, CSmMode::EWeapon::Missile, MissileAmmo);
+		}
+		case C_Attribute_ShieldArmorMax: {
+			declare LibExpAttributes_ShieldArmorMax for _Player = C_Base_ShieldArmorMax;
+			LibExpAttributes_ShieldArmorMax = Value;
+		}
+	}
+}
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+// ---------------------------------- //
+/** Return the version number of the script
+ *
+ *  @return   The version number of the script
+ */
+Text GetScriptVersion() {
+  return Version;
+}
+
+// ---------------------------------- //
+/** Return the name of the script
+ *
+ *  @return   The name of the script
+ */
+Text GetScriptName() {
+  return ScriptName;
+}
+
+// ---------------------------------- //
+/** Update an attribute base value
+ *
+ *	@param	_Attribute								The attribute to update
+ *	@param	_Value										The new base value
+ */
+Void SetBase(Integer _Attribute, Real _Value) {
+	G_BaseAttributes[_Attribute] = _Value;
+}
+
+// ---------------------------------- //
+/** Add a bonus to a player's attribute
+ *	This bonus will be added to the base
+ *	attribute value
+ *
+ *	@param	_Player										The player receiving the bonus
+ *	@param	_Attribute								The attribute to affect
+ *	@param	_Id												An id for the bonus
+ *	@param	_Value										The value of the bonus
+ */
+Void AddBonus(CSmPlayer _Player, Integer _Attribute, Text _Id, Real _Value) {
+	if (_Player == Null) return;
+	declare LibExpAttributes_Bonus for _Player = Real[Text][Integer];
+	if (!LibExpAttributes_Bonus.existskey(_Attribute)) LibExpAttributes_Bonus[_Attribute] = Real[Text];
+	LibExpAttributes_Bonus[_Attribute][_Id] = _Value;
+}
+
+// ---------------------------------- //
+/** Remove a bonus from a player's attribute
+ *
+ *	@param	_Player										The player losing the bonus
+ *	@param	_Attribute								The attribute to affect
+ *	@param	_Id												The id of the bonus to remove
+ */
+Void RemoveBonus(CSmPlayer _Player, Integer _Attribute, Text _Id) {
+	if (_Player == Null) return;
+	declare LibExpAttributes_Bonus for _Player = Real[Text][Integer];
+	if (!LibExpAttributes_Bonus.existskey(_Attribute)) return;
+	declare Removed = LibExpAttributes_Bonus[_Attribute].removekey(_Id);
+}
+
+// ---------------------------------- //
+/** Add a malus to a player's attribute
+ *	This malus will be removed from the base
+ *	attribute value
+ *
+ *	@param	_Player										The player receiving the malus
+ *	@param	_Attribute								The attribute to affect
+ *	@param	_Id												An id for the malus
+ *	@param	_Value										The value of the malus
+ */
+Void AddMalus(CSmPlayer _Player, Integer _Attribute, Text _Id, Real _Value) {
+	AddBonus(_Player, _Attribute, _Id, -_Value);
+}
+
+// ---------------------------------- //
+/** Remove a malus from a player's attribute
+ *
+ *	@param	_Player										The player losing the malus
+ *	@param	_Attribute								The attribute to affect
+ *	@param	_Id												The id of the malus to remove
+ */
+Void RemoveMalus(CSmPlayer _Player, Integer _Attribute, Text _Id) {
+	RemoveBonus(_Player, _Attribute, _Id);
+}
+
+// ---------------------------------- //
+/** Add a ratio to a player's attribute
+ *
+ *	@param	_Player										The player receiving the ratio
+ *	@param	_Attribute								The attribute to affect
+ *	@param	_Id												An id for the ratio
+ *	@param	_Value										The value of the ratio
+ */
+Void AddRatio(CSmPlayer _Player, Integer _Attribute, Text _Id, Real _Value) {
+	if (_Player == Null) return;
+	declare LibExpAttributes_Ratio for _Player = Real[Text][Integer];
+	if (!LibExpAttributes_Ratio.existskey(_Attribute)) LibExpAttributes_Ratio[_Attribute] = Real[Text];
+	LibExpAttributes_Ratio[_Attribute][_Id] = _Value;
+}
+
+// ---------------------------------- //
+/** Remove a ratio from a player's attribute
+ *
+ *	@param	_Player										The player losing the ratio
+ *	@param	_Attribute								The attribute to affect
+ *	@param	_Id												The id of the ratio to remove
+ */
+Void RemoveRatio(CSmPlayer _Player, Integer _Attribute, Text _Id) {
+	if (_Player == Null) return;
+	declare LibExpAttributes_Ratio for _Player = Real[Text][Integer];
+	if (!LibExpAttributes_Ratio.existskey(_Attribute)) return;
+	declare Removed = LibExpAttributes_Ratio[_Attribute].removekey(_Id);
+}
+
+// ---------------------------------- //
+/** Add a minimum value to a player's attribute
+ *
+ *	@param	_Player										The player receiving the minimum value
+ *	@param	_Attribute								The attribute to affect
+ *	@param	_Id												An id for the minimum value
+ *	@param	_Value										The minimum value
+ */
+Void AddMin(CSmPlayer _Player, Integer _Attribute, Text _Id, Real _Value) {
+	if (_Player == Null) return;
+	declare LibExpAttributes_Min for _Player = Real[Text][Integer];
+	if (!LibExpAttributes_Min.existskey(_Attribute)) LibExpAttributes_Min[_Attribute] = Real[Text];
+	LibExpAttributes_Min[_Attribute][_Id] = _Value;
+}
+
+// ---------------------------------- //
+/** Remove a minimum value from a player's attribute
+ *
+ *	@param	_Player										The player losing the minimum value
+ *	@param	_Attribute								The attribute to affect
+ *	@param	_Id												The id of the minimum value to remove
+ */
+Void RemoveMin(CSmPlayer _Player, Integer _Attribute, Text _Id) {
+	if (_Player == Null) return;
+	declare LibExpAttributes_Min for _Player = Real[Text][Integer];
+	if (!LibExpAttributes_Min.existskey(_Attribute)) return;
+	declare Removed = LibExpAttributes_Min[_Attribute].removekey(_Id);
+}
+
+// ---------------------------------- //
+/** Add a maximum value to a player's attribute
+ *
+ *	@param	_Player										The player receiving the maximum value
+ *	@param	_Attribute								The attribute to affect
+ *	@param	_Id												An id for the maximum value
+ *	@param	_Value										The maximum value
+ */
+Void AddMax(CSmPlayer _Player, Integer _Attribute, Text _Id, Real _Value) {
+	if (_Player == Null) return;
+	declare LibExpAttributes_Max for _Player = Real[Text][Integer];
+	if (!LibExpAttributes_Max.existskey(_Attribute)) LibExpAttributes_Max[_Attribute] = Real[Text];
+	LibExpAttributes_Max[_Attribute][_Id] = _Value;
+}
+
+// ---------------------------------- //
+/** Remove a maximum value from a player's attribute
+ *
+ *	@param	_Player										The player losing the maximum value
+ *	@param	_Attribute								The attribute to affect
+ *	@param	_Id												The id of the maximum value to remove
+ */
+Void RemoveMax(CSmPlayer _Player, Integer _Attribute, Text _Id) {
+	if (_Player == Null) return;
+	declare LibExpAttributes_Max for _Player = Real[Text][Integer];
+	if (!LibExpAttributes_Max.existskey(_Attribute)) return;
+	declare Removed = LibExpAttributes_Max[_Attribute].removekey(_Id);
+}
+
+// ---------------------------------- //
+/** Add a lock to a player's attribute
+ *
+ *	@param	_Player										The player receiving the lock
+ *	@param	_Attribute								The attribute to affect
+ *	@param	_Id												An id for the lock
+ *	@param	_Value										The lock value
+ */
+Void AddLock(CSmPlayer _Player, Integer _Attribute, Text _Id, Real _Value) {
+	if (_Player == Null) return;
+	declare LibExpAttributes_Lock for _Player = Real[Text][Integer];
+	if (!LibExpAttributes_Lock.existskey(_Attribute)) LibExpAttributes_Lock[_Attribute] = Real[Text];
+	LibExpAttributes_Lock[_Attribute][_Id] = _Value;
+}
+
+// ---------------------------------- //
+/** Remove a lock from a player's attribute
+ *
+ *	@param	_Player										The player losing the lock
+ *	@param	_Attribute								The attribute to affect
+ *	@param	_Id												The id of the lock to remove
+ */
+Void RemoveLock(CSmPlayer _Player, Integer _Attribute, Text _Id) {
+	if (_Player == Null) return;
+	declare LibExpAttributes_Lock for _Player = Real[Text][Integer];
+	if (!LibExpAttributes_Lock.existskey(_Attribute)) return;
+	declare Removed = LibExpAttributes_Lock[_Attribute].removekey(_Id);
+}
+
+// ---------------------------------- //
+/** Apply its attributes to a player
+ *
+ *	@param	_Player										The player to update
+ */
+Void Apply(CSmPlayer _Player) {
+	foreach (Attribute => Value in G_BaseAttributes) {
+		Private_ApplyAttribute(_Player, Attribute, Value);
+	}
+}
+
+// ---------------------------------- //
+/** Get the VampirePower attribute
+ *	of a given player
+ *
+ *	@param	_Player										The player to check
+ *
+ *	@return														The VampirePower of the player
+ */
+Real GetVampirePower(CSmPlayer _Player) {
+	if (_Player == Null) return C_Base_VampirePower;
+	declare LibExpAttributes_VampirePower for _Player = C_Base_VampirePower;
+	return LibExpAttributes_VampirePower;
+}
+
+// ---------------------------------- //
+/** Get the DamagePower attribute
+ *	of a given player
+ *
+ *	@param	_Player										The player to check
+ *
+ *	@return														The DamagePower of the player
+ */
+Real GetDamagePower(CSmPlayer _Player) {
+	if (_Player == Null) return C_Base_DamagePower;
+	declare LibExpAttributes_DamagePower for _Player = C_Base_DamagePower;
+	return LibExpAttributes_DamagePower;
+}
+
+// ---------------------------------- //
+/** Get the CaptureSpeed attribute
+ *	of a given player
+ *
+ *	@param	_Player										The player to check
+ *
+ *	@return														The CaptureSpeed of the player
+ */
+Real GetCaptureSpeed(CSmPlayer _Player) {
+	if (_Player == Null) return C_Base_CaptureSpeed;
+	declare LibExpAttributes_CaptureSpeed for _Player = C_Base_CaptureSpeed;
+	return LibExpAttributes_CaptureSpeed;
+}
+
+// ---------------------------------- //
+/** Get the ShieldArmorMax attribute
+ *	of a given player
+ *
+ *	@param	_Player										The player to check
+ *
+ *	@return														The ShieldArmorMax of the player
+ */
+Integer GetShieldArmorMax(CSmPlayer _Player) {
+	if (_Player == Null) return ML::NearestInteger(C_Base_ShieldArmorMax);
+	declare LibExpAttributes_ShieldArmorMax for _Player = C_Base_ShieldArmorMax;
+	return ML::NearestInteger(LibExpAttributes_ShieldArmorMax);
+}
+
+// ---------------------------------- //
+/// Unload the library
+Void Unload() {
+	G_BaseAttributes = [
+		C_Attribute_ArmorMax => C_Base_ArmorMax,
+		C_Attribute_StaminaMax => C_Base_StaminaMax,
+		C_Attribute_ArmorReplenishGain => C_Base_ArmorReplenishGain,
+		C_Attribute_ArmorGain => C_Base_ArmorGain,
+		C_Attribute_JumpPower => C_Base_JumpPower,
+		C_Attribute_SpeedPower => C_Base_SpeedPower,
+		C_Attribute_VampirePower => C_Base_VampirePower,
+		C_Attribute_DamagePower => C_Base_DamagePower,
+		C_Attribute_AmmoGain => C_Base_AmmoGain,
+		C_Attribute_CaptureSpeed => C_Base_CaptureSpeed,
+		C_Attribute_RocketAmmoMax => C_Base_RocketAmmoMax,
+		C_Attribute_LaserAmmoMax => C_Base_LaserAmmoMax,
+		C_Attribute_ArrowAmmoMax => C_Base_ArrowAmmoMax,
+		C_Attribute_NucleusAmmoMax => C_Base_NucleusAmmoMax,
+		C_Attribute_HunterAmmoMax => C_Base_HunterAmmoMax,
+		C_Attribute_ScoutAmmoMax => C_Base_ScoutAmmoMax,
+		C_Attribute_MissileAmmoMax => C_Base_MissileAmmoMax,
+		C_Attribute_ShieldArmorMax => C_Base_ShieldArmorMax
+	];
+	foreach (Player in AllPlayers) {
+		declare LibExpAttributes_Bonus for Player = Real[Text][Integer];
+		declare LibExpAttributes_Ratio for Player = Real[Text][Integer];
+		declare LibExpAttributes_Min for Player = Real[Text][Integer];
+		declare LibExpAttributes_Max for Player = Real[Text][Integer];
+		declare LibExpAttributes_Lock for Player = Real[Text][Integer];
+		LibExpAttributes_Bonus.clear();
+		LibExpAttributes_Ratio.clear();
+		LibExpAttributes_Min.clear();
+		LibExpAttributes_Max.clear();
+		LibExpAttributes_Lock.clear();
+		
+		declare LibExpAttributes_VampirePower for Player = C_Base_VampirePower;
+		declare LibExpAttributes_DamagePower for Player = C_Base_DamagePower;
+		declare LibExpAttributes_CaptureSpeed for Player = C_Base_CaptureSpeed;
+		declare LibExpAttributes_ShieldArmorMax for Player = C_Base_ShieldArmorMax;
+		LibExpAttributes_VampirePower = C_Base_VampirePower;
+		LibExpAttributes_DamagePower = C_Base_DamagePower;
+		LibExpAttributes_CaptureSpeed = C_Base_CaptureSpeed;
+		LibExpAttributes_ShieldArmorMax = C_Base_ShieldArmorMax;
+	}
+}
+
+// ---------------------------------- //
+/// Load the library
+Void Load() {
+	Unload();
+}

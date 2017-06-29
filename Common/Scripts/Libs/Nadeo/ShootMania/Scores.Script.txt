@@ -1,0 +1,1330 @@
+/**
+ *	Scores library
+ *	Manage players and teams scores
+ */
+#Const	Version			"2017-06-14"
+#Const	ScriptName	"Libs/Nadeo/ShootMania/Scores.Script.txt"
+
+// ---------------------------------- //
+// Libraries
+// ---------------------------------- //
+#Include "TextLib" as TL
+#Include "Libs/Nadeo/ShootMania/SM3.Script.txt" as SM
+#Include "Libs/Nadeo/XmlRpc2.Script.txt" as XmlRpc
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+/// Available sorting criteria
+#Const C_Sort_MatchPoints 0
+#Const C_Sort_MapPoints 1
+#Const C_Sort_RoundPoints 2
+#Const C_Sort_NbEliminationsInflicted 3
+#Const C_Sort_NbEliminationsTaken 4
+#Const C_Sort_NbRespawnsRequested 5
+#Const C_Sort_DamageInflicted 6
+#Const C_Sort_DamageTaken 7
+/// Available sorting order
+#Const C_Order_Ascending	1
+#Const C_Order_Descending	-1
+/// Available sorting order
+#Const C_Type_RoundPoints	0
+#Const C_Type_MapPoints	1
+#Const C_Type_MatchPoints 2
+/// Clans
+#Const C_Clan_1 1
+#Const C_Clan_2	2
+/// Reset levels
+#Const C_Level_Server 0
+#Const C_Level_Match 1
+#Const C_Level_Map 2
+#Const C_Level_Round 3
+/// Section for callback
+#Const C_Section_Null ""
+#Const C_Section_EndTurn "EndTurn"
+#Const C_Section_PreEndRound "PreEndRound"
+#Const C_Section_EndRound "EndRound"
+#Const C_Section_EndMap "EndMap"
+#Const C_Section_EndMatch "EndMatch"
+///XmlRpc
+#Const C_Callback_Scores	"Shootmania.Scores"
+#Const C_Method_GetScores	"Shootmania.GetScores"
+/// Default scores
+#Const C_DefaultClansContribution [1 => 0, 2 => 0]
+#Const C_DefaultClansScores_RoundPoints [1 => 0, 2 => 0]
+#Const C_DefaultClansScores_MapPoints [1 => 0, 2 => 0]
+#Const C_DefaultClansScores_MatchPoints [1 => 0, 2 => 0]
+/// Type of points
+#Const C_Points_Match	0
+#Const C_Points_Map		1
+
+#Const C_ClansScoresUIAutoUpdateInterval 250
+
+// ---------------------------------- //
+// Globales
+// ---------------------------------- //
+declare Boolean G_EnableNegativeRoundPoints;
+declare Boolean G_EnableNegativeMapPoints;
+declare Boolean G_EnableNegativeMatchPoints;
+declare Boolean G_EnableClansScoresUI;
+declare Boolean G_ClansScoresUINeedUpdate;
+declare Integer G_ClansScoresUIAutoUpdate;
+declare Integer[Integer] G_ClansScores_RoundPoints;
+declare Integer[Integer] G_ClansScores_MapPoints;
+declare Integer[Integer] G_ClansScores_MatchPoints;
+declare Ident G_PlayerWinner;
+declare Integer G_ClanWinner;
+declare Boolean[Integer] G_ClansScoresUI;
+declare Integer G_PointsInScore; ///< The type of points to save in the score
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+// ---------------------------------- //
+/**	Return the version number of the script
+ *
+ *	@return														The version number of the script
+ */
+Text GetScriptVersion() {
+	return Version;
+}
+
+// ---------------------------------- //
+/**	Return the name of the script
+ *
+ *	@return														The name of the script
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+// ---------------------------------- //
+/// Get the sort criteria constants
+Integer Sort_MatchPoints() { return C_Sort_MatchPoints; }
+Integer Sort_MapPoints() { return C_Sort_MapPoints; }
+Integer Sort_RoundPoints() { return C_Sort_RoundPoints; }
+Integer Sort_NbEliminationsInflicted() { return C_Sort_NbEliminationsInflicted; }
+Integer Sort_NbEliminationsTaken() { return C_Sort_NbEliminationsTaken; }
+Integer Sort_NbRespawnsRequested() { return C_Sort_NbRespawnsRequested; }
+Integer Sort_DamageInflicted() { return C_Sort_DamageInflicted; }
+Integer Sort_DamageTaken() { return C_Sort_DamageTaken; }
+
+// ---------------------------------- //
+/// Get the order constants
+Integer Order_Ascending() { return C_Order_Ascending; }
+Integer Order_Descending() { return C_Order_Descending; }
+
+// ---------------------------------- //
+/// Get clan constants
+Integer Clan_1() { return C_Clan_1; }
+Integer Clan_2() { return C_Clan_2; }
+
+// ---------------------------------- //
+/// Get section constants
+Text Section_EndRound() { return C_Section_EndRound; }
+Text Section_EndMap() { return C_Section_EndMap; }
+Text Section_EndMatch() { return C_Section_EndMatch; }
+
+// ---------------------------------- //
+/** Decide which type of points to save
+ *	in the score
+ *
+ *	@param	_PointsType								The type of points to save in the score
+ */
+Void SaveInScore(Integer _PointsType) {
+	G_PointsInScore = _PointsType;
+}
+
+// ---------------------------------- //
+/** Set a player round points
+ *
+ *	@param	_Score										The player's score to update
+ *	@param	_RoundPoints							The number of points to set
+ */
+Void SetPlayerRoundPoints(CSmScore _Score, Integer _RoundPoints) {
+	if (_Score == Null) return;
+	_Score.RoundPoints = _RoundPoints;
+	if (!G_EnableNegativeRoundPoints && _Score.RoundPoints < 0) {
+		_Score.RoundPoints = 0;
+	}
+}
+
+// ---------------------------------- //
+/** Get the round points of a player
+ *
+ *	@param	_Score										The player's score to check
+ *
+ *	@return														The player's round points
+ */
+Integer GetPlayerRoundPoints(CSmScore _Score) {
+	if (_Score == Null) return 0;
+	return _Score.RoundPoints;
+}
+
+// ---------------------------------- //
+/** Add points to a player round points
+ *
+ *	@param	_Score										The player's score to update
+ *	@param	_RoundPoints							The number of points to add
+ */
+Void AddPlayerRoundPoints(CSmScore _Score, Integer _RoundPoints) {
+	SetPlayerRoundPoints(_Score, GetPlayerRoundPoints(_Score) + _RoundPoints);
+}
+
+// ---------------------------------- //
+/** Remove points from a player round points
+ *
+ *	@param	_Score										The player's score to update
+ *	@param	_RoundPoints							The number of points to remove
+ */
+Void RemovePlayerRoundPoints(CSmScore _Score, Integer _RoundPoints) {
+	SetPlayerRoundPoints(_Score, GetPlayerRoundPoints(_Score) - _RoundPoints);
+}
+
+// ---------------------------------- //
+/** Set a player map points
+ *
+ *	@param	_Score										The player's score to update
+ *	@param	_MapPoints								The number of points to set
+ */
+Void SetPlayerMapPoints(CSmScore _Score, Integer _MapPoints) {
+	if (_Score == Null) return;
+	declare LibScores_MapPoints for _Score = 0;
+	LibScores_MapPoints = _MapPoints;
+	if (!G_EnableNegativeMapPoints && LibScores_MapPoints < 0) {
+		LibScores_MapPoints = 0;
+	}
+	if (G_PointsInScore == C_Points_Map) {
+		_Score.Points = LibScores_MapPoints;
+	}
+}
+
+// ---------------------------------- //
+/** Get the map points of a player
+ *
+ *	@param	_Score										The player's score to check
+ *
+ *	@return														The player's map points
+ */
+Integer GetPlayerMapPoints(CSmScore _Score) {
+	if (_Score == Null) return 0;
+	declare LibScores_MapPoints for _Score = 0;
+	return LibScores_MapPoints;
+}
+
+// ---------------------------------- //
+/** Add points to a player map points
+ *
+ *	@param	_Score										The player's score to update
+ *	@param	_MapPoints								The number of points to add
+ */
+Void AddPlayerMapPoints(CSmScore _Score, Integer _MapPoints) {
+	SetPlayerMapPoints(_Score, GetPlayerMapPoints(_Score) + _MapPoints);
+}
+
+// ---------------------------------- //
+/** Remove points from a player map points
+ *
+ *	@param	_Score										The player's score to update
+ *	@param	_MapPoints								The number of points to remove
+ */
+Void RemovePlayerMapPoints(CSmScore _Score, Integer _MapPoints) {
+	SetPlayerMapPoints(_Score, GetPlayerMapPoints(_Score) - _MapPoints);
+}
+
+// ---------------------------------- //
+/** Set a player match points
+ *
+ *	@param	_Score										The player's score to update
+ *	@param	_MatchPoints							The number of points to set
+ */
+Void SetPlayerMatchPoints(CSmScore _Score, Integer _MatchPoints) {
+	if (_Score == Null) return;
+	declare LibScores_MatchPoints for _Score = 0;
+	LibScores_MatchPoints = _MatchPoints;
+	if (!G_EnableNegativeMatchPoints && LibScores_MatchPoints < 0) {
+		LibScores_MatchPoints = 0;
+	}
+	if (G_PointsInScore == C_Points_Match) {
+		_Score.Points = LibScores_MatchPoints;
+	}
+}
+
+// ---------------------------------- //
+/** Get the match points of a player
+ *
+ *	@param	_Score										The player's score to check
+ *
+ *	@return														The player's match points
+ */
+Integer GetPlayerMatchPoints(CSmScore _Score) {
+	if (_Score == Null) return 0;
+	declare LibScores_MatchPoints for _Score = 0;
+	return LibScores_MatchPoints;
+}
+
+// ---------------------------------- //
+/** Add points to a player match points
+ *
+ *	@param	_Score										The player's score to update
+ *	@param	_MatchPoints							The number of points to add
+ */
+Void AddPlayerMatchPoints(CSmScore _Score, Integer _MatchPoints) {
+	SetPlayerMatchPoints(_Score, GetPlayerMatchPoints(_Score) + _MatchPoints);
+}
+
+// ---------------------------------- //
+/** Remove points from a player match points
+ *
+ *	@param	_Score										The player's score to update
+ *	@param	_MatchPoints							The number of points to remove
+ */
+Void RemovePlayerMatchPoints(CSmScore _Score, Integer _MatchPoints) {
+	SetPlayerMatchPoints(_Score, GetPlayerMatchPoints(_Score) - _MatchPoints);
+}
+
+// ---------------------------------- //
+/** Add the round points to the map and match
+ *	points and reset the round points to 0
+ *
+ *	@param	_Score										The player's score to update
+ */
+Void AffectPlayerRoundToMapPoints(CSmScore _Score) {
+	AddPlayerMapPoints(_Score, GetPlayerRoundPoints(_Score));
+	AddPlayerMatchPoints(_Score, GetPlayerRoundPoints(_Score));
+	SetPlayerRoundPoints(_Score, 0);
+}
+
+// ---------------------------------- //
+/// Apply AffectPlayerRoundToMapPoints() to all scores
+Void AffectPlayersRoundToMapPoints() {
+	foreach (Score in Scores) {
+		AffectPlayerRoundToMapPoints(Score);
+	}
+}
+
+// ---------------------------------- //
+/** Get the best score for a given
+ *	type of points
+ *
+ *	@param	_Type											The type of points
+ *	@param	_Order										The order of the points
+ *
+ *	@return														The best score if any, Null if draw
+ */
+CSmScore GetBestPlayerScore(Integer _Type, Integer _Order) {
+	if (Scores.count <= 0) return Null;
+	
+	declare Integer BestPoints;
+	declare Ident BestScoreId;
+	
+	if (_Order == C_Order_Ascending) {
+		if (_Type == C_Type_MatchPoints) BestPoints = GetPlayerMatchPoints(Scores[0]);
+		else if (_Type == C_Type_RoundPoints) BestPoints = GetPlayerRoundPoints(Scores[0]);
+		else BestPoints = GetPlayerMapPoints(Scores[0]);
+		BestScoreId = Scores[0].Id;
+	} else {
+		if (_Type == C_Type_MatchPoints) BestPoints = GetPlayerMatchPoints(Scores[Scores.count - 1]);
+		else if (_Type == C_Type_RoundPoints) BestPoints = GetPlayerRoundPoints(Scores[Scores.count - 1]);
+		else BestPoints = GetPlayerMapPoints(Scores[Scores.count - 1]);
+		BestScoreId = Scores[Scores.count - 1].Id;
+	}
+	
+	foreach (Score in Scores) {
+		declare Points = 0;
+		if (_Type == C_Type_MatchPoints) Points = GetPlayerMatchPoints(Score);
+		else if (_Type == C_Type_RoundPoints) Points = GetPlayerRoundPoints(Score);
+		else Points = GetPlayerMapPoints(Score);
+		
+		if (
+			(_Order == C_Order_Ascending && Points < BestPoints) ||
+			(_Order == C_Order_Descending && Points > BestPoints)
+		) {
+			BestPoints = Points;
+			BestScoreId = Score.Id;
+		} else if (Points == BestPoints && Score.Id != BestScoreId) {
+			BestScoreId = NullId;
+		}
+	}
+	
+	// Use Scores[id] to return the actual score 
+	// and not a reference to Scores[0]
+	if (BestScoreId == NullId || !Scores.existskey(BestScoreId)) return Null;
+	return Scores[BestScoreId];
+}
+
+// ---------------------------------- //
+/** Get the player's score with the
+ *	best round points
+ *
+ *	@param	_Order										The order in which the round points are sorted
+ *
+ *	@return														The score with the best round points
+ *																		Can be Null if there is a draw
+ */
+CSmScore GetBestPlayerRoundPoints(Integer _Order) {
+	return GetBestPlayerScore(C_Type_RoundPoints, _Order);
+}
+
+// ---------------------------------- //
+/** Get the player's score with the
+ *	best map points
+ *
+ *	@param	_Order										The order in which the map points are sorted
+ *
+ *	@return														The score with the best map points
+ *																		Can be Null if there is a draw
+ */
+CSmScore GetBestPlayerMapPoints(Integer _Order) {
+	return GetBestPlayerScore(C_Type_MapPoints, _Order);
+}
+
+// ---------------------------------- //
+/** Get the player's score with the
+ *	best match points
+ *
+ *	@param	_Order										The order in which the match points are sorted
+ *
+ *	@return														The score with the best match points
+ *																		Can be Null if there is a draw
+ */
+CSmScore GetBestPlayerMatchPoints(Integer _Order) {
+	return GetBestPlayerScore(C_Type_MatchPoints, _Order);
+}
+
+// ---------------------------------- //
+/** Update a player contribution to a clan
+ *	Player contribution to a clan is
+ *	used to automatically select in which
+ *	LadderClan the player should be
+ *
+ *	@param	_Score										The player's score
+ *	@param	_Clan											The clan that received the points
+ *	@param	_Points										The amount of points contributed
+ */
+Void AddClanContribution(CSmScore _Score, Integer _Clan, Integer _Points) {
+	if (_Score == Null) return;
+	declare LibScores_ClansContribution for _Score = C_DefaultClansContribution;
+	if (LibScores_ClansContribution.existskey(_Clan)) {
+		LibScores_ClansContribution[_Clan] += _Points;
+	}
+}
+
+// ---------------------------------- //
+/** Get the clans contribution of a player
+ *
+ *	@param	_Score										The player's score
+ *
+ *	@return														The player's clans contribution
+ */
+Integer[Integer] GetClansContribution(CSmScore _Score) {
+	if (_Score == Null) return C_DefaultClansContribution;
+	declare LibScores_ClansContribution for _Score = C_DefaultClansContribution;
+	return LibScores_ClansContribution;
+}
+
+// ---------------------------------- //
+/** Get the contribution of a player
+ *	to a given clan
+ *
+ *	@param	_Score										The player's score
+ *	@param	_Clan											The clan to check
+ */
+Integer GetClanContribution(CSmScore _Score, Integer _Clan) {
+	if (_Score == Null) return 0;
+	declare LibScores_ClansContribution for _Score = C_DefaultClansContribution;
+	if (!LibScores_ClansContribution.existskey(_Clan)) return 0;
+	return LibScores_ClansContribution[_Clan];
+}
+
+// ---------------------------------- //
+/** Get the clan a player most
+ *	contributed to
+ *	If both clans contributions are equal
+ *	then this function return 0
+ *
+ *	@param	_Score										The player's score
+ *
+ *	@return														The most contributed clan, or 0 if there is a draw
+ */
+Integer GetMostContributedClan(CSmScore _Score) {
+	if (_Score == Null) return 0;
+	declare LibScores_ClansContribution for _Score = C_DefaultClansContribution;
+	if (LibScores_ClansContribution[1] > LibScores_ClansContribution[2]) return 1;
+	else if (LibScores_ClansContribution[2] > LibScores_ClansContribution[1]) return 2;
+	return 0;
+}
+
+// ---------------------------------- //
+/** Reset the clans contribution of a player
+ *
+ *	@param	_Score										The player's score
+ */
+Void ResetClansContribution(CSmScore _Score) {
+	if (_Score == Null) return;
+	declare LibScores_ClansContribution for _Score = C_DefaultClansContribution;
+	LibScores_ClansContribution = C_DefaultClansContribution;
+}
+
+// ---------------------------------- //
+/// Reset the clans contribution of all players
+Void ResetClansContributions() {
+	foreach (Score in Scores) {
+		ResetClansContribution(Score);
+	}
+}
+
+// ---------------------------------- //
+/** Set a clan round points
+ *
+ *  @param  _Clan	                    The clan to update
+ *  @param  _RoundPoints              The number of points to set
+ */
+Void SetClanRoundPoints(Integer _Clan, Integer _RoundPoints) {
+	if (_Clan != C_Clan_1 && _Clan != C_Clan_2) return;
+	G_ClansScores_RoundPoints[_Clan] = _RoundPoints;
+	G_ClansScoresUINeedUpdate = True;
+}
+
+// ---------------------------------- //
+/** Get the round points of a clan
+ *
+ *  @param  _Clan            					The clan to check
+ *
+ *  @return                           The clan's round points
+ */
+Integer GetClanRoundPoints(Integer _Clan) {
+	if (_Clan != C_Clan_1 && _Clan != C_Clan_2) return 0;
+	return G_ClansScores_RoundPoints[_Clan];
+}
+
+// ---------------------------------- //
+/** Add points to a clan round points
+ *
+ *  @param  _Clan	                    The clan to update
+ *  @param  _RoundPoints              The number of points to add
+ */
+Void AddClanRoundPoints(Integer _Clan, Integer _RoundPoints) {
+	SetClanRoundPoints(_Clan, GetClanRoundPoints(_Clan) + _RoundPoints);
+}
+
+// ---------------------------------- //
+/** Remove points from a clan round points
+ *
+ *  @param  _Clan	                    The clan to update
+ *  @param  _RoundPoints              The number of points to remove
+ */
+Void RemoveClanRoundPoints(Integer _Clan, Integer _RoundPoints) {
+	SetClanRoundPoints(_Clan, GetClanRoundPoints(_Clan) - _RoundPoints);
+}
+
+// ---------------------------------- //
+/** Set a clan map points
+ *
+ *  @param  _Clan	                    The clan to update
+ *  @param  _MapPoints              	The number of points to set
+ */
+Void SetClanMapPoints(Integer _Clan, Integer _MapPoints) {
+	if (_Clan != C_Clan_1 && _Clan != C_Clan_2) return;
+	G_ClansScores_MapPoints[_Clan] = _MapPoints;
+	ClanScores[_Clan] = _MapPoints;
+	G_ClansScoresUINeedUpdate = True;
+}
+
+// ---------------------------------- //
+/** Get the map points of a clan
+ *
+ *  @param  _Clan            					The clan to check
+ *
+ *  @return                           The clan's map points
+ */
+Integer GetClanMapPoints(Integer _Clan) {
+	if (_Clan != C_Clan_1 && _Clan != C_Clan_2) return 0;
+	return G_ClansScores_MapPoints[_Clan];
+}
+
+// ---------------------------------- //
+/** Add points to a clan map points
+ *
+ *  @param  _Clan	                    The clan to update
+ *  @param  _MapPoints	              The number of points to add
+ */
+Void AddClanMapPoints(Integer _Clan, Integer _MapPoints) {
+	SetClanMapPoints(_Clan, GetClanMapPoints(_Clan) + _MapPoints);
+}
+
+// ---------------------------------- //
+/** Remove points from a clan map points
+ *
+ *  @param  _Clan	                    The clan to update
+ *  @param  _MapPoints           	  	The number of points to remove
+ */
+Void RemoveClanMapPoints(Integer _Clan, Integer _MapPoints) {
+	SetClanMapPoints(_Clan, GetClanMapPoints(_Clan) - _MapPoints);
+}
+
+// ---------------------------------- //
+/** Set a clan match points
+ *
+ *  @param  _Clan	                    The clan to update
+ *  @param  _MatchPoints              	The number of points to set
+ */
+Void SetClanMatchPoints(Integer _Clan, Integer _MatchPoints) {
+	if (_Clan != C_Clan_1 && _Clan != C_Clan_2) return;
+	G_ClansScores_MatchPoints[_Clan] = _MatchPoints;
+	G_ClansScoresUINeedUpdate = True;
+}
+
+// ---------------------------------- //
+/** Get the match points of a clan
+ *
+ *  @param  _Clan            					The clan to check
+ *
+ *  @return                           The clan's match points
+ */
+Integer GetClanMatchPoints(Integer _Clan) {
+	if (_Clan != C_Clan_1 && _Clan != C_Clan_2) return 0;
+	return G_ClansScores_MatchPoints[_Clan];
+}
+
+// ---------------------------------- //
+/** Add points to a clan match points
+ *
+ *  @param  _Clan	                    The clan to update
+ *  @param  _MatchPoints              The number of points to add
+ */
+Void AddClanMatchPoints(Integer _Clan, Integer _MatchPoints) {
+	SetClanMatchPoints(_Clan, GetClanMatchPoints(_Clan) + _MatchPoints);
+}
+
+// ---------------------------------- //
+/** Remove points from a clan match points
+ *
+ *  @param  _Clan	                    The clan to update
+ *  @param  _MatchPoints              The number of points to remove
+ */
+Void RemoveClanMatchPoints(Integer _Clan, Integer _MatchPoints) {
+	SetClanMatchPoints(_Clan, GetClanMatchPoints(_Clan) + _MatchPoints);
+}
+
+// ---------------------------------- //
+/** Get the clan with the best points
+ *
+ *	@param	_Type											The type of points to check
+ *	@param	_Order										The order in which the points are sorted
+ *
+ *	@return														The clan with the best points
+ *																		Can be 0 if there is a draw
+ */
+Integer GetBestClanPoints(Integer _Type, Integer _Order) {
+	declare Integer[Integer] Points;
+	if (_Type == C_Type_RoundPoints) Points = G_ClansScores_RoundPoints;
+	else if (_Type == C_Type_MapPoints) Points = G_ClansScores_MapPoints;
+	else Points = G_ClansScores_MatchPoints;
+	
+	if (Points[C_Clan_1] == Points[C_Clan_2]) {
+		return 0;
+	} else if (_Order == C_Order_Ascending) {
+		if (Points[C_Clan_1] < Points[C_Clan_2]) return C_Clan_1;
+		else return C_Clan_2;
+	} else if (_Order == C_Order_Descending) {
+		if (Points[C_Clan_1] > Points[C_Clan_2]) return C_Clan_1;
+		else return C_Clan_2;
+	}
+	return 0;
+}
+
+// ---------------------------------- //
+/** Get the clan with the best round points
+ *
+ *	@param	_Order										The order in which the round points are sorted
+ *
+ *	@return														The clan with the best round points
+ *																		Can be 0 if there is a draw
+ */
+Integer GetBestClanRoundPoints(Integer _Order) {
+	return GetBestClanPoints(C_Type_RoundPoints, _Order);
+}
+
+// ---------------------------------- //
+/** Get the clan with the best map points
+ *
+ *	@param	_Order										The order in which the map points are sorted
+ *
+ *	@return														The clan with the best map points
+ *																		Can be 0 if there is a draw
+ */
+Integer GetBestClanMapPoints(Integer _Order) {
+	return GetBestClanPoints(C_Type_MapPoints, _Order);
+}
+
+// ---------------------------------- //
+/** Get the clan with the best match points
+ *
+ *	@param	_Order										The order in which the match points are sorted
+ *
+ *	@return														The clan with the best match points
+ *																		Can be 0 if there is a draw
+ */
+Integer GetBestClanMatchPoints(Integer _Order) {
+	return GetBestClanPoints(C_Type_MatchPoints, _Order);
+}
+
+// ---------------------------------- //
+/// Update the score summary at the top of the screen
+Void UpdateClansScoresUI() {
+	declare PlayerClan1Id = NullId;
+	declare PlayerClan2Id = NullId;
+	
+	foreach (Player in Players) {
+		if (PlayerClan1Id == NullId && Player.CurrentClan == 1) PlayerClan1Id = Player.Id;
+		if (PlayerClan2Id == NullId && Player.CurrentClan == 2) PlayerClan2Id = Player.Id;
+		if (PlayerClan1Id != NullId && PlayerClan2Id != NullId) break;
+	}
+	
+	UIManager.UIAll.OverlayScoreSummary = (
+		G_EnableClansScoresUI == True &&
+		PlayerClan1Id != NullId &&
+		PlayerClan2Id != NullId
+	);
+	
+	if (UIManager.UIAll.OverlayScoreSummary) {
+		UIManager.UIAll.ScoreSummary_Player1 = PlayerClan1Id;
+		UIManager.UIAll.ScoreSummary_Player2 = PlayerClan2Id;
+		if (G_ClansScoresUI[C_Level_Round]) {
+			UIManager.UIAll.ScoreSummary_Points1 = G_ClansScores_RoundPoints[C_Clan_1];
+			UIManager.UIAll.ScoreSummary_Points2 = G_ClansScores_RoundPoints[C_Clan_2];
+		}
+		if (G_ClansScoresUI[C_Level_Map]) {
+			UIManager.UIAll.ScoreSummary_RoundPoints1 = G_ClansScores_MapPoints[C_Clan_1];
+			UIManager.UIAll.ScoreSummary_RoundPoints2 = G_ClansScores_MapPoints[C_Clan_2];
+		}
+		if (G_ClansScoresUI[C_Level_Match]) {
+			UIManager.UIAll.ScoreSummary_MatchPoints1 = G_ClansScores_MatchPoints[C_Clan_1];
+			UIManager.UIAll.ScoreSummary_MatchPoints2 = G_ClansScores_MatchPoints[C_Clan_2];
+		}
+	}
+}
+
+// ---------------------------------- //
+/** Enable or disable the score summary
+ *	at the top of the screen
+ *
+ *	@param	_Enable										True to enable, False to disable
+ */
+Void EnableClansScoresUI(Boolean _Enable) {
+	G_EnableClansScoresUI = _Enable;
+	UpdateClansScoresUI();
+}
+
+// ---------------------------------- //
+/** Set which score summary points
+ *	are update in the UI
+ *
+ *	@param	_RoundPoints							True to update the round points
+ *	@param	_MapPoints								True to update the map points
+ *	@param	_MatchPoints							True to update the match points
+ */
+Void SetupClansScoresUI(Boolean _RoundPoints, Boolean _MapPoints, Boolean _MatchPoints) {
+	G_ClansScoresUI = [
+		C_Level_Round => _RoundPoints,
+		C_Level_Map => _MapPoints,
+		C_Level_Match => _MatchPoints
+	];
+}
+
+// ---------------------------------- //
+/** Enable or disable the possiblity
+ *	to have a negative amount of map points
+ *	or round points for the player
+ *
+ *	@param	_RoundPoints							Set for round points
+ *	@param	_MapPoints								Set for map points
+ *	@param	_MatchPoints							Set for match points
+ */
+Void EnablePlayerNegativePoints(Boolean _RoundPoints, Boolean _MapPoints, Boolean _MatchPoints) {
+	G_EnableNegativeRoundPoints = _RoundPoints;
+	G_EnableNegativeMapPoints = _MapPoints;
+	G_EnableNegativeMatchPoints = _MatchPoints;
+	
+	if (!G_EnableNegativeRoundPoints) {
+		foreach (Score in Scores) {
+			if (GetPlayerRoundPoints(Score) < 0) SetPlayerRoundPoints(Score, 0);
+		}
+	}
+	if (!G_EnableNegativeMapPoints) {
+		foreach (Score in Scores) {
+			if (GetPlayerMapPoints(Score) < 0) SetPlayerMapPoints(Score, 0);
+		}
+	}
+	if (!G_EnableNegativeMatchPoints) {
+		foreach (Score in Scores) {
+			if (GetPlayerMatchPoints(Score) < 0) SetPlayerMatchPoints(Score, 0);
+		}
+	}
+}
+
+// ---------------------------------- //
+/** Save the score's id of the winner
+ *
+ *	@param	_Score										The score of the winner
+ */
+Void SetPlayerWinner(CSmScore _Score) {
+	if (_Score == Null) G_PlayerWinner = NullId;
+	else G_PlayerWinner = _Score.Id;
+}
+
+// ---------------------------------- //
+/** Get the score of the winner
+ *
+ *	@return														The score of the winner if any, Null otherwise
+ */
+CSmScore GetPlayerWinner() {
+	if (G_PlayerWinner == NullId || !Scores.existskey(G_PlayerWinner)) return Null;
+	return Scores[G_PlayerWinner];
+}
+
+// ---------------------------------- //
+/** Get the score's id of the winner
+ *
+ *	@return														The score's id of the winner if any, NullId otherwise
+ */
+Ident GetPlayerWinnerId() {
+	return G_PlayerWinner;
+}
+
+// ---------------------------------- //
+/// Reset the player winner
+Void ResetPlayerWinner() {
+	G_PlayerWinner = NullId;
+}
+
+// ---------------------------------- //
+/** Save which clan won
+ *
+ *	@param	_Clan											The clan that won
+ */
+Void SetClanWinner(Integer _Clan) {
+	G_ClanWinner = _Clan;
+}
+
+// ---------------------------------- //
+/** Get the clan that won
+ *
+ *	@return														The clan that won
+ */
+Integer GetClanWinner() {
+	return G_ClanWinner;
+}
+
+// ---------------------------------- //
+/// Reset the clan winner
+Void ResetClanWinner() {
+	G_ClanWinner = 0;
+}
+
+// ---------------------------------- //
+/// Unspawn players who lost the game
+Void UnspawnLosers() {
+	if (UseClans) {
+		foreach (Player in Players) {
+			if (Player.CurrentClan != GetClanWinner()) {
+				SM::Unspawn(Player);
+			}
+		}
+	} else {
+		foreach (Player in Players) {
+			if (Player.Score == Null || Player.Score.Id != GetPlayerWinnerId()) {
+				SM::Unspawn(Player);
+			}
+		}
+	}
+}
+
+// ---------------------------------- //
+/// Unspawn players who won the game
+Void UnspawnWinners() {
+	if (UseClans) {
+		foreach (Player in Players) {
+			if (Player.CurrentClan == GetClanWinner()) {
+				SM::Unspawn(Player);
+			}
+		}
+	} else {
+		foreach (Player in Players) {
+			if (Player.Score == Null || Player.Score.Id == GetPlayerWinnerId()) {
+				SM::Unspawn(Player);
+			}
+		}
+	}
+}
+
+// ---------------------------------- //
+/** Get the amount of LP awarded after
+ *	the closing of the ladder match
+ *
+ *	@return														Amount of LP won
+ */
+Real GetLP(CSmScore _Score) {
+	if (_Score == Null) return 0.;
+	return _Score.LadderScore;
+}
+
+// ---------------------------------- //
+/** Set the ladder match score value of a score
+ *
+ *	@param	_Score										The score to update
+ *	@param	_Value										The value of the ladder score
+ */
+Void SetLadderScore(CSmScore _Score, Real _Value) {
+	if (_Score == Null) return;
+	_Score.LadderMatchScoreValue = _Value;
+}
+
+// ---------------------------------- //
+/** Get the ladder match score value of a score
+ *
+ *	@param	_Score										The score to check
+ *
+ *	@return														The value of the ladder score
+ */
+Real GetLadderScore(CSmScore _Score) {
+	if (_Score == Null) return 0.;
+	return _Score.LadderMatchScoreValue;
+}
+
+// ---------------------------------- //
+/** Set the ladder clan of a score
+ *
+ *	@param	_Score										The score to update
+ *	@param	_Clan											The clan to assign
+ */
+Void SetLadderClan(CSmScore _Score, Integer _Clan) {
+	if (_Score == Null) return;
+	_Score.LadderClan = _Clan;
+}
+
+// ---------------------------------- //
+/** Get the ladder clan of a score
+ *
+ *	@param	_Score										The score to check
+ *
+ *	@return														The clan
+ */
+Integer GetLadderClan(CSmScore _Score) {
+	if (_Score == Null) return 0;
+	return _Score.LadderClan;
+}
+
+// ---------------------------------- //
+/** Assign a ladder rank sort value
+ *	to the given score
+ *
+ *	@param	_Score										The score to update
+ *	@param	_Value										The sort value
+ */
+Void SetLadderRank(CSmScore _Score, Integer _Value) {
+	if (_Score == Null) return;
+	_Score.LadderRankSortValue = _Value;
+}
+
+// ---------------------------------- //
+/** Get the ladder rank sort value
+ *	of the given score
+ *
+ *	@param	_Score										The score to check
+ *
+ *	@return														The sort value
+ */
+Integer GetLadderRank(CSmScore _Score) {
+	if (_Score == Null) return 0;
+	return _Score.LadderRankSortValue;
+}
+
+Void SetupLadder(CSmScore _Score, Integer _LadderRank, Integer _LadderClan, Real _LadderScore) {
+	SetLadderRank(_Score, _LadderRank);
+	SetLadderScore(_Score, _LadderScore);
+	SetLadderClan(_Score, _LadderClan);
+}
+
+// ---------------------------------- //
+/** Compute ranking for ladder points
+ *	Similar to the Ladder_ComputeRank()
+ *	function from CTmMode
+ *
+ *	@param	_SortCriteria							The criteria used to sort the ranking
+ *	@param	_Order										< 0 Descending order, >= 0 ascending order
+ */
+Void ComputeLadder(Integer _SortCriteria, Integer _Order) {
+	foreach (Score in Scores) {
+		declare Points = 0;
+		switch (_SortCriteria) {
+			case C_Sort_MatchPoints: Points = GetPlayerMatchPoints(Score);
+			case C_Sort_MapPoints: Points = GetPlayerMapPoints(Score);
+			case C_Sort_RoundPoints: Points = GetPlayerRoundPoints(Score);
+			case C_Sort_NbEliminationsInflicted: Points = Score.NbEliminationsInflicted;
+			case C_Sort_NbEliminationsTaken: Points = Score.NbEliminationsTaken;
+			case C_Sort_NbRespawnsRequested: Points = Score.NbRespawnsRequested;
+			case C_Sort_DamageInflicted: Points = Score.DamageInflicted;
+			case C_Sort_DamageTaken: Points = Score.DamageTaken;
+		}
+		
+		declare LadderRank = 0;
+		if (_Order == C_Order_Ascending) LadderRank = 1 + Points;
+		else LadderRank = -1 - Points;
+		
+		declare LadderClan = 0;
+		if (UseClans) {
+			LadderClan = GetMostContributedClan(Score);
+			if (LadderClan == 0) {
+				LadderClan = Score.TeamNum;
+			}
+		}
+		
+		declare LadderPoints = Points*1.;
+		if (UseClans && LadderClan == GetClanWinner()) {
+			LadderPoints *= 2.;
+		} 
+		
+		SetupLadder(Score, LadderRank, LadderClan, LadderPoints);
+	}
+}
+
+// ---------------------------------- //
+/** Reset all scores
+ *
+ *	@param	_Level										The level of reset
+ */
+Void Clear(Integer _Level) {
+	if (_Level <= C_Level_Map) ClearScores();
+	
+	foreach (Score in Scores) {
+		if (_Level <= C_Level_Round) SetPlayerRoundPoints(Score, 0);
+		if (_Level <= C_Level_Map) SetPlayerMapPoints(Score, 0);
+		if (_Level <= C_Level_Map) ResetClansContribution(Score);
+		if (_Level <= C_Level_Map) SetupLadder(Score, 0, Score.TeamNum, 0.);
+		if (_Level <= C_Level_Match) SetPlayerMatchPoints(Score, 0);
+	}
+	for (Clan, 1, 2) {
+		if (_Level <= C_Level_Round) SetClanRoundPoints(Clan, 0);
+		if (_Level <= C_Level_Map) SetClanMapPoints(Clan, 0);
+		if (_Level <= C_Level_Match) SetClanMatchPoints(Clan, 0);
+	}
+	
+	if (_Level <= C_Level_Round) ResetPlayerWinner();
+	if (_Level <= C_Level_Round) ResetClanWinner();
+}
+
+// ---------------------------------- //
+/// Reset all scores
+Void Clear() {
+	Clear(C_Level_Server);
+}
+
+// ---------------------------------- //
+/// Start a new match
+Void StartMatch() {
+	Clear(C_Level_Match);
+}
+
+
+// ---------------------------------- //
+/// End the current match
+Void EndMatch() {
+	
+}
+
+
+// ---------------------------------- //
+/// Start a new map
+Void StartMap() {
+	Clear(C_Level_Map);
+}
+
+
+// ---------------------------------- //
+/// End the current map
+Void EndMap() {
+
+}
+
+
+// ---------------------------------- //
+/// Start a new round
+Void StartRound() {
+	Clear(C_Level_Round);
+}
+
+
+// ---------------------------------- //
+/// End the current round
+Void EndRound() {
+	AffectPlayersRoundToMapPoints();
+}
+
+// ---------------------------------- //
+/** Get info about a clan score in
+ *	JSON format
+ *
+ *	@param	_Clan											The clan to export
+ *
+ *	@return														The clan's score JSON
+ */
+Text Private_XmlRpc_GetClan(Integer _Clan) {
+	declare Name = "";
+	declare TeamId = _Clan - 1;
+	if (Teams.existskey(TeamId)) {
+		Name = Teams[TeamId].Name;
+	}
+	
+	return """{
+		"id": {{{dump(TeamId)}}},
+		"name": {{{XmlRpc::JsonGetText(Name)}}},
+		"roundpoints": {{{dump(GetClanRoundPoints(_Clan))}}},
+		"mappoints": {{{dump(GetClanMapPoints(_Clan))}}},
+		"matchpoints": {{{dump(GetClanMatchPoints(_Clan))}}}
+	}""";
+}
+
+// ---------------------------------- //
+/** Concatenates all clans JSON info
+ *
+ *	@return														Clans' JSON concatenated
+ */
+Text Private_XmlRpc_GetClans() {
+	declare ClansJSON = "";
+	for (Clan, 1, 2) {
+		if (ClansJSON != "") ClansJSON ^= ",";
+		ClansJSON ^= Private_XmlRpc_GetClan(Clan);
+	}
+	return ClansJSON;
+}
+
+// ---------------------------------- //
+/** Get info about a score in JSON format
+ *
+ *	@param	_Score										The score to export
+ *	@param	_Rank											The rank of the score
+ *
+ *	@return														The score's JSON
+ */
+Text Private_XmlRpc_GetScore(CSmScore _Score, Integer _Rank) {
+	if (_Score == Null) return "{}";
+	
+	return """{
+		"login": {{{dump(_Score.User.Login)}}},
+		"name": {{{XmlRpc::JsonGetText(_Score.User.Name)}}},
+		"rank": {{{dump(_Rank)}}},
+		"roundpoints": {{{dump(GetPlayerRoundPoints(_Score))}}},
+		"mappoints": {{{dump(GetPlayerMapPoints(_Score))}}},
+		"matchpoints": {{{dump(GetPlayerMatchPoints(_Score))}}}
+	}""";
+}
+
+// ---------------------------------- //
+/** Concatenates all scores JSON info
+ *
+ *	@return														Scores' JSON concatenated
+ */
+Text Private_XmlRpc_GetScores() {
+	declare ScoresJSON = "";
+	declare ScoresLadderRank = Integer[Ident];
+	declare ScoresRank = Integer[Ident];
+	
+	foreach (Score in Scores) {
+		ScoresLadderRank[Score.Id] = Score.LadderRankSortValue;
+	}
+	ScoresLadderRank = ScoresLadderRank.sort();
+	declare Rank = 1;
+	foreach (ScoreId => LadderRank in ScoresLadderRank) {
+		ScoresRank[ScoreId] = Rank;
+		Rank += 1;
+	}
+	
+	foreach (Score in Scores) {
+		if (ScoresJSON != "") ScoresJSON ^= ",";
+		ScoresJSON ^= Private_XmlRpc_GetScore(Score, ScoresRank[Score.Id]);
+	}
+	return ScoresJSON;
+}
+
+// ---------------------------------- //
+/** Send teams and players scores
+ *
+ *	@param	_Section									The section in which the callback was sent
+ *	@param	_ResponseId								Id to insert in the response callback
+ */
+Void XmlRpc_SendScores(Text _Section, Text _ResponseId) {
+	declare WinnerLogin = "";
+	declare WinnerScore <=> GetPlayerWinner();
+	if (WinnerScore != Null) {
+		WinnerLogin = WinnerScore.User.Login;
+	}
+	
+	declare Response = """{
+	"responseid": {{{dump(_ResponseId)}}},
+	"section": {{{XmlRpc::JsonGetText(_Section)}}},
+	"useteams": {{{XmlRpc::JsonGetBoolean(UseClans)}}},
+	"winnerteam": {{{dump(GetClanWinner() - 1)}}},
+	"winnerplayer": {{{dump(WinnerLogin)}}},
+	"teams": [{{{Private_XmlRpc_GetClans()}}}],
+	"players": [{{{Private_XmlRpc_GetScores()}}}]
+}""";
+
+	XmlRpc::SendCallback(C_Callback_Scores, [Response]);
+}
+Void XmlRpc_SendScores() {
+	XmlRpc_SendScores(C_Section_Null, "");
+}
+
+// ---------------------------------- //
+/** Function to call at each yield
+ *	to update the library
+ */
+Void Yield() {
+	if (G_EnableClansScoresUI) {
+		if (G_ClansScoresUIAutoUpdate <= Now) {
+			G_ClansScoresUINeedUpdate = (
+				UIManager.UIAll.ScoreSummary_Player1 == NullId ||
+				UIManager.UIAll.ScoreSummary_Player2 == NullId ||
+				!Players.existskey(UIManager.UIAll.ScoreSummary_Player1) ||
+				!Players.existskey(UIManager.UIAll.ScoreSummary_Player2) ||
+				Players[UIManager.UIAll.ScoreSummary_Player1].CurrentClan != 1 ||
+				Players[UIManager.UIAll.ScoreSummary_Player2].CurrentClan != 2
+			);
+			G_ClansScoresUIAutoUpdate = Now + C_ClansScoresUIAutoUpdateInterval;
+		}
+		
+		if (G_ClansScoresUINeedUpdate) {
+			G_ClansScoresUINeedUpdate = False;
+			UpdateClansScoresUI();
+		}
+	}
+	
+	foreach (Event in XmlRpc.PendingEvents) {
+		if (Event.Type == CXmlRpcEvent::EType::CallbackArray) {
+			switch (Event.ParamArray1) {
+				case C_Method_GetScores: {
+					declare ResponseId = "";
+					if (Event.ParamArray2.existskey(0)) ResponseId = Event.ParamArray2[0];
+					XmlRpc_SendScores(C_Section_Null, ResponseId);
+				}
+			}
+		}
+	}
+}
+
+// ---------------------------------- //
+/// Unload the library
+Void Unload() {
+	G_EnableNegativeRoundPoints = False;
+	G_EnableNegativeMapPoints = False;
+	G_EnableNegativeMatchPoints = False;
+	G_EnableClansScoresUI = False;
+	G_ClansScoresUINeedUpdate = False;
+	G_ClansScoresUIAutoUpdate = -1;
+	G_ClansScores_RoundPoints = C_DefaultClansScores_RoundPoints;
+	G_ClansScores_MapPoints = C_DefaultClansScores_MapPoints;
+	G_ClansScores_MatchPoints = C_DefaultClansScores_MatchPoints;
+	G_PlayerWinner = NullId;
+	G_ClanWinner = 0;
+	G_ClansScoresUI = [
+		C_Level_Round => True,
+		C_Level_Map => True,
+		C_Level_Match => True
+	];
+	
+	SaveInScore(C_Points_Map);
+	
+	// Unregister callbacks
+	XmlRpc::UnregisterCallback(C_Callback_Scores);
+	// Unregister methods
+	XmlRpc::UnregisterMethod(C_Method_GetScores);
+}
+
+// ---------------------------------- //
+/// Load the library
+Void Load() {
+	Unload();
+	
+	// Register callbacks
+	XmlRpc::RegisterCallback(C_Callback_Scores, """
+* Name: {{{C_Callback_Scores}}}
+* Type: CallbackArray
+* Description: Teams and players scores.
+* Data:
+	- Version >=2.0.0: 
+	```
+	[
+		"{
+			"responseid": "xyz", //< Facultative id passed by a script event
+			"section": "EndRound", //< Current progress of the match. Can be "" | "EndRound" | "EndMap" | "EndMatch"
+			"useteams": true, //< The game mode use teams or not
+			"winnerteam": 1, //< The team who won the match, can be -1 (no winner), 0 or 1
+			"winnerplayer": "PlayerLogin1", //< Login of the player who won the match
+			"teams": [ //< Scores of the teams
+				{
+					"id": 0,
+					"name": "blue",
+					"roundpoints": 498, 
+					"mappoints": 46,
+					"matchpoints": 9,
+				},
+				{
+					"id": 1,
+					"name": "red",
+					"roundpoints": 365,
+					"mappoints": 45,
+					"matchpoints": 2,
+				}
+			],
+			"players": [ //< Scores of the players
+				{
+					"login": "PlayerLogin1",
+					"name": "Player#1",
+					"rank": 1, //< Rank of the player in the match
+					"roundpoints": 456,
+					"mappoints": 345,
+					"matchpoints": 64
+				},
+				{
+					"login": "PlayerLogin2",
+					"name": "Player#2",
+					"rank": 2,
+					"roundpoints": 234,
+					"mappoints": 123,
+					"matchpoints": 32
+				}
+			]
+		}"
+	]
+	```
+	- Version >=2.1.1: 
+	The section parameter can take one new value: "PreEndRound".
+	```
+	[
+		"{
+			...
+			"section": "EndRound", //< Current progress of the match. Can be "" | "PreEndRound" | "EndRound" | "EndMap" | "EndMatch"
+			...
+		}"
+	]
+	```
+	""");
+	// Register methods
+	XmlRpc::RegisterMethod(C_Method_GetScores, """
+* Name: {{{C_Method_GetScores}}}
+* Type: TriggerModeScriptEventArray
+* Description: Request the current scores. This method will trigger the "{{{C_Callback_Scores}}}" callback.
+* Data:
+	- Version >=2.0.0: 
+	```
+	[
+		"responseid" //< Facultative id that will be passed to the "{{{C_Callback_Scores}}}" callback.
+	]
+	```
+	""");
+}

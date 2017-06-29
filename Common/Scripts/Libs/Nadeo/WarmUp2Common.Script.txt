@@ -1,0 +1,1461 @@
+/**
+ *	WarmUp lib
+ */
+#Const	Version		"2015-02-23"
+#Const	ScriptName	"WarmUp2Common.Script.txt"
+
+#Include "TextLib" as TL
+
+// ---------------------------------- //
+// Constant
+// ---------------------------------- //
+#Const C_LibWarmUp2_LayerPosition <0., -50.>
+
+// ---------------------------------- //
+// Globales
+// ---------------------------------- //
+declare Ident G_LibWarmUp2_LayerWarmUpId;
+declare Ident[Integer][Text] G_LibWarmUp2_GroupsIds;
+declare Text[Integer][Text] G_LibWarmUp2_GroupsLogins;
+declare Text[Integer][Text] G_LibWarmUp2_GroupsIcons;
+declare Integer[][Integer][Text] G_LibWarmUp2_GroupsTimers;
+declare Integer[Text] G_LibWarmUp2_GroupsCurrentTimer;
+declare Integer G_LibWarmUp2_CurrentTimer;
+declare Integer[Integer] G_LibWarmUp2_SavedTimer;
+declare Boolean G_LibWarmUp2_Updated;
+declare Boolean G_LibWarmUp2_Stop;
+declare Text[] G_LibWarmUp2_GroupsDisabled;
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+// Private
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Update the Server Synchro Value
+ *
+ *	@return		The new server synchro value
+ */
+Integer Private_SynchroServer() {
+	declare persistent Server_SynchroValue for This = 0;
+	Server_SynchroValue += 1;
+	if(Server_SynchroValue > 100) Server_SynchroValue = 0;
+	
+	return Server_SynchroValue;
+}
+
+
+// ---------------------------------- //
+/** Create the warm up manialink
+ *
+ *	@return		The warm up manialink
+ */
+Text Private_CreateLayerWarmUp() {
+	declare ImgPath = "file://Media/Manialinks/Common/WarmUp/";
+	declare ImgPath2 = "file://Media/Manialinks/ShootMania/Common/Pager/";
+	declare SlotWidth = 50.;
+	declare SlotHeight = 9.;
+	declare SlotMargin = 0.;
+	declare LabelWidth = SlotWidth - SlotHeight;
+	declare IconWidth = SlotHeight;
+	declare LabelPosX = IconWidth / 2.;
+	declare IconPosX = -LabelWidth / 2.;
+	declare Clan1Color = TL::ColorToText(Teams[0].ColorPrimary);
+	declare Clan2Color = TL::ColorToText(Teams[1].ColorPrimary);
+	
+	return """
+<manialink version="1" name="Lib_WarmUp2:WarmUp">
+<frame posn="{{{C_LibWarmUp2_LayerPosition.X}}} {{{C_LibWarmUp2_LayerPosition.Y}}} 25" hidden="1" id="Frame_WarmUp">
+	<format textemboss="1" />
+	<frame posn="0 0" id="Frame_Pager">
+		<quad posn="-126.5 0" sizen="8 6" halign="center" valign="center" image="{{{ImgPath2}}}pagerLeftOff.dds" imagefocus="{{{ImgPath2}}}pagerLeftOn.dds" scriptevents="1" id="Button_PagerPrev" />
+		<quad posn="126.5 0" sizen="8 6" halign="center" valign="center" image="{{{ImgPath2}}}pagerRightOff.dds" imagefocus="{{{ImgPath2}}}pagerRightOn.dds" scriptevents="1" id="Button_PagerNext" />
+		<quad posn="-126.5 0" sizen="8 6" halign="center" valign="center" image="{{{ImgPath2}}}pagerEmpty.dds" hidden="1" id="Button_PagerPrevOff" />
+		<quad posn="126.5 0" sizen="8 6" halign="center" valign="center" image="{{{ImgPath2}}}pagerEmpty.dds" hidden="1" id="Button_PagerNextOff" />
+	</frame>
+	<frame posn="0 0">
+		<quad posn="0 -3 2" sizen="284 20" halign="center" valign="center" image="{{{ImgPath}}}Structure.dds" id="Quad_OrderBg" />
+		<quad posn="0 7.1 3" sizen="50 10" halign="center" valign="center" image="{{{ImgPath}}}TitleBg.dds" />
+		<label posn="0 7.4 4" sizen="35 10" halign="center" valign="center" textemboss="1" textsize="1" style="TextTitle3" text="{{{_("Players order")}}}" />
+		<frame id="Frame_Order">
+			<format textsize="2" />
+			<frame posn="-100 0" class="Frame_Slot" id="1" >
+				<label posn="0 0 -1" sizen="{{{SlotWidth}}} {{{SlotHeight}}}" halign="center" valign="center2" focusareacolor1="fff0" focusareacolor2="fff5" scriptevents="1" class="Quad_Slot" id="1" />
+				<quad sizen="{{{SlotWidth}}} {{{SlotHeight}}}" halign="center" valign="center" image="{{{ImgPath}}}PlayerCardGreen.png" hidden="1" id="Quad_SlotReady" />
+				<quad sizen="{{{SlotWidth}}} {{{SlotHeight}}}" halign="center" valign="center" image="{{{ImgPath}}}PlayerCardRed.png" id="Quad_SlotNotReady" />
+				<quad posn="{{{IconPosX}}} 0 1" sizen="{{{IconWidth}}} {{{SlotHeight}}}" scale="0.7" halign="center" valign="center" hidden="1" id="Quad_Icon" />
+				<label posn="0 0.5 1" sizen="{{{SlotWidth}}} {{{SlotHeight}}}" scale="0.9" halign="center" valign="center2" id="Label_Slot" />
+				<label posn="0 0.5 1" sizen="{{{SlotWidth}}} {{{SlotHeight}}}" scale="0.9" halign="center" valign="center2" textcolor="fff3" textemboss="0" text="{{{_("First (Press 1)")}}}" id="Label_EmptySlot" />
+			</frame>
+			<frame posn="-50 0" class="Frame_Slot" id="2" >
+				<label posn="0 0 -1" sizen="{{{SlotWidth}}} {{{SlotHeight}}}" halign="center" valign="center2" focusareacolor1="fff0" focusareacolor2="fff5" scriptevents="1" class="Quad_Slot" id="2" />
+				<quad sizen="{{{SlotWidth}}} {{{SlotHeight}}}" halign="center" valign="center" image="{{{ImgPath}}}PlayerCardGreen.png" hidden="1" id="Quad_SlotReady" />
+				<quad sizen="{{{SlotWidth}}} {{{SlotHeight}}}" halign="center" valign="center" image="{{{ImgPath}}}PlayerCardRed.png" id="Quad_SlotNotReady" />
+				<quad posn="{{{IconPosX}}} 0 1" sizen="{{{IconWidth}}} {{{SlotHeight}}}" scale="0.7" halign="center" valign="center" hidden="1" id="Quad_Icon" />
+				<label posn="0 0.5 1" sizen="{{{SlotWidth}}} {{{SlotHeight}}}" scale="0.9" halign="center" valign="center2" id="Label_Slot" />
+				<label posn="0 0.5 1" sizen="{{{SlotWidth}}} {{{SlotHeight}}}" scale="0.9" halign="center" valign="center2" textcolor="fff3" textemboss="0" text="{{{_("Second (Press 2)")}}}" id="Label_EmptySlot" />
+			</frame>
+			<frame posn="0 0" class="Frame_Slot" id="3" >
+				<label posn="0 0 -1" sizen="{{{SlotWidth}}} {{{SlotHeight}}}" halign="center" valign="center2" focusareacolor1="fff0" focusareacolor2="fff5" scriptevents="1" class="Quad_Slot" id="3" />
+				<quad sizen="{{{SlotWidth}}} {{{SlotHeight}}}" halign="center" valign="center" image="{{{ImgPath}}}PlayerCardGreen.png" hidden="1" id="Quad_SlotReady" />
+				<quad sizen="{{{SlotWidth}}} {{{SlotHeight}}}" halign="center" valign="center" image="{{{ImgPath}}}PlayerCardRed.png" id="Quad_SlotNotReady" />
+				<quad posn="{{{IconPosX}}} 0 1" sizen="{{{IconWidth}}} {{{SlotHeight}}}" scale="0.7" halign="center" valign="center" hidden="1" id="Quad_Icon" />
+				<label posn="0 0.5 1" sizen="{{{SlotWidth}}} {{{SlotHeight}}}" scale="0.9" halign="center" valign="center2" id="Label_Slot" />
+				<label posn="0 0.5 1" sizen="{{{SlotWidth}}} {{{SlotHeight}}}" scale="0.9" halign="center" valign="center2" textcolor="fff3" textemboss="0" text="{{{_("Third (Press 3)")}}}" id="Label_EmptySlot" />
+			</frame>
+			<frame posn="50 0" class="Frame_Slot" id="4" >
+				<label posn="0 0 -1" sizen="{{{SlotWidth}}} {{{SlotHeight}}}" halign="center" valign="center2" focusareacolor1="fff0" focusareacolor2="fff5" scriptevents="1" class="Quad_Slot" id="4" />
+				<quad sizen="{{{SlotWidth}}} {{{SlotHeight}}}" halign="center" valign="center" image="{{{ImgPath}}}PlayerCardGreen.png" hidden="1" id="Quad_SlotReady" />
+				<quad sizen="{{{SlotWidth}}} {{{SlotHeight}}}" halign="center" valign="center" image="{{{ImgPath}}}PlayerCardRed.png" id="Quad_SlotNotReady" />
+				<quad posn="{{{IconPosX}}} 0 1" sizen="{{{IconWidth}}} {{{SlotHeight}}}" scale="0.7" halign="center" valign="center" hidden="1" id="Quad_Icon" />
+				<label posn="0 0.5 1" sizen="{{{SlotWidth}}} {{{SlotHeight}}}" scale="0.9" halign="center" valign="center2" id="Label_Slot" />
+				<label posn="0 0.5 1" sizen="{{{SlotWidth}}} {{{SlotHeight}}}" scale="0.9" halign="center" valign="center2" textcolor="fff3" textemboss="0" text="{{{_("Fourth (Press 4)")}}}" id="Label_EmptySlot" />
+			</frame>
+			<frame posn="100 0" class="Frame_Slot" id="5" >
+				<label posn="0 0 -1" sizen="{{{SlotWidth}}} {{{SlotHeight}}}" halign="center" valign="center2" focusareacolor1="fff0" focusareacolor2="fff5" scriptevents="1" class="Quad_Slot" id="5" />
+				<quad sizen="{{{SlotWidth}}} {{{SlotHeight}}}" halign="center" valign="center" image="{{{ImgPath}}}PlayerCardGreen.png" hidden="1" id="Quad_SlotReady" />
+				<quad sizen="{{{SlotWidth}}} {{{SlotHeight}}}" halign="center" valign="center" image="{{{ImgPath}}}PlayerCardRed.png" id="Quad_SlotNotReady" />
+				<quad posn="{{{IconPosX}}} 0 1" sizen="{{{IconWidth}}} {{{SlotHeight}}}" scale="0.7" halign="center" valign="center" hidden="1" id="Quad_Icon" />
+				<label posn="0 0.5 1" sizen="{{{SlotWidth}}} {{{SlotHeight}}}" scale="0.9" halign="center" valign="center2" id="Label_Slot" />
+				<label posn="0 0.5 1" sizen="{{{SlotWidth}}} {{{SlotHeight}}}" scale="0.9" halign="center" valign="center2" textcolor="fff3" textemboss="0" text="{{{_("Fifth (Press 5)")}}}" id="Label_EmptySlot" />
+			</frame>
+		</frame>
+	</frame>
+	<frame posn="0 -9 3" scale="0.85" hidden="1" id="Frame_ClanSelection">
+		<label posn="-47 0.2" textsize="1" sizen="33 10" halign="center" valign="center2" style="TextTitle3" textcolor="fff" text="Join {{{Teams[0].Name}}} (F3)" id="Label_JoinClan1" />
+		<label posn="47 0.2" textsize="1" sizen="33 10" halign="center" valign="center2" style="TextTitle3" textcolor="fff" text="Join {{{Teams[1].Name}}} (F4)" id="Label_JoinClan2" />
+		<quad posn="-47 0" sizen="40 10" halign="center" valign="center" image="{{{ImgPath}}}ButtonOff.dds" imagefocus="{{{ImgPath}}}ButtonOn.dds" colorize="{{{Clan1Color}}}" ScriptEvents="1" id="Button_JoinClan1" />
+		<quad posn="47 0" sizen="40 10" halign="center" valign="center" image="{{{ImgPath}}}ButtonOff.dds" imagefocus="{{{ImgPath}}}ButtonOn.dds" colorize="{{{Clan2Color}}}" ScriptEvents="1" id="Button_JoinClan2" />
+	</frame>
+	<frame posn="-0.15 -10.5 3" scale="0.85" id="Frame_Ready">	
+		<label sizen="50 10" halign="center" valign="center2" style="TextTitle3" text="Ready (F6)" />
+		<quad sizen="60 15" halign="center" valign="center" image="{{{ImgPath}}}ButtonOff.dds" imagefocus="{{{ImgPath}}}ButtonOn.dds" ScriptEvents="1" id="Button_Ready" />
+	</frame>
+</frame>
+<script><!--
+#Include "TextLib" as TL
+
+#Const C_UpdateInterval	250
+
+declare Integer G_PageMin;
+declare Integer G_PageMax;
+declare Integer G_PageCurrent;
+declare Integer G_ItemPerPage;
+
+declare CMlFrame Frame_WarmUp;
+declare CMlFrame[Integer] Frames_Slot;
+declare CMlQuad Button_PagerPrev;
+declare CMlQuad Button_PagerNext;
+declare CMlQuad Button_PagerPrevOff;
+declare CMlQuad Button_PagerNextOff;
+
+/*CSmPlayer FindPlayerFromLogin(Text _Login) {
+	if (_Login == "") return Null;
+	
+	foreach (Player in Players) {
+		if (Player.User.Login == _Login) return Player;
+	}
+	
+	return Null;
+}*/
+
+Void UpdateSlotsPosition(Integer _ItemsNb) {
+	declare ItemWidth = {{{SlotWidth}}};
+	declare ItemMargin = {{{SlotMargin}}};
+	declare Width = (_ItemsNb * ItemWidth) + ((_ItemsNb - 1) * ItemMargin);
+	declare X = -((Width - ItemWidth)/ 2.);
+	
+	Button_PagerPrev.RelativePosition.X = X-(ItemWidth/2.)-8.;
+	Button_PagerNext.RelativePosition.X = -X+(ItemWidth/2.)+8.;
+	Button_PagerPrevOff.RelativePosition.X = X-(ItemWidth/2.)-8.;
+	Button_PagerNextOff.RelativePosition.X = -X+(ItemWidth/2.)+8.;
+	
+	foreach (Key => Frame_Slot in Frames_Slot) {
+		Frame_Slot.RelativePosition.X = X;
+		
+		X += ItemWidth + ItemMargin;
+		if (Key <= _ItemsNb) Frame_Slot.Show();
+		else Frame_Slot.Hide();
+	}
+	
+	declare Quad_OrderBg <=> (Page.GetFirstChild("Quad_OrderBg") as CMlQuad);
+	Quad_OrderBg.Size.X = Width + (2. * _ItemsNb);
+	//if (Quad_OrderBg.Size.X < 120.) Quad_OrderBg.Size.X = 120.;
+}
+
+Void UpdateIcons() {
+	declare netread Text[Integer][Text] Net_LibWarmUp2_GroupsIcons for Teams[0];
+	declare netread Text Net_LibWarmUp2_CurrentGroup for UI;
+	if (!Net_LibWarmUp2_GroupsIcons.existskey(Net_LibWarmUp2_CurrentGroup)) return;
+	
+	declare StartIndex = ((G_PageCurrent - 1) * G_ItemPerPage) + 1;
+	declare EndIndex = StartIndex + G_ItemPerPage - 1;
+	declare J = 1;
+	
+	for (I, StartIndex, EndIndex) {
+		if (!Frames_Slot.existskey(J)) continue;
+		if (!Net_LibWarmUp2_GroupsIcons[Net_LibWarmUp2_CurrentGroup].existskey(I)) continue;
+		declare Icon = Net_LibWarmUp2_GroupsIcons[Net_LibWarmUp2_CurrentGroup][I];
+		
+		declare Quad_Icon 		<=> (Frames_Slot[J].GetFirstChild("Quad_Icon")			as CMlQuad);
+		declare Label_Slot		<=> (Frames_Slot[J].GetFirstChild("Label_Slot")			as CMlLabel);
+		declare Label_EmptySlot	<=> (Frames_Slot[J].GetFirstChild("Label_EmptySlot")	as CMlLabel);
+		
+		if (Icon != "") {
+			if (!Quad_Icon.Visible) {
+				Quad_Icon.Show();
+				Label_Slot.RelativePosition.X = {{{LabelPosX}}};
+				Label_EmptySlot.RelativePosition.X = {{{LabelPosX}}};
+				Label_Slot.Size.X = {{{LabelWidth}}};
+				Label_EmptySlot.Size.X = {{{LabelWidth}}};
+				Label_Slot.RelativeScale = 0.9;
+				Label_EmptySlot.RelativeScale = 0.9;
+			}
+			Quad_Icon.ChangeImageUrl(Icon);
+		} else {
+			if (Quad_Icon.Visible) {
+				Quad_Icon.Hide();
+				Label_Slot.RelativePosition.X = 0.;
+				Label_EmptySlot.RelativePosition.X = 0.;
+				Label_Slot.Size.X = {{{SlotWidth}}};
+				Label_EmptySlot.Size.X = {{{SlotWidth}}};
+				Label_Slot.RelativeScale = 1.;
+				Label_EmptySlot.RelativeScale = 1.;
+			}
+		}
+		
+		J += 1;
+	}
+}
+
+Void ToggleReadyDisplay(CMlFrame _Frame, Boolean _IsReady) {
+	declare Quad_SlotReady		<=> (_Frame.GetFirstChild("Quad_SlotReady")		as CMlQuad);
+	declare Quad_SlotNotReady	<=> (_Frame.GetFirstChild("Quad_SlotNotReady")	as CMlQuad);
+	
+	if (_IsReady && !Quad_SlotReady.Visible) {
+		Quad_SlotReady.Show();
+		Quad_SlotNotReady.Hide();
+	} else if (!_IsReady && !Quad_SlotNotReady.Visible) {
+		Quad_SlotNotReady.Show();
+		Quad_SlotReady.Hide();
+	}
+}
+
+Void SetTextEmptySlot(CMlLabel _EmptySlot, Integer _Slot) {
+	declare SlotText = TL::Compose("%1 #%2", _("|Warm up|Click to take the slot"), TL::ToText(_Slot));
+	switch (_Slot) {
+		case 1 : SlotText = _("First (Press 1)");
+		case 2 : SlotText = _("Second (Press 2)");
+		case 3 : SlotText = _("Third (Press 3)");
+		case 4 : SlotText = _("Fourth (Press 4)");
+		case 5 : SlotText = _("Fifth (Press 5)");
+		case 6 : SlotText = _("Sixth (Press 6)");
+		case 7 : SlotText = _("Seventh (Press 7)");
+		case 8 : SlotText = _("Eighth (Press 8)");
+		case 9 : SlotText = _("Ninth (Press 9)");
+	}
+	_EmptySlot.SetText(SlotText);
+}
+
+Void UpdateView(Text _GroupName, Integer _PageNum) {
+	declare netread Text[Integer][Text] Net_LibWarmUp2_Groups for Teams[0];
+	
+	if (!Net_LibWarmUp2_Groups.existskey(_GroupName)) return;
+	
+	declare ItemsTotal = Net_LibWarmUp2_Groups[_GroupName].count;
+	G_PageMin = 1;
+	G_PageMax = ItemsTotal / G_ItemPerPage;
+	if (ItemsTotal % G_ItemPerPage != 0) G_PageMax += 1;
+	if (G_PageCurrent > G_PageMax) G_PageCurrent = G_PageMax;
+	else if (G_PageCurrent < G_PageMin) G_PageCurrent = G_PageMin;
+	declare ItemsNb = G_ItemPerPage;
+	if (G_PageCurrent == G_PageMax) ItemsNb = ItemsTotal % G_ItemPerPage;
+	if (ItemsNb == 0) ItemsNb = G_ItemPerPage;
+	
+	if (G_PageMax == 1) {
+		Button_PagerPrev.Hide();
+		Button_PagerNext.Hide();
+		Button_PagerPrevOff.Hide();
+		Button_PagerNextOff.Hide();
+	} else {
+		Button_PagerPrev.Show();
+		Button_PagerNext.Show();
+		if (G_PageCurrent == G_PageMin) {
+			Button_PagerPrev.Hide();
+			Button_PagerNext.Show();
+			Button_PagerPrevOff.Show();
+			Button_PagerNextOff.Hide();
+		} else if (G_PageCurrent == G_PageMax) {
+			Button_PagerPrev.Show();
+			Button_PagerNext.Hide();
+			Button_PagerPrevOff.Hide();
+			Button_PagerNextOff.Show();
+		} else {
+			Button_PagerPrev.Show();
+			Button_PagerNext.Show();
+			Button_PagerPrevOff.Hide();
+			Button_PagerNextOff.Hide();
+		}
+	}
+	
+	UpdateSlotsPosition(ItemsNb);
+	UpdateIcons();
+	
+	declare StartIndex = ((G_PageCurrent - 1) * G_ItemPerPage) + 1;
+	declare EndIndex = StartIndex + G_ItemPerPage - 1;
+	declare J = 1;
+	
+	for (I, StartIndex, EndIndex) {
+		if (!Frames_Slot.existskey(J)) continue;
+		declare Label_Slot		<=> (Frames_Slot[J].GetFirstChild("Label_Slot")			as CMlLabel);
+		declare Label_EmptySlot	<=> (Frames_Slot[J].GetFirstChild("Label_EmptySlot")	as CMlLabel);
+		declare Login for Label_Slot = "";
+		
+		if (Net_LibWarmUp2_Groups[_GroupName].existskey(I)) {
+			Login = Net_LibWarmUp2_Groups[_GroupName][I];
+			//declare Player <=> FindPlayerFromLogin(Login);
+			
+			declare Player <=> InputPlayer;
+			Player = Null;
+			foreach (TmpPlayer in Players) {
+				if (TmpPlayer.User.Login == Login) {
+					Player <=> TmpPlayer;
+					break;
+				}
+			}
+			
+			if (Player != Null) {
+				Label_Slot.SetText(Player.User.Name);
+				if (Label_EmptySlot.Visible) Label_EmptySlot.Hide();
+				declare netread Boolean Net_LibWarmUp2_IsReadyServer for Player;
+				ToggleReadyDisplay(Frames_Slot[J], Net_LibWarmUp2_IsReadyServer);
+			} else {
+				Label_Slot.SetText(Login);
+				if (Login == "") {
+					SetTextEmptySlot(Label_EmptySlot, I);
+					if (!Label_EmptySlot.Visible) Label_EmptySlot.Show();
+				} else {
+					if (Label_EmptySlot.Visible) Label_EmptySlot.Hide();
+				}
+				ToggleReadyDisplay(Frames_Slot[J], False);
+			}
+		} else {
+			Label_Slot.SetText("");
+			SetTextEmptySlot(Label_EmptySlot, I);
+			if (!Label_EmptySlot.Visible) Label_EmptySlot.Show();
+			ToggleReadyDisplay(Frames_Slot[J], False);
+		}
+		J += 1;
+	}
+}
+
+Void ToggleWarmUpDisplay() {
+	if (IsSpectatorMode) {
+		if (Frame_WarmUp.Visible) Frame_WarmUp.Hide();
+	} else {
+		declare netread Text	Net_LibWarmUp2_CurrentGroup		for UI;
+		declare netread Text[]	Net_LibWarmUp2_GroupsDisabled	for Teams[0];
+		
+		if (Net_LibWarmUp2_GroupsDisabled.exists(Net_LibWarmUp2_CurrentGroup)) {
+			if (Frame_WarmUp.Visible) Frame_WarmUp.Hide();
+		} else {
+			if (!Frame_WarmUp.Visible) Frame_WarmUp.Show();
+		}
+	}
+}
+
+main() {
+	declare Frame_Order		<=> (Page.GetFirstChild("Frame_Order")	as CMlFrame);
+	foreach (Control in Frame_Order.Controls) {
+		declare Frame_Slot <=> (Control as CMlFrame);
+		if (Frame_Slot == Null) continue;
+		declare Key = TL::ToInteger(Frame_Slot.ControlId);
+		Frames_Slot[Key] = Frame_Slot;
+	}
+	Frame_WarmUp		<=> (Page.GetFirstChild("Frame_WarmUp")			as CMlFrame);
+	Button_PagerPrev	<=> (Page.GetFirstChild("Button_PagerPrev")		as CMlQuad);
+	Button_PagerNext	<=> (Page.GetFirstChild("Button_PagerNext")		as CMlQuad);
+	Button_PagerPrevOff	<=> (Page.GetFirstChild("Button_PagerPrevOff")	as CMlQuad);
+	Button_PagerNextOff	<=> (Page.GetFirstChild("Button_PagerNextOff")	as CMlQuad);
+	declare Frame_ClanSelection	<=> (Page.GetFirstChild("Frame_ClanSelection")	as CMlFrame);
+	declare Label_JoinClan1	<=> (Page.GetFirstChild("Label_JoinClan1")	as CMlLabel);
+	declare Label_JoinClan2	<=> (Page.GetFirstChild("Label_JoinClan2")	as CMlLabel);
+	declare Button_JoinClan1	<=> (Page.GetFirstChild("Button_JoinClan1")	as CMlQuad);
+	declare Button_JoinClan2	<=> (Page.GetFirstChild("Button_JoinClan2")	as CMlQuad);
+	
+	declare netread Integer Net_LibWarmUp2_SynchroServer		for Teams[0];
+	declare netread Boolean	Net_LibWarmUp2_DisplayClanSelection	for Teams[0];
+	declare netread Integer	Net_LibWarmUp2_GroupsUpdate			for Teams[0];
+	declare netread Text	Net_LibWarmUp2_CurrentGroup			for UI;
+	declare netread Integer	Net_LibWarmUp2_IconUpdate			for Teams[0];
+	declare netread Vec2	Net_LibWarmUp2_LayerPosition		for Teams[0];
+	declare netread Integer	Net_LibWarmUp2_GroupsDisabledUpdate	for Teams[0];
+	declare netread Text[]	Net_LibWarmUp2_GroupsDisabled		for Teams[0];
+	
+	declare netwrite Integer Net_LibWarmUp2_SynchroClient for UI;
+	declare netwrite Integer Net_LibWarmUp2_SlotUpdate for UI;
+	declare netwrite Integer Net_LibWarmUp2_Slot for UI;
+	declare netwrite Boolean Net_LibWarmUp2_IsReadyClient for UI;
+	
+	Net_LibWarmUp2_SynchroClient = -1;
+	Net_LibWarmUp2_SlotUpdate = 0;
+	Net_LibWarmUp2_Slot = 0;
+	Net_LibWarmUp2_IsReadyClient = False;
+	
+	G_PageMin = 1;
+	G_PageMax = 1;
+	G_PageCurrent = 1;
+	G_ItemPerPage = Frames_Slot.count;
+	
+	declare NextUpdate = 0;
+	declare IsReady = False;
+	
+	declare PrevDisplayClanSelection = False;
+	declare PrevGroupsUpdate = 0;
+	declare PrevGroup = "";
+	declare PrevClan1Name = "";
+	declare PrevClan2Name = "";
+	declare PrevClan1Color = <0., 0., 0.>;
+	declare PrevClan2Color = <0., 0., 0.>;
+	declare PrevIsSpectatorMode = False;
+	declare PrevIconUpdate = 0;
+	declare PrevLayerPosition = {{{C_LibWarmUp2_LayerPosition}}};
+	declare PrevGroupsDisabledUpdate = 0;
+	
+	while (True) {
+		yield;
+		
+		if (InputPlayer == Null) continue;
+		if (!PageIsVisible) continue;
+		
+		if (Now >= NextUpdate) {
+			NextUpdate = Now + C_UpdateInterval;
+			
+			if (PrevIsSpectatorMode != IsSpectatorMode) {
+				PrevIsSpectatorMode = IsSpectatorMode;
+				
+				ToggleWarmUpDisplay();
+			}
+			
+			if (Net_LibWarmUp2_SynchroClient != Net_LibWarmUp2_SynchroServer) {
+				Net_LibWarmUp2_SynchroClient = Net_LibWarmUp2_SynchroServer;
+				
+				Net_LibWarmUp2_IsReadyClient = False;
+				IsReady = False;
+			}
+			
+			if (PrevDisplayClanSelection != Net_LibWarmUp2_DisplayClanSelection) {
+				PrevDisplayClanSelection = Net_LibWarmUp2_DisplayClanSelection;
+				Frame_ClanSelection.Visible = PrevDisplayClanSelection;
+			}
+			
+			if (PrevGroupsUpdate != Net_LibWarmUp2_GroupsUpdate) {
+				PrevGroupsUpdate = Net_LibWarmUp2_GroupsUpdate;
+				
+				UpdateView(Net_LibWarmUp2_CurrentGroup, G_PageCurrent);
+			}
+			
+			if (PrevGroup != Net_LibWarmUp2_CurrentGroup) {
+				PrevGroup = Net_LibWarmUp2_CurrentGroup;
+				
+				G_PageCurrent = 1;
+				UpdateView(Net_LibWarmUp2_CurrentGroup, G_PageCurrent);
+				ToggleWarmUpDisplay();
+			}
+			
+			if (PrevIconUpdate != Net_LibWarmUp2_IconUpdate) {
+				PrevIconUpdate = Net_LibWarmUp2_IconUpdate;
+				UpdateIcons();
+			}
+			
+			if (PrevClan1Name != Teams[0].Name) {
+				PrevClan1Name = Teams[0].Name;
+				Label_JoinClan1.SetText("(F3) Join "^PrevClan1Name);
+			}
+			if (PrevClan2Name != Teams[1].Name) {
+				PrevClan2Name = Teams[1].Name;
+				Label_JoinClan2.SetText("(F4) Join "^PrevClan2Name);
+			}
+			
+			if (PrevClan1Color != Teams[0].ColorPrimary) {
+				PrevClan1Color = Teams[0].ColorPrimary;
+				Button_JoinClan1.Colorize = PrevClan1Color;
+			}
+			if (PrevClan2Color != Teams[1].ColorPrimary) {
+				PrevClan2Color = Teams[1].ColorPrimary;
+				Button_JoinClan2.Colorize = PrevClan2Color;
+			}
+			
+			if (PrevLayerPosition != Net_LibWarmUp2_LayerPosition) {
+				PrevLayerPosition = Net_LibWarmUp2_LayerPosition;
+				
+				Frame_WarmUp.RelativePosition.X = PrevLayerPosition.X;
+				Frame_WarmUp.PosnY = PrevLayerPosition.Y;
+			}
+			
+			if (PrevGroupsDisabledUpdate != Net_LibWarmUp2_GroupsDisabledUpdate) {
+				PrevGroupsDisabledUpdate = Net_LibWarmUp2_GroupsDisabledUpdate;
+				
+				ToggleWarmUpDisplay();
+			}
+			
+			foreach (Player in Players) {
+				declare netread Boolean Net_LibWarmUp2_IsReadyServer for Player;
+				declare Prev_LibWarmUp2_IsReadyServer for Player = False;
+				if (Prev_LibWarmUp2_IsReadyServer != Net_LibWarmUp2_IsReadyServer) {
+					Prev_LibWarmUp2_IsReadyServer = Net_LibWarmUp2_IsReadyServer;
+					
+					declare netread Text[Integer][Text] Net_LibWarmUp2_Groups for Teams[0];
+					if (
+						Net_LibWarmUp2_Groups.existskey(Net_LibWarmUp2_CurrentGroup) 
+						&& Net_LibWarmUp2_Groups[Net_LibWarmUp2_CurrentGroup].exists(Player.Login)
+					) {
+						UpdateView(Net_LibWarmUp2_CurrentGroup, G_PageCurrent);
+					}
+				}
+			}
+		}
+		
+		foreach (Event in PendingEvents) {
+			switch (Event.Type) {
+				case CMlEvent::Type::MouseClick: {
+					switch (Event.ControlId) {
+						case "Button_JoinClan1": {
+							JoinTeam1();
+						}
+						case "Button_JoinClan2": {
+							JoinTeam2();
+						}
+						case "Button_PagerNext": {
+							if (G_PageCurrent + 1 <= G_PageMax) G_PageCurrent += 1;
+							UpdateView(Net_LibWarmUp2_CurrentGroup, G_PageCurrent);
+						}
+						case "Button_PagerPrev": {
+							if (G_PageCurrent - 1 >= G_PageMin) G_PageCurrent -= 1;
+							UpdateView(Net_LibWarmUp2_CurrentGroup, G_PageCurrent);
+						}
+						case "Button_Ready": {
+							IsReady = !IsReady;
+							Net_LibWarmUp2_IsReadyClient = IsReady;
+						}
+						default: {
+							if (Event.Control.HasClass("Quad_Slot")) {
+								Net_LibWarmUp2_SlotUpdate = Now;
+								Net_LibWarmUp2_Slot = TL::ToInteger(Event.ControlId) + ((G_PageCurrent - 1) * G_ItemPerPage);
+							}
+						}
+					}
+				}
+				case CMlEvent::Type::KeyPress: {
+					if (Event.KeyName == "F3") {
+						JoinTeam1();
+					} else if (Event.KeyName == "F4") {
+						JoinTeam2();
+					} else if (Event.KeyName == "F6") {
+						IsReady = !IsReady;
+						Net_LibWarmUp2_IsReadyClient = IsReady;
+					} else if (Event.KeyName == "1" || Event.KeyName == "Numpad1") {
+						Net_LibWarmUp2_SlotUpdate = Now;
+						Net_LibWarmUp2_Slot = 1;
+					} else if (Event.KeyName == "2" || Event.KeyName == "Numpad2") {
+						Net_LibWarmUp2_SlotUpdate = Now;
+						Net_LibWarmUp2_Slot = 2;
+					} else if (Event.KeyName == "3" || Event.KeyName == "Numpad3") {
+						Net_LibWarmUp2_SlotUpdate = Now;
+						Net_LibWarmUp2_Slot = 3;
+					} else if (Event.KeyName == "4" || Event.KeyName == "Numpad4") {
+						Net_LibWarmUp2_SlotUpdate = Now;
+						Net_LibWarmUp2_Slot = 4;
+					} else if (Event.KeyName == "5" || Event.KeyName == "Numpad5") {
+						Net_LibWarmUp2_SlotUpdate = Now;
+						Net_LibWarmUp2_Slot = 5;
+					} else if (Event.KeyName == "6" || Event.KeyName == "Numpad6") {
+						Net_LibWarmUp2_SlotUpdate = Now;
+						Net_LibWarmUp2_Slot = 6;
+					} else if (Event.KeyName == "7" || Event.KeyName == "Numpad7") {
+						Net_LibWarmUp2_SlotUpdate = Now;
+						Net_LibWarmUp2_Slot = 7;
+					} else if (Event.KeyName == "8" || Event.KeyName == "Numpad8") {
+						Net_LibWarmUp2_SlotUpdate = Now;
+						Net_LibWarmUp2_Slot = 8;
+					} else if (Event.KeyName == "9" || Event.KeyName == "Numpad9") {
+						Net_LibWarmUp2_SlotUpdate = Now;
+						Net_LibWarmUp2_Slot = 9;
+					} else if (Event.KeyName == "0" || Event.KeyName == "Numpad0") {
+						Net_LibWarmUp2_SlotUpdate = Now;
+						Net_LibWarmUp2_Slot = -1;
+					}
+				}
+			}
+		}
+	}
+}
+--></script>
+</manialink>
+""";
+}
+
+// ---------------------------------- //
+// Send the players orders to the UI
+Void Private_SendGroupsToUI() {
+	declare netwrite Text[Integer][Text] Net_LibWarmUp2_Groups for Teams[0];
+	declare netwrite Integer Net_LibWarmUp2_GroupsUpdate for Teams[0];
+	
+	Net_LibWarmUp2_Groups = G_LibWarmUp2_GroupsLogins;
+	Net_LibWarmUp2_GroupsUpdate = Now;
+}
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Return the version number of the script
+ *
+ *	@return		The version number of the script
+ */
+Text GetScriptVersion() {
+	return Version;
+}
+
+// ---------------------------------- //
+/** Return the name of the script
+ *
+ *	@return		The name of the script
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+// ---------------------------------- //
+/// Unload the library
+Void Unload() {
+	if (UIManager.UILayers.existskey(G_LibWarmUp2_LayerWarmUpId)) {
+		UIManager.UILayerDestroy(UIManager.UILayers[G_LibWarmUp2_LayerWarmUpId]);
+		G_LibWarmUp2_LayerWarmUpId = NullId;
+	}
+	
+	declare netwrite Text[Integer][Text] Net_LibWarmUp2_Groups for Teams[0];
+	declare netwrite Integer Net_LibWarmUp2_GroupsUpdate for Teams[0];
+	declare netwrite Integer Net_LibWarmUp2_SynchroServer for Teams[0];
+	declare netwrite Boolean Net_LibWarmUp2_DisplayClanSelection for Teams[0];
+	declare netwrite Integer Net_LibWarmUp2_GroupsDisabledUpdate for Teams[0];
+	declare netwrite Text[] Net_LibWarmUp2_GroupsDisabled for Teams[0];
+	Net_LibWarmUp2_Groups = Text[Integer][Text];
+	Net_LibWarmUp2_GroupsUpdate = 0;
+	Net_LibWarmUp2_SynchroServer = Private_SynchroServer();
+	Net_LibWarmUp2_DisplayClanSelection = False;
+	Net_LibWarmUp2_GroupsDisabledUpdate = -1;
+	Net_LibWarmUp2_GroupsDisabled = Text[];
+	
+	foreach (Player in AllPlayers) {
+		declare netwrite Net_LibWarmUp2_IsReadyServer for Player = False;
+		Net_LibWarmUp2_IsReadyServer = False;
+		
+		declare LibWarmUp2_CurrentGroup for Player = "";
+		LibWarmUp2_CurrentGroup = "";
+		
+		declare UI <=> UIManager.GetUI(Player);
+		if (UI != Null) {
+			declare netwrite Text Net_LibWarmUp2_CurrentGroup for UI;
+			Net_LibWarmUp2_CurrentGroup = "";
+		}
+	}
+	
+	G_LibWarmUp2_GroupsIds.clear();
+	G_LibWarmUp2_GroupsLogins.clear();
+	G_LibWarmUp2_GroupsIcons.clear();
+	G_LibWarmUp2_Updated = True;
+	G_LibWarmUp2_GroupsDisabled.clear();
+	G_LibWarmUp2_GroupsTimers.clear();
+	G_LibWarmUp2_GroupsCurrentTimer.clear();
+	G_LibWarmUp2_CurrentTimer = -1;
+	G_LibWarmUp2_SavedTimer.clear();
+	
+	declare LibXmlRpc_LibWarmUp2Loaded for XmlRpc = False;
+	LibXmlRpc_LibWarmUp2Loaded = False;
+}
+
+// ---------------------------------- //
+/// Load the library
+Void Load() {
+	Unload();
+	
+	// Create and assign the layer
+	declare LayerWarmUp <=> UIManager.UILayerCreate();
+	LayerWarmUp.ManialinkPage = Private_CreateLayerWarmUp();
+	G_LibWarmUp2_LayerWarmUpId = LayerWarmUp.Id;
+	
+	declare netwrite Net_LibWarmUp2_LayerPosition for Teams[0] = C_LibWarmUp2_LayerPosition;
+	Net_LibWarmUp2_LayerPosition = C_LibWarmUp2_LayerPosition;
+	
+	declare LibXmlRpc_LibWarmUp2Loaded for XmlRpc = False;
+	LibXmlRpc_LibWarmUp2Loaded = True;
+}
+
+// ---------------------------------- //
+/** Enable the order selection for a group
+ *
+ *	@param	_GroupName		The name of the group to enable
+ */
+Void Enable(Text _GroupName) {
+	if (!G_LibWarmUp2_GroupsDisabled.exists(_GroupName)) return;
+	
+	declare Removed = G_LibWarmUp2_GroupsDisabled.remove(_GroupName);
+	
+	declare netwrite Integer Net_LibWarmUp2_GroupsDisabledUpdate for Teams[0];
+	declare netwrite Text[] Net_LibWarmUp2_GroupsDisabled for Teams[0];
+	Net_LibWarmUp2_GroupsDisabledUpdate = Now;
+	Net_LibWarmUp2_GroupsDisabled = G_LibWarmUp2_GroupsDisabled;
+}
+
+// ---------------------------------- //
+/** Disable the order selection for a group
+ *
+ *	@param	_GroupName		The name of the group to disable
+ */
+Void Disable(Text _GroupName) {
+	if (G_LibWarmUp2_GroupsDisabled.exists(_GroupName)) return;
+	
+	G_LibWarmUp2_GroupsDisabled.add(_GroupName);
+	
+	declare netwrite Integer Net_LibWarmUp2_GroupsDisabledUpdate for Teams[0];
+	declare netwrite Text[] Net_LibWarmUp2_GroupsDisabled for Teams[0];
+	Net_LibWarmUp2_GroupsDisabledUpdate = Now;
+	Net_LibWarmUp2_GroupsDisabled = G_LibWarmUp2_GroupsDisabled;
+}
+
+// ---------------------------------- //
+/// Rebuild the warm up UI
+Void RebuildUI() {
+	if (!UIManager.UILayers.existskey(G_LibWarmUp2_LayerWarmUpId)) return;
+	UIManager.UILayers[G_LibWarmUp2_LayerWarmUpId].ManialinkPage = Private_CreateLayerWarmUp();
+}
+
+// ---------------------------------- //
+/** Display the clan selection buttons
+ *
+ *	@param	_Display	The new display status of the clan selection buttons
+ */
+Void DisplayClanSelection(Boolean _Display) {
+	declare netwrite Net_LibWarmUp2_DisplayClanSelection for Teams[0] = False;
+	Net_LibWarmUp2_DisplayClanSelection = _Display;
+}
+
+// ---------------------------------- //
+/** Set the position of the warm up layer
+ *
+ *	@param	_Pos	The new position
+ */
+Void SetLayerPosition(Vec2 _Pos) {
+	declare netwrite Net_LibWarmUp2_LayerPosition for Teams[0] = C_LibWarmUp2_LayerPosition;
+	Net_LibWarmUp2_LayerPosition = _Pos;
+}
+
+// ---------------------------------- //
+/** Display an icon in one slot of a group
+ *
+ *	@param	_GroupName		The name of the group to set
+ *	@param	_Slot			The number of the slot to set
+ *	@param	_Icon			The path to the icon to display
+ */
+Void SetSlotIcon(Text _GroupName, Integer _Slot, Text _Icon) {
+	if (!G_LibWarmUp2_GroupsIcons.existskey(_GroupName)) return;
+	if (!G_LibWarmUp2_GroupsIcons[_GroupName].existskey(_Slot)) return;
+	
+	G_LibWarmUp2_GroupsIcons[_GroupName][_Slot] = _Icon;
+	
+	declare netwrite Integer Net_LibWarmUp2_IconUpdate for Teams[0];
+	declare netwrite Text[Integer][Text] Net_LibWarmUp2_GroupsIcons for Teams[0];
+	Net_LibWarmUp2_IconUpdate = Now;
+	Net_LibWarmUp2_GroupsIcons = G_LibWarmUp2_GroupsIcons;
+}
+
+// ---------------------------------- //
+/** Display an icon in all the slots of a group
+ *
+ *	@param	_GroupName		The name of the group to set
+ *	@param	_Icon			The path to the icon to display
+ */
+Void SetAllSlotsIcons(Text _GroupName, Text _Icon) {
+	if (!G_LibWarmUp2_GroupsIcons.existskey(_GroupName)) return;
+	
+	declare Group = G_LibWarmUp2_GroupsIcons[_GroupName];
+	foreach (Slot => Icon in Group) {
+		G_LibWarmUp2_GroupsIcons[_GroupName][Slot] = _Icon;
+	}
+	
+	declare netwrite Integer Net_LibWarmUp2_IconUpdate for Teams[0];
+	declare netwrite Text[Integer][Text] Net_LibWarmUp2_GroupsIcons for Teams[0];
+	Net_LibWarmUp2_IconUpdate = Now;
+	Net_LibWarmUp2_GroupsIcons = G_LibWarmUp2_GroupsIcons;
+}
+
+// ---------------------------------- //
+/** Check if the order or ready state was updated
+ *	since the last time we called thius function
+ *
+ *	@return		True if it was updated, false otherwise
+ */
+Boolean Updated() {
+	if (!G_LibWarmUp2_Updated) return False;
+	
+	G_LibWarmUp2_Updated = False;
+	return True;
+}
+
+// ---------------------------------- //
+/** Check if a player is ready
+ *
+ *	@param	_Player		The player to check
+ *
+ *	@return		True if the player is ready, false otherwise
+ */
+Boolean IsReady(CPlayer _Player) {
+	if (_Player == Null) return False;
+	if (_Player.User.IsFakeUser) return True;
+	
+	declare UI <=> UIManager.GetUI(_Player);
+	if (UI == Null) return True;
+	
+	declare netwrite Integer Net_LibWarmUp2_SynchroServer for Teams[0];
+	declare netread Integer Net_LibWarmUp2_SynchroClient for UI;
+	declare netread Boolean Net_LibWarmUp2_IsReadyClient for UI;
+	
+	if (Net_LibWarmUp2_SynchroServer == Net_LibWarmUp2_SynchroClient && Net_LibWarmUp2_IsReadyClient) return True;
+	
+	return False;
+}
+
+// ---------------------------------- //
+/** Check if a player is ready
+ *
+ *	@param	_PlayerId		The id of the player to check
+ *
+ *	@return		True if the player is ready, false otherwise
+ */
+Boolean IsReady(Ident _PlayerId) {
+	if (Players.existskey(_PlayerId)) return IsReady(Players[_PlayerId]);
+	
+	return False;
+}
+
+// ---------------------------------- //
+/** Move a player in a group
+ *
+ *	@param	_Player		The player to remove
+ *	@param	_GroupName	The group where to move the player
+ */
+Void SetPlayerGroup(CPlayer _Player, Text _GroupName) {
+	if (_Player == Null) return;
+	if (!G_LibWarmUp2_GroupsIds.existskey(_GroupName)) return;
+	
+	declare Text LibWarmUp2_CurrentGroup for _Player;
+	
+	if (LibWarmUp2_CurrentGroup == _GroupName) return;
+	
+	// Remove the player from his old group
+	if (
+		LibWarmUp2_CurrentGroup != ""
+		&& G_LibWarmUp2_GroupsIds.existskey(LibWarmUp2_CurrentGroup)
+		&& G_LibWarmUp2_GroupsIds[LibWarmUp2_CurrentGroup].exists(_Player.Id)
+	) {
+		declare Slot = G_LibWarmUp2_GroupsIds[LibWarmUp2_CurrentGroup].keyof(_Player.Id);
+		G_LibWarmUp2_GroupsIds[LibWarmUp2_CurrentGroup][Slot] = NullId;
+		G_LibWarmUp2_GroupsLogins[LibWarmUp2_CurrentGroup][Slot] = "";
+	}
+	
+	LibWarmUp2_CurrentGroup = _GroupName;
+	
+	declare UI <=> UIManager.GetUI(_Player);
+	if (UI != Null) {
+		declare netwrite Text Net_LibWarmUp2_CurrentGroup for UI;
+		Net_LibWarmUp2_CurrentGroup = LibWarmUp2_CurrentGroup;
+	}
+	
+	G_LibWarmUp2_Updated = True;
+	Private_SendGroupsToUI();
+}
+
+// ---------------------------------- //
+/** Remove a player from his current group
+ *
+ *	@param	The player to remove
+ */
+Void UnsetPlayerGroup(CPlayer _Player) {
+	declare Text LibWarmUp2_CurrentGroup for _Player;
+	
+	// Remove the player from his old group
+	if (
+		LibWarmUp2_CurrentGroup != ""
+		&& G_LibWarmUp2_GroupsIds.existskey(LibWarmUp2_CurrentGroup)
+		&& G_LibWarmUp2_GroupsIds[LibWarmUp2_CurrentGroup].exists(_Player.Id)
+	) {
+		declare Slot = G_LibWarmUp2_GroupsIds[LibWarmUp2_CurrentGroup].keyof(_Player.Id);
+		G_LibWarmUp2_GroupsIds[LibWarmUp2_CurrentGroup][Slot] = NullId;
+		G_LibWarmUp2_GroupsLogins[LibWarmUp2_CurrentGroup][Slot] = "";
+	}
+	
+	LibWarmUp2_CurrentGroup = "";
+	
+	declare UI <=> UIManager.GetUI(_Player);
+	if (UI != Null) {
+		declare netwrite Text Net_LibWarmUp2_CurrentGroup for UI;
+		Net_LibWarmUp2_CurrentGroup = LibWarmUp2_CurrentGroup;
+	}
+	
+	G_LibWarmUp2_Updated = True;
+	Private_SendGroupsToUI();
+}
+
+// ---------------------------------- //
+/** Get in which group a player is
+ *
+ *	@param	_Player		The player to check
+ *
+ *	@return		The name of the group if the player has one, an empty Text otherwise
+ */
+Text GetPlayerGroup(CPlayer _Player) {
+	declare Text LibWarmUp2_CurrentGroup for _Player;
+	return LibWarmUp2_CurrentGroup;
+}
+
+// ---------------------------------- //
+/** Set a player in a slot of his group
+ *	If the set is not forced the player can take the slot
+ *	only if it's empty or if the player in the slot is not ready.
+ *	If the player in the slot is ready the other player must already
+ *	have a slot in the group to wamp with him.
+ *
+ *	@param	_Player		The player to set
+ *	@param	_Slot		The slot for this player
+ *	@param	_Forced		If False, the slot must meet certain conditions before the player can take it
+ */
+Void SetPlayerSlot(CPlayer _Player, Integer _Slot, Boolean _Forced) {
+	if (_Player == Null) return;
+	declare Text LibWarmUp2_CurrentGroup for _Player;
+	if (!G_LibWarmUp2_GroupsIds.existskey(LibWarmUp2_CurrentGroup)) return;
+	if (!G_LibWarmUp2_GroupsIds[LibWarmUp2_CurrentGroup].existskey(_Slot)) return;
+	
+	// Check if the player was already in a slot
+	declare PrevSlot = -1;
+	if (G_LibWarmUp2_GroupsIds[LibWarmUp2_CurrentGroup].exists(_Player.Id)) {
+		PrevSlot = G_LibWarmUp2_GroupsIds[LibWarmUp2_CurrentGroup].keyof(_Player.Id);
+	}
+	// Check if the new slot is occupied
+	declare OtherId = NullId;
+	declare OtherLogin = "";
+	if (G_LibWarmUp2_GroupsIds[LibWarmUp2_CurrentGroup][_Slot] != NullId) {
+		OtherId = G_LibWarmUp2_GroupsIds[LibWarmUp2_CurrentGroup][_Slot];
+		OtherLogin = G_LibWarmUp2_GroupsLogins[LibWarmUp2_CurrentGroup][_Slot];
+	}
+	
+	if (!_Forced && OtherId != NullId) {
+		if (PrevSlot <= 0 && IsReady(OtherId)) return;
+	}
+	
+	// Update the previous slot of the player
+	if (PrevSlot > 0) {
+		G_LibWarmUp2_GroupsIds[LibWarmUp2_CurrentGroup][PrevSlot] = OtherId;
+		G_LibWarmUp2_GroupsLogins[LibWarmUp2_CurrentGroup][PrevSlot] = OtherLogin;
+	}
+	
+	G_LibWarmUp2_GroupsIds[LibWarmUp2_CurrentGroup][_Slot] = _Player.Id;
+	G_LibWarmUp2_GroupsLogins[LibWarmUp2_CurrentGroup][_Slot] = _Player.User.Login;
+	
+	G_LibWarmUp2_Updated = True;
+	Private_SendGroupsToUI();
+}
+
+// ---------------------------------- //
+// Overload of the SetPlayerSlot function
+Void SetPlayerSlot(CPlayer _Player, Integer _Slot) {
+	SetPlayerSlot(_Player, _Slot, False);
+}
+
+// ---------------------------------- //
+/** Get the current slot of a player
+ *
+ *	@param	_Player		The player to check
+ *
+ *	@return		The slot of the player if he has one, -1 otherwise
+ */
+Integer GetPlayerSlot(CPlayer _Player) {
+	if (_Player == Null) return -1;
+	declare Text LibWarmUp2_CurrentGroup for _Player;
+	if (!G_LibWarmUp2_GroupsIds.existskey(LibWarmUp2_CurrentGroup)) return -1;
+	if (!G_LibWarmUp2_GroupsIds[LibWarmUp2_CurrentGroup].exists(_Player.Id)) return -1;
+	
+	return G_LibWarmUp2_GroupsIds[LibWarmUp2_CurrentGroup].keyof(_Player.Id);
+}
+
+// ---------------------------------- //
+/** Unset the slot of a player
+ *
+ *	@param	_Player		The player to unset
+ */
+Void UnsetPlayerSlot(CPlayer _Player) {
+	if (_Player == Null) return;
+	declare Text LibWarmUp2_CurrentGroup for _Player;
+	if (!G_LibWarmUp2_GroupsIds.existskey(LibWarmUp2_CurrentGroup)) return;
+	if (!G_LibWarmUp2_GroupsIds[LibWarmUp2_CurrentGroup].exists(_Player.Id)) return;
+	
+	declare Slot = G_LibWarmUp2_GroupsIds[LibWarmUp2_CurrentGroup].keyof(_Player.Id);
+	G_LibWarmUp2_GroupsIds[LibWarmUp2_CurrentGroup][Slot] = NullId;
+	G_LibWarmUp2_GroupsLogins[LibWarmUp2_CurrentGroup][Slot] = "";
+	
+	G_LibWarmUp2_Updated = True;
+	Private_SendGroupsToUI();
+}
+
+// ---------------------------------- //
+/** Get the content of a slot
+ *
+ *	@param	_GroupName		The group to check
+ *	@param	_Slot			The slot to check
+ *
+ *	@return		The id of the player in the slot if there is one, NullId otherwise
+ */
+Ident GetSlot(Text _GroupName, Integer _Slot) {
+	if (!G_LibWarmUp2_GroupsIds.existskey(_GroupName)) return NullId;
+	if (!G_LibWarmUp2_GroupsIds[_GroupName].existskey(_Slot)) return NullId;
+	
+	return G_LibWarmUp2_GroupsIds[_GroupName][_Slot];
+}
+
+// ---------------------------------- //
+/** Unset a player from a slot
+ *
+ *	@param	_GroupName	The name of the group where the slot must be unset
+ *	@param	_Slot		The slot to unset
+ */
+Void UnsetSlot(Text _GroupName, Integer _Slot) {
+	if (!G_LibWarmUp2_GroupsIds.existskey(_GroupName)) return;
+	if (!G_LibWarmUp2_GroupsIds[_GroupName].existskey(_Slot)) return;
+	
+	G_LibWarmUp2_GroupsIds[_GroupName][_Slot] = NullId;
+	G_LibWarmUp2_GroupsLogins[_GroupName][_Slot] = "";
+	
+	G_LibWarmUp2_Updated = True;
+	Private_SendGroupsToUI();
+}
+
+// ---------------------------------- //
+/** Check if a group exists
+ *
+ *	@param	_GroupName		The name of the group
+ *
+ *	@return		True if the gorup exists, False otherwise
+ */
+Boolean GroupExists(Text _GroupName) {
+	return G_LibWarmUp2_GroupsIds.existskey(_GroupName);
+}
+
+// ---------------------------------- //
+/** Create a new warm up group
+ *
+ *	@param	_GroupName		The name of the group
+ *	@param	_SlotsNb		The number of slots in the group
+ */
+Void CreateGroup(Text _GroupName, Integer _SlotsNb) {
+	if (_SlotsNb < 1) return;
+	if (G_LibWarmUp2_GroupsIds.existskey(_GroupName)) return;
+	
+	G_LibWarmUp2_GroupsIds[_GroupName] = Ident[Integer];
+	G_LibWarmUp2_GroupsLogins[_GroupName] = Text[Integer];
+	G_LibWarmUp2_GroupsIcons[_GroupName] = Text[Integer];
+	
+	for (I, 1, _SlotsNb) {
+		G_LibWarmUp2_GroupsIds[_GroupName][I] = NullId;
+		G_LibWarmUp2_GroupsLogins[_GroupName][I] = "";
+		G_LibWarmUp2_GroupsIcons[_GroupName][I] = "";
+	}
+	
+	G_LibWarmUp2_Updated = True;
+	Private_SendGroupsToUI();
+}
+
+// ---------------------------------- //
+/** Destroy a warm up group
+ *
+ *	@param	_GroupName		The name of the group to destroy
+ */
+Void DestroyGroup(Text _GroupName) {
+	if (!G_LibWarmUp2_GroupsIds.existskey(_GroupName)) return;
+	
+	// Remove the players from this group
+	foreach (Player in AllPlayers) {
+		if (GetPlayerGroup(Player) == _GroupName) {
+			UnsetPlayerGroup(Player);
+		}
+	}
+	
+	declare Removed = G_LibWarmUp2_GroupsIds.removekey(_GroupName);
+	Removed = G_LibWarmUp2_GroupsLogins.removekey(_GroupName);
+	Removed = G_LibWarmUp2_GroupsIcons.removekey(_GroupName);
+	Removed = G_LibWarmUp2_GroupsTimers.removekey(_GroupName);
+	
+	G_LibWarmUp2_Updated = True;
+	Private_SendGroupsToUI();
+}
+
+// ---------------------------------- //
+/** Manually set the players ids in a group
+ *
+ *	@param	_GroupName		The name of the group to set
+ *	@param	_PlayersIds		The players ids to add
+ */
+Void SetGroup(Text _GroupName, Ident[Integer] _PlayersIds) {
+	if (!G_LibWarmUp2_GroupsIds.existskey(_GroupName)) return;
+	declare Group = G_LibWarmUp2_GroupsIds[_GroupName];
+	
+	foreach (Slot => PlayerId in Group) {
+		if (_PlayersIds.existskey(Slot)) {
+			if (!Players.existskey(_PlayersIds[Slot])) continue;
+			declare Player <=> Players[_PlayersIds[Slot]];
+			SetPlayerGroup(Player, _GroupName);
+			SetPlayerSlot(Player, Slot, True);
+		} else {
+			UnsetSlot(_GroupName, Slot);
+		}
+	}
+	
+	G_LibWarmUp2_Updated = True;
+	Private_SendGroupsToUI();
+}
+
+// ---------------------------------- //
+/** Get the players ids of a group
+ *
+ *	@param	_GroupName		The name of the group to get
+ *
+ *	@return		The ordered players ids
+ */
+Ident[Integer] GetGroup(Text _GroupName) {
+	declare Empty = Ident[Integer];
+	
+	if (!G_LibWarmUp2_GroupsIds.existskey(_GroupName)) return Empty;
+	
+	return G_LibWarmUp2_GroupsIds[_GroupName];
+}
+
+// ---------------------------------- //
+/** Update the number of slots available in a group
+ *
+ *	@param	_GroupName		The name of the group to update
+ *	@param	_SlotsNb		The new number  of slots
+ */
+Void SetSlotsNb(Text _GroupName, Integer _SlotsNb) {
+	if (_SlotsNb < 1) return;
+	if (!G_LibWarmUp2_GroupsIds.existskey(_GroupName)) return;
+	if (G_LibWarmUp2_GroupsIds[_GroupName].count == _SlotsNb) return;
+	
+	if (G_LibWarmUp2_GroupsIds[_GroupName].count > _SlotsNb) {
+		for (I, _SlotsNb+1, G_LibWarmUp2_GroupsIds[_GroupName].count) {
+			declare Removed = G_LibWarmUp2_GroupsIds[_GroupName].removekey(I);
+			Removed = G_LibWarmUp2_GroupsLogins[_GroupName].removekey(I);
+			Removed = G_LibWarmUp2_GroupsIcons[_GroupName].removekey(I);
+		}
+	} else {
+		for (I, G_LibWarmUp2_GroupsIds[_GroupName].count+1, _SlotsNb) {
+			G_LibWarmUp2_GroupsIds[_GroupName][I] = NullId;
+			G_LibWarmUp2_GroupsLogins[_GroupName][I] = "";
+			G_LibWarmUp2_GroupsIcons[_GroupName][I] = "";
+		}
+	}
+	
+	G_LibWarmUp2_Updated = True;
+	Private_SendGroupsToUI();
+}
+
+// ---------------------------------- //
+/** Get the number of slots in a group
+ *
+ *	@param	_GroupName		The name of the group to check
+ *
+ *	@return		The number of slot in the group if this group exist, 0 otherwise
+ */
+Integer GetSlotsNb(Text _GroupName) {
+	if (!G_LibWarmUp2_GroupsIds.existskey(_GroupName)) return 0;
+	
+	return G_LibWarmUp2_GroupsIds[_GroupName].count;
+}
+
+// ---------------------------------- //
+/** Get the number of ready players in a group
+ *
+ *	@param	_GroupName		The name of the group to check
+ *
+ *	@return		The number of ready players
+ */
+Integer GetReadyPlayersNb(Text _GroupName) {
+	if (!G_LibWarmUp2_GroupsIds.existskey(_GroupName)) return 0;
+	
+	declare ReadyNb = 0;
+	foreach (PlayerId in G_LibWarmUp2_GroupsIds[_GroupName]) {
+		if (IsReady(PlayerId)) ReadyNb += 1;
+	}
+	
+	return ReadyNb;
+}
+
+// ---------------------------------- //
+/** Get the number of players in a group
+ *
+ *	@param	_GroupName		The name of the group to check
+ *
+ *	@return		The number of players
+ */
+Integer GetPlayersNb(Text _GroupName) {
+	if (!G_LibWarmUp2_GroupsIds.existskey(_GroupName)) return 0;
+	
+	declare PlayersNb = 0;
+	foreach (PlayerId in G_LibWarmUp2_GroupsIds[_GroupName]) {
+		if (PlayerId != NullId) PlayersNb += 1;
+	}
+	
+	return PlayersNb;
+}
+
+// ---------------------------------- //
+// Automatically fill the orders with players
+Void Fill() {
+	foreach (Player in Players) {
+		declare Text LibWarmUp2_CurrentGroup for Player;
+		if (!G_LibWarmUp2_GroupsIds.existskey(LibWarmUp2_CurrentGroup)) continue;		
+		declare Group = G_LibWarmUp2_GroupsIds[LibWarmUp2_CurrentGroup];
+		if (Group.exists(Player.Id)) continue;
+		
+		foreach (Slot => PlayerId in Group) {
+			if (PlayerId != NullId) continue;
+			
+			G_LibWarmUp2_GroupsIds[LibWarmUp2_CurrentGroup][Slot] = Player.Id;
+			G_LibWarmUp2_GroupsLogins[LibWarmUp2_CurrentGroup][Slot] = Player.User.Login;
+			break;
+		}
+	}
+	
+	G_LibWarmUp2_Updated = True;
+	Private_SendGroupsToUI();
+}
+
+// ---------------------------------- //
+/// Remove the players from the order when they stop playing
+Void Clean() {
+	declare ToRemove = Integer[Text];
+	foreach (GroupName => GroupOrder in G_LibWarmUp2_GroupsIds) {
+		foreach (Slot => PlayerId in GroupOrder) {
+			if (PlayerId == NullId) continue;
+			if (!Players.existskey(PlayerId)) {
+				ToRemove[GroupName] = Slot;
+			}
+		}
+	}
+	foreach (GroupName => Slot in ToRemove) {
+		G_LibWarmUp2_GroupsIds[GroupName][Slot] = NullId;
+		G_LibWarmUp2_GroupsLogins[GroupName][Slot] = "";
+	}
+	if (ToRemove.count > 0) {
+		G_LibWarmUp2_Updated = True;
+		Private_SendGroupsToUI();
+	}
+}
+
+// ---------------------------------- //
+/** Set a group timers
+ *	@param	_GroupName		The name of the group to update
+ *	@param	_Timers			The new timers with this format :
+ *							[Timer => [MinPlayerReady, MinPlayer]]
+ *							If MinPlayerReady < 0 then the value will be replaced
+ *							by the current number of players in the group
+ *							(meaning that all the players of the group must be ready)
+ */
+Void SetGroupTimers(Text _GroupName, Integer[][Integer] _Timers) {
+	if (!GroupExists(_GroupName)) return;
+	
+	foreach (PlayersNb in _Timers) {
+		if (PlayersNb.count != 2) return;
+	}
+	G_LibWarmUp2_GroupsTimers[_GroupName] = _Timers;
+	G_LibWarmUp2_GroupsCurrentTimer[_GroupName] = -1;
+}
+
+// ---------------------------------- //
+/// Attach the warm up layer
+Void Attach() {
+	if (
+		UIManager.UILayers.existskey(G_LibWarmUp2_LayerWarmUpId) 
+		&& !UIManager.UIAll.UILayers.existskey(G_LibWarmUp2_LayerWarmUpId)
+	) {
+		UIManager.UIAll.UILayers.add(UIManager.UILayers[G_LibWarmUp2_LayerWarmUpId]);
+	}
+}
+
+// ---------------------------------- //
+/// Detach the warm up layer
+Void Detach() {
+	declare Removed = UIManager.UIAll.UILayers.removekey(G_LibWarmUp2_LayerWarmUpId);
+}
+
+// ---------------------------------- //
+/// Initialize the warm up
+Void Begin() {
+	Attach();
+	
+	declare netwrite Integer Net_LibWarmUp2_SynchroServer for Teams[0];
+	Net_LibWarmUp2_SynchroServer = Private_SynchroServer();
+	
+	foreach (GroupName => GroupIds in G_LibWarmUp2_GroupsIds) {
+		if (G_LibWarmUp2_GroupsCurrentTimer.existskey(GroupName)) {
+			G_LibWarmUp2_GroupsCurrentTimer[GroupName] = -1;
+		}
+	}
+	G_LibWarmUp2_CurrentTimer = -1;
+	G_LibWarmUp2_SavedTimer.clear();
+	G_LibWarmUp2_Updated = True;
+	G_LibWarmUp2_Stop = False;
+}
+
+// ---------------------------------- //
+/// Clean after the warm up
+Void End() {	
+	Detach();
+	G_LibWarmUp2_Stop = False;
+}
+
+// ---------------------------------- //
+/** Warm up loop
+ *	@param	_EndTime	The current end time
+ *
+ *	@return 			The new end time
+ */
+Integer Loop(Integer _EndTime) {
+	declare CommonEndTime = _EndTime;
+	
+	// Check the players requests
+	foreach (Player in Players) {
+		declare Text LibWarmUp2_CurrentGroup for Player;
+		if (G_LibWarmUp2_GroupsDisabled.exists(LibWarmUp2_CurrentGroup)) continue;
+		
+		declare UI <=> UIManager.GetUI(Player);
+		if (UI == Null) continue;
+		
+		declare LibWarmUp2_PrevSlotUpdate for Player = 0;
+		declare netread Integer Net_LibWarmUp2_SlotUpdate for UI;
+		if (LibWarmUp2_PrevSlotUpdate != Net_LibWarmUp2_SlotUpdate) {
+			LibWarmUp2_PrevSlotUpdate = Net_LibWarmUp2_SlotUpdate;
+			
+			declare netread Integer Net_LibWarmUp2_Slot for UI;
+			if (Net_LibWarmUp2_Slot > 0) {
+				SetPlayerSlot(Player, Net_LibWarmUp2_Slot);
+			} else if (Net_LibWarmUp2_Slot < 0) {
+				UnsetPlayerSlot(Player);
+			}
+		}
+		
+		declare netwrite Net_LibWarmUp2_IsReadyServer for Player = False;
+		declare netread Boolean Net_LibWarmUp2_IsReadyClient for UI;
+		if (Player.User.IsFakeUser && !Net_LibWarmUp2_IsReadyServer) {
+			Net_LibWarmUp2_IsReadyServer = True;
+			G_LibWarmUp2_Updated = True;
+		} else if (!Player.User.IsFakeUser && Net_LibWarmUp2_IsReadyServer != Net_LibWarmUp2_IsReadyClient) {
+			Net_LibWarmUp2_IsReadyServer = Net_LibWarmUp2_IsReadyClient;
+			G_LibWarmUp2_Updated = True;
+		}
+	}
+	
+	// Timer management
+	declare NeedUpdate = False;
+	foreach (GroupName => Timers in G_LibWarmUp2_GroupsTimers) {
+		declare I = 0;
+		foreach (Timer => PlayersNb in Timers) {
+			declare PlayersReadyTarget = PlayersNb[0];
+			declare PlayersTotalTarget = PlayersNb[1];
+			declare PlayersReadyCurrent = GetReadyPlayersNb(GroupName);
+			declare PlayersTotalCurrent = GetPlayersNb(GroupName);
+			if (PlayersReadyTarget < 0) PlayersReadyTarget = PlayersTotalCurrent;
+			if (PlayersTotalTarget < 0) PlayersTotalTarget = PlayersTotalCurrent;
+			
+			if (PlayersReadyCurrent >= PlayersReadyTarget && PlayersTotalCurrent >= PlayersTotalTarget) {
+				if (G_LibWarmUp2_GroupsCurrentTimer[GroupName] != Timer) {
+					G_LibWarmUp2_GroupsCurrentTimer[GroupName] = Timer;
+					NeedUpdate = True;
+				}
+				break;
+			}
+			I += 1;
+			if (I == Timers.count) {
+				if (G_LibWarmUp2_GroupsCurrentTimer[GroupName] != -1) {
+					G_LibWarmUp2_GroupsCurrentTimer[GroupName] = -1;
+					NeedUpdate = True;
+				}
+			}
+		}
+	}
+	if (NeedUpdate) {
+		declare NewTimer = -1;
+		foreach (GroupName => Timer in G_LibWarmUp2_GroupsCurrentTimer) {
+			if (Timer == -1) {
+				NewTimer = -1;
+				break;
+			}
+			if (Timer > NewTimer) NewTimer = Timer;
+		}
+		
+		if (G_LibWarmUp2_CurrentTimer != NewTimer) {
+			declare OverrideEndTime = -1;
+			if (NewTimer > 0 && NewTimer < G_LibWarmUp2_CurrentTimer) {
+				G_LibWarmUp2_SavedTimer.clear();
+				G_LibWarmUp2_SavedTimer[G_LibWarmUp2_CurrentTimer] = CommonEndTime;
+			} else if (G_LibWarmUp2_SavedTimer.existskey(NewTimer)) {
+				OverrideEndTime = G_LibWarmUp2_SavedTimer[NewTimer];
+				G_LibWarmUp2_SavedTimer.clear();
+			} else {
+				G_LibWarmUp2_SavedTimer.clear();
+			}
+			G_LibWarmUp2_CurrentTimer = NewTimer;
+			
+			if (OverrideEndTime >= 0) CommonEndTime = OverrideEndTime;
+			else if (G_LibWarmUp2_CurrentTimer >= 0) CommonEndTime = Now + G_LibWarmUp2_CurrentTimer;
+			else CommonEndTime = -1;
+		}
+	}
+	
+	if (CommonEndTime > 0 && CommonEndTime <= Now) G_LibWarmUp2_Stop = True;
+	
+	// XmlRpc commands
+	foreach (Event in XmlRpc.PendingEvents) {
+		if (Event.Param1 == "WarmUp_Extend") {
+			declare ExtendTime = TL::ToInteger(Event.Param2);
+			if (CommonEndTime >= 0) {
+				CommonEndTime += ExtendTime;
+				if (G_LibWarmUp2_SavedTimer.count > 0) {
+					declare Key = -1;
+					foreach (Timer => PrevEndTime in G_LibWarmUp2_SavedTimer) { Key = Timer; break; }
+					G_LibWarmUp2_SavedTimer[Key] += ExtendTime;
+				}
+			}
+		} else if (Event.Param1 == "WarmUp_Stop") {
+			G_LibWarmUp2_Stop = True;
+		}
+	}
+		
+	// Cleaning
+	Clean();
+	
+	return CommonEndTime;
+}
+
+// ---------------------------------- //
+/** Say if the warm up must stop or not
+ *
+ *	@return		True if the warm up must stop, false if it cans continue
+ */
+Boolean Stop() {
+	if (ServerShutdownRequested || MatchEndRequested) return True;
+	
+	return G_LibWarmUp2_Stop;
+}

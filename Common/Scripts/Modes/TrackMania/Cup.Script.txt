@@ -1,0 +1,553 @@
+/**
+ *	Cup mode
+ */
+#Extends "Modes/TrackMania/Base/RoundsBase2.Script.txt"
+
+#Const	CompatibleMapTypes	"Race"
+#Const	Version							"2017-06-13"
+#Const	ScriptName					"Modes/TrackMania/Cup/Cup.Script.txt"
+
+// ---------------------------------- //
+// Libraries
+// ---------------------------------- //
+#Include "TextLib" as TL
+#Include "Libs/Nadeo/Semver.Script.txt" as Semver
+
+// ---------------------------------- //
+// Settings
+// ---------------------------------- //
+#Setting S_RoundsPerMap		5	as _("Rounds per map :")
+#Setting S_NbOfWinners			3	as _("Number of winners :")
+#Setting S_NbOfPlayersMax	4	as _("Maximum number of players in matchmaking :")
+#Setting S_NbOfPlayersMin	4	as _("Minimum number of players in matchmaking :")
+#Setting S_WarmUpNb				0	as _("Number of warm up :")
+#Setting S_WarmUpDuration	0	as _("Duration of one warm up :")
+// Matchmaking
+#Setting S_NbPlayersPerTeamMax	3		as "<hidden>" //_("Maximum number of players per team in matchmaking")
+#Setting S_NbPlayersPerTeamMin	3		as "<hidden>" //_("Minimum number of players per team in matchmaking")
+
+#Setting S_ScriptEnvironment "production"/*/"development"*/
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_BotsNb 0
+#Const C_HudModulePath "Nadeo/TrackMania/Cup/Hud.Module.Gbx" ///< Path to the hud module
+#Const C_ManiaAppUrl "file://Media/ManiaApps/Nadeo/TrackMania/Cup/Cup.Script.txt"
+
+#Const Description _("""$fffThe cup mode consists of $f00a series of races on multiple maps$fff.
+
+When you finish a race in a good $f00position$fff, you get $f00points$fff added to your total.
+Servers might propose warmup races to get familiar with a map first.
+
+To win, you must first reach the $f00point limit$fff to become a $f00finalist$fff. Once you are a finalist, you must finish a race in $f00first position$fff to win the cup.The cup mode ends once 3 players have managed to become finalists and to finish first.""")
+
+// ---------------------------------- //
+// Globales
+// ---------------------------------- //
+declare Integer G_NbOfValidRounds;
+
+// ---------------------------------- //
+// Extend
+// ---------------------------------- //
+***MM_SetupMatchmaking***
+***
+declare Format = Integer[];
+for (I, 1, S_NbOfPlayersMax) {
+	Format.add(1);
+}
+MM_SetFormat(Format);
+Format.clear();
+declare ProgressiveFormat = Integer[][];
+for (I, 1, S_NbOfPlayersMin) {
+	Format.add(1);
+}
+ProgressiveFormat.add(Format);
+for (I, S_NbOfPlayersMin+1, S_NbOfPlayersMax) {
+	Format.add(1);
+	ProgressiveFormat.add(Format);
+}
+MM_SetProgressiveFormats(ProgressiveFormat);
+***
+
+***Lobby_MatchRulesManialink***
+***
+ManialinkRules = """<label posn="-62.5 25" sizen="125 50" autonewline="1" maxline="10" textemboss="1" textsize="1.5" text="{{{Description}}}" />""";
+***
+
+***Match_LogVersion***
+***
+MB_LogVersion(ScriptName, Version);
+***
+
+***Match_Settings***
+***
+MB_Settings_UseDefaultHud = False;
+***
+
+***Match_Rules***
+***
+ModeInfo::SetName("Cup");
+ModeInfo::SetType(ModeInfo::C_Type_FreeForAll);
+ModeInfo::SetRules(Description);
+ModeInfo::SetStatusMessage("");
+***
+
+***Match_LoadHud***
+***
+ClientManiaAppUrl = C_ManiaAppUrl;
+Hud_Load(C_HudModulePath);
+MB_SortScores(CTmMode::ETmScoreSortOrder::TotalPoints);
+***
+
+***Match_InitServer***
+***
+declare PrevPointsLimit = S_PointsLimit;
+***
+
+***Match_StartServer***
+***
+WarmUp::SetAvailability(True);
+ChannelProgression::Enable(S_IsChannelServer);
+Scores::SaveInScore(Scores::C_Points_Match);
+***
+
+***Match_StartMatch***
+***
+foreach (User in Users) {
+	declare IsWinner for User = -1;
+	IsWinner = -1;
+}
+***
+
+***Match_StartMap***
+***
+// ---------------------------------- //
+// Restore score from the previous map
+foreach (Score in Scores) {
+	declare Cup_RoundsPerformance for Score = Real[];
+	Cup_RoundsPerformance = Real[];
+}
+
+// ---------------------------------- //
+// Initialize map
+Users_SetNbFakeUsers(C_BotsNb, 0);
+SetUiScoresPointsLimit(S_PointsLimit);
+G_NbOfValidRounds = 0;
+
+if (Hud != Null) Hud.ScoresTable.SetFooterText(TL::Compose("%1 "^S_PointsLimit, _("Points limit : ")));
+
+if (MM_IsMatchServer()) {
+	MM_SetScores([GetBestScore()]);
+} else {
+	// ---------------------------------- //
+	// Warm up
+	foreach (Score in Scores) {
+		WarmUp::CanPlay(Score, CanSpawn(Score));
+	}
+	declare WarmUpDuration = S_WarmUpDuration * 1000;
+	MB_WarmUp(S_WarmUpNb, WarmUpDuration);
+}
+***
+
+***Rounds_CanSpawn***
+***
+foreach (Score in Scores) {
+	declare CanSpawn for Score = True;
+	CanSpawn = CanSpawn(Score);
+}
+***
+
+***Match_PlayLoop***
+***
+// ---------------------------------- //
+// Manage events
+foreach (Event in PendingEvents) {
+	Events::Valid(Event);
+	
+	// ---------------------------------- //
+	// Waypoint
+	if (Event.Type == CTmModeEvent::EType::WayPoint) {
+		if (Event.IsEndRace) {
+			declare Better = Scores::SetPlayerBestRaceIfBetter(Event.Player.Score, Event.Player.CurRace, CTmResult::ETmRaceResultCriteria::Time);
+			Scores::SetPlayerPrevRace(Event.Player.Score, Event.Player.CurRace);
+			ComputeLatestRaceScores();
+			MB_SortScores(CTmMode::ETmScoreSortOrder::TotalPoints);
+			TM::EndRace(Event.Player);
+			
+			// ---------------------------------- //
+			// Start the countdown if it's the first player to finish
+			if (CutOffTimeLimit <= 0) {
+				CutOffTimeLimit = GetFinishTimeout();
+			}
+		}
+		if (Event.IsEndLap) {
+			declare Better = Scores::SetPlayerBestLapIfBetter(Event.Player.Score, Event.Player.CurLap, CTmResult::ETmRaceResultCriteria::Time);
+		}
+	}
+	// ---------------------------------- //
+	// GiveUp
+	else if (Event.Type == CTmModeEvent::EType::GiveUp) {
+		TM::WaitRace(Event.Player);
+	}
+}
+
+// ---------------------------------- //
+// Server info change
+if (PrevPointsLimit != S_PointsLimit) {
+	PrevPointsLimit = S_PointsLimit;
+	
+	SetUiScoresPointsLimit(S_PointsLimit);
+	if (Hud != Null) Hud.ScoresTable.SetFooterText(TL::Compose("%1 "^S_PointsLimit, _("Points limit : ")));
+}
+***
+
+***Match_EndRound***
+***
+TM::WaitRaceAll();
+CutOffTimeLimit = -1;
+SetUiScoresPointsLimit(S_PointsLimit);
+
+if (Semver::Compare(XmlRpc::GetApiVersion(), ">=", "2.2.0")) {
+	Scores::XmlRpc_SendScores(Scores::C_Section_PreEndRound, "");
+}
+
+if (ForceEndRound) {
+	ForcedEndRoundSequence();
+} else {
+	// Compute round performance
+	declare ReferenceTime = Map.MapInfo.TMObjective_AuthorTime;
+	declare BestRaceTime = ReferenceTime;
+	foreach (Score in Scores) {
+		declare RaceTime = Scores::GetPlayerPrevRaceTime(Score);
+		if (RaceTime > 0 && RaceTime < BestRaceTime) {
+			BestRaceTime = RaceTime;
+		}
+	}
+	if (BestRaceTime > 0 && BestRaceTime < ReferenceTime) ReferenceTime = BestRaceTime;
+		
+	foreach (Score in Scores) {
+		declare RoundPerformance = 0.;
+		declare PrevRaceTime = Scores::GetPlayerPrevRaceTime(Score);
+		
+		if (
+			PrevRaceTime > 0 &&
+			ReferenceTime > 0 &&
+			PrevRaceTime <= Map.MapInfo.TMObjective_BronzeTime &&
+			ReferenceTime <= Map.MapInfo.TMObjective_BronzeTime
+		) {
+			declare A = (Map.MapInfo.TMObjective_BronzeTime - PrevRaceTime) * 1.;
+			declare B = Map.MapInfo.TMObjective_BronzeTime - ReferenceTime;
+			RoundPerformance = ((A / B) * 0.9) + 0.1;
+		}
+		
+		declare Cup_RoundsPerformance for Score = Real[];
+		Cup_RoundsPerformance.add(RoundPerformance);
+		
+		Log::Log("""[Cup] RoundPerformance > {{{Score.User.Login}}} > | PrevRaceTime : {{{PrevRaceTime}}} | BronzeTime : {{{Map.MapInfo.TMObjective_BronzeTime}}} | AuthorTime : {{{Map.MapInfo.TMObjective_AuthorTime}}} | BestRaceTime : {{{BestRaceTime}}} | ReferenceTime : {{{ReferenceTime}}} | RoundPerformance: {{{RoundPerformance}}}""");
+	}
+	
+	// Get the last round points
+	ComputeLatestRaceScores();
+	MB_SortScores(CTmMode::ETmScoreSortOrder::TotalPoints);
+	UIManager.UIAll.ScoreTableVisibility = CUIConfig::EVisibility::ForcedVisible;
+	UIManager.UIAll.UISequence = CUIConfig::EUISequence::EndRound;
+	MB_Sleep(3000);
+	// Add them to the total scores
+	ComputeScores();
+	MB_SortScores(CTmMode::ETmScoreSortOrder::TotalPoints);
+	MB_Sleep(3000);
+	UIManager.UIAll.ScoreTableVisibility = CUIConfig::EVisibility::Normal;
+	UIManager.UIAll.UISequence = CUIConfig::EUISequence::Playing;
+	UIManager.UIAll.BigMessage = "";
+	
+	// ---------------------------------- //
+	// Match is over, we have all the winners
+	if (MatchIsOver()) {
+		MB_StopMatch();
+	}
+	// ---------------------------------- //
+	// Map is over, we played all the rounds
+	else if (MapIsOver()) {
+		MB_StopMap();
+	}
+}
+
+// ---------------------------------- //
+// Set matchmaking scores
+if (MM_IsMatchServer()) {
+	declare BestScore = GetBestScore();
+	MM_SetScores([BestScore]);
+}
+***
+
+***Match_EndMap***
+***
+UiScoresPointsLimit = -1;
+
+MB_SortScores(CTmMode::ETmScoreSortOrder::TotalPoints);
+Scores::SetDefaultLadderSort(Scores::C_Sort_MatchPoints);
+	
+if (!MB_MatchIsRunning()) {
+	if (Scores.existskey(0) &&  Scores[0].Points > 0) {
+		if (MM_IsMatchServer()) MM_SetMasterLogin(Scores[0].User.Login);
+	}
+	Scores::SetPlayerWinner(Scores::GetBestPlayer(Scores::C_Sort_MatchPoints, Scores::Order_Descending()));
+} else {
+	MB_SkipPodiumSequence();
+}
+***
+
+***Match_BeforeCloseLadder***
+***
+if (ChannelProgression::IsEnabled()) {
+	declare RoundsCount = MB_GetRoundCount();
+	foreach (Score in Scores) {
+		declare Cup_RoundsPerformance for Score = Real[];
+		declare RoundsPerformance = 0.;
+		if (RoundsCount != 0) {
+			foreach (RoundPerformance in Cup_RoundsPerformance) {
+				RoundsPerformance += RoundPerformance;
+			}
+			RoundsPerformance /= RoundsCount;
+		}
+		
+		Log::Log("""[Cup] RoundsPerformance > {{{Score.User.Login}}} > Cup_RoundsPerformance : {{{Cup_RoundsPerformance}}} | RoundsCount : {{{RoundsCount}}} | RoundsPerformance: {{{RoundsPerformance}}}""");
+		
+		ChannelProgression::SetPlayerPerformance(Score, RoundsPerformance);
+	}
+}
+***
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+// ---------------------------------- //
+/** Get matchmaking format
+ *
+ *	@param	_PlayersNb		The number of players
+ *
+ *	@return					The format with the given number of players
+ */
+Integer[] GetMatchmakingFormat(Integer _PlayersNb) {
+	declare Format = Integer[];
+	for (I, 1, _PlayersNb) {
+		Format.add(1);
+	}
+	return Format;
+}
+
+// ---------------------------------- //
+/**	Set the cup points limit
+ *
+ *	@param	_PointsLimit	The new points limit
+ */
+Void SetUiScoresPointsLimit(Integer _PointsLimit) {
+	UiScoresPointsLimit = _PointsLimit;
+}
+
+// ---------------------------------- //
+/** Check if a player can spawn
+ *
+ *	@param	_Score										The player's score
+ *
+ *	@return														True if the player can spawn,
+ *																		False otherwise
+ */
+Boolean CanSpawn(CTmScore _Score) {
+	if (_Score == Null) return False;
+	
+	if (Scores::GetPlayerMatchPoints(_Score) > S_PointsLimit) {
+		return False;
+	} else if (MM_IsMatchServer()) {
+		declare Player <=> TM::GetPlayer(_Score.User.Login);
+		return MM_PlayerIsAllowedToPlay(Player);
+	}
+	
+	return True;
+}
+
+// ---------------------------------- //
+/** Get the time left to the players to finish the round after the first player
+ *
+ *	@return 				The time left in ms
+ */
+Integer GetFinishTimeout() {
+	declare FinishTimeout = 0;
+	
+	if (S_FinishTimeout >= 0) {
+		FinishTimeout = S_FinishTimeout * 1000;
+	} else {
+		FinishTimeout = 5000;
+		if (Map.TMObjective_IsLapRace && NbLaps > 0 && Map.TMObjective_NbLaps > 0) {
+			FinishTimeout += ((Map.TMObjective_AuthorTime / Map.TMObjective_NbLaps) * NbLaps) / 6;
+		} else {
+			FinishTimeout += Map.TMObjective_AuthorTime / 6;
+		}
+	}
+	
+if (S_UseAlternateRules) {
+		if (Map.TMObjective_IsLapRace && NbLaps > 0 && Map.TMObjective_NbLaps > 0) {
+			return G_RoundStartTime + ((Map.TMObjective_AuthorTime / Map.TMObjective_NbLaps) * NbLaps) + FinishTimeout;
+		} else {
+			return G_RoundStartTime + Map.TMObjective_AuthorTime + FinishTimeout;
+		}
+	} else {
+		return Now + FinishTimeout;
+	}
+	
+	// Default value from TMO, TMS (not used)
+	return Now + 15000;
+}
+
+// ---------------------------------- //
+/** Announce a new winner in the chat
+ *
+ *	@param	_Name			The name of the new winner
+ *	@param	_Rank			The rank of the new winner
+ */
+Void AnnounceWinner(Text _Name, Integer _Rank) {
+	declare Message = "";
+	switch (_Rank) {
+		case 1: Message = TL::Compose("$<%1$> takes 1st place!", _Name);
+		case 2: Message = TL::Compose("$<%1$> takes 2nd place!", _Name);
+		case 3: Message = TL::Compose("$<%1$> takes 3rd place!", _Name);
+		default: Message = TL::Compose("$<%1$> takes %2th place!", _Name, TL::ToText(_Rank));
+	}
+	
+	UIManager.UIAll.SendChat(Message);
+	UIManager.UIAll.BigMessage = Message;
+}
+
+// ---------------------------------- //
+/// Compute the latest race scores
+Void ComputeLatestRaceScores() {
+	MB_SortScores(CTmMode::ETmScoreSortOrder::PrevRace_Time);
+	
+	// Only points for the first players
+	if (S_UseAlternateRules) {
+		declare Points = 1;
+		
+		foreach (Score in Scores) {
+			if (Scores::GetPlayerPrevRaceTime(Score) > 0) {
+				//Score.PrevRaceDeltaPoints = Points;
+				Scores::SetPlayerRoundPoints(Score, Points);
+				if (Points > 0) Points -= 1;
+			} else {
+				//Score.PrevRaceDeltaPoints = 0;
+				Scores::SetPlayerRoundPoints(Score, 0);
+			}
+		}
+	} 
+	// Points distributed between all players
+	else {		
+		declare I = 0;
+		declare J = 0;
+		foreach (Score in Scores) {
+			if (Scores::GetPlayerPrevRaceTime(Score) > 0) {
+				declare Points = 0;
+				declare PointsRepartition = Scores::GetPointsRepartition();
+				if (PointsRepartition.count > 0) {
+					if (PointsRepartition.existskey(I)) {
+						Points = PointsRepartition[I];
+					} else {
+						Points = PointsRepartition[PointsRepartition.count - 1];
+					}
+				}
+				
+				// If the player is finalist but didn't take the first place, he doesn't earn points
+				// or if he already won
+				if ((Scores::GetPlayerMatchPoints(Score) == S_PointsLimit && J > 0) || Scores::GetPlayerMatchPoints(Score) > S_PointsLimit) {
+					//Score.PrevRaceDeltaPoints = 0;
+					Scores::SetPlayerRoundPoints(Score, 0);
+				} else {
+					//Score.PrevRaceDeltaPoints = Points;
+					Scores::SetPlayerRoundPoints(Score, Points);
+				}
+				I += 1;
+			} else {
+				//Score.PrevRaceDeltaPoints = 0;
+				Scores::SetPlayerRoundPoints(Score, 0);
+			}
+			J += 1;
+		}
+	}
+}
+
+// ---------------------------------- //
+/// Compute the map scores
+Void ComputeScores() {
+	declare RoundIsValid = False;
+	declare NbOfWinners = 0;
+	declare NewWinner = False;
+	
+	MB_SortScores(CTmMode::ETmScoreSortOrder::TotalPoints);
+	
+	foreach (Score in Scores) {
+		if (Scores::GetPlayerRoundPoints(Score) > 0) RoundIsValid = True;
+		
+		// Already won
+		if (Scores::GetPlayerMatchPoints(Score) > S_PointsLimit) {
+			Scores::SetPlayerMatchPoints(Score, S_PointsLimit + 1 + S_NbOfWinners - NbOfWinners);
+			NbOfWinners += 1;
+		} 
+		// New winner
+		else if (Scores::GetPlayerMatchPoints(Score) == S_PointsLimit && Scores::GetPlayerRoundPoints(Score) > 0 && !NewWinner) {
+			Scores::SetPlayerMatchPoints(Score, S_PointsLimit + 1 + S_NbOfWinners - NbOfWinners);
+			NbOfWinners += 1;
+			NewWinner = True;
+			AnnounceWinner(Score.User.Name, NbOfWinners);
+		} 
+		// Standard round finish
+		else {
+			Scores::AddPlayerMatchPoints(Score, Scores::GetPlayerRoundPoints(Score));
+			if (Scores::GetPlayerMatchPoints(Score) > S_PointsLimit) Scores::SetPlayerMatchPoints(Score, S_PointsLimit);
+		}
+		
+		Scores::AddPlayerMapPoints(Score, Scores::GetPlayerRoundPoints(Score));
+		Scores::SetPlayerRoundPoints(Score, 0);
+	}
+	
+	if (RoundIsValid) G_NbOfValidRounds += 1;
+}
+
+// ---------------------------------- //
+/** Get the best score
+ *
+ *	@return					The best score
+ */
+Integer GetBestScore() {
+	declare Max = 0;
+	foreach (Score in Scores) {
+		if (Scores::GetPlayerMatchPoints(Score) > Max) Max = Scores::GetPlayerMatchPoints(Score);
+	}
+	return Max;
+}
+
+// ---------------------------------- //
+/** Check if we should go to the next map
+ *
+ *	@return					True if the map is over, false otherwise
+ */
+Boolean MapIsOver() {
+	if (G_NbOfValidRounds >= S_RoundsPerMap) return True;
+	return False;
+}
+
+// ---------------------------------- //
+/** Check if we have found all the winners
+ *
+ *	@return					True if the match is over, false otherwise
+ */
+Boolean MatchIsOver() {
+	declare NbOfWinners = 0;
+	foreach (Score in Scores) {
+		if (Scores::GetPlayerMatchPoints(Score) > S_PointsLimit) NbOfWinners += 1;
+	}
+	
+	declare WinnersLimit = Players.count - 1;
+	if (WinnersLimit < 1) WinnersLimit = 1;
+	if (NbOfWinners >= S_NbOfWinners || NbOfWinners >= WinnersLimit) return True;
+	
+	return False;
+}

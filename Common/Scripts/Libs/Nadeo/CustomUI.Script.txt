@@ -1,0 +1,751 @@
+/** 
+ * Custom UI library
+ */
+
+#Const Version		"2014-05-19"
+#Const ScriptName	"CustomUI.Script.txt"
+
+#Include "TextLib" as TL
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_WindowWidth	320.
+#Const C_WindowHeight	180.
+#Const C_DefaultKey		"F8"
+	
+// ---------------------------------- //
+// Globales
+// ---------------------------------- //
+declare Ident G_LibCustomUI_LayerCustomUIId;
+declare Text[Text] G_MLHelpers;
+declare Text G_Key;
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+// ---------------------------------- //
+// Private
+// ---------------------------------- //
+// ---------------------------------- //
+/** Create the Helper manialink for a module
+ *
+ *	@param	_Name		Name of the module
+ *	@param	_Movable	The module can be moved
+ *	@param	_Hidable	The module can be hidden
+ *
+ *	@return	The manialink Text
+ */
+Text Private_GetMLHelper(Text _Name, Vec2 _Pos, Vec2 _Size, Text _VAlign, Text _HAlign, Boolean _Movable, Boolean _Hidable) {
+	declare AdditionalClasses = "";
+	if (!_Movable) AdditionalClasses ^= " NotMovable";
+	if (!_Hidable) AdditionalClasses ^= " NotHidable";
+	
+	// We use the Controls array from Frame_Helper_XXX in the code below, take care when changing/adding elements in this frame!
+	return """
+<frame posn="{{{_Pos.X}}} {{{_Pos.Y}}}">
+	<frame hidden="0" class="Module_Helper{{{AdditionalClasses}}}" id="Frame_Helper_{{{_Name}}}">
+		<quad sizen="{{{_Size.X}}} {{{_Size.Y}}}" halign="{{{_HAlign}}}" valign="{{{_VAlign}}}" bgcolor="0505" id="Quad_Visible" />
+		<quad sizen="{{{_Size.X}}} {{{_Size.Y}}}" halign="{{{_HAlign}}}" valign="{{{_VAlign}}}" bgcolor="5005" hidden="1" id="Quad_NotVisible" />
+		<label posn="0 0 1" sizen="{{{_Size.X}}} {{{_Size.Y}}}" halign="{{{_HAlign}}}" valign="{{{_VAlign}}}" focusareacolor1="fff0" focusareacolor2="fff1" scriptevents="1" class="Module_Handler" id="{{{_Name}}}" />
+		<label posn="0 0 2" halign="{{{_HAlign}}}" valign="{{{_VAlign}}}" textsize="1" textcolor="ddd" textemboss="1" text="{{{_Name}}}" />
+		<quad sizen="{{{_Size.X}}} {{{_Size.Y}}}" halign="{{{_HAlign}}}" valign="{{{_VAlign}}}" id="Quad_BoundingBox" />
+	</frame>
+</frame>""";
+}
+
+// ---------------------------------- //
+/** Create the CustomUI manialink
+ *
+ *	@return	The manialink Text
+ */
+Text Private_GetMLCustomUI() {
+	declare MLHelpers = "";
+	
+	foreach (MLHelper in G_MLHelpers) {
+		MLHelpers ^= MLHelper;
+	}
+	
+	return """
+<manialink version="1" name="Lib_CustomUI:CustomUI">
+<frame posn="0 0 60" hidden="1" id="Frame_Global">
+	<frame id="Frame_Helpers">
+		{{{MLHelpers}}}
+	</frame>
+	<frame posn="0 0 5" id="Frame_BasicHelpers">
+		<frame posn="-160 0" hidden="1" class="BasicHelper" id="Notices">
+			<quad sizen="60 50" bgcolor="0509" id="Quad_Visible" />
+			<quad sizen="60 50" bgcolor="5009" hidden="1" id="Quad_NotVisible" />
+			<label posn="0 0 2" textsize="1" textcolor="ddd" textemboss="1" text="Notices" />
+		</frame>
+		<frame posn="160 86" hidden="1" class="BasicHelper" id="MapInfo">
+			<quad sizen="25 12" halign="right" bgcolor="0509" id="Quad_Visible" />
+			<quad sizen="25 12" halign="right" bgcolor="5009" hidden="1" id="Quad_NotVisible" />
+			<label posn="0 0 2" halign="right" textsize="1" textcolor="ddd" textemboss="1" text="MapInfo" />
+		</frame>
+		<frame posn="-160 -90" hidden="1" class="BasicHelper" id="Chat">
+			<quad sizen="85 40" valign="bottom" bgcolor="0509" id="Quad_Visible" />
+			<quad sizen="85 40" valign="bottom" bgcolor="5009" hidden="1" id="Quad_NotVisible" />
+			<label posn="0 0 2" valign="bottom" textsize="1" textcolor="ddd" textemboss="1" text="Chat" />
+		</frame>
+		<frame posn="0 0" hidden="1" class="BasicHelper" id="Crosshair">
+			<quad sizen="15 15" halign="center" valign="center" bgcolor="0509" id="Quad_Visible" />
+			<quad sizen="15 15" halign="center" valign="center" bgcolor="5009" hidden="1" id="Quad_NotVisible" />
+			<label posn="0 0 2" halign="center" valign="center2" textsize="1" textcolor="ddd" textemboss="1" text="Crosshair" />
+		</frame>
+		<frame posn="0 -90" hidden="1" class="BasicHelper" id="Gauges">
+			<quad sizen="150 23" halign="center" valign="bottom" bgcolor="0509" id="Quad_Visible" />
+			<quad sizen="150 23" halign="center" valign="bottom" bgcolor="5009" hidden="1" id="Quad_NotVisible" />
+			<label posn="0 0 2" halign="center" valign="bottom" textsize="1" textcolor="ddd" textemboss="1" text="Gauges" />
+		</frame>
+	</frame>
+	<frame posn="-160 85 9" id="Frame_Buttons">
+		<quad posn="0 0" sizen="8 8" style="Icons128x32_1" substyle="Settings" scriptevents="1" id="Button_Menu" />
+		<quad posn="0 -8" sizen="8 8" style="UIConstruction_Buttons" substyle="Reload" scriptevents="1" id="Button_Reset" />
+		<quad posn="0 -16" sizen="8 8" style="UIConstruction_Buttons" substyle="Help" scriptevents="1" id="Button_Help" />
+		<quad posn="1 -24" sizen="6 7" style="Icons128x32_1" substyle="Close" scriptevents="1" id="Button_Close" />
+	</frame>
+	<frame posn="-154 86 10" hidden="1" id="Frame_Menu">
+		<quad sizen="56 38" style="Bgs1InRace" substyle="BgTitle2" scriptevents="1" />
+		<quad posn="53 0" sizen="8 8" style="Icons64x64_1" substyle="Close" scriptevents="1" id="Button_CloseMenu"/>
+		<frame posn="4 -4 1" id="Frame_BasicButtons">
+			<label posn="0 0" style="CardButtonSmallL" scriptevents="1" class="BasicButton" id="Notices" />
+			<label posn="0 -6" style="CardButtonSmallL" scriptevents="1" class="BasicButton" id="MapInfo" />
+			<label posn="0 -12" style="CardButtonSmallL" scriptevents="1" class="BasicButton" id="Chat" />
+			<label posn="0 -18" style="CardButtonSmallL" scriptevents="1" class="BasicButton" id="Crosshair" />
+			<label posn="0 -24" style="CardButtonSmallL" scriptevents="1" class="BasicButton" id="Gauges" />
+		</frame>
+	</frame>
+	<frame posn="-154 78 10" hidden="1" id="Frame_Reset">		
+		<quad sizen="88 14" style="Bgs1InRace" substyle="BgTitle2" scriptevents="1" />
+		<quad posn="85 0" sizen="8 8" style="Icons64x64_1" substyle="Close" scriptevents="1" id="Button_CloseReset"/>
+		<frame posn="4 -4 1">
+			<label posn="0 0" style="CardButtonSmallXXXL" text="{{{_("Reset the UI customization")}}}" scriptevents="1" id="Button_ActiveReset" />
+		</frame>
+	</frame>
+	<frame posn="-154 70 10" hidden="1" id="Frame_Help">
+		<quad sizen="100 29" style="Bgs1InRace" substyle="BgTitle2" scriptevents="1" />
+		<quad posn="97 0" sizen="8 8" style="Icons64x64_1" substyle="Close" scriptevents="1" id="Button_CloseHelp"/>
+		<frame posn="4 -4 1">
+			<format textsize="2" textcolor="fff" textemboss="1" />
+			<label posn="0 0" sizen="92 5" text="{{{_("Click on the UI modules to edit their properties")}}}" />
+			<label posn="0 -6" sizen="92 5" text="{{{_("Left click : move the module")}}}" />
+			<label posn="0 -12" sizen="92 5" text="{{{_("Right click : hide/show the module")}}}" />
+			<label posn="0 -18" sizen="92 5" text="{{{_("Middle click : reset the module")}}}" />
+		</frame>
+	</frame>
+</frame>
+<script><!--
+#Include "TextLib" as TL
+
+Void SetHelperModuleVisibility(CMlControl _Control, Boolean _Visible) {
+	if (_Control == Null) return;
+	declare Control <=> (_Control as CMlFrame);
+	declare Quad_Visible		<=> Control.Controls[0];
+	declare Quad_NotVisible		<=> Control.Controls[1];
+	if (Quad_Visible == Null || Quad_NotVisible == Null) return;
+		
+	if (_Visible) {
+		Quad_Visible.Visible = True;
+		Quad_NotVisible.Visible = False;
+	} else {
+		Quad_Visible.Visible = False;
+		Quad_NotVisible.Visible = True;
+	}
+}
+
+Void SetButtonText(CMlLabel _Button, Boolean _Visible) {
+	if (_Button == Null) return;
+	
+	if (_Visible) {
+		_Button.Value = TL::Compose("%1 \"%2\"", "{{{_("Hide")}}}", _Button.ControlId);
+	} else {
+		_Button.Value = TL::Compose("%1 \"%2\"", "{{{_("Show")}}}", _Button.ControlId);
+	}
+}
+
+main() {
+	declare CMlFrame Frame_Global	<=> (Page.GetFirstChild("Frame_Global")				as CMlFrame);
+	declare CMlFrame Frame_Helpers	<=> (Frame_Global.GetFirstChild("Frame_Helpers")	as CMlFrame);
+	declare CMlFrame Frame_Buttons	<=> (Frame_Global.GetFirstChild("Frame_Buttons")	as CMlFrame);
+	declare CMlQuad Button_Menu		<=> (Frame_Buttons.GetFirstChild("Button_Menu")		as CMlQuad);
+	declare CMlQuad Button_Help		<=> (Frame_Buttons.GetFirstChild("Button_Help")		as CMlQuad);
+	declare CMlFrame Frame_Menu		<=> (Frame_Global.GetFirstChild("Frame_Menu")		as CMlFrame);
+	declare CMlFrame Frame_Reset	<=> (Frame_Global.GetFirstChild("Frame_Reset")		as CMlFrame);
+	declare CMlFrame Frame_Help		<=> (Frame_Global.GetFirstChild("Frame_Help")		as CMlFrame);
+	declare CMlFrame Frame_BasicHelpers <=> (Frame_Global.GetFirstChild("Frame_BasicHelpers") as CMlFrame);
+	declare CMlFrame Frame_BasicButtons <=> (Frame_Global.GetFirstChild("Frame_BasicButtons") as CMlFrame);
+	
+	declare persistent Vec3[Text] Persistent_LibCustomUI_ModulesPositions;
+	declare persistent Boolean[Text] Persistent_LibCustomUI_ModulesVisibilities;
+	declare persistent Boolean[Text] Persistent_LibCustomUI_BasicVisibilities;
+	
+	declare Boolean LibCustomUI_IsVisible for ClientUI;
+	declare Boolean[Text] LibCustomUI_ModulesUpdated for ClientUI;
+	declare Vec3[Text] LibCustomUI_ModulesPositions for ClientUI;
+	declare Boolean[Text] LibCustomUI_ModulesVisibilities for ClientUI;
+	declare Integer LibCustomUI_ForcedUpdate for ClientUI;
+	
+	LibCustomUI_IsVisible = False;
+	LibCustomUI_ModulesUpdated.clear();
+	LibCustomUI_ModulesPositions.clear();
+	LibCustomUI_ForcedUpdate = Now;
+	
+	Page.GetClassChildren("Module_Helper", Frame_Helpers, True);
+	foreach (Control in Page.GetClassChildren_Result) {
+		declare Label_Handler <=> (Control as CMlFrame).Controls[2];
+		
+		LibCustomUI_ModulesUpdated[Label_Handler.ControlId] = True;
+		
+		if (Persistent_LibCustomUI_ModulesPositions.existskey(Label_Handler.ControlId)) {
+			LibCustomUI_ModulesPositions[Label_Handler.ControlId] = Persistent_LibCustomUI_ModulesPositions[Label_Handler.ControlId];
+			Control.RelativePosition = LibCustomUI_ModulesPositions[Label_Handler.ControlId];
+		} else {
+			LibCustomUI_ModulesPositions[Label_Handler.ControlId] = <0., 0., 0.>;
+			Control.RelativePosition = <0., 0., 0.>;
+		}
+		if (Persistent_LibCustomUI_ModulesVisibilities.existskey(Label_Handler.ControlId)) {
+			LibCustomUI_ModulesVisibilities[Label_Handler.ControlId] = Persistent_LibCustomUI_ModulesVisibilities[Label_Handler.ControlId];
+			SetHelperModuleVisibility(Control, LibCustomUI_ModulesVisibilities[Label_Handler.ControlId]);
+		} else {
+			LibCustomUI_ModulesVisibilities[Label_Handler.ControlId] = True;
+			SetHelperModuleVisibility(Control, True);
+		}
+	}
+	
+	declare CMlLabel[Text] Buttons_BasicVisibilities;
+	foreach (Control in Frame_BasicButtons.Controls) {
+		declare Button <=> (Control as CMlLabel);
+		Buttons_BasicVisibilities[Control.ControlId] <=> Button;
+		
+		if (Persistent_LibCustomUI_BasicVisibilities.existskey(Control.ControlId)) {
+			SetButtonText(Button, Persistent_LibCustomUI_BasicVisibilities[Control.ControlId]);
+		} else {
+			SetButtonText(Button, True);
+			Persistent_LibCustomUI_BasicVisibilities[Control.ControlId] = True;
+		}
+	}
+	
+	declare CMlControl[Text] Frames_BasicHelpers;
+	foreach (Control in Frame_BasicHelpers.Controls) {
+		Frames_BasicHelpers[Control.ControlId] <=> Control;
+		
+		if (Persistent_LibCustomUI_BasicVisibilities.existskey(Control.ControlId)) {
+			SetHelperModuleVisibility(Control, Persistent_LibCustomUI_BasicVisibilities[Control.ControlId]);
+		} else {
+			SetHelperModuleVisibility(Control, True);
+		}
+	}
+	
+	foreach (Name => Visibility in Persistent_LibCustomUI_BasicVisibilities) {
+		switch (Name) {
+			case "Notices"		: ClientUI.OverlayHideNotices	= !Visibility;
+			case "MapInfo"		: ClientUI.OverlayHideMapInfo	= !Visibility;
+			case "Chat"			: ClientUI.OverlayHideChat		= !Visibility;
+			case "Crosshair"	: ClientUI.OverlayHideCrosshair	= !Visibility;
+			case "Gauges"		: ClientUI.OverlayHideGauges	= !Visibility;
+		}
+	}
+	
+	declare Boolean LibCustomUI_PrevIsVisible;
+	declare Boolean LibCustomUI_IsMoving;
+	declare Boolean LibCustomUI_PrevMouseMiddleButton;
+	declare Boolean LibCustomUI_PrevMouseLeftButton;
+	declare Boolean LibCustomUI_PrevMouseRightButton;
+	declare Text LibCustomUI_CurrentModuleName;
+	declare CMlControl LibCustomUI_CurrentModule;
+	declare Vec2 LibCustomUI_OffsetClick;
+	declare Real[] LibCustomUI_Containment;
+	
+	LibCustomUI_PrevIsVisible = False;
+	LibCustomUI_IsMoving = False;
+	LibCustomUI_PrevMouseMiddleButton = False;
+	LibCustomUI_PrevMouseLeftButton = False;
+	LibCustomUI_PrevMouseRightButton = False;
+	LibCustomUI_CurrentModuleName = "";
+	LibCustomUI_CurrentModule <=> Null;
+	LibCustomUI_OffsetClick = <0., 0.>;
+	LibCustomUI_Containment = [90., 160., -90., -160.];
+	ClientUI.UISequence = CUIConfig::EUISequence::None;
+	
+	while (True) {
+		yield;
+		
+		if (!PageIsVisible || InputPlayer == Null) continue;
+		
+		// Show/hide edit UI
+		foreach (Event in PendingEvents) {
+			if (Event.Type == CMlEvent::Type::KeyPress && Event.KeyName == "{{{G_Key}}}") {
+				Frame_Global.Visible = !Frame_Global.Visible;
+				if (Frame_Global.Visible) {
+					LibCustomUI_IsVisible = True;
+					ClientUI.UISequence = CUIConfig::EUISequence::UIInteraction;
+				} else {
+					LibCustomUI_IsVisible = False;
+					ClientUI.UISequence = CUIConfig::EUISequence::None;
+				}
+			}
+		}
+		
+		if (!LibCustomUI_IsVisible) continue;
+		
+		foreach (Event in PendingEvents) {
+			if (Event.Type == CMlEvent::Type::MouseClick) {
+				if (Event.Control.HasClass("BasicButton")) {
+					declare Visibility = !Persistent_LibCustomUI_BasicVisibilities[Event.Control.ControlId];
+					Persistent_LibCustomUI_BasicVisibilities[Event.Control.ControlId] = Visibility;
+					SetHelperModuleVisibility(Frames_BasicHelpers[Event.Control.ControlId], Visibility);
+					SetButtonText(Buttons_BasicVisibilities[Event.Control.ControlId], Visibility);
+					// Buttons
+					switch (Event.ControlId) {
+						case "Notices"		: ClientUI.OverlayHideNotices	= !Visibility;
+						case "MapInfo"		: ClientUI.OverlayHideMapInfo	= !Visibility;
+						case "Chat"			: ClientUI.OverlayHideChat		= !Visibility;
+						case "Crosshair"	: ClientUI.OverlayHideCrosshair	= !Visibility;
+						case "Gauges"		: ClientUI.OverlayHideGauges	= !Visibility;
+					}
+				} else {
+					// Menu control
+					switch (Event.ControlId) {
+						case "Button_Menu": {
+							Frame_Menu.Visible = !Frame_Menu.Visible;
+							if (Frame_Help.Visible) Frame_Help.Visible = False;
+							if (Frame_Reset.Visible) Frame_Reset.Visible = False;
+						}
+						case "Button_CloseMenu": {
+							Frame_Menu.Visible = False;
+						}
+						case "Button_Reset": {
+							Frame_Reset.Visible = !Frame_Reset.Visible;
+							if (Frame_Menu.Visible) Frame_Menu.Visible = False;
+							if (Frame_Help.Visible) Frame_Help.Visible = False;
+						}
+						case "Button_CloseReset": {
+							Frame_Reset.Visible = False;
+						}
+						case "Button_ActiveReset": {
+							foreach (Name => Button in Buttons_BasicVisibilities) {
+								Persistent_LibCustomUI_BasicVisibilities[Name] = True;
+								SetHelperModuleVisibility(Frames_BasicHelpers[Name], True);
+								SetButtonText(Button, True);
+								switch (Name) {
+									case "Notices"		: ClientUI.OverlayHideNotices	= False;
+									case "MapInfo"		: ClientUI.OverlayHideMapInfo	= False;
+									case "Chat"			: ClientUI.OverlayHideChat		= False;
+									case "Crosshair"	: ClientUI.OverlayHideCrosshair	= False;
+									case "Gauges"		: ClientUI.OverlayHideGauges	= False;
+								}
+							}
+							
+							Page.GetClassChildren("Module_Helper", Frame_Helpers, True);
+							foreach (Control in Page.GetClassChildren_Result) {
+								declare Name = (Control as CMlFrame).Controls[2].ControlId;
+								if (LibCustomUI_ModulesUpdated.existskey(Name)) {
+									Control.RelativePosition = <0., 0., 0.>;
+									LibCustomUI_ModulesPositions[Name] = <0., 0., 0.>;
+									Persistent_LibCustomUI_ModulesPositions[Name] = <0., 0., 0.>;
+									LibCustomUI_ModulesVisibilities[Name] = True;
+									Persistent_LibCustomUI_ModulesVisibilities[Name] = True;
+									SetHelperModuleVisibility(Control, True);
+									LibCustomUI_ModulesUpdated[Name] = True;
+								}
+							}
+							
+							Frame_Reset.Visible = False;
+						}
+						case "Button_Help": {
+							Frame_Help.Visible = !Frame_Help.Visible;
+							if (Frame_Menu.Visible) Frame_Menu.Visible = False;
+							if (Frame_Reset.Visible) Frame_Reset.Visible = False;
+						}
+						case "Button_CloseHelp": {
+							Frame_Help.Visible = False;
+						}
+						case "Button_Close": {
+							Frame_Global.Visible = False;
+							LibCustomUI_IsVisible = False;
+							ClientUI.UISequence = CUIConfig::EUISequence::None;
+						}
+					}
+				}
+			}
+			else if (!LibCustomUI_IsMoving) {
+				if (Event.Type == CMlEvent::Type::MouseOver) {
+					// Select module
+					if (Event.Control.HasClass("Module_Handler")) {
+						LibCustomUI_CurrentModuleName = Event.ControlId;
+						LibCustomUI_CurrentModule <=> Null;
+					} 
+					// Show basic module
+					else if (Event.Control.HasClass("BasicButton")) {
+						if (Frames_BasicHelpers.existskey(Event.Control.ControlId)) {
+							Frames_BasicHelpers[Event.Control.ControlId].Visible = True;
+						}
+					}
+				} else if (Event.Type == CMlEvent::Type::MouseOut) {
+					// Select module
+					if (Event.Control.HasClass("Module_Handler")) {
+						LibCustomUI_CurrentModuleName = "";
+						LibCustomUI_CurrentModule <=> Null;
+					}
+					// Hide basic module
+					else if (Event.Control.HasClass("BasicButton")) {
+						if (Frames_BasicHelpers.existskey(Event.Control.ControlId)) {
+							Frames_BasicHelpers[Event.Control.ControlId].Visible = False;
+						}
+					}
+				}
+			}
+		}
+		
+		// Reset
+		if (LibCustomUI_PrevMouseMiddleButton != MouseMiddleButton) {
+			LibCustomUI_PrevMouseMiddleButton = MouseMiddleButton;
+			
+			if (MouseMiddleButton && !LibCustomUI_IsMoving) {
+				if (LibCustomUI_CurrentModuleName != "" && LibCustomUI_CurrentModule == Null) {
+					LibCustomUI_CurrentModule <=> Frame_Helpers.GetFirstChild("Frame_Helper_"^LibCustomUI_CurrentModuleName);
+				}
+				if (LibCustomUI_CurrentModule != Null && LibCustomUI_ModulesUpdated.existskey(LibCustomUI_CurrentModuleName)) {
+					LibCustomUI_CurrentModule.RelativePosition = <0., 0., 0.>;
+					LibCustomUI_ModulesPositions[LibCustomUI_CurrentModuleName] = <0., 0., 0.>;
+					Persistent_LibCustomUI_ModulesPositions[LibCustomUI_CurrentModuleName] = <0., 0., 0.>;
+					LibCustomUI_ModulesVisibilities[LibCustomUI_CurrentModuleName] = True;
+					Persistent_LibCustomUI_ModulesVisibilities[LibCustomUI_CurrentModuleName] = True;
+					SetHelperModuleVisibility(LibCustomUI_CurrentModule, True);
+					LibCustomUI_ModulesUpdated[LibCustomUI_CurrentModuleName] = True;
+				}
+			}
+		}
+		
+		// Show/Hide
+		if (LibCustomUI_PrevMouseRightButton != MouseRightButton) {
+			LibCustomUI_PrevMouseRightButton = MouseRightButton;
+			
+			if (MouseRightButton && !LibCustomUI_IsMoving) {
+				if (LibCustomUI_CurrentModuleName != "" && LibCustomUI_CurrentModule == Null) {
+					LibCustomUI_CurrentModule <=> Frame_Helpers.GetFirstChild("Frame_Helper_"^LibCustomUI_CurrentModuleName);
+				}
+				if (
+					LibCustomUI_CurrentModule != Null 
+					&& !LibCustomUI_CurrentModule.HasClass("NotHidable") 
+					&& LibCustomUI_ModulesUpdated.existskey(LibCustomUI_CurrentModuleName)
+				) {
+					LibCustomUI_ModulesVisibilities[LibCustomUI_CurrentModuleName] = !LibCustomUI_ModulesVisibilities[LibCustomUI_CurrentModuleName];
+					Persistent_LibCustomUI_ModulesVisibilities[LibCustomUI_CurrentModuleName] = LibCustomUI_ModulesVisibilities[LibCustomUI_CurrentModuleName];
+					SetHelperModuleVisibility(LibCustomUI_CurrentModule, LibCustomUI_ModulesVisibilities[LibCustomUI_CurrentModuleName]);
+					LibCustomUI_ModulesUpdated[LibCustomUI_CurrentModuleName] = True;
+				}
+			}
+		}
+		
+		// Move
+		if (LibCustomUI_PrevMouseLeftButton != MouseLeftButton) {
+			LibCustomUI_PrevMouseLeftButton = MouseLeftButton;
+			
+			// Unclick
+			if (LibCustomUI_IsMoving && !MouseLeftButton) {
+				LibCustomUI_IsMoving = False;
+			}
+			
+			// Click
+			if (!LibCustomUI_IsMoving && MouseLeftButton) {
+				if (LibCustomUI_CurrentModuleName != "" && LibCustomUI_CurrentModule == Null) {
+					LibCustomUI_CurrentModule <=> Frame_Helpers.GetFirstChild("Frame_Helper_"^LibCustomUI_CurrentModuleName);
+				}
+				if (
+					LibCustomUI_CurrentModule != Null 
+					&& !LibCustomUI_CurrentModule.HasClass("NotMovable") 
+					&& LibCustomUI_ModulesUpdated.existskey(LibCustomUI_CurrentModuleName)
+				) {
+					LibCustomUI_IsMoving = True;
+					LibCustomUI_OffsetClick = <LibCustomUI_CurrentModule.RelativePosition.X - MouseX, LibCustomUI_CurrentModule.RelativePosition.Y - MouseY>;
+					LibCustomUI_Containment = [90., 160., -90., -160.];
+					
+					declare BoundingBox <=> (LibCustomUI_CurrentModule as CMlFrame).GetFirstChild("Quad_BoundingBox");
+					if (BoundingBox != Null) {
+						if (BoundingBox.HorizontalAlign == CMlControl::AlignHorizontal::Left) {
+							LibCustomUI_Containment[1] -= BoundingBox.Size.X;
+						} else if (BoundingBox.HorizontalAlign == CMlControl::AlignHorizontal::Right) {
+							LibCustomUI_Containment[3] += BoundingBox.Size.X;
+						} else {
+							LibCustomUI_Containment[1] -= (BoundingBox.Size.X / 2.);
+							LibCustomUI_Containment[3] += (BoundingBox.Size.X / 2.);
+						}
+						
+						if (BoundingBox.VerticalAlign == CMlControl::AlignVertical::Bottom) {
+							LibCustomUI_Containment[0] -= BoundingBox.Size.Y;
+						} else if (BoundingBox.VerticalAlign == CMlControl::AlignVertical::Top) {
+							LibCustomUI_Containment[2] += BoundingBox.Size.Y;
+						} else {
+							LibCustomUI_Containment[0] -= (BoundingBox.Size.Y / 2.);
+							LibCustomUI_Containment[2] += (BoundingBox.Size.Y / 2.);
+						}
+					}
+				}
+			}
+		}
+		
+		// Moving
+		if (LibCustomUI_IsVisible && LibCustomUI_IsMoving) {
+			LibCustomUI_CurrentModule.RelativePosition.X = MouseX + LibCustomUI_OffsetClick.X;
+			LibCustomUI_CurrentModule.RelativePosition.Y = MouseY + LibCustomUI_OffsetClick.Y;
+			
+			if (LibCustomUI_CurrentModule.AbsolutePosition.X > LibCustomUI_Containment[1]) {
+				LibCustomUI_CurrentModule.RelativePosition.X -= LibCustomUI_CurrentModule.AbsolutePosition.X - LibCustomUI_Containment[1];
+			}
+			if (LibCustomUI_CurrentModule.AbsolutePosition.X < LibCustomUI_Containment[3]) {
+				LibCustomUI_CurrentModule.RelativePosition.X -= LibCustomUI_CurrentModule.AbsolutePosition.X - LibCustomUI_Containment[3];
+			}
+			if (LibCustomUI_CurrentModule.AbsolutePosition.Y > LibCustomUI_Containment[0]) {
+				LibCustomUI_CurrentModule.RelativePosition.Y -= LibCustomUI_CurrentModule.AbsolutePosition.Y - LibCustomUI_Containment[0];
+			}
+			if (LibCustomUI_CurrentModule.AbsolutePosition.Y < LibCustomUI_Containment[2]) {
+				LibCustomUI_CurrentModule.RelativePosition.Y -= LibCustomUI_CurrentModule.AbsolutePosition.Y - LibCustomUI_Containment[2];
+			}
+			
+			LibCustomUI_ModulesPositions[LibCustomUI_CurrentModuleName] = LibCustomUI_CurrentModule.RelativePosition;
+			Persistent_LibCustomUI_ModulesPositions[LibCustomUI_CurrentModuleName] = LibCustomUI_CurrentModule.RelativePosition;
+			LibCustomUI_ModulesUpdated[LibCustomUI_CurrentModuleName] = True;
+		}
+	}
+}
+--></script>
+</manialink>""";
+}
+
+// ---------------------------------- //
+/** Create the manialink script to inject in the UI to customize
+ *	Initialization sequence
+ *
+ *	@return		A manialink script
+ */
+Text Private_GetMLInjectInit() {
+	return """
+declare Boolean LibCustomUI_IsVisible for ClientUI;
+declare Boolean[Text] LibCustomUI_ModulesUpdated for ClientUI;
+declare Vec3[Text] LibCustomUI_ModulesPositions for ClientUI;
+declare Boolean[Text] LibCustomUI_ModulesVisibilities for ClientUI;
+declare Integer LibCustomUI_ForcedUpdate for ClientUI;
+declare CMlControl[Text] LibCustomUI_LocalModules;
+declare Integer LibCustomUI_PrevForcedUpdate;
+declare Boolean LibCustomUI_Reload;
+
+Page.GetClassChildren("LibCustomUI_Module", Page.MainFrame, True);
+foreach (Control in Page.GetClassChildren_Result) {
+	LibCustomUI_LocalModules[Control.ControlId] <=> Page.GetFirstChild(Control.ControlId);
+}
+LibCustomUI_PrevForcedUpdate = -1;
+LibCustomUI_Reload = False;
+""";
+}
+
+// ---------------------------------- //
+/** Create the manialink script to inject in the UI to customize
+ *	Update sequence
+ *
+ *	@return		A manialink script
+ */
+Text Private_GetMLInjectLoop() {
+	return """
+if (LibCustomUI_PrevForcedUpdate != LibCustomUI_ForcedUpdate) {
+	LibCustomUI_Reload = True;
+	LibCustomUI_PrevForcedUpdate = LibCustomUI_ForcedUpdate;
+}
+if (LibCustomUI_IsVisible || LibCustomUI_Reload) {
+	declare Text[] ModulesUpdated;
+	foreach (ModuleName => ModuleUpdated in LibCustomUI_ModulesUpdated) {
+		if ((ModuleUpdated || LibCustomUI_Reload) && LibCustomUI_LocalModules.existskey(ModuleName)) {
+			declare Module <=> LibCustomUI_LocalModules[ModuleName];
+			Module.RelativePosition = LibCustomUI_ModulesPositions[ModuleName];
+			Module.Visible = LibCustomUI_ModulesVisibilities[ModuleName];
+			ModulesUpdated.add(ModuleName);
+		}
+	}
+	foreach (ModuleName in ModulesUpdated) {
+		LibCustomUI_ModulesUpdated[ModuleName] = False;
+	}
+	LibCustomUI_Reload = False;
+}
+""";
+}
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+// ---------------------------------- //
+/** Return the version number of the script
+ *
+ *	@return		The version number of the script
+ */
+Text GetScriptVersion() {
+	return Version;
+}
+
+// ---------------------------------- //
+/** Return the name of the script
+ *
+ *	@return		The name of the script
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+// ---------------------------------- //
+/// Attach the CustomUI layer
+Void Attach() {
+	if (UIManager.UILayers.existskey(G_LibCustomUI_LayerCustomUIId) && !UIManager.UIAll.UILayers.existskey(G_LibCustomUI_LayerCustomUIId)) {
+		UIManager.UIAll.UILayers.add(UIManager.UILayers[G_LibCustomUI_LayerCustomUIId]);
+	}
+}
+
+// ---------------------------------- //
+/// Detach the CustomUI layer
+Void Detach() {
+	if (UIManager.UIAll.UILayers.existskey(G_LibCustomUI_LayerCustomUIId)) {
+		declare Removed = UIManager.UIAll.UILayers.removekey(G_LibCustomUI_LayerCustomUIId);
+	}
+}
+
+// ---------------------------------- //
+/// Unload the library
+Void Unload() {
+	Detach();
+	
+	if (UIManager.UILayers.existskey(G_LibCustomUI_LayerCustomUIId)) {
+		UIManager.UILayerDestroy(UIManager.UILayers[G_LibCustomUI_LayerCustomUIId]);
+	}
+	
+	G_LibCustomUI_LayerCustomUIId = NullId;
+	G_MLHelpers.clear();
+	G_Key = "";
+}
+
+// ---------------------------------- //
+/// Load the library
+Void Load() {
+	Unload();
+	
+	G_Key = C_DefaultKey;
+	
+	declare LayerCustomUI = UIManager.UILayerCreate();
+	G_LibCustomUI_LayerCustomUIId = LayerCustomUI.Id;
+	LayerCustomUI.ManialinkPage = Private_GetMLCustomUI();
+	UIManager.UIAll.UILayers.add(LayerCustomUI);
+}
+
+// ---------------------------------- //
+/** Add a customizable module
+ *
+ *	@param	_Name		The name of the module, it must be unique and used as the id of the frame to customize
+ *	@param	_Pos		The position of the helper
+ *	@param	_Size		The size of the helper
+ *	@param	_VAlign		The vertical align of the helper, can be top, center or bottom
+ *	@param	_HAlign		The horizontal align of the helper, can be left, center or right
+ *	@param	_Movable	Can the module be moved?
+ *	@param	_Hidable	Can the module be hidden?
+ */
+Void Add(Text _Name, Vec2 _Pos, Vec2 _Size, Text _VAlign, Text _HAlign, Boolean _Movable, Boolean _Hidable) {
+	declare Name = TL::MLEncode(_Name);
+	declare Size = _Size;
+	if (Size.X > C_WindowWidth) Size.X = C_WindowWidth;
+	if (Size.Y > C_WindowHeight) Size.Y = C_WindowHeight;
+	if (Size.X < 0.) Size.X = 0.;
+	if (Size.Y < 0.) Size.Y = 0.;
+	declare HAlign = "center";
+	declare VAlign = "center";
+	if (_HAlign == "left" || _HAlign == "right") HAlign = _HAlign;
+	if (_VAlign == "top" || _VAlign == "bottom") VAlign = _VAlign;
+	
+	G_MLHelpers[Name] = Private_GetMLHelper(Name, _Pos, Size, VAlign, HAlign, _Movable, _Hidable);
+}
+
+// ---------------------------------- //
+/// Overload of the Add() function, see above for documentation
+Void Add(Text _Name, Vec2 _Pos, Vec2 _Size, Text _VAlign, Text _HAlign) {
+	Add(_Name, _Pos, _Size, _VAlign, _HAlign, True, True);
+}
+
+// ---------------------------------- //
+/// Overload of the Add() function, see above for documentation
+Void Add(Text _Name, Vec2 _Pos, Vec2 _Size) {
+	Add(_Name, _Pos, _Size, "", "", True, True);
+}
+
+// ---------------------------------- //
+/** Remove a customizable module
+ *
+ *	@param	_Name		The name of the module to remove
+ */
+Void Remove(Text _Name) {
+	declare Removed = G_MLHelpers.removekey(TL::MLEncode(_Name));
+}
+
+// ---------------------------------- //
+/** Check if a module exists
+ *
+ *	@return		True if the module already exists, false otherwise
+ */
+Boolean Exists(Text _Name) {
+	return G_MLHelpers.existskey(TL::MLEncode(_Name));
+}
+
+// ---------------------------------- //
+/** Build the helpers
+ *	You must call this function after using Add() or Remove() to rebuild
+ *	the manialink containing the helpers
+ */
+Void Build() {
+	if (UIManager.UILayers.existskey(G_LibCustomUI_LayerCustomUIId)) {
+		UIManager.UILayers[G_LibCustomUI_LayerCustomUIId].ManialinkPage = Private_GetMLCustomUI();
+	}
+}
+
+// ---------------------------------- //
+/** Set the key ot open/close the customization menu
+ *	You need to Build() the UI to take this change into account
+ *
+ *	@param	_Key	The name of the key to use
+ */
+Void SetMenuKey(Text _Key) {
+	G_Key = _Key;
+}
+
+// ---------------------------------- //
+/** Inject the initialization script in the manialink to customize
+ *
+ *	@return		The manialink script 
+ */
+Text InjectMLInit() {
+	return Private_GetMLInjectInit();
+}
+
+// ---------------------------------- //
+/** Inject the update script in the manialink to customize
+ *
+ *	@return		The manialink script 
+ */
+Text InjectMLLoop() {
+	return Private_GetMLInjectLoop();
+}
+
+// ---------------------------------- //
+/** Inject the complete script in the manialink to customize
+ *
+ *	@return		The manialink script 
+ */
+Text InjectMLFullScript() {
+	return """
+<script><!--
+main() {
+	{{{InjectMLInit()}}}
+	
+	while (True) {
+		yield;
+		if (!PageIsVisible || InputPlayer == Null) continue;
+		
+		{{{InjectMLLoop()}}}
+	}
+}
+--></script>""";
+}

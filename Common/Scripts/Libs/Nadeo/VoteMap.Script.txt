@@ -1,0 +1,746 @@
+/**
+ *	Vote to select the next map
+ *
+ *	Each player vote for one map,
+ *	each map with a vote has a chance top be selected.
+ *	Maps with more votes have a higher probability to be selected.
+ */
+#Const	Version		"2017-03-28"
+#Const	ScriptName	"Libs/Nadeo/VoteMap.Script.txt"
+
+#Include "MathLib" as ML
+#Include "Libs/Nadeo/CustomUI.Script.txt" as CustomUI
+#Include "Libs/Nadeo/Window.Script.txt" as Window
+#Include "Libs/Nadeo/Manialink.Script.txt" as Manialink
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_LibVoteMap_DefaultVoteDuration		15000	///< Default vote sequence duration
+#Const C_LibVoteMap_DefaultResultDuration	5000	///< Default result sequence duration
+#Const C_LibVoteMap_SequenceNone			0		///< Vote not started
+#Const C_LibVoteMap_SequenceVote			1		///< Vote sequence
+#Const C_LibVoteMap_SequenceResult			2		///< Result sequence
+#Const C_LibVoteMap_SequenceAnim			3		///< Anim sequence
+#Const C_LibVoteMap_AnimDuration			450		///< Duration of the animations
+
+// ---------------------------------- //
+// Globales
+// ---------------------------------- //
+declare Ident G_LibVoteMap_LayerVoteMapId;		///< Save layer id
+declare Integer G_LibVoteMap_ResultDuration;	///< Result display duration
+declare CMapInfo[] G_LibVoteMap_AvailableMaps;	///< List of maps available for the vote
+declare Integer G_LibVoteMap_Sequence;			///< Current sequence
+declare Text G_LibVoteMap_Style;				///< Style of the UI
+declare Boolean G_LibVoteMap_UseAnimations;		///< Use animations to show/hide the vote UI
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+// Private
+// ---------------------------------- //
+// ---------------------------------- //
+/** Create the vote map manialink
+ *
+ *	@param	_Style		The style of the UI
+ *	@param	_MapsCount	The number of maps in the list
+ *
+ *	@return		The manialink text
+ */
+Text Private_CreateMLVoteMap(Text _Style, Integer _MapsCount) {
+	declare MapsByCol = 7;
+	declare ColsNb = ((_MapsCount - 1) / MapsByCol) + 1;
+	if (ColsNb > 3) ColsNb = 3;
+	else if (ColsNb < 1) ColsNb = 1;
+	
+	declare ColWidth = 100.;
+	declare Width = ColsNb * ColWidth;
+	declare MapMargin = 2.;
+	declare MapWidth = (Width - ((ColsNb + 1) * MapMargin)) / ColsNb;
+	
+	declare MapsGrid = "";
+	for (Col, 1, ColsNb) {
+		declare PosnX = ((Col - 1) * (MapWidth + MapMargin)) + MapMargin;
+		for (Row, 1, MapsByCol) {
+			declare PosnY = (Row - 1) * -12.;
+			MapsGrid ^= """<frameinstance posn="{{{PosnX}}} {{{PosnY}}}" modelid="Framemodel_MapCard" />""";
+		}
+	}
+	
+	declare BgStyle = "";
+	declare MapCard = "";
+	switch (_Style) {
+		case "SM": {
+			BgStyle = """
+<frame posn="{{{-(Width+4.)/2.}}} 73.">
+	{{{Window::Create("SM", <Width+4., 138.>, 0.15)}}}
+</frame>
+<quad posn="0 47 1" sizen="{{{Width}}} 22" halign="center" valign="center" style="Bgs1InRace" substyle="BgTitle2" />
+""";
+		}
+		case "TM": {
+			BgStyle = """
+<frame posn="{{{-(Width+6.)/2.}}} 73.">
+	{{{Window::Create("TM", <Width+6., 138.>, 0.1)}}}
+</frame>
+<quad posn="0 47 1" sizen="{{{Width}}} 22" halign="center" valign="center" style="Bgs1InRace" substyle="BgTitle2" />
+""";
+		}
+		default: {
+			BgStyle = """
+<quad sizen="{{{Width}}} 128" halign="center" valign="center" style="Bgs1" substyle="BgCardProperty" />
+<quad posn="0 70 2" sizen="{{{Width+6.5}}} 8" halign="center" valign="center" style="Bgs1InRace" substyle="BgGlow2" />
+<quad posn="0 64 1" sizen="{{{Width+0.2}}} 12" halign="center" valign="center" style="Bgs1InRace" substyle="BgTitle" />
+<quad posn="0 -64 1" sizen="{{{Width}}} 2" halign="center" valign="center" style="Bgs1InRace" substyle="BgMetalBar" />
+<quad posn="0 47 1" sizen="{{{Width}}} 22" halign="center" valign="center" style="Bgs1InRace" substyle="BgTitle2" />
+""";
+		}
+	}
+	
+	return """
+<manialink version="1" name="Lib_VoteMap:VoteMap">
+<framemodel id="Framemodel_MapCard">
+	<quad sizen="{{{MapWidth}}} 12" valign="center" style="Bgs1" substyle="BgCardChallenge" class="MapCard" scriptevents="1" id="Quad_Background" />
+	<label posn="2 0 2" sizen="{{{MapWidth*0.8}}} 11" halign="left" valign="center2" textsize="3" translate="0" id="Label_Name" />
+	<label posn="{{{MapWidth-2}}} 0 0" sizen="{{{MapWidth*0.15}}} 5" halign="right" valign="center2" style="TextRaceMessageBig" textsize="6" id="Label_Vote" />
+</framemodel>
+<frame posn="0 160 15" id="Frame_Global" hidden="1">
+	<frame id="Frame_Background">
+		{{{BgStyle}}}
+	</frame>
+	<frame posn="0 64 5">
+		<label posn="0 0 0" sizen="96 8" halign="center" valign="center2" text="{{{_("Vote for a map")}}}" style="TextButtonBig" id="Label_Title" />
+	</frame>
+	<frame posn="0 47 5" id="Frame_Info">
+		<quad posn="{{{-(Width/2.)-2.5}}} -0.2"  sizen="27.5 27.5" valign="center" style="UIConstruction_Buttons" substyle="Help" />
+		<label posn="9 0" sizen="{{{Width-25.}}} 20" halign="center" valign="center" autonewline="1" maxline="4" textsize="2" text="{{{_("Voting for a map only increases the odds that it will be selected. Any map with at least one vote has a chance to be played.")}}}" />
+	</frame>
+	<frame posn="0 30 5" id="Frame_Vote">
+		<frame posn="{{{-Width/2.}}} 0" id="Frame_MapCards">
+			{{{MapsGrid}}}
+		</frame>
+		<frame posn="0 -85 20" id="Frame_Pager">
+			<quad posn="25 0" sizen="12 12" halign="center" valign="center" style="Icons64x64_1" substyle="ArrowNext" scriptevents="1" class="Pager" id="Button_PagerNext" />
+			<quad posn="-25 0" sizen="12 12" halign="center" valign="center" style="Icons64x64_1" substyle="ArrowPrev" scriptevents="1" class="Pager" id="Button_PagerPrev" />
+			<quad sizen="38 11" halign="center" valign="center" style="Bgs1" substyle="BgProgressBar" />
+			<label posn="0 0 1" sizen="32 8" halign="center" valign="center2" id="Label_Pager" />
+		</frame>
+	</frame>
+	<frame posn="-48 36 5" id="Frame_Result">
+		<quad sizen="96 44" style="Bgs1" substyle="BgCardChallenge" />
+		<quad posn="2 -4 1" sizen="6 6" valign="center" style="UIConstruction_Buttons" substyle="Challenge" />
+		<label posn="10 -4 1" sizen="80 6" halign="left" valign="center2" textsize="4" translate="0" id="Label_Name" />
+		<quad posn="2 -12 1" sizen="6 6" valign="center" style="UIConstruction_Buttons" substyle="Author" />
+		<label posn="10 -12 1" sizen="80 6" halign="left" valign="center2" textsize="3" translate="0" id="Label_Author" />
+		<quad posn="2 -20 1" sizen="6 6" valign="center" style="UIConstruction_Buttons" substyle="ScriptEditor" />
+		<label posn="10 -18 1" sizen="80 6" halign="left" textsize="3" translate="0" autonewline="1" maxline="5" id="Label_Comment" />
+	</frame>
+</frame>
+<script><!--
+#Include "TextLib" as TL
+#Include "MathLib" as ML
+
+{{{Manialink::Animations(["EaseOutExp"])}}}
+
+declare Integer G_MapCardsNb;
+declare Integer G_CurrentPage;
+
+declare CMlFrame Frame_Global;
+declare CMlFrame Frame_Vote;
+declare CMlFrame Frame_Result;
+declare CMlFrame Frame_MapCards;
+declare CMlFrame Frame_Pager;
+declare CMlQuad Button_PagerNext;
+declare CMlQuad Button_PagerPrev;
+declare CMlLabel Label_Pager;
+
+Void UpdateResultCard() {
+	declare netread Text[] Net_LibVoteMap_Result for Teams[0];
+	
+	declare Label_Name		<=> (Frame_Result.GetFirstChild("Label_Name")	as CMlLabel);
+	declare Label_Author	<=> (Frame_Result.GetFirstChild("Label_Author")	as CMlLabel);
+	declare Label_Comment	<=> (Frame_Result.GetFirstChild("Label_Comment")as CMlLabel);
+	
+	if (Net_LibVoteMap_Result.existskey(0)) Label_Name.Value = Net_LibVoteMap_Result[0];
+	else Label_Name.Value = "...";
+	
+	if (Net_LibVoteMap_Result.existskey(1)) Label_Author.Value = Net_LibVoteMap_Result[1];
+	else Label_Author.Value = "...";
+	
+	if (Net_LibVoteMap_Result.existskey(2)) Label_Comment.Value = Net_LibVoteMap_Result[2];
+	else Label_Comment.Value = "...";
+}
+
+Void UpdateMapCard(CMlFrame _Frame, Integer _MapKey) {
+	if (_Frame == Null) return;
+	
+	declare netread Text[] Net_LibVoteMap_MapList for Teams[0];
+	declare netread Integer[Text] Net_LibVoteMap_PlayersVotes for Teams[0];
+	
+	if (Net_LibVoteMap_MapList.existskey(_MapKey)) {
+		declare Quad_Background	<=> (_Frame.GetFirstChild("Quad_Background")	as CMlQuad);
+		declare Label_Name		<=> (_Frame.GetFirstChild("Label_Name")			as CMlLabel);
+		declare Label_Vote		<=> (_Frame.GetFirstChild("Label_Vote")			as CMlLabel);
+		
+		declare MapName = Net_LibVoteMap_MapList[_MapKey];
+		
+		_Frame.Visible = True;
+		Label_Name.Value = MapName;
+		
+		declare VoteNb = 0;
+		declare IsMyVote = False;
+		foreach (PlayerLogin => VoteMapKey in Net_LibVoteMap_PlayersVotes) {
+			if (VoteMapKey == _MapKey) {
+				VoteNb += 1;
+				
+				if (PlayerLogin == InputPlayer.Login) IsMyVote = True;
+			}
+		}
+		
+		if (VoteNb > 0) {
+			if (IsMyVote) {
+				Quad_Background.StyleSelected = True;
+			} else {
+				Quad_Background.StyleSelected = False;
+			}
+			Label_Vote.Value = TL::ToText(VoteNb);
+		} else {
+			Quad_Background.StyleSelected = False;
+			Label_Vote.Value = "";
+		}
+	} else {
+		_Frame.Visible = False;
+	}
+}
+
+Void UpdatePage() {
+	declare netread Text[] Net_LibVoteMap_MapList for Teams[0];
+	
+	declare StartKey = G_CurrentPage * G_MapCardsNb;
+	foreach (Key => Control in Frame_MapCards.Controls) {
+		declare Frame_MapCard	<=> (Control as CMlFrame);
+		
+		declare MapKey = StartKey + Key;
+		UpdateMapCard(Frame_MapCard, MapKey);
+	}
+}
+
+Void ChangePage(Integer _Shift) {
+	declare netread Text[] Net_LibVoteMap_MapList for Teams[0];
+	declare PageMax = 0;
+	if (Net_LibVoteMap_MapList.count > G_MapCardsNb) {
+		Frame_Pager.Visible = True;
+		PageMax = (Net_LibVoteMap_MapList.count - 1) / G_MapCardsNb;
+	} else if (Net_LibVoteMap_MapList.count <= G_MapCardsNb) {
+		Frame_Pager.Visible = False;
+		G_CurrentPage = 0;
+	}
+	
+	declare NewPage = G_CurrentPage + _Shift;
+	if (NewPage < 0) NewPage = 0;
+	else if (NewPage > PageMax) NewPage = PageMax;
+	G_CurrentPage = NewPage;
+	
+	if (G_CurrentPage <= 0) Button_PagerPrev.Substyle = "ArrowDisabled";
+	else Button_PagerPrev.Substyle = "ArrowPrev";
+	if (G_CurrentPage >= PageMax) Button_PagerNext.Substyle = "ArrowDisabled";
+	else Button_PagerNext.Substyle = "ArrowNext";
+	
+	Label_Pager.Value = (G_CurrentPage + 1)^" / "^(PageMax + 1);
+	
+	UpdatePage();
+}
+
+Void SelectMap(Integer _MapKey) {
+	declare netread Integer Net_LibVoteMap_SynchroServer for Teams[0];
+	declare netwrite Integer Net_LibVoteMap_SynchroClient for UI;
+	declare netwrite Integer Net_LibVoteMap_MapUpdate for UI;
+	declare netwrite Integer Net_LibVoteMap_MapKey for UI;
+	declare netwrite Integer Net_LibVoteMap_Validate for UI;
+	
+	Net_LibVoteMap_MapKey = _MapKey;
+	Net_LibVoteMap_SynchroClient = Net_LibVoteMap_SynchroServer;
+	Net_LibVoteMap_MapUpdate = Now;
+	Net_LibVoteMap_Validate = Now;
+}
+
+Void PlayAnim(Text _AnimId) {
+	if (_AnimId == "SlideIn") {
+		LibManialink_Anim({{{Manialink::Inject("""<frame posn="0 -10 15" id="Frame_Global" />""")}}}, {{{C_LibVoteMap_AnimDuration}}}, "EaseOutExp");
+	} else if(_AnimId == "SlideOut") {
+		LibManialink_Anim({{{Manialink::Inject("""<frame posn="0 160 15" id="Frame_Global" />""")}}}, {{{C_LibVoteMap_AnimDuration}}}, "EaseOutExp");
+	} else {
+		Frame_Global <=> (Page.GetFirstChild("Frame_Global") as CMlFrame);
+		Frame_Global.RelativePosition.Y = -10.;
+	}
+}
+
+main() {
+	Frame_Global		<=> (Page.GetFirstChild("Frame_Global")				as CMlFrame);
+	Frame_Vote			<=> (Page.GetFirstChild("Frame_Vote")				as CMlFrame);
+	Frame_Result		<=> (Page.GetFirstChild("Frame_Result")				as CMlFrame);
+	Frame_MapCards		<=> (Frame_Global.GetFirstChild("Frame_MapCards")	as CMlFrame);
+	Frame_Pager			<=> (Frame_Global.GetFirstChild("Frame_Pager")		as CMlFrame);
+	Button_PagerNext	<=> (Frame_Pager.GetFirstChild("Button_PagerNext")	as CMlQuad);
+	Button_PagerPrev	<=> (Frame_Pager.GetFirstChild("Button_PagerPrev")	as CMlQuad);
+	Label_Pager			<=> (Frame_Pager.GetFirstChild("Label_Pager")		as CMlLabel);
+	
+	declare Label_Title <=> (Frame_Global.GetFirstChild("Label_Title") as CMlLabel);
+	
+	foreach (Key => Control in Frame_MapCards.Controls) {
+		declare Frame_MapCard <=> (Control as CMlFrame);
+		declare Quad_Background <=> (Frame_MapCard.GetFirstChild("Quad_Background") as CMlQuad);
+		declare LibVoteMap_Key for Quad_Background = 0;
+		LibVoteMap_Key = Key;
+	}
+	G_MapCardsNb = Frame_MapCards.Controls.count;
+	G_CurrentPage = 0;
+	
+	declare netread Integer Net_LibVoteMap_Sequence for Teams[0];
+	declare netread Integer Net_LibVoteMap_SynchroServer for Teams[0];
+	declare netwrite Integer Net_LibVoteMap_SynchroClient for UI;
+	declare netread Integer Net_LibVoteMap_MapListUpdate for Teams[0];
+	declare netread Integer Net_LibVoteMap_ResultUpdate for Teams[0];
+	declare netread Integer Net_LibVoteMap_AnimUpdate for Teams[0];
+	declare netread Text Net_LibVoteMap_Anim for Teams[0];
+	declare netwrite Integer Net_LibVoteMap_Validate for UI;
+	Net_LibVoteMap_Validate = -1;
+	
+	declare PrevSequence = -1;
+	declare PrevMapListUpdate = -1;
+	declare PrevResultUpdate = -1;
+	declare PrevAnimUpdate = -1;
+	
+	while (InputPlayer == Null) yield;
+	Frame_Global.Visible = True;
+	
+	while (True) {
+		yield;
+		if (!PageIsVisible || InputPlayer == Null) continue;
+		
+		LibManialink_AnimLoop();
+		
+		if (PrevAnimUpdate != Net_LibVoteMap_AnimUpdate) {
+			PrevAnimUpdate = Net_LibVoteMap_AnimUpdate;
+			PlayAnim(Net_LibVoteMap_Anim);
+		}
+		
+		if (PrevSequence != Net_LibVoteMap_Sequence) {
+			PrevSequence = Net_LibVoteMap_Sequence;
+			
+			if (Net_LibVoteMap_Sequence == {{{C_LibVoteMap_SequenceVote}}}) {
+				Frame_Vote.Visible = True;
+				Frame_Result.Visible = False;
+				Label_Title.Value = "{{{_("Vote for a map")}}}";
+			} else if (Net_LibVoteMap_Sequence == {{{C_LibVoteMap_SequenceResult}}}) {
+				Frame_Vote.Visible = False;
+				Frame_Result.Visible = True;
+				Label_Title.Value = "{{{_("Selected map")}}}";
+			} else {
+				Frame_Vote.Visible = False;
+				Frame_Result.Visible = False;
+			}
+		}
+		
+		if (PrevMapListUpdate != Net_LibVoteMap_MapListUpdate) {
+			PrevMapListUpdate = Net_LibVoteMap_MapListUpdate;
+			ChangePage(0);
+		}
+		
+		if (PrevResultUpdate != Net_LibVoteMap_ResultUpdate) {
+			PrevResultUpdate = Net_LibVoteMap_ResultUpdate;
+			UpdateResultCard();
+		}
+		
+		foreach (Event in PendingEvents) {
+			if (Event.Type == CMlEvent::Type::MouseClick) {
+				if (Event.Control.HasClass("Pager")) {
+					if (Event.ControlId == "Button_PagerNext") {
+						ChangePage(1);
+					} else if (Event.ControlId == "Button_PagerPrev") {
+						ChangePage(-1);
+					}
+				} else if (Event.Control.HasClass("MapCard")) {
+					declare LibVoteMap_Key for Event.Control = 0;
+					declare MapKey = (G_CurrentPage * G_MapCardsNb) + LibVoteMap_Key;
+					SelectMap(MapKey);
+				}
+			}
+		}
+	}
+}
+--></script>
+</manialink>""";
+}
+
+// ---------------------------------- //
+/** Find a map index in the map list from its CMapInfo
+ *
+ *	@param	_MapInfo	The MapInfo of the map
+ *
+ *	@return				The map index if found, -1 otherwise
+ */
+Integer Private_FindMapIndex(CMapInfo _MapInfo) {
+	foreach (MapIndex => AvailableMap in MapList) {
+		if (_MapInfo.Id == AvailableMap.Id) return MapIndex;
+	}
+	return -1;
+}
+
+// ---------------------------------- //
+/** Set the current sequence
+ *
+ *	@param	_Sequence		The new sequence
+ */
+Void Private_SetSequence(Integer _Sequence) {
+	G_LibVoteMap_Sequence = _Sequence;
+	
+	declare netwrite Net_LibVoteMap_Sequence for Teams[0] = C_LibVoteMap_SequenceNone;
+	Net_LibVoteMap_Sequence = _Sequence;
+}
+
+// ---------------------------------- //
+/** Get the current sequence
+ *
+ *	@return		Get the current sequence
+ */
+Integer Private_GetSequence() {
+	return G_LibVoteMap_Sequence;
+}
+
+// ---------------------------------- //
+/// Synchronize the client with the server
+Void Private_Synchro() {
+	declare LibVoteMap_SynchroServer for This = 0;
+	LibVoteMap_SynchroServer += 1;
+	if (LibVoteMap_SynchroServer > 10000) LibVoteMap_SynchroServer = 0;
+	
+	declare netwrite Integer Net_LibVoteMap_SynchroServer for Teams[0];
+	Net_LibVoteMap_SynchroServer = LibVoteMap_SynchroServer;
+}
+
+// ---------------------------------- //
+/** Anim the vote map manialink
+ *
+ *	@param	_AnimeId		The name of the animation to play
+ */
+Void Private_AnimVoteMap(Text _AnimId) {
+	declare netwrite Integer Net_LibVoteMap_AnimUpdate for Teams[0];
+	declare netwrite Text Net_LibVoteMap_Anim for Teams[0];
+	Net_LibVoteMap_Anim = _AnimId;
+	Net_LibVoteMap_AnimUpdate = Now;
+}
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+// ---------------------------------- //
+/**	Return the version number of the script
+ *
+ *	@return   The version number of the script
+ */
+Text GetScriptVersion() {
+	return Version;
+}
+
+// ---------------------------------- //
+/**	Return the name of the script
+ *
+ *	@return		The name of the script
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+// ---------------------------------- //
+/// Unload the library
+Void Unload() {
+	// Destroy the vote map layer
+	if (UIManager.UILayers.existskey(G_LibVoteMap_LayerVoteMapId)) {
+		declare LayerVoteMap = UIManager.UILayers[G_LibVoteMap_LayerVoteMapId];
+		declare Removed = UIManager.UIAll.UILayers.remove(LayerVoteMap);
+		UIManager.UILayerDestroy(LayerVoteMap);
+	}
+	
+	G_LibVoteMap_UseAnimations = True;
+	G_LibVoteMap_ResultDuration = -1;
+	G_LibVoteMap_Style = "";
+	G_LibVoteMap_AvailableMaps.clear();
+	Private_SetSequence(C_LibVoteMap_SequenceNone);
+	
+	Private_Synchro();
+}
+
+// ---------------------------------- //
+/// Load the library
+Void Load() {
+	Unload();
+	
+	// Create the vote map layer
+	declare LayerVoteMap = UIManager.UILayerCreate();
+	G_LibVoteMap_LayerVoteMapId = LayerVoteMap.Id;
+}
+
+// ---------------------------------- //
+/** Select a style for the UI
+ *
+ *	@param	_Style		The style to use, can be "" (automatic), "MP", or "SM"
+ */
+Void SetStyle(Text _Style) {
+	G_LibVoteMap_Style = _Style;
+}
+
+// ---------------------------------- //
+/**	Get the selected style of UI
+ *
+ *	@return		The selected style
+ */
+Text GetStyle() {
+	return G_LibVoteMap_Style;
+}
+
+// ---------------------------------- //
+/**	Use animations to show/hide the vote UI
+ *
+ *	@param	_UseAnimations		True to use animations, False otherwise
+ */
+Void UseAnimations(Boolean _UseAnimations) {
+	G_LibVoteMap_UseAnimations = _UseAnimations;
+}
+
+// ---------------------------------- //
+/** Begin the vote with a specific list of maps
+ *
+ *	@param	_Maps		An array with the maps the players can vote for
+ */
+Void Begin(CMapInfo[] _Maps, Integer _VoteDuration, Integer _ResultDuration) {
+	Private_Synchro();
+	
+	declare netwrite Integer		Net_LibVoteMap_MapListUpdate	for Teams[0];
+	declare netwrite Text[]			Net_LibVoteMap_MapList			for Teams[0];
+	declare netwrite Integer[Text]	Net_LibVoteMap_PlayersVotes		for Teams[0];
+	Net_LibVoteMap_MapList.clear();
+	Net_LibVoteMap_PlayersVotes.clear();
+	
+	G_LibVoteMap_AvailableMaps = _Maps;
+	if (G_LibVoteMap_AvailableMaps.count <= 0) {
+		foreach (AvailableMap in MapList) {
+			Net_LibVoteMap_MapList.add(AvailableMap.Name);
+		}
+	} else {
+		foreach (AvailableMap in _Maps) {
+			Net_LibVoteMap_MapList.add(AvailableMap.Name);
+		}
+	}
+	
+	Net_LibVoteMap_MapListUpdate = Now;
+	
+	foreach (Player in Players) {
+		declare LibVoteMap_MapKey for Player = -1;
+		declare LibVoteMap_Voted for Player = False;
+		LibVoteMap_MapKey = -1;
+		LibVoteMap_Voted = False;
+	}
+	
+	// Attach the vote map layer and create manialink
+	if (UIManager.UILayers.existskey(G_LibVoteMap_LayerVoteMapId)) {
+		declare LayerVoteMap = UIManager.UILayers[G_LibVoteMap_LayerVoteMapId];
+		if (!UIManager.UIAll.UILayers.exists(LayerVoteMap)) {
+			UIManager.UIAll.UILayers.add(LayerVoteMap);
+		}
+		
+		// Try to find style automatically
+		if (GetStyle() == "") {
+			if (This is CSmMode) SetStyle("SM");
+			else if (This is CTmMode) SetStyle("TM");
+		}
+		
+		LayerVoteMap.ManialinkPage = Private_CreateMLVoteMap(G_LibVoteMap_Style, Net_LibVoteMap_MapList.count);
+		if (G_LibVoteMap_UseAnimations) Private_AnimVoteMap("SlideIn");
+		else Private_AnimVoteMap("Reset");
+	}
+	
+	if (_VoteDuration >= 0) {
+		UIManager.UIAll.CountdownEndTime = Now + _VoteDuration;
+	} else {
+		UIManager.UIAll.CountdownEndTime = Now + C_LibVoteMap_DefaultVoteDuration;
+	}
+	
+	if (_ResultDuration >= 0) {
+		G_LibVoteMap_ResultDuration = _ResultDuration;
+	} else {
+		G_LibVoteMap_ResultDuration = C_LibVoteMap_DefaultResultDuration;
+	}
+	
+	// Disable scores table and ladder ranking info window
+	UIManager.UIAll.ScoreTableVisibility = CUIConfig::EVisibility::ForcedHidden;
+	UIManager.UIAll.OverlayHideEndMapLadderRecap = True;
+	
+	Private_SetSequence(C_LibVoteMap_SequenceVote);
+}
+
+// ---------------------------------- //
+/// Begin the vote with all the maps of the server
+Void Begin() {
+	Begin(CMapInfo[], -1, -1);
+}
+
+// ---------------------------------- //
+/** Check if we can stop the vote
+ *
+ *	@return		True if the vote can be stopped, false otherwise
+ */
+Boolean CanStop() {
+	return ((UIManager.UIAll.CountdownEndTime >= 0 && Now > UIManager.UIAll.CountdownEndTime));
+}
+
+// ---------------------------------- //
+/// Update the vote process and receive the choices of the players
+Void Loop() {
+	// Vote
+	if (Private_GetSequence() == C_LibVoteMap_SequenceVote) {
+		declare AllPlayersVoted = (Players.count > 0);
+		
+		foreach (Player in Players) {
+			declare UI <=> UIManager.GetUI(Player);
+			if (UI == Null) continue;
+				
+			declare netwrite Integer Net_LibVoteMap_SynchroServer for Teams[0];
+			declare netread Integer Net_LibVoteMap_SynchroClient for UI;
+				
+			declare netread Integer Net_LibVoteMap_MapUpdate for UI;
+			declare LibVoteMap_Update for Player = -1;
+			
+			// Check vote update
+			if (LibVoteMap_Update != Net_LibVoteMap_MapUpdate) {
+				LibVoteMap_Update = Net_LibVoteMap_MapUpdate;
+				
+				if (Net_LibVoteMap_SynchroServer == Net_LibVoteMap_SynchroClient) {
+					declare netread Integer Net_LibVoteMap_MapKey for UI;
+					declare LibVoteMap_MapKey for Player = -1;
+					
+					LibVoteMap_MapKey = Net_LibVoteMap_MapKey;
+					
+					declare netwrite Integer Net_LibVoteMap_MapListUpdate for Teams[0];
+					declare netwrite Integer[Text] Net_LibVoteMap_PlayersVotes for Teams[0];
+					Net_LibVoteMap_PlayersVotes[Player.User.Login] = LibVoteMap_MapKey;
+					Net_LibVoteMap_MapListUpdate = Now;
+				}
+			}
+			
+			// Check validation
+			declare netread Integer Net_LibVoteMap_Validate for UI;
+			declare LibVoteMap_Validate for Player = -1;
+			declare LibVoteMap_Voted for Player = False;
+			
+			if (LibVoteMap_Validate != Net_LibVoteMap_Validate) {
+				LibVoteMap_Validate = Net_LibVoteMap_Validate;
+				
+				if (Net_LibVoteMap_SynchroServer == Net_LibVoteMap_SynchroClient) {
+					LibVoteMap_Voted = True;
+				}
+			}
+			
+			if (!Player.User.IsFakeUser && !Player.RequestsSpectate && !LibVoteMap_Voted) AllPlayersVoted = False;
+		}
+		
+		if (Now >= UIManager.UIAll.CountdownEndTime || AllPlayersVoted) {
+			Private_SetSequence(C_LibVoteMap_SequenceResult);
+			UIManager.UIAll.CountdownEndTime = Now + G_LibVoteMap_ResultDuration;
+			
+			// Find voted maps
+			declare MapPool = Integer[];
+			foreach (Player in Players) {
+				declare LibVoteMap_MapKey for Player = -1;
+				if (G_LibVoteMap_AvailableMaps.count > 0 && G_LibVoteMap_AvailableMaps.existskey(LibVoteMap_MapKey)) {
+					declare MapIndex = Private_FindMapIndex(G_LibVoteMap_AvailableMaps[LibVoteMap_MapKey]);
+					if (MapIndex >= 0) MapPool.add(MapIndex);
+				} else if (G_LibVoteMap_AvailableMaps.count <= 0 && MapList.existskey(LibVoteMap_MapKey)) {
+					MapPool.add(LibVoteMap_MapKey);
+				}
+			}
+			
+			// Select random map
+			declare Text CMapName;
+			declare Text MapAuthor;
+			declare Text MapComment;
+			if (MapPool.count > 0) {
+				declare RandomKey = ML::Rand(0, MapPool.count - 1);
+				if (MapPool.existskey(RandomKey)) {
+					NextMapIndex = MapPool[RandomKey];
+				}
+			}
+			if (MapList.existskey(NextMapIndex)) {
+				declare NextMap <=> MapList[NextMapIndex];
+				CMapName = NextMap.Name;
+				MapAuthor = NextMap.AuthorNickName;
+				MapComment = NextMap.Comments;
+			}
+			if (CMapName == "") CMapName = "...";
+			if (MapAuthor == "") MapAuthor = "...";
+			if (MapComment == "") MapComment = "...";
+			
+			// Send result
+			declare netwrite Integer Net_LibVoteMap_ResultUpdate for Teams[0];
+			declare netwrite Text[] Net_LibVoteMap_Result for Teams[0];
+			Net_LibVoteMap_Result = [CMapName, MapAuthor, MapComment];
+			Net_LibVoteMap_ResultUpdate = Now;
+		}
+	} 
+	// Result
+	else if (Private_GetSequence() == C_LibVoteMap_SequenceResult) {
+		if (Now >= UIManager.UIAll.CountdownEndTime) {
+			Private_SetSequence(C_LibVoteMap_SequenceAnim);
+			UIManager.UIAll.CountdownEndTime = Now + C_LibVoteMap_AnimDuration;
+			
+			// Anim layer
+			if (G_LibVoteMap_UseAnimations) Private_AnimVoteMap("SlideOut");
+			else Private_AnimVoteMap("Reset");
+		}
+	}
+}
+
+// ---------------------------------- //
+/// End the vote and set the next map
+Void End() {
+	// Detach the vote map layer
+	if (UIManager.UILayers.existskey(G_LibVoteMap_LayerVoteMapId)) {
+		declare LayerVoteMap = UIManager.UILayers[G_LibVoteMap_LayerVoteMapId];
+		declare Removed = UIManager.UIAll.UILayers.remove(LayerVoteMap);
+	}
+	
+	// Enable scores table and ladder ranking info window
+	UIManager.UIAll.ScoreTableVisibility = CUIConfig::EVisibility::Normal;
+	UIManager.UIAll.OverlayHideEndMapLadderRecap = False;
+	
+	G_LibVoteMap_AvailableMaps.clear();
+	Private_SetSequence(C_LibVoteMap_SequenceNone);
+	
+	UIManager.UIAll.CountdownEndTime = -1;
+}
+
+// ---------------------------------- //
+/** Get the MapInfo of the next map
+ *
+ *	@return		The MapInfo of the next map
+ */
+CMapInfo GetNextMapInfo() {
+	declare CMapInfo MapInfo;
+	
+	if (MapList.existskey(NextMapIndex)) {
+		MapInfo <=> MapList[NextMapIndex];
+	}
+	
+	return MapInfo;
+}
+
+// ---------------------------------- //
+/** Get the duration of the vote
+ *
+ *	@return		The duration of the vote
+ */
+Integer GetVoteDuration() {
+	return UIManager.UIAll.CountdownEndTime;
+}

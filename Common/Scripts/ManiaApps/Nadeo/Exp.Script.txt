@@ -1,0 +1,130 @@
+/**
+ *  UI for the Exp library
+ */
+#Const Version    "2016-10-28"
+#Const ScriptName "ManiaApps/Nadeo/Exp.Script.txt"
+
+// ---------------------------------- //
+// Libraries
+// ---------------------------------- //
+#Include "ManiaApps/Nadeo/Layers.Script.txt" as Layers
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_LayerName "Exp_UI"
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+// ---------------------------------- //
+/** Return the version number of the script
+ *
+ *  @return                           The version number of the script
+ */
+Text GetScriptVersion() {
+  return Version;
+}
+
+// ---------------------------------- //
+/** Return the name of the script
+ *
+ *  @return                           The name of the script
+ */
+Text GetScriptName() {
+  return ScriptName;
+}
+
+// ---------------------------------- //
+/** Get the exp manialink
+ *
+ *  @return                           The manialink
+ */
+Text GetExpML() {
+  //L16N [Exp mode] A session represent a game with a fixed duration.
+  declare Text_Session = _("Session");
+  return """
+<manialink version="3" name="Exp">
+<frame id="frame-global">
+  <frame pos="-160 0" id="frame-exp">
+    <label pos="-1 4" halign="right" valign="bottom" textsize="5" textemboss="1" text="{{{Text_Session}}}" />
+    <quad size="8 8" halign="right" valign="center" style="BgRaceScore2" substyle="SandTimer" />
+    <label pos="-8 0.5" halign="right" valign="center" textsize="5" style="TextRaceChrono" id="label-timer" />
+  </frame>
+</frame>
+<script><!--
+#Include "TextLib" as TL
+
+main() {
+  declare Frame_Exp <=> (Page.GetFirstChild("frame-exp") as CMlFrame);
+  declare Label_Timer <=> (Frame_Exp.GetFirstChild("label-timer") as CMlLabel);
+
+  declare Vec3 Position for Page;
+  declare Vec3 PrevPosition;
+
+  declare netread LibExp_Session_EndTime for Teams[0] = -1;
+  declare PrevSession_EndTime = LibExp_Session_EndTime-1;
+
+  while (True) {
+    yield;
+
+    if (PrevPosition != Position) {
+      PrevPosition = Position;
+      Frame_Exp.RelativePosition_V3 = <Position.X, Position.Y>;
+      Frame_Exp.ZIndex = Position.Z;
+    }
+
+    if (PrevSession_EndTime != LibExp_Session_EndTime) {
+      PrevSession_EndTime = LibExp_Session_EndTime;
+      Frame_Exp.Visible = LibExp_Session_EndTime >= 0;
+    }
+
+    if (Frame_Exp.Visible) {
+      declare RemainingTime = LibExp_Session_EndTime - GameTime;
+
+      if (RemainingTime >= 0) {
+        declare Hours = (RemainingTime / (3600*1000));
+        declare Minutes = (RemainingTime / (60*1000)) % 60;
+        declare Seconds = (RemainingTime / 1000) % 60;
+        Label_Timer.Value = TL::FormatInteger(Minutes, 2)^":"^TL::FormatInteger(Seconds, 2);
+        if (Hours > 0) Label_Timer.Value = Hours^":"^Label_Timer.Value;
+      } else {
+        Frame_Exp.Visible = False;
+      }
+    }
+  }
+}
+--></script>
+</manialink>
+""";
+}
+
+// ---------------------------------- //
+/** Set the position of the UI
+ *
+ *  @param  _Position                 The position of the UI
+ *                                    <PosX, PosY, ZIndex>
+ */
+Void SetPosition(Vec3 _Position) {
+  declare Page <=> Layers::Get(C_LayerName).LocalPage;
+  declare Vec3 Position for Page;
+  Position = _Position;
+}
+
+// ---------------------------------- //
+/// Unload the library
+Void Unload() {
+  Layers::Destroy(C_LayerName);
+}
+
+// ---------------------------------- //
+/// Load the library
+Void Load() {
+  Unload();
+
+  Layers::Create(C_LayerName, GetExpML());
+  SetPosition(<160., 0., 0.>);
+}

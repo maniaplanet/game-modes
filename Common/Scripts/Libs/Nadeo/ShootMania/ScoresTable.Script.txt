@@ -1,0 +1,2263 @@
+/** 
+ *	DEPRECATED - Use the new ScoresTable2 library instead
+ *	
+ *	ScoresTable library
+ */
+
+#Const Version		"2013-07-26"
+#Const ScriptName	"ScoresTable.Script.txt"
+
+#Include "TextLib" as TL
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_LibST_RefreshInterval				250
+#Const C_LibST_Z							20
+#Const C_LibST_TablePosX					0.
+#Const C_LibST_TablePosY					42.
+#Const C_LibST_TableSizeX					188.
+#Const C_LibST_HeaderSizeY					12.
+#Const C_LibST_PlayerSizeY					10.
+#Const C_LibST_FooterSizeY					15.
+#Const C_LibST_ColNb						1
+#Const C_LibST_LinesByColNb					6
+#Const C_LibST_TableBackgroundImage			""
+#Const C_LibST_TableBackgroundPos			<0., 0.>
+#Const C_LibST_TableBackgroundSize			<0., 0.>
+#Const C_LibST_TableBackgroundImageLeft		""
+#Const C_LibST_TableBackgroundImageRight	""
+#Const C_LibST_TableBackgroundLeftColor		"$f00"
+#Const C_LibST_TableBackgroundRightColor	"$0f0"
+#Const C_LibST_PlayerCardBackgroundImage1	""
+#Const C_LibST_PlayerCardBackgroundImage2	""
+#Const C_LibST_PlayerCardBackgroundPos		<0., 0.>
+#Const C_LibST_PlayerCardBackgroundSize		<0., 0.>
+#Const C_LibST_Colors [
+	"Background" => "0007",
+	"PlayerCardTop" => "222d",
+	"PlayerCardBottom" => "111d",
+	"PlayerCardOff" => "111a",
+	"PlayerCardMe" => "fff3"
+]
+#Const C_LibST_PlayerCardDimensions [
+	"Position"		=> <2.	, 6.>,
+	"Status"		=> <1.5	, 6.>,
+	"Avatar"		=> <1.5	, 6.>,
+	"Name"			=> <20.	, 6.>,
+	"Spectator"		=> <1.5	, 6.>,
+	"Profile"		=> <1.5	, 6.>,
+	"Custom1"		=> <0.	, 6.>,
+	"Custom2"		=> <0.	, 6.>,
+	"Custom3"		=> <0.	, 6.>,
+	"RoundPoints"	=> <3.	, 6.>,
+	"Points"		=> <3.	, 6.>
+]
+#Const C_LibST_ColumnsNames [
+	"Custom1"		=> "",
+	"Custom2"		=> "",
+	"Custom3"		=> "",
+	"RoundPoints"	=> _("Points"),
+	"Points"		=> _("Total")
+]
+#Const C_LibST_RoundPointsFormat	"$0c0+"
+#Const C_LibST_PointsFormat			""
+#Const C_LibST_DisplayTeamScore		False
+#Const C_LibST_FooterStatsTextSize 	2
+#Const C_LibST_DisplayPlayerInfo 	True
+#Const C_LibST_DisplayManiaStars 	True
+#Const C_LibST_TabName				"ScoresTab"
+#Const C_ImgBaseDir					"file://Media/Manialinks/Shootmania/Common/"
+
+// ---------------------------------- //
+// Globales
+// ---------------------------------- //
+// Scores table layer id
+declare Ident	G_LibST_LayerScoresTableId;
+// Scores table dimensions
+declare Real	G_LibST_TablePosX;
+declare Real	G_LibST_TablePosY;
+declare Real	G_LibST_TableSizeX;
+declare Real	G_LibST_HeaderSizeY;
+declare Real	G_LibST_PlayerSizeY;
+declare Real	G_LibST_FooterSizeY;
+declare Integer	G_LibST_ColNb;
+declare Integer	G_LibST_LinesByColNb;
+// Scores table background
+declare Text 	G_LibST_TableBackgroundImage;
+declare Vec2	G_LibST_TableBackgroundPos;
+declare Vec2	G_LibST_TableBackgroundSize;
+
+// If the Bg is divided into 2 images
+declare Text 	G_LibST_TableBackgroundImageLeft;
+declare Text 	G_LibST_TableBackgroundImageRight;
+declare Text 	G_LibST_TableBackgroundLeftColor;
+declare Text 	G_LibST_TableBackgroundRightColor;
+
+
+declare Integer G_LibST_TableBgLeftRightXOffset;
+declare Integer G_LibST_TableBgLeftRightYOffset;
+declare Integer G_LibST_TableBgLeftRightSize;
+
+// Player cars background
+declare Text	G_LibST_PlayerCardBackgroundImage1;
+declare Text	G_LibST_PlayerCardBackgroundImage2;
+declare Vec2	G_LibST_PlayerCardBackgroundPos;
+declare Vec2	G_LibST_PlayerCardBackgroundSize;
+// Custom fields default values
+declare Text	G_LibST_DefaultCustom1;
+declare Text	G_LibST_DefaultCustom2;
+declare Text	G_LibST_DefaultCustom3;
+declare Text	G_LibST_DefaultPIScore;
+declare Text	G_LibST_DefaultPIStats;
+declare Text	G_LibST_DefaultPICustom1;
+declare Text	G_LibST_DefaultPICustom2;
+// Scores table colors
+declare Text[Text]	G_LibST_Colors;
+// Player card dimensions
+declare Vec2[Text]	G_LibST_PlayerCardDimensions;
+// Scores table columns names
+declare Text[Text]	G_LibST_ColumnsNames;
+// 
+declare Integer		G_LibST_CustomUpdateCount;
+
+declare Text 	G_LibST_RoundPointsFormat;
+declare Text	G_LibST_PointsFormat;
+declare Real 	G_LibST_Height;
+declare Boolean G_LibST_DisplayTeamScore;
+declare Integer	G_LibST_FooterStatsTextSize;
+declare Boolean G_LibST_DisplayPlayerInfo;
+declare Boolean G_LibST_DisplayManiaStars;
+declare Text	G_LibST_TabName;
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+// Private
+// ---------------------------------- //
+
+// ---------------------------------- //
+/// Normalize size of the player card elements
+Void Private_NormalizeColumnsWidth(Real _X, Real _Y) {
+	declare CardSizeX = 0.;
+	
+	foreach (Size in G_LibST_PlayerCardDimensions) {
+		CardSizeX += Size.X;
+	}
+	
+	declare Ratio = _X / CardSizeX;
+	
+	foreach (Key => Size in C_LibST_PlayerCardDimensions) {
+		G_LibST_PlayerCardDimensions[Key] *= Ratio;
+	}
+}
+
+// ---------------------------------- //
+/// Resize to a square
+Vec2 Private_ResizeSquare(Real _X, Real _Y) {
+	declare Size = <_X, _Y>;
+	
+	if (Size.X > Size.Y) Size.X = Size.Y;
+	else if (Size.Y > Size.X) Size.Y = Size.X;
+	
+	return Size;
+}
+
+// ---------------------------------- //
+/// Resize while keeping image ratio
+Vec2 Private_ResizeKeepRatio(Real _FromX, Real _FromY, Real _ToX, Real _ToY) {
+	declare Size = <_FromX, _FromY>;
+	declare Ratio = _FromX/_FromY;
+	
+	if (Size.X < _ToX) {
+		Size.X = _ToX;
+		Size.Y = Size.X / Ratio;
+	}
+	
+	if (Size.Y < _ToY) {
+		Size.Y = _ToY;
+		Size.X = Size.Y * Ratio;
+	}
+	
+	if (Size.X > _ToX) {
+		Size.X = _ToX;
+		Size.Y = Size.X / Ratio;
+	}
+	
+	if (Size.Y > _ToY) {
+		Size.Y = _ToY;
+		Size.X = Size.Y * Ratio;
+	}
+	
+	return Size;
+}
+
+// ---------------------------------- //
+/** Get the X size of an element of the player card
+ *
+ *	@param	_Name	Name of the element
+ *
+ *	@return			The X size of the element
+ */
+Real _X(Text _Name) {
+	if (!G_LibST_PlayerCardDimensions.existskey(_Name)) return 0.;
+	
+	return G_LibST_PlayerCardDimensions[_Name].X;
+}
+
+// ---------------------------------- //
+/** Get the Y size of an element of the player card
+ *
+ *	@param	_Name	Name of the element
+ *
+ *	@return			The Y size of the element
+ */
+Real _Y(Text _Name) {
+	if (!G_LibST_PlayerCardDimensions.existskey(_Name)) return 0.;
+	
+	return G_LibST_PlayerCardDimensions[_Name].Y;
+}
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Return the version number of the script
+ *
+ *	@return		The version number of the script
+ */
+Text GetScriptVersion() {
+	return Version;
+}
+
+// ---------------------------------- //
+/** Return the name of the script
+ *
+ *	@return		The name of the script
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+// ---------------------------------- //
+/// Unload the scores table library
+Void Unload() {
+	// Destroy the scores table layer
+	if (UIManager.UILayers.existskey(G_LibST_LayerScoresTableId)) {
+		declare LayerScoresTable = UIManager.UILayers[G_LibST_LayerScoresTableId];
+		declare Removed = UIManager.UIAll.UILayers.remove(LayerScoresTable);
+		UIManager.UILayerDestroy(LayerScoresTable);
+	}
+}
+
+// ---------------------------------- //
+// Load the scores table library
+Void Load() {
+	Unload();
+	
+	// Create the scores table layer
+	declare LayerScoresTable	= UIManager.UILayerCreate();
+	G_LibST_LayerScoresTableId	= LayerScoresTable.Id;
+	LayerScoresTable.Type		= CUILayer::EUILayerType::ScoresTable;
+	UIManager.UIAll.UILayers.add(LayerScoresTable);
+	
+	// Initialize scores table dimensions
+	G_LibST_TablePosX		= C_LibST_TablePosX;
+	G_LibST_TablePosY		= C_LibST_TablePosY;
+	G_LibST_TableSizeX		= C_LibST_TableSizeX;
+	G_LibST_HeaderSizeY		= C_LibST_HeaderSizeY;
+	G_LibST_PlayerSizeY		= C_LibST_PlayerSizeY;
+	G_LibST_FooterSizeY		= C_LibST_FooterSizeY;
+	G_LibST_ColNb			= C_LibST_ColNb;
+	G_LibST_LinesByColNb	= C_LibST_LinesByColNb;
+	// Initialize scores table background
+	G_LibST_TableBackgroundImage= C_LibST_TableBackgroundImage;
+	
+	G_LibST_TableBackgroundImageLeft	= C_LibST_TableBackgroundImageLeft;
+	G_LibST_TableBackgroundImageRight	= C_LibST_TableBackgroundImageRight;
+	G_LibST_TableBackgroundLeftColor	= C_LibST_TableBackgroundLeftColor;
+	G_LibST_TableBackgroundRightColor	= C_LibST_TableBackgroundRightColor;
+	
+	G_LibST_TableBgLeftRightXOffset = 0;
+	G_LibST_TableBgLeftRightYOffset = 0;
+	G_LibST_TableBgLeftRightSize	= 0;
+	
+	G_LibST_TableBackgroundPos	= C_LibST_TableBackgroundPos;
+	G_LibST_TableBackgroundSize	= C_LibST_TableBackgroundSize;
+	// Initialize player card background
+	G_LibST_PlayerCardBackgroundImage1	= C_LibST_PlayerCardBackgroundImage1;
+	G_LibST_PlayerCardBackgroundImage2	= C_LibST_PlayerCardBackgroundImage2;
+	G_LibST_PlayerCardBackgroundPos		= C_LibST_PlayerCardBackgroundPos;
+	G_LibST_PlayerCardBackgroundSize	= C_LibST_PlayerCardBackgroundSize;
+	// Initialize colors
+	G_LibST_Colors			= C_LibST_Colors;
+	// Initialize player card dimensions
+	G_LibST_PlayerCardDimensions = C_LibST_PlayerCardDimensions;
+	
+	// Initialize columns names
+	G_LibST_ColumnsNames = C_LibST_ColumnsNames;
+	
+	G_LibST_RoundPointsFormat = C_LibST_RoundPointsFormat;
+	G_LibST_PointsFormat = C_LibST_PointsFormat;
+	G_LibST_DisplayTeamScore = C_LibST_DisplayTeamScore; // By default, use team scores
+	G_LibST_FooterStatsTextSize = C_LibST_FooterStatsTextSize;
+	G_LibST_DisplayPlayerInfo = C_LibST_DisplayPlayerInfo;
+	G_LibST_DisplayManiaStars = C_LibST_DisplayManiaStars;
+	G_LibST_TabName = C_LibST_TabName;
+	
+	// Disable the default scores table
+	UIManager.UIAll.ScoreTableOnlyManialink = True;
+	
+	// Initialize players custom fields
+	G_LibST_CustomUpdateCount = 0;
+	foreach (Player in AllPlayers) {
+		declare UI <=> UIManager.GetUI(Player);
+		if (UI == Null) continue;
+		
+		declare netwrite Integer	Net_LibST_CustomUpdate	for Player;
+		declare netwrite Text		Net_LibST_Custom1		for Player;
+		declare netwrite Text		Net_LibST_Custom2		for Player;
+		declare netwrite Text		Net_LibST_Custom3		for Player;
+		declare netwrite Text		Net_LibST_PIScore		for Player;
+		declare netwrite Text		Net_LibST_PIStats		for Player;
+		declare netwrite Text		Net_LibST_PICustom1		for Player;
+		declare netwrite Text		Net_LibST_PICustom2		for Player;
+		Net_LibST_CustomUpdate	= 0;
+		Net_LibST_Custom1		= "";
+		Net_LibST_Custom2		= "";
+		Net_LibST_Custom3		= "";
+		Net_LibST_PIScore		= "";
+		Net_LibST_PIStats		= "";
+		Net_LibST_PICustom1		= "";
+		Net_LibST_PICustom2		= "";
+	}
+	
+	// Initialize the filters
+	declare netwrite Net_LibST_FilterUpdate for Teams[0] = 0;
+	declare netwrite Net_LibST_FilterLogins for Teams[0] = Text[];
+	declare netwrite Net_LibST_FilterStatus for Teams[0] = "All";
+	Net_LibST_FilterUpdate = Now;
+	Net_LibST_FilterLogins = Text[];
+	Net_LibST_FilterStatus = "All";
+}
+
+// ---------------------------------- //
+/** Set the custom1 score of a player
+ *
+ *	@param	_Player		The player to update
+ *	@param	_Value		The new value
+ */
+Void SetCustom1(CSmPlayer _Player, Text _Value) {
+	if (_Player.Score == Null) return;
+	declare netwrite Integer	Net_LibST_CustomUpdate	for _Player;
+	declare netwrite Text		Net_LibST_Custom1		for _Player;
+	declare Text 				LibST_Custom1			for _Player.Score;
+	Net_LibST_Custom1			= _Value;
+	LibST_Custom1				= Net_LibST_Custom1;
+	G_LibST_CustomUpdateCount	+= 1;
+	Net_LibST_CustomUpdate		= G_LibST_CustomUpdateCount;
+}
+
+// ---------------------------------- //
+/** Set the custom2 score of a player
+ *
+ *	@param	_Player		The player to update
+ *	@param	_Value		The new value
+ */
+Void SetCustom2(CSmPlayer _Player, Text _Value) {
+	if (_Player.Score == Null) return;
+	declare netwrite Integer	Net_LibST_CustomUpdate	for _Player;
+	declare netwrite Text		Net_LibST_Custom2		for _Player;
+	declare Text 				LibST_Custom2			for _Player.Score;
+	Net_LibST_Custom2			= _Value;
+	LibST_Custom2				= Net_LibST_Custom2;
+	G_LibST_CustomUpdateCount	+= 1;
+	Net_LibST_CustomUpdate		= G_LibST_CustomUpdateCount;
+}
+
+// ---------------------------------- //
+/** Set the custom3 score of a player
+ *
+ *	@param	_Player		The player to update
+ *	@param	_Value		The new value
+ */
+Void SetCustom3(CSmPlayer _Player, Text _Value) {
+	if (_Player.Score == Null) return;
+	declare netwrite Integer	Net_LibST_CustomUpdate	for _Player;
+	declare netwrite Text		Net_LibST_Custom3		for _Player;
+	declare Text 				LibST_Custom3			for _Player.Score;
+	Net_LibST_Custom3			= _Value;
+	LibST_Custom3				= Net_LibST_Custom3;
+	G_LibST_CustomUpdateCount	+= 1;
+	Net_LibST_CustomUpdate		= G_LibST_CustomUpdateCount;
+}
+
+// ---------------------------------- //
+/** Set the footer score of a player
+ *
+ *	@param	_Player		The player to update
+ *	@param	_Value		The new value
+ */
+Void SetFooterScore(CSmPlayer _Player, Text _Value) {
+	if (_Player.Score == Null) return;
+	declare netwrite Integer	Net_LibST_CustomUpdate	for _Player;
+	declare netwrite Text		Net_LibST_PIScore 		for _Player;
+	declare Text 				LibST_PIScore			for _Player.Score;
+	Net_LibST_PIScore			= _Value;
+	LibST_PIScore				= Net_LibST_PIScore;
+	G_LibST_CustomUpdateCount	+= 1;
+	Net_LibST_CustomUpdate		= G_LibST_CustomUpdateCount;
+}
+
+// ---------------------------------- //
+/** Set the footer stats of a player
+ *
+ *	@param	_Player		The player to update
+ *	@param	_Value		The new value
+ */
+Void SetFooterStats(CSmPlayer _Player, Text _Value) {
+	if (_Player.Score == Null) return;
+	declare netwrite Integer	Net_LibST_CustomUpdate	for _Player;
+	declare netwrite Text		Net_LibST_PIStats		for _Player;
+	declare Text 				LibST_PIStats			for _Player.Score;
+	Net_LibST_PIStats			= _Value;
+	LibST_PIStats				= Net_LibST_PIStats;
+	G_LibST_CustomUpdateCount	+= 1;
+	Net_LibST_CustomUpdate		= G_LibST_CustomUpdateCount;
+}
+
+// ---------------------------------- //
+/** Set the footer custom 1 of a player
+ *
+ *	@param	_Player		The player to update
+ *	@param	_Value		The new value
+ */
+Void SetFooterCustom1(CSmPlayer _Player, Text _Value) {
+	if (_Player.Score == Null) return;
+	declare netwrite Integer	Net_LibST_CustomUpdate	for _Player;
+	declare netwrite Text		Net_LibST_PICustom1		for _Player;
+	declare Text 				LibST_PICustom1			for _Player.Score;
+	Net_LibST_PICustom1			= _Value;
+	LibST_PICustom1				= Net_LibST_PICustom1;
+	G_LibST_CustomUpdateCount	+= 1;
+	Net_LibST_CustomUpdate		= G_LibST_CustomUpdateCount;
+}
+
+// ---------------------------------- //
+/** Set the footer custom 2 of a player
+ *
+ *	@param	_Player		The player to update
+ *	@param	_Value		The new value
+ */
+Void SetFooterCustom2(CSmPlayer _Player, Text _Value) {
+	if (_Player.Score == Null) return;
+	declare netwrite Integer	Net_LibST_CustomUpdate	for _Player;
+	declare netwrite Text		Net_LibST_PICustom2		for _Player;
+	declare Text 				LibST_PICustom2			for _Player.Score;
+	Net_LibST_PICustom2			= _Value;
+	LibST_PICustom2				= Net_LibST_PICustom2;
+	G_LibST_CustomUpdateCount	+= 1;
+	Net_LibST_CustomUpdate		= G_LibST_CustomUpdateCount;
+}
+
+// ---------------------------------- //
+/** Set the default custom1 score
+ *
+ *	@param	_Value		The new value
+ */
+Void SetDefaultCustom1(Text _Value) {
+	G_LibST_DefaultCustom1 = TL::MLEncode(_Value);
+}
+
+// ---------------------------------- //
+/** Set the default custom2 score
+ *
+ *	@param	_Value		The new value
+ */
+Void SetDefaultCustom2(Text _Value) {
+	G_LibST_DefaultCustom2 = TL::MLEncode(_Value);
+}
+
+// ---------------------------------- //
+/** Set the default custom3 score
+ *
+ *	@param	_Value		The new value
+ */
+Void SetDefaultCustom3(Text _Value) {
+	G_LibST_DefaultCustom3 = TL::MLEncode(_Value);
+}
+
+// ---------------------------------- //
+/** Set the default footer score value
+ *
+ *	@param	_Value		The new value
+ */
+Void SetDefaultFooterScore(Text _Value) {
+	G_LibST_DefaultPIScore = TL::MLEncode(_Value);
+}
+
+// ---------------------------------- //
+/** Set the default footer stats value
+ *
+ *	@param	_Value		The new value
+ */
+Void SetDefaultFooterStats(Text _Value) {
+	G_LibST_DefaultPIStats = TL::MLEncode(_Value);
+}
+
+// ---------------------------------- //
+/** Set the default footer custom 1 value
+ *
+ *	@param	_Value		The new value
+ */
+Void SetDefaultFooterCustom1(Text _Value) {
+	G_LibST_DefaultPICustom1 = TL::MLEncode(_Value);
+}
+
+// ---------------------------------- //
+/** Set the default footer custom 2 value
+ *
+ *	@param	_Value		The new value
+ */
+Void SetDefaultFooterCustom2(Text _Value) {
+	G_LibST_DefaultPICustom2 = TL::MLEncode(_Value);
+}
+
+// ---------------------------------- //
+/** Set the default format for round points
+ *
+ *	@param	_RoundScoreFormat		a text format, e.g. "$f00$s+"
+ */
+Void SetRoundScoreFormat(Text _RoundScoreFormat){
+	G_LibST_RoundPointsFormat = TL::MLEncode(_RoundScoreFormat);
+}
+
+// ---------------------------------- //
+/** Set the default format for points
+ *
+ *	@param	_ScoreFormat		a text format, e.g. "$f00$s+"
+ */
+Void SetScoreFormat(Text _ScoreFormat){
+	G_LibST_PointsFormat = TL::MLEncode(_ScoreFormat);
+}
+
+// ---------------------------------- //
+/** Restore the custom scores of a player
+ *	Eg: a player disconnect/reconnect to the server
+ *	while the scores haven't been reset yet
+ *
+ *	@param	_Player		The player to restore
+ */
+Void RestoreCustomScores(CSmPlayer _Player) {
+	if (_Player.Score == Null) return;
+	declare netwrite Integer	Net_LibST_CustomUpdate	for _Player;
+	declare netwrite Text		Net_LibST_Custom1		for _Player;
+	declare netwrite Text		Net_LibST_Custom2		for _Player;
+	declare netwrite Text		Net_LibST_Custom3		for _Player;
+	declare netwrite Text		Net_LibST_PIScore 		for _Player;
+	declare netwrite Text		Net_LibST_PIStats		for _Player;
+	declare netwrite Text		Net_LibST_PICustom1		for _Player;
+	declare netwrite Text		Net_LibST_PICustom2		for _Player;
+	declare LibST_Custom1 for _Player.Score = G_LibST_DefaultCustom1;
+	declare LibST_Custom2 for _Player.Score = G_LibST_DefaultCustom2;
+	declare LibST_Custom3 for _Player.Score = G_LibST_DefaultCustom3;
+	declare LibST_PIScore for _Player.Score = G_LibST_DefaultPIScore;
+	declare LibST_PIStats for _Player.Score = G_LibST_DefaultPIStats;
+	declare LibST_PICustom1 for _Player.Score = G_LibST_DefaultPICustom1;
+	declare LibST_PICustom2 for _Player.Score = G_LibST_DefaultPICustom2;
+	
+	G_LibST_CustomUpdateCount	+= 1;
+	Net_LibST_CustomUpdate	= G_LibST_CustomUpdateCount;
+	Net_LibST_Custom1		= LibST_Custom1;
+	Net_LibST_Custom2		= LibST_Custom2;
+	Net_LibST_Custom3		= LibST_Custom3;
+	Net_LibST_PIScore		= LibST_PIScore;
+	Net_LibST_PIStats		= LibST_PIStats;
+	Net_LibST_PICustom1		= LibST_PICustom1;
+	Net_LibST_PICustom2		= LibST_PICustom2;
+}
+
+// ---------------------------------- //
+/// Initialize the players scores
+Void StartMatch() {
+	foreach (Score in Scores) {
+		declare Text LibST_Custom1 for Score;
+		declare Text LibST_Custom2 for Score;
+		declare Text LibST_Custom3 for Score;
+		declare Text LibST_PIScore for Score;
+		declare Text LibST_PIStats for Score;
+		declare Text LibST_PICustom1 for Score;
+		declare Text LibST_PICustom2 for Score;
+		LibST_Custom1 = G_LibST_DefaultCustom1;
+		LibST_Custom2 = G_LibST_DefaultCustom2;
+		LibST_Custom3 = G_LibST_DefaultCustom3;
+		LibST_PIScore = G_LibST_DefaultPIScore;
+		LibST_PIStats = G_LibST_DefaultPIStats;
+		LibST_PICustom1 = G_LibST_DefaultPICustom1;
+		LibST_PICustom2 = G_LibST_DefaultPICustom2;
+	}
+	
+	foreach (Player in AllPlayers) {
+		RestoreCustomScores(Player);
+	}
+}
+
+Void EndMatch() {}
+
+// ---------------------------------- //
+/** Get the scores table layer
+ *
+ *	@return		The scores table layer
+ */
+CUILayer GetLayerScoresTable() {
+	if (UIManager.UILayers.existskey(G_LibST_LayerScoresTableId)) {
+		return UIManager.UILayers[G_LibST_LayerScoresTableId];
+	}
+	return Null;
+}
+
+// ---------------------------------- //
+/** Set the colors of the scores table elements
+ *
+ *	@param	_Name	The name of the element to update
+ *	@param	_Value	The new color for this element
+ */
+Void SetColor(Text _Name, Text _Value) {
+	if (G_LibST_Colors.existskey(_Name)) {
+		G_LibST_Colors[_Name] = TL::MLEncode(_Value);
+	}
+}
+
+// ---------------------------------- //
+/** Use a background image for the scores table
+ *	If _ImagePath is empty, then the background is removed
+ *
+ *	@param	_ImagePath	The path to the image
+ *	@param	_Pos		The image position
+ *	@param	_Size		The image size
+ */
+Void SetTableBackgroundImage(Text _ImagePath, Vec2 _Pos, Vec2 _Size) {
+	if (_ImagePath == "") {
+		G_LibST_TableBackgroundImage	= "";
+		G_LibST_TableBackgroundPos	= <0., 0.>;
+		G_LibST_TableBackgroundSize	= <0., 0.>;
+	} else {
+		G_LibST_TableBackgroundImage	= TL::MLEncode(_ImagePath);
+		G_LibST_TableBackgroundPos		= _Pos;
+		G_LibST_TableBackgroundSize		= _Size;
+	}
+}
+
+// ---------------------------------- //
+/** Use a background image for the scores table
+ *	If _ImagePath is empty, then the background is removed
+ *
+ *	@param	_ImagePath	The path to the image
+ *	@param	_Pos		The image position
+ *	@param	_Size		The image size
+ */
+Void SetTableBackgroundLeftRightImage(Text _ImageBgPath, Text _ImageLeftPath, Text _ImageRightPath, 
+	Text _ColorLeft, Text _ColorRight, 
+	Integer _XOffset, Integer _YOffset, Integer _SmallSize,
+	Vec2 _Pos, Vec2 _Size) {
+	G_LibST_TableBackgroundImage		= TL::MLEncode(_ImageBgPath);
+	G_LibST_TableBackgroundImageLeft	= TL::MLEncode(_ImageLeftPath);
+	G_LibST_TableBackgroundImageRight	= TL::MLEncode(_ImageRightPath);
+	G_LibST_TableBackgroundLeftColor	= TL::MLEncode(_ColorLeft);
+	G_LibST_TableBackgroundRightColor	= TL::MLEncode(_ColorRight);
+	
+	G_LibST_TableBgLeftRightXOffset = _XOffset;
+	G_LibST_TableBgLeftRightYOffset = _YOffset;
+	G_LibST_TableBgLeftRightSize	= _SmallSize;
+	
+	G_LibST_TableBackgroundPos		= _Pos;
+	G_LibST_TableBackgroundSize		= _Size;
+}
+
+// ---------------------------------- //
+/** Use a background image for the player card
+ *	If _ImagePath1 is empty, then the background is removed
+ *
+ *	@param	_ImagePath1	The path to the background image
+ *	@param	_ImagePath2	The path to the not spawned player overlay image
+ *	@param	_Pos		The image position
+ *	@param	_Size		The image size
+ */
+Void SetPlayerCardBackgroundImage(Text _ImagePath1, Text _ImagePath2, Vec2 _Pos, Vec2 _Size) {
+	if (_ImagePath1 == "") {
+		G_LibST_PlayerCardBackgroundImage1	= "";
+		G_LibST_PlayerCardBackgroundImage2	= "";
+		G_LibST_PlayerCardBackgroundPos		= <0., 0.>;
+		G_LibST_PlayerCardBackgroundSize	= <0., 0.>;
+	} else {
+		G_LibST_PlayerCardBackgroundImage1	= TL::MLEncode(_ImagePath1);
+		G_LibST_PlayerCardBackgroundImage2	= TL::MLEncode(_ImagePath2);
+		G_LibST_PlayerCardBackgroundPos		= _Pos;
+		G_LibST_PlayerCardBackgroundSize	= _Size;
+	}
+}
+
+// ---------------------------------- //
+/** Set the number of columns and the number lines by columns
+ *	in the scores table players list
+ *
+ *	@param	_ColNb			The number of columns, must be > 0
+ *	@param	_LinesByColNb	The number of lines by columns, Must be > 0
+ */
+Void SetTableFormat(Integer _ColNb, Integer _LinesByColNb) {
+	declare ColNb			= _ColNb;
+	declare LinesByColNb	= _LinesByColNb;
+	
+	if (ColNb <= 0)			ColNb		= 1;
+	if (LinesByColNb <= 0)	LinesByColNb	= 1;
+	
+	G_LibST_ColNb			= ColNb;
+	G_LibST_LinesByColNb	= LinesByColNb;
+}
+
+// ---------------------------------- //
+/** Set the position of the scores table
+ *
+ *	@param	_PosX	The new X position of the scores table
+ *	@param	_PosY	The new Y position of the scores table
+ */
+Void SetTablePosition(Real _PosX, Real _PosY) {
+	G_LibST_TablePosX = _PosX;
+	G_LibST_TablePosY = _PosY;
+}
+
+// ---------------------------------- //
+/** Set the width of the scores table
+ *
+ *	@param	_Width		The width of the scores table
+ */
+Void SetTableWidth(Real _Width) {
+	G_LibST_TableSizeX = _Width;
+}
+
+// ---------------------------------- //
+/** Set the height of the header
+ *
+ *	@param	_Height		The new height of the header
+ */
+Void SetHeaderHeight(Real _Height) {
+	G_LibST_HeaderSizeY = _Height;
+}
+
+// ---------------------------------- //
+/** Set the height of the player card
+ *
+ *	@param	_Height		The new height of the player card
+ */
+Void SetPlayerCardHeight(Real _Height) {
+	G_LibST_PlayerSizeY = _Height;
+}
+
+// ---------------------------------- //
+/** Set the height of the footer
+ *
+ *	@param	_Height		The new height of the footer
+ */
+Void SetFooterHeight(Real _Height) {
+	G_LibST_FooterSizeY = _Height;
+}
+
+// ---------------------------------- //
+/// Add a legends above the score columns
+Void SetColumnsName(Text _Custom1, Text _Custom2, Text _Custom3, Text _RoundPoints, Text _Points) {
+	foreach (Key => Name in C_LibST_ColumnsNames) {
+		switch (Key) {
+			case "Custom1"		: G_LibST_ColumnsNames[Key] = TL::MLEncode(_Custom1);
+			case "Custom2"		: G_LibST_ColumnsNames[Key] = TL::MLEncode(_Custom2);
+			case "Custom3"		: G_LibST_ColumnsNames[Key] = TL::MLEncode(_Custom3);
+			case "RoundPoints"	: G_LibST_ColumnsNames[Key] = TL::MLEncode(_RoundPoints);
+			case "Points"		: G_LibST_ColumnsNames[Key] = TL::MLEncode(_Points);
+		}
+	}
+}
+
+// ---------------------------------- //
+/** Set one column name
+ *
+ *	@param	_Column		The column to update
+ *	@param	_Name		THe new name
+ */
+Void SetColumnName(Text _Column, Text _Name) {
+	if (G_LibST_ColumnsNames.existskey(_Column)) {
+		G_LibST_ColumnsNames[_Column] = TL::MLEncode(_Name);
+	}
+}
+
+// ---------------------------------- //
+/// Set the X size of the player card elements
+Void SetColumnsWidth(
+	Real _Position,
+	Real _Status,
+	Real _Avatar,
+	Real _Name,
+	Real _Spectator,
+	Real _Profile,
+	Real _Custom1,
+	Real _Custom2,
+	Real _Custom3,
+	Real _RoundPoints,
+	Real _Points
+) {
+	foreach (Key => Size in C_LibST_PlayerCardDimensions) {
+		switch(Key) {
+			case "Position"		: G_LibST_PlayerCardDimensions[Key].X = _Position;
+			case "Status"		: G_LibST_PlayerCardDimensions[Key].X = _Status;
+			case "Avatar"		: G_LibST_PlayerCardDimensions[Key].X = _Avatar;
+			case "Name"			: G_LibST_PlayerCardDimensions[Key].X = _Name;
+			case "Spectator"	: G_LibST_PlayerCardDimensions[Key].X = _Spectator;
+			case "Profile"		: G_LibST_PlayerCardDimensions[Key].X = _Profile;
+			case "Custom1"		: G_LibST_PlayerCardDimensions[Key].X = _Custom1;
+			case "Custom2"		: G_LibST_PlayerCardDimensions[Key].X = _Custom2;
+			case "Custom3"		: G_LibST_PlayerCardDimensions[Key].X = _Custom3;
+			case "RoundPoints"	: G_LibST_PlayerCardDimensions[Key].X = _RoundPoints;
+			case "Points"		: G_LibST_PlayerCardDimensions[Key].X = _Points;
+		}
+	}
+}
+
+// ---------------------------------- //
+/** Set one column width
+ *
+ *	@param	_Column		The name of the column
+ *	@param	_Width		The new width of the column
+ */
+Void SetColumnWidth(Text _Column, Real _Width) {
+	if (G_LibST_PlayerCardDimensions.existskey(_Column)) {
+		G_LibST_PlayerCardDimensions[_Column].X = _Width;
+	}
+}
+
+// ---------------------------------- //
+/**
+ * Display scores of teams or not
+ *
+ *	@param	_DisplayTeamScore	The new display value
+ */
+Void SetDisplayTeamScore(Boolean _DisplayTeamScore) {
+	G_LibST_DisplayTeamScore = _DisplayTeamScore;
+}
+
+// ---------------------------------- //
+/** Set the text size of the stats line in the footer
+ *
+ *	@param	_Size	New size of the text
+ */
+Void SetFooterStatsTextSize(Integer _Size) {
+	G_LibST_FooterStatsTextSize = _Size;
+}
+
+// ---------------------------------- //
+/**
+ * Display the local player info in the footer
+ *
+ *	@param	_DisplayPlayerInfo	The new display value
+ */
+Void SetDisplayPlayerInfo(Boolean _DisplayPlayerInfo) {
+	G_LibST_DisplayPlayerInfo = _DisplayPlayerInfo;
+}
+
+// ---------------------------------- //
+/**
+ * Display the maniastars of the players
+ *
+ *	@param	_DisplayManiaStars	The new display value
+ */
+Void SetDisplayManiaStars(Boolean _DisplayManiaStars) {
+	G_LibST_DisplayManiaStars = _DisplayManiaStars;
+}
+
+// ---------------------------------- //
+/**
+ * Set the name of the tab (used by the tab library)
+ *
+ *	@param	_LibST_ScoresTab	The new name of the tab
+ */
+Void SetTabName(Text _TabName) {
+	G_LibST_TabName = _TabName;
+}
+
+// ---------------------------------- //
+/** Get the height of the scores table
+ *
+ *	@return		The height of the table once it is built
+ */
+Real GetHeight() {
+	return G_LibST_Height;
+}
+
+// ---------------------------------- //
+/** Filter the players displayed in the scores table by logins
+ *
+ *	@param	_Logins		The logins to display
+ */
+Void FilterLogins(Text[] _Logins) {
+	declare netwrite Net_LibST_FilterUpdate for Teams[0] = 0;
+	declare netwrite Net_LibST_FilterLogins for Teams[0] = Text[];
+	
+	Net_LibST_FilterUpdate = Now;
+	Net_LibST_FilterLogins = _Logins;
+}
+
+// ---------------------------------- //
+/** Filter the players displayed in the scores table by status
+ *
+ *	@param	_Status		The status to display:
+ *						- All
+ *						- Playing
+ *						- Alive
+ *						- Spectators
+ */
+Void FilterStatus(Text _Status) {
+	declare netwrite Net_LibST_FilterUpdate for Teams[0] = 0;
+	declare netwrite Net_LibST_FilterStatus for Teams[0] = "All";
+	
+	Net_LibST_FilterUpdate = Now;
+	Net_LibST_FilterStatus = _Status;
+}
+
+// ---------------------------------- //
+/** Build the scores table manialink
+ *	This function must be called each time
+ *	the scores table's manialink is updated
+ *
+ *	@param	_ForceUseClans		Force the use of clans or not in the scores table
+ *	@param	_UseClans			If _ForceUseClans is True, then use this value instead of the defaul UseClans
+ */
+Void Build(Boolean _ForceUseClans, Boolean _UseClans) {
+	declare LayerScoresTable = GetLayerScoresTable();
+	if (LayerScoresTable == Null) return;
+	
+	declare BGSizeX			= 0.;
+	declare BGSizeY			= 0.;
+	declare PMarginX		= 1.;
+	declare PMarginY		= 0.5;
+	declare PLegendSizeY	= 4.;
+	declare ZText			= C_LibST_Z + 8;
+	
+	declare LibST_UseClans	= UseClans;
+	if (_ForceUseClans) LibST_UseClans = _UseClans;
+	
+	// ---------------------------------- //
+	// Create the scores table background
+	declare BGML	= "";
+	
+	// With 2 images
+	if(G_LibST_TableBackgroundImageLeft != "") {
+		declare Pos			= G_LibST_TableBackgroundPos.X^" "^G_LibST_TableBackgroundPos.Y^" "^(C_LibST_Z);
+		declare PosLeft		= (G_LibST_TableBackgroundPos.X-G_LibST_TableBgLeftRightXOffset)^" "^(G_LibST_TableBackgroundPos.Y-G_LibST_TableBgLeftRightYOffset)^" "^(C_LibST_Z + 16);
+		declare PosRight	= (G_LibST_TableBackgroundPos.X+G_LibST_TableBgLeftRightXOffset)^" "^(G_LibST_TableBackgroundPos.Y-G_LibST_TableBgLeftRightYOffset)^" "^(C_LibST_Z + 16);
+		declare Size		= G_LibST_TableBackgroundSize.X^" "^G_LibST_TableBackgroundSize.Y;
+		BGSizeY	= G_LibST_TableBackgroundSize.Y;
+		declare SizeLeftRight = G_LibST_TableBgLeftRightSize^" "^G_LibST_TableBgLeftRightSize;
+		
+		BGML = """
+		<quad posn="{{{Pos}}}" sizen="{{{Size}}}" halign="center" image="{{{
+			G_LibST_TableBackgroundImage}}}" />
+		<quad posn="{{{PosLeft}}}" sizen="{{{SizeLeftRight}}}" halign="center" image="{{{
+			G_LibST_TableBackgroundImageLeft}}}" colorize="{{{G_LibST_TableBackgroundLeftColor}}}" id="Quad_ColorTeam1" />
+		<quad posn="{{{PosRight}}}" sizen="{{{SizeLeftRight}}}" halign="center" image="{{{
+			G_LibST_TableBackgroundImageRight}}}" colorize="{{{G_LibST_TableBackgroundRightColor}}}" id="Quad_ColorTeam2" />
+		""";
+	}
+	else {
+		// Without an image
+		if (G_LibST_TableBackgroundImage == "") {
+			declare PlayersSizeY = (G_LibST_PlayerSizeY * (G_LibST_LinesByColNb * 1.)) - PMarginY + PLegendSizeY;
+			BGSizeX	= G_LibST_TableSizeX;
+			BGSizeY	= G_LibST_HeaderSizeY + PlayersSizeY + G_LibST_FooterSizeY;
+			BGML = """<quad posn="0 0 {{{C_LibST_Z}}}" sizen="{{{BGSizeX}}} {{{BGSizeY}}}" halign="center" bgcolor="{{{G_LibST_Colors["Background"]}}}" />""";
+		} 
+		// With an image
+		else {
+			declare Pos		= G_LibST_TableBackgroundPos.X^" "^G_LibST_TableBackgroundPos.Y^" "^C_LibST_Z;
+			declare Size	= G_LibST_TableBackgroundSize.X^" "^G_LibST_TableBackgroundSize.Y;
+			BGSizeY	= G_LibST_TableBackgroundSize.Y;
+			BGML = """<quad posn="{{{Pos}}}" sizen="{{{Size}}}" halign="center" image="{{{G_LibST_TableBackgroundImage}}}" />""";
+		}
+	}
+	
+	// Update frame height
+	declare HeightByPlayer = (G_LibST_PlayerSizeY * (G_LibST_LinesByColNb * 1.)) - PMarginY + PLegendSizeY;
+	G_LibST_Height = G_LibST_HeaderSizeY + HeightByPlayer + G_LibST_FooterSizeY;
+	
+	
+	// ---------------------------------- //
+	// Create the header
+	declare HeaderML = "";
+	// For teams mode
+	if (LibST_UseClans) {
+		declare NTSizeX = ((G_LibST_TableSizeX/2.) - 45.);
+		declare NTPosX = (NTSizeX/2.) + 32.5;
+		declare STScale = 0.7;
+		declare STSizeX = 12. / STScale;
+		
+		declare Real EmblemSize = 15.;
+		HeaderML = """
+			<frame posn="0 0" id="Frame_VS">
+				<quad posn="-6 -11 {{{C_LibST_Z+5}}}" sizen="{{{EmblemSize}}} {{{EmblemSize}}}" halign="right" valign="bottom" style="Emblems" substyle="#1" />
+				<quad posn="6 -11 {{{C_LibST_Z+5}}}" sizen="{{{EmblemSize}}} {{{EmblemSize}}}" valign="bottom" style="Emblems" substyle="#2" />
+				<label posn="-21 -3 {{{ZText}}}" sizen="{{{STSizeX}}} 5" scale="{{{STScale}}}" halign="right" valign="center" style="TextRaceMessageBig" text="0" id="Label_ScoreTeam1" />
+				<label posn="21 -3 {{{ZText}}}" sizen="{{{STSizeX}}} 5" scale="{{{STScale}}}" valign="center" style="TextRaceMessageBig" text="0" id="Label_ScoreTeam2" />
+				<label posn="{{{-NTPosX}}} -3.4 {{{ZText}}}" sizen="{{{NTSizeX}}} 5" halign="center" valign="center" textemboss="1" id="Label_NameTeam1" />
+				<label posn="{{{NTPosX}}} -3.4 {{{ZText}}}" sizen="{{{NTSizeX}}} 5" halign="center" valign="center" textemboss="1" id="Label_NameTeam2" />
+			</frame>
+			""";
+	}
+	// For solo mode
+	else {
+		HeaderML = """
+<label posn="{{{-(G_LibST_TableSizeX/2.)+3.}}} -2.5 {{{ZText}}}" sizen="{{{G_LibST_TableSizeX - 20.}}} {{{G_LibST_HeaderSizeY}}}" textsize="6" textemboss="1" text="{{{_("Ranking")}}}" id="Label_Header" />
+""";
+	}
+	
+	// ---------------------------------- //
+	// Create the pager
+	declare PagerImagePath = C_ImgBaseDir^"Pager/";
+	declare PagerUp 	= PagerImagePath^"pagerUpOff.dds";
+	declare PagerDown 	= PagerImagePath^"pagerDownOff.dds";
+	declare PagerEnd	= PagerImagePath^"pagerEmpty.dds";
+	declare PagerPosX	= 3.;
+	declare PagerPosY	= 8.5;
+	declare PagerScale	= 1.5;
+	if (LibST_UseClans) {
+		PagerPosX	= 2.5;
+		PagerPosY	= 1.3;
+		PagerScale	= 1.;
+	}
+	
+	declare PagerML = """
+<frame posn="{{{(G_LibST_TableSizeX/2.)-PagerPosX}}} {{{-G_LibST_HeaderSizeY+PagerPosY}}} 3" scale="{{{PagerScale}}}" id="Frame_Pager" hidden="1">
+	<quad posn="0 0 {{{C_LibST_Z+1}}}" sizen="4 4" halign="center"  valign="center" image="{{{PagerDown}}}" scriptevents="1" id="Button_PageNext" />
+	<quad posn="0 0 {{{C_LibST_Z+1}}}" sizen="4 4" halign="center"  valign="center" image="{{{PagerEnd}}}" hidden="1" id="Button_PageNextOff" />
+	<quad posn="-4 0 {{{C_LibST_Z+1}}}" sizen="4 4" halign="center" valign="center" image="{{{PagerUp}}}" scriptevents="1" id="Button_PagePrev" />
+	<quad posn="-4 0 {{{C_LibST_Z+1}}}" sizen="4 4" halign="center" valign="center" image="{{{PagerEnd}}}" hidden="1" id="Button_PagePrevOff" />
+	<quad posn="-6.1 0 {{{C_LibST_Z+1}}}" sizen="3.4 3.4" halign="right" valign="center" style="Icons64x64_1" substyle="Maximize" scriptevents="1" id="Button_PagePlayer" />
+</frame>
+""";
+
+	// ---------------------------------- //
+	// Create the players list
+	declare PlayersML = "";
+	
+	if (LibST_UseClans) G_LibST_ColNb = 2;
+	//else G_LibST_ColNb = 1;
+	
+	declare PSizeX		= (G_LibST_TableSizeX - ((G_LibST_ColNb - 1.) * PMarginX)) / G_LibST_ColNb;
+	declare PSizeY		= (G_LibST_PlayerSizeY - PMarginY);
+	declare PSize		= PSizeX^" "^PSizeY;
+	declare PShiftX		= PSizeX + PMarginX;
+	declare PShiftY		= G_LibST_PlayerSizeY;
+	declare PTopSizeY	= PSizeY * (2./3.);
+	declare PBotSizeY	= PSizeY * (1./3.);
+	declare PTopPosY	= PBotSizeY / 2.;
+	declare PBotPosY	= -PTopSizeY / 2.;
+	
+	Private_NormalizeColumnsWidth(PSizeX, PSizeY);
+	
+	declare PositionPosX 	= 0.;										///< Align: left
+	declare StatusPosX		= _X("Position");							///< Align: left
+	declare AvatarPosX		= StatusPosX + _X("Status");				///< Align: left
+	declare NamePosX		= AvatarPosX + _X("Avatar");				///< Align: left
+	declare SpectatorPosX	= NamePosX + _X("Name") + _X("Spectator");	///< Align: right
+	declare ProfilePosX		= SpectatorPosX + _X("Profile");			///< Align: right
+	declare Custom1PosX		= ProfilePosX + _X("Custom1");				///< Align: right
+	declare Custom2PosX		= Custom1PosX + _X("Custom2");				///< Align: right
+	declare Custom3PosX		= Custom2PosX + _X("Custom3");				///< Align: right
+	declare RoundPointsPosX	= Custom3PosX + _X("RoundPoints");			///< Align: right
+	declare PointsPosX		= RoundPointsPosX + _X("Points");			///< Align: right
+	
+	declare TagsSizeX		= PointsPosX - ProfilePosX;
+	declare TagSizeX		= TagsSizeX/3.;
+	declare TagSize			= Private_ResizeKeepRatio(16., 9., TagSizeX, PTopSizeY);
+	
+	
+	declare StarSizeX		= 3.;
+	declare ManiaStarsHidden = 0;
+	if (!G_LibST_DisplayManiaStars)	{
+		ManiaStarsHidden = 1;
+		StarSizeX = 0.;
+	}
+	
+	declare StatusSize		= Private_ResizeSquare(_X("Status"), PTopSizeY);
+	declare AvatarSize		= Private_ResizeSquare(_X("Avatar"), PTopSizeY);
+	declare SpectatorSize	= Private_ResizeSquare(_X("Spectator"), PTopSizeY);
+	declare ProfileSize		= Private_ResizeSquare(_X("Profile"), PTopSizeY);
+	declare StarSize		= Private_ResizeSquare(StarSizeX, PTopSizeY);
+	declare FlagSize		= Private_ResizeSquare(_X("Position"), PBotSizeY);
+	declare LPSize			= Private_ResizeSquare(4., PTopSizeY);
+	
+	declare PositionHidden		= 0;
+	declare StatusHidden		= 0;
+	declare AvatarHidden		= 0;
+	declare NameHidden			= 0;
+	declare SpectatorHidden		= 0;
+	declare ProfileHidden		= 0;
+	declare Custom1Hidden		= 0;
+	declare Custom2Hidden		= 0;
+	declare Custom3Hidden		= 0;
+	declare RoundPointsHidden	= 0;
+	declare PointsHidden		= 0;
+	if (_X("Position") <= 0.)		PositionHidden		= 1;
+	if (_X("Status") <= 0.)			StatusHidden		= 1;
+	if (_X("Avatar") <= 0.)			AvatarHidden		= 1;
+	if (_X("Name") <= 0.)			NameHidden			= 1;
+	if (_X("Spectator") <= 0.)		SpectatorHidden		= 1;
+	if (_X("Profile") <= 0.)		ProfileHidden		= 1;
+	if (_X("Custom1") <= 0.)		Custom1Hidden		= 1;
+	if (_X("Custom2") <= 0.)		Custom2Hidden		= 1;
+	if (_X("Custom3") <= 0.)		Custom3Hidden		= 1;
+	if (_X("RoundPoints") <= 0.)	RoundPointsHidden	= 1;
+	if (_X("Points") <= 0.)			PointsHidden		= 1;
+	
+	declare Key = 1;
+	
+	// ---------------------------------- //
+	// Column legend
+	declare LegendModel = """
+	<framemodel id="Frame_Legends">
+		<frame posn="0 0.8 {{{ZText}}}">
+			<label posn="{{{Custom1PosX-1.}}} 0" sizen="{{{_X("Custom1")-1.}}} {{{PLegendSizeY}}}" halign="right" valign="bottom" style="TextCardSmallScores2Rank" textprefix="$s" text="{{{G_LibST_ColumnsNames["Custom1"]}}}" hidden="{{{Custom1Hidden}}}" />
+			<label posn="{{{Custom2PosX-1.}}} 0" sizen="{{{_X("Custom2")-1.}}} {{{PLegendSizeY}}}" halign="right" valign="bottom" style="TextCardSmallScores2Rank" textprefix="$s" text="{{{G_LibST_ColumnsNames["Custom2"]}}}" hidden="{{{Custom2Hidden}}}" />
+			<label posn="{{{Custom3PosX-1.}}} 0" sizen="{{{_X("Custom3")-1.}}} {{{PLegendSizeY}}}" halign="right" valign="bottom" style="TextCardSmallScores2Rank" textprefix="$s" text="{{{G_LibST_ColumnsNames["Custom3"]}}}" hidden="{{{Custom3Hidden}}}" />
+			<label posn="{{{RoundPointsPosX-1.}}} 0" sizen="{{{_X("RoundPoints")-1.}}} {{{PLegendSizeY}}}" halign="right" valign="bottom" style="TextCardSmallScores2Rank" textprefix="$s" text="{{{G_LibST_ColumnsNames["RoundPoints"]}}}" hidden="{{{RoundPointsHidden}}}" />
+			<label posn="{{{PointsPosX-1.}}} 0" sizen="{{{_X("Points")-1.}}} {{{PLegendSizeY}}}" halign="right" valign="bottom" style="TextCardSmallScores2Rank" textprefix="$s" text="{{{G_LibST_ColumnsNames["Points"]}}}" hidden="{{{PointsHidden}}}" />
+		</frame>
+	</framemodel>
+		
+""";
+	
+	// ---------------------------------- //
+	// Player card background
+	declare BGPlayerCardML = "";
+	// Without an image
+	if (G_LibST_PlayerCardBackgroundImage1 == "") {
+		BGPlayerCardML = """
+<quad posn="{{{AvatarPosX}}} 0 {{{C_LibST_Z+1}}}" sizen="{{{PSizeX-AvatarPosX+1.}}} {{{PSizeY+0.5}}}" valign="center" image="{{{C_ImgBaseDir}}}ScoresRectangle.dds" />
+<quad posn="{{{AvatarPosX}}} -0.1 {{{C_LibST_Z+9}}}" sizen="{{{PSizeX-AvatarPosX+1.}}} {{{PSizeY+0.5}}}" valign="center" image="{{{C_ImgBaseDir}}}ScoresRectangleUnspawn.dds" id="Quad_Off" hidden="1" />
+""";
+	} 
+	// With an image
+	else {
+		declare Pos		= G_LibST_PlayerCardBackgroundPos.X^" "^G_LibST_PlayerCardBackgroundPos.Y;
+		declare Size	= G_LibST_PlayerCardBackgroundSize.X^" "^G_LibST_PlayerCardBackgroundSize.Y;
+		BGPlayerCardML	= """
+<quad posn="{{{Pos}}} {{{C_LibST_Z+1}}}"  sizen="{{{Size}}}" valign="center" image="{{{G_LibST_PlayerCardBackgroundImage1}}}" />
+<quad posn="{{{Pos}}} {{{C_LibST_Z+9}}}" sizen="{{{Size}}}" valign="center" image="{{{G_LibST_PlayerCardBackgroundImage2}}}" id="Quad_Off" hidden="1" />
+""";
+	}
+	
+	// ---------------------------------- //
+	// Player card content
+	declare PlayerCardModel = """
+<framemodel id="Frame_Player">
+	{{{BGPlayerCardML}}}
+	
+	<quad posn="0 0 {{{C_LibST_Z+14}}}" sizen="{{{_X("Position")+_X("Status")+1.}}} {{{PSizeY+0.5}}}" valign="center" bgcolor="000a" image="{{{C_ImgBaseDir}}}ScoresSquare.dds" hidden="{{{PositionHidden}}}" />
+	<label posn="{{{PositionPosX+(_X("Position")/2.)+(_X("Status")*(10./100.))+0.8}}} 0.3 {{{C_LibST_Z+15}}}" sizen="{{{(_X("Position")-0.8)/0.7}}} {{{_Y("Position")/0.7}}}" scale="0.7" halign="center" valign="center" id="Label_Position" hidden="{{{PositionHidden}}}" />
+
+	<quad posn="{{{StatusPosX+(_X("Status")/2.)}}} 0 {{{C_LibST_Z+15}}}" sizen="{{{StatusSize.X}}} {{{StatusSize.Y}}}" scale="0.7" halign="center" valign="center" style="Icons64x64_1" id="Quad_Status" hidden="{{{StatusHidden}}}" />
+	
+	
+	<frame posn="0 {{{PTopPosY}}}">
+		<quad posn="{{{AvatarPosX+(_X("Avatar")/2.)+1.}}} 0 {{{C_LibST_Z+3}}}" sizen="{{{AvatarSize.X}}} {{{AvatarSize.Y}}}" scale="0.9" halign="center" valign="center" bgcolor="0007" id="Quad_Avatar" hidden="{{{AvatarHidden}}}" />
+		
+		<label posn="{{{NamePosX+1.}}} 0.4 {{{ZText}}}" sizen="{{{_X("Name")-(2*StarSize.X)-1.}}} {{{_Y("Name")}}}" valign="center" style="TextRaceMessage" id="Label_Name" hidden="{{{NameHidden}}}" />
+		
+		<frame posn="{{{NamePosX+_X("Name")}}} 0 {{{C_LibST_Z+3}}}" hidden="{{{ManiaStarsHidden}}}">
+			<quad posn="0 0" sizen="{{{StarSize.X}}} {{{StarSize.Y}}}" halign="right" valign="center" style="BgRaceScore2" substyle="Fame" id="Quad_Star_1" />
+			<quad posn="{{{-StarSize.X*1.}}} 0" sizen="{{{StarSize.X}}} {{{StarSize.Y}}}" halign="right" valign="center" style="BgRaceScore2" substyle="Fame" id="Quad_Star_2" />
+			<quad posn="{{{-StarSize.X*2.}}} 0" sizen="{{{StarSize.X}}} {{{StarSize.Y}}}" halign="right" valign="center" style="BgRaceScore2" substyle="Fame" id="Quad_Star_3" />
+			<quad posn="{{{-StarSize.X*3.}}} 0" sizen="{{{StarSize.X}}} {{{StarSize.Y}}}" halign="right" valign="center" style="BgRaceScore2" substyle="Fame" id="Quad_Star_4" />
+			<quad posn="{{{-StarSize.X*4.}}} 0" sizen="{{{StarSize.X}}} {{{StarSize.Y}}}" halign="right" valign="center" style="BgRaceScore2" substyle="Fame" id="Quad_Star_5" />
+		</frame>
+		
+		<frame posn="0 0 {{{ZText}}}" id="Frame_Scores">
+			<label posn="{{{Custom1PosX-1.}}} 0.4" sizen="{{{_X("Custom1")-1.}}} {{{_Y("Custom1")}}}" halign="right" valign="center" style="TextCardSmallScores2" id="Label_Custom1" hidden="{{{Custom1Hidden}}}" />
+			
+			<label posn="{{{Custom2PosX-1.}}} 0.4" sizen="{{{_X("Custom2")-1.}}} {{{_Y("Custom2")}}}" halign="right" valign="center" style="TextCardSmallScores2" id="Label_Custom2" hidden="{{{Custom2Hidden}}}" />
+			
+			<label posn="{{{Custom3PosX-1.}}} 0.4" sizen="{{{_X("Custom3")-1.}}} {{{_Y("Custom3")}}}" halign="right" valign="center" style="TextCardSmallScores2" id="Label_Custom3" hidden="{{{Custom3Hidden}}}" />
+			
+			<label posn="{{{RoundPointsPosX-1.}}} 0.4" sizen="{{{_X("RoundPoints")-1.}}} {{{_Y("RoundPoints")}}}" halign="right" valign="center" style="TextCardSmallScores2" id="Label_RoundPoints" hidden="{{{RoundPointsHidden}}}" />
+			
+			<label posn="{{{PointsPosX-1.5}}} 0.4" sizen="{{{_X("Points")-1.5}}} {{{_Y("Points")}}}" halign="right" valign="center" style="TextCardScores2" id="Label_Points" hidden="{{{PointsHidden}}}" />
+		</frame>
+		
+		<frame posn="0 0 {{{C_LibST_Z+3}}}" id="Frame_Tags" hidden="1">
+			<quad posn="{{{PointsPosX-1.}}} 0" sizen="{{{TagSize.X}}} {{{TagSize.Y}}}" scale="0.9" halign="right" valign="center" bgcolor="0007" id="Quad_Tag1" />
+			<quad posn="{{{PointsPosX-1.-TagSize.X}}} 0" sizen="{{{TagSize.X}}} {{{TagSize.Y}}}" scale="0.9" halign="right" valign="center" bgcolor="0007" id="Quad_Tag2" />
+			<quad posn="{{{PointsPosX-1.-(2*TagSize.X)}}} 0" sizen="{{{TagSize.X}}} {{{TagSize.Y}}}" scale="0.9" halign="right" valign="center" bgcolor="0007" id="Quad_Tag3" />
+		</frame>
+		
+		<frame posn="{{{PointsPosX-1.}}} 0.4 {{{ZText}}}" id="Frame_LadderPoints" hidden="1">
+			<label posn="{{{-LPSize.X-0.5}}} 0" sizen="{{{TagsSizeX-LPSize.X-1.}}} {{{_Y("Points")}}}" halign="right" valign="center" style="TextCardSmallScores2" id="Label_LadderPoints" />
+			<quad posn="0 -0.2" sizen="{{{LPSize.X}}} {{{LPSize.Y}}}" halign="right" valign="center" style="Icons128x128_1" substyle="LadderPoints" />
+		</frame>
+	
+	</frame>
+	<frame posn="0 {{{PBotPosY}}}">
+		<!--<quad posn="{{{AvatarPosX}}} 0 {{{C_LibST_Z+4}}}" sizen="{{{PSizeX-AvatarPosX}}} {{{PBotSizeY}}}" valign="center" bgcolor="{{{G_LibST_Colors["PlayerCardBottom"]}}}" />-->
+		
+		<frame posn="{{{AvatarPosX}}} 0.2">
+			<frame posn="1 0 {{{ZText}}}">
+				<quad posn="1.25 -0.3" sizen="1 2.5" halign="right" valign="center" id="Quad_Echelon" />
+			</frame>
+			<frame posn="3 0 {{{ZText}}}">
+				<quad posn="2.5 -0.3" sizen="2.5 2.5" halign="right" valign="center" style="Icons64x64_1" substyle="IconPlayersLadder" />
+				<label posn="3 -0.4" sizen="{{{33-3.5}}} {{{PBotSizeY}}}" scale="0.8" valign="center2" textsize="1" style="TextCardSmallScores2Rank" textemboss="1" id="Label_Rank" />
+			</frame>
+			<frame posn="{{{PSizeX-AvatarPosX-1.}}} 0 {{{ZText}}}" id="Frame_LadderPointsTotal" hidden="1">
+				<quad posn="0 -0.2" sizen="3 3" halign="right" valign="center" style="Icons128x128_1" substyle="LadderPoints" />
+				<label posn="-3.5 0" sizen="{{{PSizeX-AvatarPosX-33.-1.}}} {{{PBotSizeY}}}" halign="right" valign="center" style="TextCardSmallScores2Rank" id="Label_LadderPointsTotal" />
+			</frame>
+			<frame posn="35 0 {{{ZText}}}" id="Frame_LadderProgression" hidden="1">
+				<quad posn="3 -0.1" sizen="3 3" halign="right" valign="center" style="UIConstructionSimple_Buttons" substyle="Up" />
+				<label posn="3.5 0" sizen="{{{15-3.5}}} {{{PBotSizeY}}}" valign="center" style="TextCardSmallScores2Rank" id="Label_LadderProgression" />
+			</frame>
+			<frame posn="50 0 {{{ZText}}}" id="Frame_Medals" hidden="1">
+				<quad posn="3 -0.1" sizen="2.8 2.8" halign="right" valign="center" style="MedalsBig" substyle="MedalGold" />
+				<label posn="3.5 0" sizen="4 3" valign="center" style="TextCardSmallScores2Rank" id="Label_MedalGold" />
+				<quad posn="11 -0.1" sizen="2.8 2.8" halign="right" valign="center" style="MedalsBig" substyle="MedalSilver" />
+				<label posn="11.5 0" sizen="4 3" valign="center" style="TextCardSmallScores2Rank" id="Label_MedalSilver" />
+				<quad posn="19 -0.1" sizen="2.8 2.8" halign="right" valign="center" style="MedalsBig" substyle="MedalBronze" />
+				<label posn="19.5 0" sizen="4 3" valign="center" style="TextCardSmallScores2Rank" id="Label_MedalBronze" />
+			</frame>
+		</frame>
+		
+	</frame>
+</framemodel>
+""";
+	
+	declare InputPlayerBG = """<quad posn="0 0 {{{C_LibST_Z}}}" sizen="{{{PSizeX+1.5}}} {{{PSizeY+1.5}}}" valign="center" style="Icons128x128_Blink" substyle="ShareBlink" id="Quad_Me" hidden="1" />""";
+	
+	PlayersML ^= """{{{LegendModel}}}{{{InputPlayerBG}}}{{{PlayerCardModel}}}""";
+	
+	for (I, 1, G_LibST_ColNb) {
+		PlayersML ^= """
+<frame posn="{{{(I-1)*PShiftX}}} {{{-PLegendSizeY}}} 1" id="Frame_Col_{{{I}}}">
+	<frameinstance modelid="Frame_Legends" id="Frame_Legends" />
+""";
+		for (J, 1, G_LibST_LinesByColNb) {
+			PlayersML ^= """
+	<frame posn="0 {{{(-(J-1)*PShiftY)-(PSizeY/2.)}}}">
+		<label posn="{{{((I-1)*PShiftX)-0.5}}} {{{(-(J-1)*PShiftY)-(PSizeY/2.)-PLegendSizeY}}}" hidden="1" id="Label_PlayerPos_{{{J}}}" />
+		<frameinstance modelid="Frame_Player" id="Frame_Player_{{{J}}}" />
+		<frame posn="0 {{{PTopPosY}}}" id="Frame_Buttons">
+			<quad posn="{{{SpectatorPosX-(_X("Spectator")/2.)}}} 0 {{{C_LibST_Z+11}}}" sizen="{{{SpectatorSize.X}}} {{{SpectatorSize.Y}}}" halign="center" valign="center" style="UIConstructionSimple_Buttons" substyle="Camera" scriptevents="1" hidden="1" id="Button_Spec_{{{Key}}}" />
+			<quad posn="{{{ProfilePosX-(_X("Profile")/2.)}}} 0 {{{C_LibST_Z+11}}}" sizen="{{{ProfileSize.X}}} {{{ProfileSize.Y}}}" halign="center" valign="center" style="UIConstructionSimple_Buttons" substyle="Author" scriptevents="1" id="Button_Prof_{{{Key}}}" />
+		</frame>
+	</frame>
+""";
+			Key += 1;
+		}
+		PlayersML ^= """
+</frame>
+""";
+	}
+	
+	// ---------------------------------- //
+	// Create the footer
+	declare LPosX = 2.;
+	declare RPosX = G_LibST_TableSizeX - 2.;
+	declare NameScale = 0.4;
+	declare NameSizeX = (((G_LibST_TableSizeX - 20.) / 10.) * 6.) / NameScale;
+	declare PointsScale = 0.4;
+	declare PointsSizeX = (((G_LibST_TableSizeX - 20.) / 10.) * 4.) / PointsScale;
+	declare PositionScale = 0.6;
+	declare PositionSizeX = (((G_LibST_TableSizeX - 20.) / 10.) * 2.) / PositionScale;
+	declare StatsSizeX = (((G_LibST_TableSizeX - 20.) / 10.) * 8.);
+	declare FooterCustom1SizeX = (((G_LibST_TableSizeX - 20.) / 10.) * 6.) + 16.;
+	declare FooterCustom2SizeX = (((G_LibST_TableSizeX - 20.) / 10.) * 2.) + 16.;
+	declare DisplayPlayerInfo = 0;
+	if (!G_LibST_DisplayPlayerInfo) DisplayPlayerInfo = 1;
+	declare FooterML = """
+<frame id="Frame_PlayerInfoDefault" hidden="{{{DisplayPlayerInfo}}}">
+	<quad posn="1 -1 {{{C_LibST_Z+1}}}" sizen="13 13" bgcolor="0003" id="Quad_PIAvatar" />
+	<format style="TextRaceMessageBig" />
+	<label posn="16 -7 {{{ZText}}}" sizen="{{{NameSizeX}}} 5" scale="{{{NameScale}}}" valign="bottom" id="Label_PIName" />
+	<label posn="16 -15 {{{ZText}}}" sizen="{{{PositionSizeX}}} 5" scale="{{{PositionScale}}}" valign="bottom" id="Label_PIPosition" />
+</frame>
+<frame id="Frame_PlayerInfoCustom" hidden="{{{1-DisplayPlayerInfo}}}">
+	<label posn="{{{LPosX}}} -7 {{{ZText}}}" sizen="{{{FooterCustom1SizeX}}} 5" valign="bottom" textemboss="1" id="Label_PICustom1" />
+	<label posn="{{{LPosX}}} -14 {{{ZText}}}" sizen="{{{FooterCustom2SizeX}}} 5" valign="bottom" textemboss="1"  id="Label_PICustom2" />
+</frame>
+<label posn="{{{RPosX}}} -7 {{{ZText}}}" sizen="{{{PointsSizeX}}} 5" scale="0.4" halign="right" valign="bottom" style="TextRaceMessageBig" id="Label_PIScore" />
+<label posn="{{{RPosX}}} -14 {{{ZText}}}" sizen="{{{StatsSizeX}}} 5" textsize="{{{G_LibST_FooterStatsTextSize}}}" halign="right" valign="bottom" textemboss="1" id="Label_PIStats" />
+""";
+	
+	// ---------------------------------- //
+	// Create the spec confirmation window
+	declare FrameSpec = """
+<quad posn="0 0 {{{ZText+15}}}" sizen="{{{PSizeX}}} {{{PSizeY+0.5}}}" bgcolor="111e" scriptevents="1" />
+<frame posn="0 {{{(-PSizeY/2.)-0.25}}} {{{ZText+16}}}">
+	<label posn="3. 0" sizen="{{{PSizeX-25.}}} 5" valign="center2" textsize="2" textemboss="1" text="{{{_("Switch to spectator mode?")}}}" /> 
+	<format style="TextButtonNav" />
+	<label posn="{{{PSizeX-17.3}}} 0" sizen="10 5" halign="center" valign="center" focusareacolor1="333f" focusareacolor2="eeef" textcolor="fff" text="{{{_("Yes")}}}" scriptevents="1" id="Button_SpecYes" />
+	<label posn="{{{PSizeX-7.}}} 0" sizen="10 5" halign="center" valign="center" focusareacolor1="333f" focusareacolor2="eeef" textcolor="fff" text="{{{_("No")}}}" scriptevents="1" id="Button_SpecNo" />
+</frame>
+""";
+	
+	// ---------------------------------- //
+	// Scores table
+	declare TablePos = G_LibST_TablePosX^" "^G_LibST_TablePosY^" "^C_LibST_Z;
+	declare PlayersPos = (-G_LibST_TableSizeX/2.)^" "^(-G_LibST_HeaderSizeY);
+	declare FooterPos = (-G_LibST_TableSizeX/2.)^" "^(-G_LibST_HeaderSizeY-(G_LibST_PlayerSizeY * (G_LibST_LinesByColNb * 1.))+PMarginY-PLegendSizeY);
+	declare ML = """
+<frame posn="{{{TablePos}}}" id="Frame_ScoresTable" hidden="1">
+	{{{BGML}}}
+	<frame posn="0 0" id="Frame_Header">
+		{{{HeaderML}}}
+		{{{PagerML}}}
+	</frame>
+	<frame posn="{{{PlayersPos}}}" id="Frame_Players">
+		{{{PlayersML}}}
+		<frame id="Frame_Spec" hidden="1">
+			{{{FrameSpec}}}
+		</frame>
+	</frame>
+	<frame posn="{{{FooterPos}}}" id="Frame_Footer" hidden="1">
+		{{{FooterML}}}
+	</frame>
+</frame>
+<script><!--
+#Include "TextLib" as TL
+#Include "MathLib" as ML
+
+#Const C_LinesByColNb		{{{G_LibST_LinesByColNb}}}
+#Const C_ColNb				{{{G_LibST_ColNb}}}
+#Const C_RefreshInterval	{{{C_LibST_RefreshInterval}}}
+#Const C_StarSize			{{{StarSize.X}}}
+#Const C_DisplayTeamScores	{{{G_LibST_DisplayTeamScore}}}
+#Const C_RoundPointsFormat	"{{{G_LibST_RoundPointsFormat}}}"
+#Const C_PointsFormat		"{{{G_LibST_PointsFormat}}}"
+#Const C_DisplayPlayerInfo	{{{G_LibST_DisplayPlayerInfo}}}
+
+#Const C_Disconnected	0
+#Const C_Spawned		1
+#Const C_NotSpawned		2
+#Const C_Spectating		3
+
+#Const C_DefaultCustom1	"{{{G_LibST_DefaultCustom1}}}"
+#Const C_DefaultCustom2	"{{{G_LibST_DefaultCustom2}}}"
+#Const C_DefaultCustom3	"{{{G_LibST_DefaultCustom3}}}"
+#Const C_DefaultPIScore	"{{{G_LibST_DefaultPIScore}}}"
+#Const C_DefaultPIStats "{{{G_LibST_DefaultPIStats}}}"
+#Const C_DefaultPICustom1 "{{{G_LibST_DefaultPICustom1}}}"
+#Const C_DefaultPICustom2 "{{{G_LibST_DefaultPICustom2}}}"
+
+declare Integer G_PageCurrent;
+declare Integer G_PageMax;
+declare Integer G_PageStart;
+declare Integer G_PageEnd;
+declare Integer G_PageRange;
+
+declare Text G_LastSpecButtonId;
+declare Text G_LastSpecLogin;
+declare Integer[Integer] G_ClansNbPlayers;
+
+declare CMlFrame	Frame_Pager;
+declare CMlQuad		Button_PageNext;
+declare CMlQuad		Button_PageNextOff;
+declare CMlQuad		Button_PagePrev;
+declare CMlQuad		Button_PagePrevOff;
+declare CMlFrame	Frame_Players;
+declare CMlFrame	Frame_Footer;
+declare CMlQuad		Quad_Me;
+declare CMlQuad		Quad_PIAvatar;
+declare CMlLabel	Label_PIName;
+declare CMlLabel	Label_PIScore;
+declare CMlLabel	Label_PIPosition;
+declare CMlLabel	Label_PIStats;
+declare CMlLabel	Label_PICustom1;
+declare CMlLabel	Label_PICustom2;
+declare CMlFrame	Frame_Spec;
+
+Boolean Filter(CGamePlayerInfo _User) {
+	declare netread Text[]	Net_LibST_FilterLogins for Teams[0];
+	declare netread Text	Net_LibST_FilterStatus for Teams[0];
+	
+	declare LibST_PrevStatus for _User = C_Disconnected;
+	
+	if (Net_LibST_FilterLogins.count > 0 && !Net_LibST_FilterLogins.exists(_User.Login)) return False;
+	
+	switch (Net_LibST_FilterStatus) {
+		case "Playing"	: {
+			if (LibST_PrevStatus == C_Spawned || LibST_PrevStatus == C_NotSpawned) return True;
+			else return False;
+		}
+		case "Alive"	: {
+			if (LibST_PrevStatus == C_Spawned) return True;
+			else return False;
+		}
+		case "Spectating": {
+			if (LibST_PrevStatus == C_Spectating) return True;
+			else return False;
+		}
+		default			: {
+			return True;
+		}
+	}
+	
+	return True;
+}
+
+Void UpdatePlayersList() {
+	declare Col = 1;
+	declare Row = 1;
+	declare RowClan1 = 1;
+	declare RowClan2 = 1;
+	declare Clan1Cnt = 0;
+	declare Clan2Cnt = 0;
+	declare Count = 0;
+	declare Shift = 0;
+	Quad_Me.Hide();
+	
+	declare CMlFrame Frame_Col;
+	declare CMlFrame Frame_Legends;
+	declare CMlFrame Frame_Player;
+	declare CMlLabel Label_PlayerPos;
+	declare CMlQuad Quad_Off;
+	declare CMlLabel Label_Position;
+	declare CMlQuad Quad_Status;
+	declare CMlQuad Quad_Avatar;
+	declare CMlLabel Label_Name;
+	declare CMlQuad Quad_Echelon;
+	declare CMlLabel Label_Rank;
+	declare CMlFrame Frame_LadderPoints;
+	declare CMlLabel Label_LadderPoints;
+	declare CMlFrame Frame_LadderPointsTotal;
+	declare CMlLabel Label_LadderPointsTotal;
+	declare CMlFrame Frame_LadderProgression;
+	declare CMlLabel Label_LadderProgression;
+	declare CMlFrame Frame_Buttons;
+	declare CMlQuad Button_Spec;
+	declare CMlQuad Button_Prof;
+	declare CMlFrame Frame_Scores;
+	declare CMlLabel Label_Custom1;
+	declare CMlLabel Label_Custom2;
+	declare CMlLabel Label_Custom3;
+	declare CMlLabel Label_RoundPoints;
+	declare CMlLabel Label_Points;
+	declare CMlFrame Frame_Tags;
+	/*declare CMlQuad Quad_Tag1;
+	declare CMlQuad Quad_Tag2;
+	declare CMlQuad Quad_Tag3;*/
+	declare CMlQuad[Integer] Quad_Stars;
+	declare CMlLabel Label_MedalGold;
+	declare CMlLabel Label_MedalSilver;
+	declare CMlLabel Label_MedalBronze;
+	
+	foreach (Key => Score in Scores) {
+		declare LibST_PrevClan for Score.User = 0;
+		
+		if (!Filter(Score.User)) {
+			Shift += 1;
+			continue;
+		}
+		
+		if ({{{LibST_UseClans}}}) {
+			if (LibST_PrevClan == 1) {
+				Clan1Cnt += 1;
+				
+				if (Clan1Cnt < G_PageStart) continue;
+				if (Clan1Cnt > G_PageEnd) continue;
+				
+				Col = 1;
+				Row = RowClan1;
+			} else if (LibST_PrevClan == 2) {
+				Clan2Cnt += 1;
+				
+				if (Clan2Cnt < G_PageStart) continue;
+				if (Clan2Cnt > G_PageEnd) continue;
+				
+				Col = 2;
+				Row = RowClan2;
+			} else if (LibST_PrevClan == 0) continue;
+		} else {
+			if (Key + 1 - Shift < G_PageStart) continue;
+			if (Key + 1 - Shift > G_PageEnd) break;
+		}
+		
+		Count = ((Col - 1) * C_LinesByColNb) + Row;
+		
+		Frame_Col				<=> (Frame_Players.GetFirstChild("Frame_Col_"^Col)						as CMlFrame);
+		Frame_Legends			<=> (Frame_Col.GetFirstChild("Frame_Legends")							as CMlFrame);
+		Frame_Player			<=> (Frame_Col.GetFirstChild("Frame_Player_"^Row)						as CMlFrame);
+		Label_PlayerPos			<=> (Frame_Col.GetFirstChild("Label_PlayerPos_"^Row)					as CMlLabel);
+		Quad_Off				<=> (Frame_Player.GetFirstChild("Quad_Off")								as CMlQuad);
+		Label_Position			<=> (Frame_Player.GetFirstChild("Label_Position")						as CMlLabel);
+		Quad_Status				<=> (Frame_Player.GetFirstChild("Quad_Status")							as CMlQuad);
+		Quad_Avatar				<=> (Frame_Player.GetFirstChild("Quad_Avatar")							as CMlQuad);
+		Label_Name				<=> (Frame_Player.GetFirstChild("Label_Name")							as CMlLabel);
+		Quad_Echelon			<=> (Frame_Player.GetFirstChild("Quad_Echelon")							as CMlQuad);
+		Label_Rank				<=> (Frame_Player.GetFirstChild("Label_Rank")							as CMlLabel);
+		Frame_LadderPoints		<=> (Frame_Player.GetFirstChild("Frame_LadderPoints")					as CMlFrame);
+		Label_LadderPoints		<=> (Frame_LadderPoints.GetFirstChild("Label_LadderPoints")				as CMlLabel);
+		Frame_LadderPointsTotal	<=> (Frame_Player.GetFirstChild("Frame_LadderPointsTotal")				as CMlFrame);
+		Label_LadderPointsTotal	<=> (Frame_LadderPointsTotal.GetFirstChild("Label_LadderPointsTotal")	as CMlLabel);
+		Frame_LadderProgression	<=> (Frame_Player.GetFirstChild("Frame_LadderProgression")				as CMlFrame);
+		Label_LadderProgression	<=> (Frame_LadderProgression.GetFirstChild("Label_LadderProgression")	as CMlLabel);
+		Button_Spec				<=> (Frame_Col.GetFirstChild("Button_Spec_"^Count)						as CMlQuad);
+		Button_Prof				<=> (Frame_Col.GetFirstChild("Button_Prof_"^Count)						as CMlQuad);
+		Frame_Scores			<=> (Frame_Player.GetFirstChild("Frame_Scores")							as CMlFrame);
+		Label_Custom1			<=> (Frame_Scores.GetFirstChild("Label_Custom1")						as CMlLabel);
+		Label_Custom2			<=> (Frame_Scores.GetFirstChild("Label_Custom2")						as CMlLabel);
+		Label_Custom3			<=> (Frame_Scores.GetFirstChild("Label_Custom3")						as CMlLabel);
+		Label_RoundPoints		<=> (Frame_Scores.GetFirstChild("Label_RoundPoints")					as CMlLabel);
+		Label_Points			<=> (Frame_Scores.GetFirstChild("Label_Points")							as CMlLabel);
+		Frame_Tags				<=> (Frame_Player.GetFirstChild("Frame_Tags")							as CMlFrame);
+		//Quad_Tag1				<=> (Frame_Tags.GetFirstChild("Quad_Tag1")								as CMlQuad);
+		//Quad_Tag2				<=> (Frame_Tags.GetFirstChild("Quad_Tag2")								as CMlQuad);
+		//Quad_Tag3				<=> (Frame_Tags.GetFirstChild("Quad_Tag3")								as CMlQuad);
+		for (L, 1, 6) Quad_Stars[L] = (Frame_Player.GetFirstChild("Quad_Star_"^L)						as CMlQuad);
+		Label_MedalGold			<=> (Frame_Player.GetFirstChild("Label_MedalGold")						as CMlLabel);
+		Label_MedalSilver		<=> (Frame_Player.GetFirstChild("Label_MedalSilver")					as CMlLabel);
+		Label_MedalBronze		<=> (Frame_Player.GetFirstChild("Label_MedalBronze")					as CMlLabel);
+		
+		declare LibST_PrevRoundPoints	for Score = 0;
+		declare LibST_PrevPoints		for Score = 0;
+		declare LibST_PrevStatus		for Score.User = C_Disconnected;
+		
+		Frame_Player.Show();
+		Label_Position.SetText(TL::ToText(Key+1-Shift));
+		if (InputPlayer != Null && InputPlayer.Score != Null && InputPlayer.Score.Id == Score.Id) {
+			Quad_Me.Show();
+			Quad_Me.PosnX = Label_PlayerPos.PosnX;
+			Quad_Me.PosnY = Label_PlayerPos.PosnY;
+			if (LibST_PrevStatus == C_Spawned) Quad_Me.Show();
+			else if (UI.UISequence != CUIConfig::EUISequence::Playing) Quad_Me.Show();
+			else Quad_Me.Hide();
+		}
+		
+		declare StatusStyle = "Icons64x64_1";
+		declare StatusSubStyle = "Empty";
+		switch (LibST_PrevStatus) {
+			case C_Disconnected	: { StatusStyle = "Icons64x64_2"; StatusSubStyle = "DisconnectedLight"; }
+			case C_Spawned		: { StatusStyle = "Icons64x64_1"; StatusSubStyle = "LvlGreen"; }
+			case C_NotSpawned	: { StatusStyle = "Icons64x64_1"; StatusSubStyle = "LvlRed"; }
+			case C_Spectating	: { StatusStyle = "BgRaceScore2"; StatusSubStyle = "Spectator"; }
+		}
+		Quad_Status.Style = StatusStyle;
+		Quad_Status.Substyle = StatusSubStyle;
+		
+		if (UI.UISequence != CUIConfig::EUISequence::Playing && (LibST_PrevStatus == C_Spawned || LibST_PrevStatus == C_NotSpawned)) {
+			Quad_Status.Hide();
+		} else {
+			Quad_Status.Show();
+		}
+		
+		if (LibST_PrevStatus == C_Spawned) Quad_Off.Hide();
+		else if (UI.UISequence != CUIConfig::EUISequence::Playing) Quad_Off.Hide();
+		else Quad_Off.Show();
+		
+		Label_Name.SetText(Score.User.Name);
+		declare AvatarPath = "file://Avatars/"^Score.User.Login^"/Default";
+		if (Http.IsValidUrl(AvatarPath)) Quad_Avatar.ChangeImageUrl(AvatarPath);
+		
+		declare ZonePath = "";
+		if (Score.User.ZonePath != "") {
+		  declare ExplodeZonePath = TL::Split("|", Score.User.ZonePath);
+		  if (ExplodeZonePath.existskey(1)) ZonePath = ExplodeZonePath[1];
+		}
+		if (ZonePath == "") ZonePath = _("Other");
+		
+		declare Echelon = ML::FloorInteger(Score.User.LadderPoints / 10000.);
+		if (Echelon >= 1 && Echelon <= 9) {
+			Quad_Echelon.Show();
+			Quad_Echelon.ChangeImageUrl("file://Media/Manialinks/Common/Echelons/small_echelon"^Echelon^".dds");
+		} else {
+			Quad_Echelon.Hide();
+		}
+		
+		if (Score.User.LadderRank > 0) Label_Rank.SetText(TL::Compose("%1: %2", ZonePath, TL::ToText(Score.User.LadderRank)));
+		else Label_Rank.SetText(TL::Compose("%1: %2", ZonePath, "{{{_("Not ranked")}}}"));
+		
+		declare StarSize = C_StarSize;
+		declare Fame = Score.User.FameStars;
+		declare FameStop = 1;
+		if (Fame > 5) Fame = 5;
+		else if (Fame < 0) Fame = 0;
+		
+		switch (Fame) {
+			case 1: {
+				Quad_Stars[1].PosnX = 0.; Quad_Stars[1].PosnY = 0.;
+			}
+			case 2: {
+				Quad_Stars[1].PosnX = 0.;			Quad_Stars[1].PosnY = 0.;
+				Quad_Stars[2].PosnX = -StarSize;	Quad_Stars[2].PosnY = 0.;
+			}
+			case 3: {
+				Quad_Stars[1].PosnX = 0.;			Quad_Stars[1].PosnY = -StarSize/2.;
+				Quad_Stars[2].PosnX = -StarSize;	Quad_Stars[2].PosnY = -StarSize/2.;
+				Quad_Stars[3].PosnX = -StarSize/2.;	Quad_Stars[3].PosnY = StarSize/2.;
+			}
+			case 4: {
+				Quad_Stars[1].PosnX = 0.;			Quad_Stars[1].PosnY = -StarSize/2.;
+				Quad_Stars[2].PosnX = -StarSize;	Quad_Stars[2].PosnY = -StarSize/2.;
+				Quad_Stars[3].PosnX = 0.;			Quad_Stars[3].PosnY = StarSize/2.;
+				Quad_Stars[4].PosnX = -StarSize;	Quad_Stars[4].PosnY = StarSize/2.;
+			}
+			case 5: {
+				Quad_Stars[1].PosnX = 0.;				Quad_Stars[1].PosnY = -StarSize/2.;
+				Quad_Stars[2].PosnX = -StarSize;		Quad_Stars[2].PosnY = -StarSize/2.;
+				Quad_Stars[3].PosnX = 0.;				Quad_Stars[3].PosnY = StarSize/2.;
+				Quad_Stars[4].PosnX = -StarSize;		Quad_Stars[4].PosnY = StarSize/2.;
+				Quad_Stars[5].PosnX = -StarSize*0.5;	Quad_Stars[5].PosnY = 0.;
+			}
+		}		
+		for (M, 1, Fame) {
+			Quad_Stars[M].Show();
+			FameStop += 1;
+		}
+		for (N, FameStop, 5) {
+			Quad_Stars[N].Hide();
+		}
+		
+		if (UI.UISequence == CUIConfig::EUISequence::Podium && Score.LadderScore >= 0 && LibST_PrevStatus != C_Disconnected) {
+			Frame_LadderPoints.Show();
+			Frame_LadderPointsTotal.Show();
+			Frame_Scores.Hide();
+			//Frame_Legends.Hide();
+			//Frame_LadderProgression.Hide();
+			
+			declare LadderPointsExplode = TL::Split(".", TL::ToText(Score.LadderScore));
+			declare LadderPoints = "0.0";
+			if (LadderPointsExplode.existskey(0)) LadderPoints = LadderPointsExplode[0];
+			if (LadderPointsExplode.existskey(1)) LadderPoints ^= "."^TL::SubString(LadderPointsExplode[1], 0, 2);
+			Label_LadderPoints.SetText("$s$bb8+"^LadderPoints);
+			
+			declare LadderPointsTotalExplode = TL::Split(".", TL::ToText(Score.User.LadderPoints));
+			declare LadderPointsTotal = "0";
+			if (LadderPointsTotalExplode.existskey(0)) LadderPointsTotal = LadderPointsTotalExplode[0];
+			//if (LadderPointsTotalExplode.existskey(1)) LadderPointsTotal ^= "."^TL::SubString(LadderPointsTotalExplode[1], 0, 2);
+			Label_LadderPointsTotal.SetText("$s$bb8"^LadderPointsTotal);
+		} else {
+			Frame_LadderPoints.Hide();
+			Frame_LadderPointsTotal.Hide();
+			Frame_Scores.Show();
+			//Frame_Legends.Show();
+			/*Frame_LadderProgression.Show();
+			
+			declare LibST_InitialLadderRank for Score.User = Score.User.LadderRank;
+			declare RankShift = LibST_InitialLadderRank - Score.User.LadderRank;
+			Label_LadderProgression.SetText(TL::ToText(RankShift));*/
+		}
+		
+		if (Button_Spec != Null) {
+			if (Score.User.Login != LocalUser.Login && LibST_PrevStatus == C_Spawned) {
+				Button_Spec.Show();
+				declare Text Login for Button_Spec;
+				Login = Score.User.Login;
+			} else {
+				Button_Spec.Hide();
+			}
+		}
+		if (Button_Prof != Null) {
+			Button_Prof.Show();
+			declare Text Login for Button_Prof;
+			Login = Score.User.Login;
+		}
+		
+		declare LibST_PrevCustom1 for Score = C_DefaultCustom1;
+		declare LibST_PrevCustom2 for Score = C_DefaultCustom2;
+		declare LibST_PrevCustom3 for Score = C_DefaultCustom3;
+		declare Custom1String = C_DefaultCustom1;
+		declare Custom2String = C_DefaultCustom2;
+		declare Custom3String = C_DefaultCustom3;
+		if (LibST_PrevCustom1 != "") Custom1String = LibST_PrevCustom1;
+		if (LibST_PrevCustom2 != "") Custom2String = LibST_PrevCustom2;
+		if (LibST_PrevCustom3 != "") Custom3String = LibST_PrevCustom3;
+		Label_Custom1.SetText(Custom1String);
+		Label_Custom2.SetText(Custom2String);
+		Label_Custom3.SetText(Custom3String);
+		
+		//if(Score.RoundPoints > 0) {
+			Label_RoundPoints.SetText(C_RoundPointsFormat^TL::ToText(Score.RoundPoints));
+		/*} else {
+			Label_RoundPoints.SetText("");
+		}*/
+		Label_Points.SetText(C_PointsFormat^TL::ToText(Score.Points));
+		
+		/*if (UI.UISequence == CUIConfig::EUISequence::Podium) {
+			Frame_Scores.Hide();
+			Frame_Legends.Hide();
+			Frame_Tags.Show();
+		} else {
+			Frame_Scores.Show();
+			Frame_Legends.Show();
+			Frame_Tags.Hide();
+		}*/
+		
+		if (Frame_Spec.Visible && Score.User.Login == G_LastSpecLogin) {
+			Frame_Spec.PosnX = Label_PlayerPos.PosnX;
+			Frame_Spec.PosnY = Label_PlayerPos.PosnY + ({{{PSizeY}}} / 2.) + 0.25;
+		}
+		
+		if ({{{LibST_UseClans}}}) {
+			if (LibST_PrevClan == 1) RowClan1 += 1;
+			else if (LibST_PrevClan == 2) RowClan2 += 1;
+		} else {
+			Row += 1;
+			if (Row > C_LinesByColNb) {
+				Col += 1;
+				Row = 1;
+			}
+			if (Col > C_ColNb) break;
+		}
+	}
+		
+	if ({{{LibST_UseClans}}}) Col = 1;
+	for (I, Col, C_ColNb) {
+		if ({{{LibST_UseClans}}}) {
+			if (I == 1) Row = RowClan1;
+			else if (I == 2) Row = RowClan2;
+		}
+		for (J, Row, C_LinesByColNb) {
+			Count = ((I - 1) * C_LinesByColNb) + J;
+		
+			Frame_Col	<=> (Frame_Players.GetFirstChild("Frame_Col_"^I)	as CMlFrame);
+			Frame_Player<=> (Frame_Col.GetFirstChild("Frame_Player_"^J)		as CMlFrame);
+			Button_Spec	<=> (Frame_Col.GetFirstChild("Button_Spec_"^Count)	as CMlQuad);
+			Button_Prof	<=> (Frame_Col.GetFirstChild("Button_Prof_"^Count)	as CMlQuad);
+			Label_Name	<=> (Frame_Player.GetFirstChild("Label_Name")		as CMlLabel);
+			Frame_Legends<=> (Frame_Col.GetFirstChild("Frame_Legends")		as CMlFrame);
+			
+			Frame_Player.Hide();
+			Button_Spec.Hide();
+			Button_Prof.Hide();
+			
+			//if (UI.UISequence == CUIConfig::EUISequence::Podium) Frame_Legends.Hide();
+			//else Frame_Legends.Show();
+			
+			Count += 1;
+		}
+		Row = 1;
+	}
+}
+
+Void UpdateHeader() {
+	if ({{{LibST_UseClans}}}) {
+		declare Frame_VS <=> (Page.GetFirstChild("Frame_VS") as CMlFrame);
+		if (Frame_VS == Null) return;
+		
+		declare Label_NameTeam1		<=> (Frame_VS.GetFirstChild("Label_NameTeam1")	as CMlLabel);
+		declare Label_NameTeam2		<=> (Frame_VS.GetFirstChild("Label_NameTeam2")	as CMlLabel);
+		declare Label_ScoreTeam1	<=> (Frame_VS.GetFirstChild("Label_ScoreTeam1")	as CMlLabel);
+		declare Label_ScoreTeam2	<=> (Frame_VS.GetFirstChild("Label_ScoreTeam2")	as CMlLabel);
+		declare Quad_ColorTeam1		<=> (Page.GetFirstChild("Quad_ColorTeam1")		as CMlQuad);
+		declare Quad_ColorTeam2		<=> (Page.GetFirstChild("Quad_ColorTeam2")		as CMlQuad);
+		
+		if (Teams[0].ColorizedName == "$<$00fBlue$>") Label_NameTeam1.SetText("$<$fffBlue$>");
+		else Label_NameTeam1.SetText(Teams[0].ColorizedName);
+		if (Teams[1].ColorizedName == "$<$f00Red$>") Label_NameTeam2.SetText("$<$fffRed$>");
+		else Label_NameTeam2.SetText(Teams[1].ColorizedName);
+		
+		if (C_DisplayTeamScores) {
+			Label_ScoreTeam1.SetText(TL::ToText(ClanScores[1]));
+			Label_ScoreTeam2.SetText(TL::ToText(ClanScores[2]));
+		} else {
+			Label_ScoreTeam1.SetText("");
+			Label_ScoreTeam2.SetText("");
+		}
+		
+		if (Quad_ColorTeam1 != Null) Quad_ColorTeam1.Colorize = Teams[0].ColorPrimary;
+		if (Quad_ColorTeam2 != Null) Quad_ColorTeam2.Colorize = Teams[1].ColorPrimary;
+	} else {
+		declare Label_Header <=> (Page.GetFirstChild("Label_Header") as CMlLabel);
+		if (Label_Header == Null) return;
+		
+		Label_Header.SetText(CurrentServerName);
+	}
+}
+
+Void UpdatePlayerInfo() {
+	if (LocalUser != Null) {
+		Frame_Footer.Show();
+		
+		declare AvatarPath = "file://Avatars/"^LocalUser.Login^"/Default";
+		if (Http.IsValidUrl(AvatarPath)) Quad_PIAvatar.ChangeImageUrl(AvatarPath);
+		Label_PIName.SetText(LocalUser.Name);
+		
+		
+		if (InputPlayer != Null && InputPlayer.Score != Null) {
+			declare LibST_PrevPIScore for InputPlayer.Score = C_DefaultPIScore;
+			declare LibST_PrevPIStats for InputPlayer.Score = C_DefaultPIStats;
+			declare LibST_PrevPICustom1 for InputPlayer.Score = C_DefaultPICustom1;
+			declare LibST_PrevPICustom2 for InputPlayer.Score = C_DefaultPICustom2;
+			declare PIScoreString = C_DefaultPIScore;
+			declare PIStatsString = C_DefaultPIStats;
+			declare PICustom1String = C_DefaultPICustom1;
+			declare PICustom2String = C_DefaultPICustom2;
+			if (LibST_PrevPIScore != "") PIScoreString = LibST_PrevPIScore;
+			if (LibST_PrevPIStats != "") PIStatsString = LibST_PrevPIStats;
+			if (LibST_PrevPICustom1 != "") PICustom1String = LibST_PrevPICustom1;
+			if (LibST_PrevPICustom2 != "") PICustom2String = LibST_PrevPICustom2;
+			
+			if (LibST_PrevPIScore == "" && C_DefaultPIScore == "") {
+				declare PointString = "point";
+				if (InputPlayer.Score.RoundPoints/* + InputPlayer.Score.Points*/ > 1) 
+					Label_PIScore.SetText(
+						TL::Compose("$<%1$>$<%2$> %3", C_PointsFormat^TL::ToText(InputPlayer.Score.Points), C_RoundPointsFormat^TL::ToText(InputPlayer.Score.RoundPoints), _("points"))
+					);
+				else 
+					Label_PIScore.SetText(
+						TL::Compose("$<%1$>$<%2$> %3", C_PointsFormat^TL::ToText(InputPlayer.Score.Points), C_RoundPointsFormat^TL::ToText(InputPlayer.Score.RoundPoints), _("point"))
+					);
+			} else {
+				Label_PIScore.SetText(PIScoreString);
+			}
+			
+			if (Scores.exists(InputPlayer.Score)) Label_PIPosition.SetText("#"^Scores.keyof(InputPlayer.Score)+1);
+			Label_PIStats.SetText(PIStatsString);
+			
+			Label_PICustom1.SetText(PICustom1String);
+			Label_PICustom2.SetText(PICustom2String);
+		}
+	} else {
+		Frame_Footer.Hide();
+	}
+}
+
+Void UpdatePager(Integer _Step) {
+	if ({{{LibST_UseClans}}}) {
+		declare MaxClan1 = ((G_ClansNbPlayers[1] - 1) / G_PageRange) + 1;
+		declare MaxClan2 = ((G_ClansNbPlayers[2] - 1) / G_PageRange) + 1;
+		if (MaxClan1 >= MaxClan2) G_PageMax = MaxClan1;
+		else G_PageMax = MaxClan2;
+		if (G_PageMax <= 0) G_PageMax = 1;
+	} else {
+		G_PageMax = ((G_ClansNbPlayers[0] - 1) / G_PageRange) + 1;
+		if (G_PageMax <= 0) G_PageMax = 1;
+	}
+	
+	if (G_PageMax <= 1) Frame_Pager.Hide();
+	else Frame_Pager.Show();
+	
+	G_PageCurrent += _Step;
+	if (G_PageCurrent < 1) G_PageCurrent = 1;
+	else if (G_PageCurrent > G_PageMax) G_PageCurrent = G_PageMax;
+	
+	G_PageStart	= ((G_PageCurrent - 1) * G_PageRange) + 1;
+	G_PageEnd	= G_PageStart + G_PageRange - 1;
+	
+	Button_PagePrev.Show(); Button_PagePrevOff.Hide();
+	Button_PageNext.Show(); Button_PageNextOff.Hide();
+	
+	if (G_PageCurrent == 1) { 
+		Button_PagePrev.Hide(); Button_PagePrevOff.Show(); 
+	} else if (G_PageCurrent == G_PageMax) { 
+		Button_PageNext.Hide(); Button_PageNextOff.Show();
+	}
+	
+	if (_Step != 0 && Frame_Spec.Visible) Frame_Spec.Hide();
+}
+
+Void FindPlayer() {
+	if (InputPlayer == Null) return;
+	if (InputPlayer.Score == Null) return;
+	
+	declare Rank = 0;
+	declare LibST_PrevClan for InputPlayer.Score.User = 0;
+	
+	foreach (Score in Scores) {
+		declare LibST_PrevClan as LibST_PrevClan2 for Score.User = 0;
+		if (Score.Id == InputPlayer.Score.Id) break;
+		
+		if ({{{LibST_UseClans}}} && LibST_PrevClan == LibST_PrevClan2) Rank += 1;
+		else if (!{{{LibST_UseClans}}}) Rank += 1;
+	}
+	
+	declare PageNb = (Rank / G_PageRange) + 1;
+	declare PageShift = PageNb - G_PageCurrent;
+	
+	if (PageShift != 0) {
+		UpdatePager(PageShift);
+		UpdatePlayersList();
+	}
+}
+
+Void UpdateSpectate(Text _Login, Text _ControlId) {
+	G_LastSpecLogin = _Login;
+	
+	if (IsSpectatorMode) {
+		if (Frame_Spec.Visible) Frame_Spec.Hide();
+		SetSpectateTarget(_Login);
+	} else {
+		G_LastSpecButtonId = _ControlId;
+		
+		if (!Frame_Spec.Visible) Frame_Spec.Show();
+		
+		declare Key = TL::ToInteger(TL::SubString(_ControlId, 12, 10));
+		declare Col = ((Key - 1) / C_LinesByColNb) + 1;
+		declare Row = Key % C_LinesByColNb;
+		if (Row == 0) Row = C_LinesByColNb;
+		
+		declare Frame_Col <=> (Frame_Players.GetFirstChild("Frame_Col_"^Col) as CMlFrame);
+		if (Frame_Col != Null) {
+			declare Label_PlayerPos <=> (Frame_Col.GetFirstChild("Label_PlayerPos_"^Row) as CMlLabel);
+			if (Label_PlayerPos != Null) {
+				Frame_Spec.PosnX = Label_PlayerPos.PosnX + 0.5;
+				Frame_Spec.PosnY = Label_PlayerPos.PosnY + ({{{PSizeY}}} / 2.) + 0.25;
+			}
+		}
+	}
+}
+
+/**
+ * Called By the client UI.
+ * Update a Manialink page, showing the frame of [Page] with Id [FrameTabId]
+ * if the tab [TabKey] is selected.
+ * @param UI		 	UI of the player (variable "UI" in client manialink).
+ * @param Page 			Manialink page containing the tab page (assumably variable "Page" in client manialink).
+ * @param TabKey 		The key associated to this tab, as defined in CreateTabPaneLayer.
+ * @param FrameTabId	Id of the frame containing the tab page.
+ */
+Void UpdateFrameTab(CUIConfig UI, CMlPage Page, Text TabKey, CMlFrame MainFrame) {
+	declare netread Boolean _TabsLib_UseTabs for UI;
+	if (! _TabsLib_UseTabs) return;
+	
+	declare Boolean _TabsLib_ScoresLayerIsVisible 	for UI;
+	declare Boolean _TabsLib_AltLayerIsVisible 		for UI;
+	declare Text 	_TabsLib_CurrentTab 			for UI;
+	declare netread Text _TabsLib_ScoresTableTab 	for UI;
+	
+	declare Boolean ShowCurrentTab = _TabsLib_AltLayerIsVisible && (_TabsLib_CurrentTab == TabKey);
+	
+	if(TabKey == _TabsLib_ScoresTableTab) 
+	{
+		// log("_TabsLib_ScoresTableTab: "^_TabsLib_ScoresTableTab);
+		ShowCurrentTab = _TabsLib_ScoresLayerIsVisible || 
+			(_TabsLib_AltLayerIsVisible && (_TabsLib_CurrentTab == _TabsLib_ScoresTableTab));
+	}
+
+	if(ShowCurrentTab) {
+		MainFrame.Show();
+	}
+	else {
+		MainFrame.Hide();
+	}
+}
+
+main() {
+	declare NeedUpdateAll	= True;
+	declare NeedUpdatePI	= False;
+	declare NeedUpdateHeader= False;
+	declare PrevRefresh		= 0;
+	declare PrevUISequence	= CUIConfig::EUISequence::None;
+	
+	declare PrevClanScores		= [1 => 0, 2 => 0];
+	declare PrevTeamsName		= [0 => "", 1 => ""];
+	declare PrevTeamsColor		= [0 => Vec3, 1 => Vec3];
+	declare PrevServerName		= "";
+	declare PrevFilterUpdate	= 0;
+	
+	declare netread Integer Net_LibST_FilterUpdate for Teams[0];
+	declare netread Text[] Net_LibST_FilterLogins for Teams[0];
+	
+	G_PageCurrent	= 1;
+	G_PageMax		= 1;
+	G_PageStart		= 0;
+	G_PageEnd		= 0;
+	
+	G_LastSpecButtonId = "";
+	G_LastSpecLogin = "";
+	G_ClansNbPlayers = [0 => 0, 1 => 0, 2 => 0];
+	
+	if ({{{LibST_UseClans}}}) G_PageRange = C_LinesByColNb;
+	else G_PageRange = C_LinesByColNb * C_ColNb;
+	
+	Frame_Pager			<=> (Page.GetFirstChild("Frame_Pager")					as CMlFrame);
+	Button_PageNext		<=> (Frame_Pager.GetFirstChild("Button_PageNext")		as CMlQuad);
+	Button_PageNextOff	<=> (Frame_Pager.GetFirstChild("Button_PageNextOff")	as CMlQuad);
+	Button_PagePrev		<=> (Frame_Pager.GetFirstChild("Button_PagePrev")		as CMlQuad);
+	Button_PagePrevOff	<=> (Frame_Pager.GetFirstChild("Button_PagePrevOff")	as CMlQuad);
+	Frame_Players		<=> (Page.GetFirstChild("Frame_Players")				as CMlFrame);
+	Frame_Footer		<=> (Page.GetFirstChild("Frame_Footer")					as CMlFrame);
+	Quad_Me				<=> (Frame_Players.GetFirstChild("Quad_Me")				as CMlQuad);
+	Quad_PIAvatar		<=> (Frame_Footer.GetFirstChild("Quad_PIAvatar")		as CMlQuad);
+	Label_PIName		<=> (Frame_Footer.GetFirstChild("Label_PIName")			as CMlLabel);
+	Label_PIScore		<=> (Frame_Footer.GetFirstChild("Label_PIScore")		as CMlLabel);
+	Label_PIPosition	<=> (Frame_Footer.GetFirstChild("Label_PIPosition")		as CMlLabel);
+	Label_PIStats		<=> (Frame_Footer.GetFirstChild("Label_PIStats")		as CMlLabel);
+	Label_PICustom1		<=> (Frame_Footer.GetFirstChild("Label_PICustom1")		as CMlLabel);
+	Label_PICustom2		<=> (Frame_Footer.GetFirstChild("Label_PICustom2")		as CMlLabel);
+	Frame_Spec			<=> (Page.GetFirstChild("Frame_Spec")					as CMlFrame);
+	
+	
+	declare CMlFrame MainFrame <=> (Page.GetFirstChild("Frame_ScoresTable") as CMlFrame);
+	UpdatePager(0);
+	declare Boolean PageNeverShown = True;
+	
+	while (True) {
+		// We have to yield, and not sleep, because we have events
+		yield;
+		if (InputPlayer == Null) continue;
+		
+		// We have to update this even if the frame is not visible
+		// to manage disconnected players
+		// Later : manage this in another way (server-side ?)
+		foreach (Player in Players) {
+			if (Player.Score == Null) continue;
+			
+			declare netread Integer Net_LibST_CustomUpdate for Player;
+			declare LibST_PrevCustomUpdate for Player = 0;
+			if (Net_LibST_CustomUpdate != LibST_PrevCustomUpdate) {				
+				LibST_PrevCustomUpdate = Net_LibST_CustomUpdate;
+				declare netread Text Net_LibST_Custom1 for Player;
+				declare netread Text Net_LibST_Custom2 for Player;
+				declare netread Text Net_LibST_Custom3 for Player;
+				declare netread Text Net_LibST_PIScore for Player;
+				declare netread Text Net_LibST_PIStats for Player;
+				declare netread Text Net_LibST_PICustom1 for Player;
+				declare netread Text Net_LibST_PICustom2 for Player;
+				declare LibST_Custom1 for Player.Score = C_DefaultCustom1;
+				declare LibST_Custom2 for Player.Score = C_DefaultCustom2;
+				declare LibST_Custom3 for Player.Score = C_DefaultCustom3;
+				declare LibST_PIScore for Player.Score = C_DefaultPIScore;
+				declare LibST_PIStats for Player.Score = C_DefaultPIStats;
+				declare LibST_PICustom1 for Player.Score = C_DefaultPICustom1;
+				declare LibST_PICustom2 for Player.Score = C_DefaultPICustom2;
+				LibST_Custom1 = Net_LibST_Custom1;
+				LibST_Custom2 = Net_LibST_Custom2;
+				LibST_Custom3 = Net_LibST_Custom3;
+				LibST_PIScore = Net_LibST_PIScore;
+				LibST_PIStats = Net_LibST_PIStats;
+				LibST_PICustom1 = Net_LibST_PICustom1;
+				LibST_PICustom2 = Net_LibST_PICustom2;
+			}
+		}
+		
+		// Manage Frame visibility
+		if (!PageIsVisible) continue;
+		if (PageNeverShown) {
+			PageNeverShown = False;
+			MainFrame.Show();
+		}
+		UpdateFrameTab(UI, Page, "{{{G_LibST_TabName}}}", MainFrame);
+		if (!MainFrame.Visible) continue;		
+		
+		if (PrevRefresh + C_RefreshInterval < Now) {
+			PrevRefresh = Now;
+			G_ClansNbPlayers = [0 => 0, 1 => 0, 2 => 0];
+			
+			if (UI.UISequence != PrevUISequence) {
+				PrevUISequence = UI.UISequence;
+				NeedUpdateAll = True;
+			}
+			
+			if (PrevFilterUpdate != Net_LibST_FilterUpdate) {
+				PrevFilterUpdate = Net_LibST_FilterUpdate;
+				NeedUpdateAll = True;
+			}
+	
+			foreach (Player in Players) {
+				declare LibST_PrevUpdate		for Player.User = 0;
+				declare LibST_PrevStatus		for Player.User = C_NotSpawned;
+				declare LibST_Status			for Player.User = C_NotSpawned;
+				declare LibST_PrevClan			for Player.User = 0;
+				
+				declare LibST_NewPlayer for Player = True;
+				
+				LibST_PrevUpdate = PrevRefresh;
+				
+				if (Player.RequestsSpectate) LibST_Status = C_Spectating;
+				else if (Player.SpawnStatus != CSmPlayer::ESpawnStatus::Spawned) LibST_Status = C_NotSpawned;
+				else LibST_Status = C_Spawned;
+				
+				if (LibST_PrevStatus != LibST_Status) {
+					LibST_PrevStatus = LibST_Status;
+					NeedUpdateAll = True;
+				}
+				
+				if (LibST_PrevClan != Player.CurrentClan && Player.CurrentClan != 0) {
+					LibST_PrevClan = Player.CurrentClan;
+					NeedUpdateAll = True;
+				}
+				
+				if (LibST_NewPlayer) {
+					LibST_NewPlayer = False;
+					NeedUpdateAll = True;
+				}
+			}
+	
+			foreach (Score in Scores) {
+				declare LibST_PrevRoundPoints	for Score = 0;
+				declare LibST_PrevPoints 		for Score = 0;
+				declare LibST_PrevUpdate		for Score.User = 0;
+				declare LibST_PrevStatus		for Score.User = C_Disconnected;
+				declare LibST_Status			for Score.User = C_Disconnected;
+				declare LibST_PrevClan			for Score.User = 0;
+				
+				declare Text LibST_Custom1 for Score;
+				declare Text LibST_Custom2 for Score;
+				declare Text LibST_Custom3 for Score;
+				declare LibST_PrevCustom1 for Score = C_DefaultCustom1;
+				declare LibST_PrevCustom2 for Score = C_DefaultCustom2;
+				declare LibST_PrevCustom3 for Score = C_DefaultCustom3;
+				
+				declare Text LibST_PIScore for Score;
+				declare Text LibST_PIStats for Score;
+				declare Text LibST_PICustom1 for Score;
+				declare Text LibST_PICustom2 for Score;
+				declare LibST_PrevPIScore for Score = C_DefaultPIScore;
+				declare LibST_PrevPIStats for Score = C_DefaultPIStats;
+				declare LibST_PrevPICustom1 for Score = C_DefaultPICustom1;
+				declare LibST_PrevPICustom2 for Score = C_DefaultPICustom2;
+				
+				if (LibST_PrevUpdate != PrevRefresh) LibST_Status = C_Disconnected;
+				
+				if (LibST_PrevStatus != LibST_Status) {
+					LibST_PrevStatus = LibST_Status;
+					NeedUpdateAll = True;
+				}
+				
+				if (Score.RoundPoints != LibST_PrevRoundPoints) {
+					LibST_PrevRoundPoints = Score.RoundPoints;
+					LibST_PrevPoints = Score.Points;
+					NeedUpdateAll = True;
+				} else if (Score.Points != LibST_PrevPoints) {
+					LibST_PrevPoints = Score.Points;
+					NeedUpdateAll = True;
+				}
+				
+				if (LibST_Custom1 != LibST_PrevCustom1) { LibST_PrevCustom1 = LibST_Custom1; NeedUpdateAll = True; }
+				if (LibST_Custom2 != LibST_PrevCustom2) { LibST_PrevCustom2 = LibST_Custom2; NeedUpdateAll = True; }
+				if (LibST_Custom3 != LibST_PrevCustom3) { LibST_PrevCustom3 = LibST_Custom3; NeedUpdateAll = True; }
+				
+				if (LibST_PIScore != LibST_PrevPIScore) { LibST_PrevPIScore = LibST_PIScore; NeedUpdatePI = True; }
+				if (LibST_PIStats != LibST_PrevPIStats) { LibST_PrevPIStats = LibST_PIStats; NeedUpdatePI = True; }
+				if (LibST_PICustom1 != LibST_PrevPICustom1) { LibST_PrevPICustom1 = LibST_PICustom1; NeedUpdatePI = True; }
+				if (LibST_PICustom2 != LibST_PrevPICustom2) { LibST_PrevPICustom2 = LibST_PICustom2; NeedUpdatePI = True; }
+				
+				if (Filter(Score.User)) {
+					G_ClansNbPlayers[LibST_PrevClan] += 1;
+				}
+			}
+			
+			if (
+				{{{LibST_UseClans}}} &&
+				(
+					Teams[0].ColorizedName != PrevTeamsName[0]
+					|| Teams[1].ColorizedName != PrevTeamsName[1]
+					|| Teams[0].ColorPrimary != PrevTeamsColor[0]
+					|| Teams[1].ColorPrimary != PrevTeamsColor[1]
+					|| ClanScores[1] != PrevClanScores[1]
+					|| ClanScores[2] != PrevClanScores[2]
+				)
+			) {
+				PrevTeamsName[0] = Teams[0].ColorizedName;
+				PrevTeamsName[1] = Teams[1].ColorizedName;
+				PrevTeamsColor[0] = Teams[0].ColorPrimary;
+				PrevTeamsColor[1] = Teams[1].ColorPrimary;
+				PrevClanScores[1] = ClanScores[1];
+				PrevClanScores[2] = ClanScores[2];
+				NeedUpdateHeader = True;
+			} else if (!{{{LibST_UseClans}}} && PrevServerName != CurrentServerName) {
+				PrevServerName = CurrentServerName;
+				NeedUpdateHeader = True;
+			}
+		}
+		
+		if (NeedUpdatePI && !NeedUpdateAll) {
+			NeedUpdatePI = False;
+			
+			UpdatePlayerInfo();
+		}
+		
+		if (NeedUpdateHeader) {
+			UpdateHeader();
+			NeedUpdateHeader = False;
+		}
+		
+		if (NeedUpdateAll) {
+			NeedUpdateAll = False;
+			NeedUpdatePI = False;
+			
+			UpdatePager(0);
+			UpdatePlayersList();
+			UpdatePlayerInfo();
+		}
+		
+		foreach (Event in PendingEvents) {
+			if (Event.Type == CMlEvent::Type::MouseOver) {
+				if (Event.ControlId == "Button_PageNext") {
+					Button_PageNext.ImageUrl = "{{{C_ImgBaseDir}}}Pager/pagerDownOn.dds";
+				} else if (Event.ControlId == "Button_PagePrev") {
+					Button_PagePrev.ImageUrl = "{{{C_ImgBaseDir}}}Pager/pagerUpOn.dds";
+				}
+			}
+			else if (Event.Type == CMlEvent::Type::MouseOut) {
+				if (Event.ControlId == "Button_PageNext") {
+					Button_PageNext.ImageUrl = "{{{C_ImgBaseDir}}}Pager/pagerDownOff.dds";
+				} else if (Event.ControlId == "Button_PagePrev") {
+					Button_PagePrev.ImageUrl = "{{{C_ImgBaseDir}}}Pager/pagerUpOff.dds";
+				}
+			}
+			else if (Event.Type == CMlEvent::Type::MouseClick) {
+				if (Event.ControlId == "Button_PageNext") {
+					UpdatePager(1);
+					UpdatePlayersList();
+				} else if (Event.ControlId == "Button_PagePrev") {
+					UpdatePager(-1);
+					UpdatePlayersList();
+				} else if (Event.ControlId == "Button_PagePlayer") {
+					FindPlayer();
+				} else if (Event.ControlId == "Button_SpecYes") {
+					if (Frame_Spec.Visible) Frame_Spec.Hide();
+					IsSpectatorMode = True;
+					SetSpectateTarget(G_LastSpecLogin);
+					G_LastSpecButtonId = "";
+					G_LastSpecLogin = "";
+				} else if (Event.ControlId == "Button_SpecNo") {
+					if (Frame_Spec.Visible) Frame_Spec.Hide();
+					G_LastSpecButtonId = "";
+					G_LastSpecLogin = "";
+				} else {
+					declare ShortControlId = TL::SubString(Event.ControlId, 0, 12);
+					if (ShortControlId == "Button_Spec_") {
+						declare CMlQuad Button_Spec <=> (Page.GetFirstChild(Event.ControlId) as CMlQuad);
+						if (Button_Spec != Null) {
+							declare Text Login for Button_Spec;
+							UpdateSpectate(Login, Event.ControlId);
+						}
+					} else if (ShortControlId == "Button_Prof_") {
+						declare CMlQuad Button_Prof <=> (Page.GetFirstChild(Event.ControlId) as CMlQuad);
+						if (Button_Prof != Null) {
+							declare Text Login for Button_Prof;
+							ShowProfile(Login);
+						}
+					}
+				}
+			} else if (Event.Type == CMlEvent::Type::KeyPress) {
+				if (Event.KeyName == "Next") {
+					UpdatePager(1);
+					UpdatePlayersList();
+				} else if (Event.KeyName == "Prior") {
+					UpdatePager(-1);
+					UpdatePlayersList();
+				} else if (Event.KeyName == "Home") {
+					FindPlayer();
+				}
+			}
+		}
+	}
+}
+--></script>
+""";
+
+	LayerScoresTable.ManialinkPage = ML;
+}
+
+// ---------------------------------- //
+/// Overload of the Build() function
+Void Build() {
+	Build(False, False);
+}

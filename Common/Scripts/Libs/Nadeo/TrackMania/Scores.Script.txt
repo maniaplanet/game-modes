@@ -1,0 +1,1906 @@
+/**
+ *	Scores library
+ *	Manage players and teams scores
+ */
+#Const	Version			"2017-06-13"
+#Const	ScriptName	"Libs/Nadeo/TrackMania/Scores.Script.txt"
+
+// ---------------------------------- //
+// Libraries
+// ---------------------------------- //
+#Include "TextLib" as TL
+#Include "Libs/Nadeo/Log.Script.txt" as Log
+#Include "Libs/Nadeo/Semver.Script.txt" as Semver
+#Include "Libs/Nadeo/XmlRpc2.Script.txt" as XmlRpc
+#Include "Libs/Nadeo/TrackMania/TM3.Script.txt" as TM
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+/// Available sorting criteria
+#Const C_Sort_MatchPoints 0
+#Const C_Sort_MapPoints 1
+#Const C_Sort_RoundPoints 2
+#Const C_Sort_BestRaceTime 3
+#Const C_Sort_BestLapTime 4
+#Const C_Sort_BestRaceStunts 5
+#Const C_Sort_BestRaceNbRespawns 6
+#Const C_Sort_BestRaceCheckpointsProgress 7
+#Const C_Sort_PrevRaceTime 8
+/// Available sorting order
+#Const C_Order_Ascending 1
+#Const C_Order_Descending -1
+/// Clans
+#Const C_Clan_1 1
+#Const C_Clan_2 2
+/// Reset levels
+#Const C_Level_Server 0
+#Const C_Level_Match 1
+#Const C_Level_Map 2
+#Const C_Level_Round 3
+/// Section for callback
+#Const C_Section_Null ""
+#Const C_Section_PreEndRound "PreEndRound"
+#Const C_Section_EndRound "EndRound"
+#Const C_Section_EndMap "EndMap"
+#Const C_Section_EndMatch "EndMatch"
+///XmlRpc
+#Const C_Callback_Scores							"Trackmania.Scores"
+#Const C_Callback_PointsRepartition	"Trackmania.PointsRepartition"
+#Const C_Method_GetScores						"Trackmania.GetScores"
+#Const C_Method_GetPointsRepartition	"Trackmania.GetPointsRepartition"
+#Const C_Method_SetPointsRepartition	"Trackmania.SetPointsRepartition"
+#Const C_Method_SetPlayerPoints			"Trackmania.SetPlayerPoints"
+#Const C_Method_SetTeamPoints				"Trackmania.SetTeamPoints"
+/// Default scores
+#Const C_DefaultClansContribution [1 => 0, 2 => 0]
+#Const C_DefaultClansScores_RoundPoints [1 => 0, 2 => 0]
+#Const C_DefaultClansScores_MapPoints [1 => 0, 2 => 0]
+#Const C_DefaultClansScores_MatchPoints [1 => 0, 2 => 0]
+/// Type of points
+#Const C_Points_Match	0
+#Const C_Points_Map		1
+
+#Const C_ClansScoresUIAutoUpdateInterval 250
+
+// ---------------------------------- //
+// Globales
+// ---------------------------------- //
+declare Boolean G_EnableNegativeRoundPoints;
+declare Boolean G_EnableNegativeMapPoints;
+declare Boolean G_EnableNegativeMatchPoints;
+declare Boolean G_EnableClansScoresUI;
+declare Boolean G_ClansScoresUINeedUpdate;
+declare Integer G_ClansScoresUIAutoUpdate;
+declare Integer[Integer] G_ClansScores_RoundPoints;
+declare Integer[Integer] G_ClansScores_MapPoints;
+declare Integer[Integer] G_ClansScores_MatchPoints;
+declare Ident G_PlayerWinner;
+declare Integer G_ClanWinner;
+declare Boolean[Integer] G_ClansScoresUI;
+declare Integer[] G_PointsRepartition; ///< Points awarded to the players at the end of the round
+declare Integer G_DefaultLadderSorting; ///< Default sort use to compute ladder
+declare Integer G_PointsInScore; ///< The type of points to save in the score
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+// ---------------------------------- //
+/**	Return the version number of the script
+ *
+ *	@return														The version number of the script
+ */
+Text GetScriptVersion() {
+	return Version;
+}
+
+// ---------------------------------- //
+/**	Return the name of the script
+ *
+ *	@return														The name of the script
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+// ---------------------------------- //
+/// Get the sort criteria constants
+Integer Sort_MatchPoints() { return C_Sort_MatchPoints; }
+Integer Sort_MapPoints() { return C_Sort_MapPoints; }
+Integer Sort_RoundPoints() { return C_Sort_RoundPoints; }
+Integer Sort_BestRaceTime() { return C_Sort_BestRaceTime; }
+Integer Sort_BestLapTime() { return C_Sort_BestLapTime; }
+Integer Sort_BestRaceStunts() { return C_Sort_BestRaceStunts; }
+Integer Sort_BestRaceNbRespawns() { return C_Sort_BestRaceNbRespawns; }
+Integer Sort_BestRaceCheckpointsProgress() { return C_Sort_BestRaceCheckpointsProgress; }
+Integer Sort_PrevRaceTime() { return C_Sort_PrevRaceTime; }
+
+// ---------------------------------- //
+/// Get the order constants
+Integer Order_Ascending() { return C_Order_Ascending; }
+Integer Order_Descending() { return C_Order_Descending; }
+
+// ---------------------------------- //
+/// Get clan constants
+Integer Clan_1() { return C_Clan_1; }
+Integer Clan_2() { return C_Clan_2; }
+
+// ---------------------------------- //
+/// Get section constants
+Text Section_EndRound() { return C_Section_EndRound; }
+Text Section_EndMap() { return C_Section_EndMap; }
+Text Section_EndMatch() { return C_Section_EndMatch; }
+
+// ---------------------------------- //
+/** Decide which type of points to save
+ *	in the score
+ *
+ *	@param	_PointsType								The type of points to save in the score
+ */
+Void SaveInScore(Integer _PointsType) {
+	G_PointsInScore = _PointsType;
+}
+
+// ---------------------------------- //
+/** Set a player round points
+ *
+ *	@param	_Score										The player's score to update
+ *	@param	_RoundPoints							The number of points to set
+ */
+Void SetPlayerRoundPoints(CTmScore _Score, Integer _RoundPoints) {
+	if (_Score == Null) return;
+	_Score.PrevRaceDeltaPoints = _RoundPoints;
+	if (!G_EnableNegativeRoundPoints && _Score.PrevRaceDeltaPoints < 0) {
+		_Score.PrevRaceDeltaPoints = 0;
+	}
+}
+
+// ---------------------------------- //
+/** Get the round points of a player
+ *
+ *	@param	_Score										The player's score to check
+ *
+ *	@return														The player's round points
+ */
+Integer GetPlayerRoundPoints(CTmScore _Score) {
+	if (_Score == Null) return 0;
+	return _Score.PrevRaceDeltaPoints;
+}
+
+// ---------------------------------- //
+/** Add points to a player round points
+ *
+ *	@param	_Score										The player's score to update
+ *	@param	_RoundPoints							The number of points to add
+ */
+Void AddPlayerRoundPoints(CTmScore _Score, Integer _RoundPoints) {
+	SetPlayerRoundPoints(_Score, GetPlayerRoundPoints(_Score) + _RoundPoints);
+}
+
+// ---------------------------------- //
+/** Remove points from a player round points
+ *
+ *	@param	_Score										The player's score to update
+ *	@param	_RoundPoints							The number of points to remove
+ */
+Void RemovePlayerRoundPoints(CTmScore _Score, Integer _RoundPoints) {
+	SetPlayerRoundPoints(_Score, GetPlayerRoundPoints(_Score) - _RoundPoints);
+}
+
+// ---------------------------------- //
+/** Set a player map points
+ *
+ *	@param	_Score										The player's score to update
+ *	@param	_MapPoints								The number of points to set
+ */
+Void SetPlayerMapPoints(CTmScore _Score, Integer _MapPoints) {
+	if (_Score == Null) return;
+	declare LibScores_MapPoints for _Score = 0;
+	LibScores_MapPoints = _MapPoints;
+	if (!G_EnableNegativeMapPoints && LibScores_MapPoints < 0) {
+		LibScores_MapPoints = 0;
+	}
+	if (G_PointsInScore == C_Points_Map) {
+		_Score.Points = LibScores_MapPoints;
+	}
+}
+
+// ---------------------------------- //
+/** Get the map points of a player
+ *
+ *	@param	_Score										The player's score to check
+ *
+ *	@return														The player's map points
+ */
+Integer GetPlayerMapPoints(CTmScore _Score) {
+	if (_Score == Null) return 0;
+	declare LibScores_MapPoints for _Score = 0;
+	return LibScores_MapPoints;
+}
+
+// ---------------------------------- //
+/** Add points to a player map points
+ *
+ *	@param	_Score										The player's score to update
+ *	@param	_MapPoints								The number of points to add
+ */
+Void AddPlayerMapPoints(CTmScore _Score, Integer _MapPoints) {
+	SetPlayerMapPoints(_Score, GetPlayerMapPoints(_Score) + _MapPoints);
+}
+
+// ---------------------------------- //
+/** Remove points from a player map points
+ *
+ *	@param	_Score										The player's score to update
+ *	@param	_MapPoints								The number of points to remove
+ */
+Void RemovePlayerMapPoints(CTmScore _Score, Integer _MapPoints) {
+	SetPlayerMapPoints(_Score, GetPlayerMapPoints(_Score) - _MapPoints);
+}
+
+// ---------------------------------- //
+/** Set a player match points
+ *
+ *	@param	_Score										The player's score to update
+ *	@param	_MatchPoints							The number of points to set
+ */
+Void SetPlayerMatchPoints(CTmScore _Score, Integer _MatchPoints) {
+	if (_Score == Null) return;
+	declare LibScores_MatchPoints for _Score = 0;
+	LibScores_MatchPoints = _MatchPoints;
+	if (!G_EnableNegativeMatchPoints && LibScores_MatchPoints < 0) {
+		LibScores_MatchPoints = 0;
+	}
+	if (G_PointsInScore == C_Points_Match) {
+		_Score.Points = LibScores_MatchPoints;
+	}
+}
+
+// ---------------------------------- //
+/** Get the match points of a player
+ *
+ *	@param	_Score										The player's score to check
+ *
+ *	@return														The player's match points
+ */
+Integer GetPlayerMatchPoints(CTmScore _Score) {
+	if (_Score == Null) return 0;
+	declare LibScores_MatchPoints for _Score = 0;
+	return LibScores_MatchPoints;
+}
+
+// ---------------------------------- //
+/** Add points to a player match points
+ *
+ *	@param	_Score										The player's score to update
+ *	@param	_MatchPoints							The number of points to add
+ */
+Void AddPlayerMatchPoints(CTmScore _Score, Integer _MatchPoints) {
+	SetPlayerMatchPoints(_Score, GetPlayerMatchPoints(_Score) + _MatchPoints);
+}
+
+// ---------------------------------- //
+/** Remove points from a player match points
+ *
+ *	@param	_Score										The player's score to update
+ *	@param	_MatchPoints							The number of points to remove
+ */
+Void RemovePlayerMatchPoints(CTmScore _Score, Integer _MatchPoints) {
+	SetPlayerMatchPoints(_Score, GetPlayerMatchPoints(_Score) - _MatchPoints);
+}
+
+// ---------------------------------- //
+/** Add the round points to the map and match
+ *	points and reset the round points to 0
+ *
+ *	@param	_Score										The player's score to update
+ */
+Void AffectPlayerRoundToMapPoints(CTmScore _Score) {
+	AddPlayerMapPoints(_Score, GetPlayerRoundPoints(_Score));
+	AddPlayerMatchPoints(_Score, GetPlayerRoundPoints(_Score));
+	SetPlayerRoundPoints(_Score, 0);
+}
+
+// ---------------------------------- //
+/// Apply AffectPlayerRoundToMapPoints() to all scores
+Void AffectPlayersRoundToMapPoints() {
+	foreach (Score in Scores) {
+		AffectPlayerRoundToMapPoints(Score);
+	}
+}
+
+// ---------------------------------- //
+/** Update the player's best race 
+ *	if the given one is better
+ *
+ *	@param	_Score										The player's score to update
+ *	@param	_Result										The new result
+ *	@param	_Criteria									The criteria to judge if the race is better
+ *
+ *	@return														True if the best race was updated, False otherwise
+ */
+Boolean SetPlayerBestRaceIfBetter(CTmScore _Score, CTmResult _Result, CTmResult::ETmRaceResultCriteria _Criteria) {
+	if (_Score == Null || _Result == Null) return False;
+	
+	declare Updated = False;
+	
+	if (_Score.BestRace == Null) {
+		_Score.BestRace = _Result;
+		Updated = True;
+	} else if (_Score.BestRace.Compare(_Result, _Criteria) <= 0) {
+		_Score.BestRace = _Result;
+		Updated = True;
+	}
+	
+	return Updated;
+}
+
+// ---------------------------------- //
+/** Update the player's best race
+ *
+ *	@param	_Score										The player's score to update
+ *	@param	_Result										The new result
+ */
+Void SetPlayerBestRace(CTmScore _Score, CTmResult _Result) {
+	if (_Score == Null) return;
+	_Score.BestRace = _Result;
+}
+
+// ---------------------------------- //
+/** Get the player's best race
+ *
+ *	@param	_Score										The player's score to check
+ *
+ *	@return														The player's best race
+ */
+CTmResult GetPlayerBestRace(CTmScore _Score) {
+	if (_Score == Null) return Null;
+	return _Score.BestRace;
+}
+
+// ---------------------------------- //
+/** Update the player's best lap 
+ *	if the given one is better
+ *
+ *	@param	_Score										The player's score to update
+ *	@param	_Result										The new result
+ *	@param	_Criteria									The criteria to judge if the lap is better
+ *
+ *	@return														True if the best lap was updated, False otherwise
+ */
+Boolean SetPlayerBestLapIfBetter(CTmScore _Score, CTmResult _Result, CTmResult::ETmRaceResultCriteria _Criteria) {
+	if (_Score == Null || _Result == Null) return False;
+	
+	declare Updated = False;
+	
+	if (_Score.BestLap == Null) {
+		_Score.BestLap = _Result;
+		Updated = True;
+	} else if (_Score.BestLap.Compare(_Result, _Criteria) <= 0) {
+		_Score.BestLap = _Result;
+		Updated = True;
+	}
+	
+	return Updated;
+}
+
+// ---------------------------------- //
+/** Update the player's best lap
+ *
+ *	@param	_Score										The player's score to update
+ *	@param	_Result										The new result
+ */
+Void SetPlayerBestLap(CTmScore _Score, CTmResult _Result) {
+	if (_Score == Null) return;
+	_Score.BestLap = _Result;
+}
+
+// ---------------------------------- //
+/** Get the player's best lap
+ *
+ *	@param	_Score										The player's score to check
+ *
+ *	@return														The player's best lap
+ */
+CTmResult GetPlayerBestLap(CTmScore _Score) {
+	if (_Score == Null) return Null;
+	return _Score.BestLap;
+}
+
+// ---------------------------------- //
+/** Update the player's previous race
+ *
+ *	@param	_Score										The player's score to update
+ *	@param	_Result										The new result
+ */
+Void SetPlayerPrevRace(CTmScore _Score, CTmResult _Result) {
+	if (_Score == Null) return;
+	_Score.PrevRace = _Result;
+}
+
+// ---------------------------------- //
+/** Get the player's previous race
+ *
+ *	@param	_Score										The player's score to check
+ *
+ *	@return														The player's previous race
+ */
+CTmResult GetPlayerPrevRace(CTmScore _Score) {
+	if (_Score == Null) return Null;
+	return _Score.PrevRace;
+}
+
+// ---------------------------------- //
+/** Get the player's best race time
+ *
+ *	@param	_Score										The player's score to check
+ *
+ *	@return														The player's best race time
+ *																		Will be -1 if there's no best race
+ */
+Integer GetPlayerBestRaceTime(CTmScore _Score) {
+	if (_Score == Null || _Score.BestRace == Null) return -1;
+	return _Score.BestRace.Time;
+}
+
+// ---------------------------------- //
+/** Get the player's best lap time
+ *
+ *	@param	_Score										The player's score to check
+ *
+ *	@return														The player's best lap time
+ *																		Will be -1 if there's no best lap
+ */
+Integer GetPlayerBestLapTime(CTmScore _Score) {
+	if (_Score == Null || _Score.BestLap == Null) return -1;
+	return _Score.BestLap.Time;
+}
+
+// ---------------------------------- //
+/** Get the player's best stunts score
+ *
+ *	@param	_Score										The player's score to check
+ *
+ *	@return														The player's best stunts score
+ *																		Will be 0 if there's no best stunts score
+ */
+Integer GetPlayerBestRaceStunts(CTmScore _Score) {
+	if (_Score == Null || _Score.BestRace == Null) return 0;
+	return _Score.BestRace.Score;
+}
+
+// ---------------------------------- //
+/** Get the player's number of respawns
+ *	during his best race
+ *
+ *	@param	_Score										The player's score to check
+ *
+ *	@return														The player's best number of respawns
+ *																		Will be -1 if there's no best number of respawns
+ */
+Integer GetPlayerBestRaceNbRespawns(CTmScore _Score) {
+	if (_Score == Null || _Score.BestRace == Null) return -1;
+	return _Score.BestRace.NbRespawns;
+}
+
+// ---------------------------------- //
+/** Get the player's best checkpoints progress
+ *
+ *	@param	_Score										The player's score to check
+ *
+ *	@return														The player's best checkpoints progress
+ *																		Will be 0 if there's no best checkpoints progress
+ */
+Integer GetPlayerBestRaceCheckpointsProgress(CTmScore _Score) {
+	if (_Score == Null || _Score.BestRace == Null) return 0;
+	return _Score.BestRace.Checkpoints.count;
+}
+
+// ---------------------------------- //
+/** Get the player's previous race time
+ *
+ *	@param	_Score										The player's score to check
+ *
+ *	@return														The player's previous race time
+ *																		Will be -1 if there's no previous race
+ */
+Integer GetPlayerPrevRaceTime(CTmScore _Score) {
+	if (_Score == Null || _Score.PrevRace == Null) return -1;
+	return _Score.PrevRace.Time;
+}
+
+// ---------------------------------- //
+/** Check if the given type of points
+ *	can be negative or not
+ *
+ *	@param	_Type											The type of points
+ *
+ *	@return														True if the points can be negative, False otherwise
+ */
+Boolean Private_PointsCanBeNegative(Integer _Type) {
+	return (
+		_Type != C_Sort_BestRaceTime &&
+		_Type != C_Sort_BestLapTime &&
+		_Type != C_Sort_BestRaceNbRespawns &&
+		_Type != C_Sort_PrevRaceTime
+	);
+}
+
+// ---------------------------------- //
+/** Get the player's time at
+ *	the last checkpoint crossed
+ *
+ *	@param	_Result										The result to check
+ *
+ *	@return														The player's time if found
+ *																		-1 if the player did not cross a checkpoint
+ */
+Integer Private_GetPlayerLastCheckpointTime(CTmResult _Result) {
+	if (_Result == Null || _Result.Checkpoints.count <= 0) return -1;
+	return _Result.Checkpoints[_Result.Checkpoints.count - 1];
+}
+
+// ---------------------------------- //
+/** Get the best score for a given
+ *	type of points
+ *
+ *	@param	_Type											The type of points
+ *	@param	_Order										The order of the points
+ *
+ *	@return														The best score if any, Null if draw
+ */
+CTmScore GetBestPlayer(Integer _Type, Integer _Order) {
+	if (Scores.count <= 0) return Null;
+	
+	declare Integer BestTime;
+	declare Integer BestPoints;
+	declare Ident BestScoreId;
+	
+	declare Integer BestScoreKey;
+	if (_Order == C_Order_Ascending) BestScoreKey = 0;
+	else BestScoreKey = Scores.count - 1;
+	
+	if (_Type == C_Sort_RoundPoints) BestPoints = GetPlayerRoundPoints(Scores[BestScoreKey]);
+	else if (_Type == C_Sort_MapPoints) BestPoints = GetPlayerMapPoints(Scores[BestScoreKey]);
+	else if (_Type == C_Sort_MatchPoints) BestPoints = GetPlayerMatchPoints(Scores[BestScoreKey]);
+	else if (_Type == C_Sort_BestRaceTime) BestPoints = GetPlayerBestRaceTime(Scores[BestScoreKey]);
+	else if (_Type == C_Sort_BestLapTime) BestPoints = GetPlayerBestLapTime(Scores[BestScoreKey]);
+	else if (_Type == C_Sort_BestRaceStunts) BestPoints = GetPlayerBestRaceStunts(Scores[BestScoreKey]);
+	else if (_Type == C_Sort_BestRaceNbRespawns) BestPoints = GetPlayerBestRaceNbRespawns(Scores[BestScoreKey]);
+	else if (_Type == C_Sort_BestRaceCheckpointsProgress) {
+		BestPoints = GetPlayerBestRaceCheckpointsProgress(Scores[BestScoreKey]);
+		BestTime = Private_GetPlayerLastCheckpointTime(Scores[BestScoreKey].BestRace);
+	} else if (_Type == C_Sort_PrevRaceTime) BestPoints = GetPlayerPrevRaceTime(Scores[BestScoreKey]);
+	BestScoreId = Scores[BestScoreKey].Id;
+	
+	declare PointsCantBeNegative = !Private_PointsCanBeNegative(_Type);
+		
+	foreach (Score in Scores) {
+		declare Time = -1;
+		declare Points = -1;
+		if (_Type == C_Sort_RoundPoints) Points = GetPlayerRoundPoints(Score);
+		else if (_Type == C_Sort_MapPoints) Points = GetPlayerMapPoints(Score);
+		else if (_Type == C_Sort_MatchPoints) Points = GetPlayerMatchPoints(Score);
+		else if (_Type == C_Sort_BestRaceTime) Points = GetPlayerBestRaceTime(Score);
+		else if (_Type == C_Sort_BestLapTime) Points = GetPlayerBestLapTime(Score);
+		else if (_Type == C_Sort_BestRaceStunts) Points = GetPlayerBestRaceStunts(Score);
+		else if (_Type == C_Sort_BestRaceNbRespawns) Points = GetPlayerBestRaceNbRespawns(Score);
+		else if (_Type == C_Sort_BestRaceCheckpointsProgress) {
+			Points = GetPlayerBestRaceCheckpointsProgress(Score);
+			Time = Private_GetPlayerLastCheckpointTime(Score.BestRace);
+		} else if (_Type == C_Sort_PrevRaceTime) Points = GetPlayerPrevRaceTime(Score);
+		
+		// Skip score when it is negative and it is not allowed
+		if (PointsCantBeNegative && (Points < 0 || (_Type == C_Sort_BestRaceCheckpointsProgress && Time < 0))) {
+			if (Score.Id == BestScoreId) {
+				BestScoreId = NullId;
+				BestPoints = -1;
+				BestTime = -1;
+			}
+		} 
+		// If the score is better save it as the new best score
+		else if (
+			(PointsCantBeNegative && BestPoints < 0) ||
+			(_Order == C_Order_Ascending && Points < BestPoints) ||
+			(_Order == C_Order_Descending && Points > BestPoints)
+		) {
+			BestTime = Time;
+			BestPoints = Points;
+			BestScoreId = Score.Id;
+		} 
+		// If there is a draw
+		else if (Points == BestPoints && Score.Id != BestScoreId) {
+			// Checkpoints progress ranking use player time as a second criteria
+			if (_Type == C_Sort_BestRaceCheckpointsProgress) {
+				if (
+					(_Order == C_Order_Ascending && Time > BestTime) ||
+					(_Order == C_Order_Descending && Time < BestTime)
+				) {
+					BestTime = Time;
+					BestScoreId = Score.Id;
+				} else if (Time == BestTime && Score.Id != BestScoreId) {
+					BestScoreId = NullId;
+				}
+			} 
+			// Reset the best score
+			else {
+				BestScoreId = NullId;
+			}
+		}
+	}
+	
+	// Use Scores[id] to return the actual score 
+	// and not a reference to Scores[0]
+	if (BestScoreId == NullId || !Scores.existskey(BestScoreId)) return Null;
+	return Scores[BestScoreId];
+}
+
+// ---------------------------------- //
+/** Update a player contribution to a clan
+ *	Player contribution to a clan is
+ *	used to automatically select in which
+ *	LadderClan the player should be
+ *
+ *	@param	_Score										The player's score
+ *	@param	_Clan											The clan that received the points
+ *	@param	_Points										The amount of points contributed
+ */
+Void AddClanContribution(CTmScore _Score, Integer _Clan, Integer _Points) {
+	if (_Score == Null) return;
+	declare LibScores_ClansContribution for _Score = C_DefaultClansContribution;
+	if (LibScores_ClansContribution.existskey(_Clan)) {
+		LibScores_ClansContribution[_Clan] += _Points;
+	}
+}
+
+// ---------------------------------- //
+/** Get the clans contribution of a player
+ *
+ *	@param	_Score										The player's score
+ *
+ *	@return														The player's clans contribution
+ */
+Integer[Integer] GetClansContribution(CTmScore _Score) {
+	if (_Score == Null) return C_DefaultClansContribution;
+	declare LibScores_ClansContribution for _Score = C_DefaultClansContribution;
+	return LibScores_ClansContribution;
+}
+
+// ---------------------------------- //
+/** Get the contribution of a player
+ *	to a given clan
+ *
+ *	@param	_Score										The player's score
+ *	@param	_Clan											The clan to check
+ */
+Integer GetClanContribution(CTmScore _Score, Integer _Clan) {
+	if (_Score == Null) return 0;
+	declare LibScores_ClansContribution for _Score = C_DefaultClansContribution;
+	if (!LibScores_ClansContribution.existskey(_Clan)) return 0;
+	return LibScores_ClansContribution[_Clan];
+}
+
+// ---------------------------------- //
+/** Get the clan a player most
+ *	contributed to
+ *	If both clans contributions are equal
+ *	then this function return 0
+ *
+ *	@param	_Score										The player's score
+ *
+ *	@return														The most contributed clan, or 0 if there is a draw
+ */
+Integer GetMostContributedClan(CTmScore _Score) {
+	if (_Score == Null) return 0;
+	declare LibScores_ClansContribution for _Score = C_DefaultClansContribution;
+	if (LibScores_ClansContribution[1] > LibScores_ClansContribution[2]) return 1;
+	else if (LibScores_ClansContribution[2] > LibScores_ClansContribution[1]) return 2;
+	return 0;
+}
+
+// ---------------------------------- //
+/** Reset the clans contribution of a player
+ *
+ *	@param	_Score										The player's score
+ */
+Void ResetClansContribution(CTmScore _Score) {
+	if (_Score == Null) return;
+	declare LibScores_ClansContribution for _Score = C_DefaultClansContribution;
+	LibScores_ClansContribution = C_DefaultClansContribution;
+}
+
+// ---------------------------------- //
+/// Reset the clans contribution of all players
+Void ResetClansContributions() {
+	foreach (Score in Scores) {
+		ResetClansContribution(Score);
+	}
+}
+
+// ---------------------------------- //
+/** Set a clan round points
+ *
+ *  @param  _Clan	                    The clan to update
+ *  @param  _RoundPoints              The number of points to set
+ */
+Void SetClanRoundPoints(Integer _Clan, Integer _RoundPoints) {
+	if (_Clan != C_Clan_1 && _Clan != C_Clan_2) return;
+	G_ClansScores_RoundPoints[_Clan] = _RoundPoints;
+	G_ClansScoresUINeedUpdate = True;
+}
+
+// ---------------------------------- //
+/** Get the round points of a clan
+ *
+ *  @param  _Clan            					The clan to check
+ *
+ *  @return                           The clan's round points
+ */
+Integer GetClanRoundPoints(Integer _Clan) {
+	if (_Clan != C_Clan_1 && _Clan != C_Clan_2) return 0;
+	return G_ClansScores_RoundPoints[_Clan];
+}
+
+// ---------------------------------- //
+/** Add points to a clan round points
+ *
+ *  @param  _Clan	                    The clan to update
+ *  @param  _RoundPoints              The number of points to add
+ */
+Void AddClanRoundPoints(Integer _Clan, Integer _RoundPoints) {
+	SetClanRoundPoints(_Clan, GetClanRoundPoints(_Clan) + _RoundPoints);
+}
+
+// ---------------------------------- //
+/** Remove points from a clan round points
+ *
+ *  @param  _Clan	                    The clan to update
+ *  @param  _RoundPoints              The number of points to remove
+ */
+Void RemoveClanRoundPoints(Integer _Clan, Integer _RoundPoints) {
+	SetClanRoundPoints(_Clan, GetClanRoundPoints(_Clan) - _RoundPoints);
+}
+
+// ---------------------------------- //
+/** Set a clan map points
+ *
+ *  @param  _Clan	                    The clan to update
+ *  @param  _MapPoints              	The number of points to set
+ */
+Void SetClanMapPoints(Integer _Clan, Integer _MapPoints) {
+	if (_Clan != C_Clan_1 && _Clan != C_Clan_2) return;
+	G_ClansScores_MapPoints[_Clan] = _MapPoints;
+	ClanScores[_Clan] = _MapPoints;
+	G_ClansScoresUINeedUpdate = True;
+}
+
+// ---------------------------------- //
+/** Get the map points of a clan
+ *
+ *  @param  _Clan            					The clan to check
+ *
+ *  @return                           The clan's map points
+ */
+Integer GetClanMapPoints(Integer _Clan) {
+	if (_Clan != C_Clan_1 && _Clan != C_Clan_2) return 0;
+	return G_ClansScores_MapPoints[_Clan];
+}
+
+// ---------------------------------- //
+/** Add points to a clan map points
+ *
+ *  @param  _Clan	                    The clan to update
+ *  @param  _MapPoints	              The number of points to add
+ */
+Void AddClanMapPoints(Integer _Clan, Integer _MapPoints) {
+	SetClanMapPoints(_Clan, GetClanMapPoints(_Clan) + _MapPoints);
+}
+
+// ---------------------------------- //
+/** Remove points from a clan map points
+ *
+ *  @param  _Clan	                    The clan to update
+ *  @param  _MapPoints           	  	The number of points to remove
+ */
+Void RemoveClanMapPoints(Integer _Clan, Integer _MapPoints) {
+	SetClanMapPoints(_Clan, GetClanMapPoints(_Clan) - _MapPoints);
+}
+
+// ---------------------------------- //
+/** Set a clan match points
+ *
+ *  @param  _Clan	                    The clan to update
+ *  @param  _MatchPoints              	The number of points to set
+ */
+Void SetClanMatchPoints(Integer _Clan, Integer _MatchPoints) {
+	if (_Clan != C_Clan_1 && _Clan != C_Clan_2) return;
+	G_ClansScores_MatchPoints[_Clan] = _MatchPoints;
+	G_ClansScoresUINeedUpdate = True;
+}
+
+// ---------------------------------- //
+/** Get the match points of a clan
+ *
+ *  @param  _Clan            					The clan to check
+ *
+ *  @return                           The clan's match points
+ */
+Integer GetClanMatchPoints(Integer _Clan) {
+	if (_Clan != C_Clan_1 && _Clan != C_Clan_2) return 0;
+	return G_ClansScores_MatchPoints[_Clan];
+}
+
+// ---------------------------------- //
+/** Add points to a clan match points
+ *
+ *  @param  _Clan	                    The clan to update
+ *  @param  _MatchPoints              The number of points to add
+ */
+Void AddClanMatchPoints(Integer _Clan, Integer _MatchPoints) {
+	SetClanMatchPoints(_Clan, GetClanMatchPoints(_Clan) + _MatchPoints);
+}
+
+// ---------------------------------- //
+/** Remove points from a clan match points
+ *
+ *  @param  _Clan	                    The clan to update
+ *  @param  _MatchPoints              The number of points to remove
+ */
+Void RemoveClanMatchPoints(Integer _Clan, Integer _MatchPoints) {
+	SetClanMatchPoints(_Clan, GetClanMatchPoints(_Clan) + _MatchPoints);
+}
+
+// ---------------------------------- //
+/** Get the clan with the best points
+ *
+ *	@param	_Type											The type of points to check
+ *	@param	_Order										The order in which the points are sorted
+ *
+ *	@return														The clan with the best points
+ *																		Can be 0 if there is a draw
+ */
+Integer GetBestClanPoints(Integer _Type, Integer _Order) {
+	declare Integer[Integer] Points;
+	if (_Type == C_Sort_RoundPoints) Points = G_ClansScores_RoundPoints;
+	else if (_Type == C_Sort_MapPoints) Points = G_ClansScores_MapPoints;
+	else Points = G_ClansScores_MatchPoints;
+	
+	if (Points[C_Clan_1] == Points[C_Clan_2]) {
+		return 0;
+	} else if (_Order == C_Order_Ascending) {
+		if (Points[C_Clan_1] < Points[C_Clan_2]) return C_Clan_1;
+		else return C_Clan_2;
+	} else if (_Order == C_Order_Descending) {
+		if (Points[C_Clan_1] > Points[C_Clan_2]) return C_Clan_1;
+		else return C_Clan_2;
+	}
+	return 0;
+}
+
+// ---------------------------------- //
+/** Get the clan with the best round points
+ *
+ *	@param	_Order										The order in which the round points are sorted
+ *
+ *	@return														The clan with the best round points
+ *																		Can be 0 if there is a draw
+ */
+Integer GetBestClanRoundPoints(Integer _Order) {
+	return GetBestClanPoints(C_Sort_RoundPoints, _Order);
+}
+Integer GetBestClanRoundPoints() {
+	return GetBestClanPoints(C_Sort_RoundPoints, C_Order_Descending);
+}
+Integer GetWorstClanRoundPoints() {
+	return GetBestClanPoints(C_Sort_RoundPoints, C_Order_Ascending);
+}
+
+// ---------------------------------- //
+/** Get the clan with the best map points
+ *
+ *	@param	_Order										The order in which the map points are sorted
+ *
+ *	@return														The clan with the best map points
+ *																		Can be 0 if there is a draw
+ */
+Integer GetBestClanMapPoints(Integer _Order) {
+	return GetBestClanPoints(C_Sort_MapPoints, _Order);
+}
+Integer GetBestClanMapPoints() {
+	return GetBestClanPoints(C_Sort_MapPoints, C_Order_Descending);
+}
+Integer GetWorstClanMapPoints() {
+	return GetBestClanPoints(C_Sort_MapPoints, C_Order_Ascending);
+}
+
+// ---------------------------------- //
+/** Get the clan with the best match points
+ *
+ *	@param	_Order										The order in which the match points are sorted
+ *
+ *	@return														The clan with the best match points
+ *																		Can be 0 if there is a draw
+ */
+Integer GetBestClanMatchPoints(Integer _Order) {
+	return GetBestClanPoints(C_Sort_MatchPoints, _Order);
+}
+Integer GetBestClanMatchPoints() {
+	return GetBestClanPoints(C_Sort_MatchPoints, C_Order_Descending);
+}
+Integer GetWorstClanMatchPoints() {
+	return GetBestClanPoints(C_Sort_MatchPoints, C_Order_Ascending);
+}
+
+// ---------------------------------- //
+/// Update the score summary at the top of the screen
+Void UpdateClansScoresUI() {
+	declare PlayerClan1Id = NullId;
+	declare PlayerClan2Id = NullId;
+	
+	foreach (Player in Players) {
+		if (PlayerClan1Id == NullId && Player.CurrentClan == 1) PlayerClan1Id = Player.Id;
+		if (PlayerClan2Id == NullId && Player.CurrentClan == 2) PlayerClan2Id = Player.Id;
+		if (PlayerClan1Id != NullId && PlayerClan2Id != NullId) break;
+	}
+	
+	UIManager.UIAll.OverlayScoreSummary = (
+		G_EnableClansScoresUI == True &&
+		PlayerClan1Id != NullId &&
+		PlayerClan2Id != NullId
+	);
+	
+	if (UIManager.UIAll.OverlayScoreSummary) {
+		UIManager.UIAll.ScoreSummary_Player1 = PlayerClan1Id;
+		UIManager.UIAll.ScoreSummary_Player2 = PlayerClan2Id;
+		if (G_ClansScoresUI[C_Level_Round]) {
+			UIManager.UIAll.ScoreSummary_Points1 = G_ClansScores_RoundPoints[C_Clan_1];
+			UIManager.UIAll.ScoreSummary_Points2 = G_ClansScores_RoundPoints[C_Clan_2];
+		}
+		if (G_ClansScoresUI[C_Level_Map]) {
+			UIManager.UIAll.ScoreSummary_RoundPoints1 = G_ClansScores_MapPoints[C_Clan_1];
+			UIManager.UIAll.ScoreSummary_RoundPoints2 = G_ClansScores_MapPoints[C_Clan_2];
+		}
+		if (G_ClansScoresUI[C_Level_Match]) {
+			UIManager.UIAll.ScoreSummary_MatchPoints1 = G_ClansScores_MatchPoints[C_Clan_1];
+			UIManager.UIAll.ScoreSummary_MatchPoints2 = G_ClansScores_MatchPoints[C_Clan_2];
+		}
+	}
+}
+
+// ---------------------------------- //
+/** Enable or disable the score summary
+ *	at the top of the screen
+ *
+ *	@param	_Enable										True to enable, False to disable
+ */
+Void EnableClansScoresUI(Boolean _Enable) {
+	G_EnableClansScoresUI = _Enable;
+	UpdateClansScoresUI();
+}
+
+// ---------------------------------- //
+/** Set which score summary points
+ *	are update in the UI
+ *
+ *	@param	_RoundPoints							True to update the round points
+ *	@param	_MapPoints								True to update the map points
+ *	@param	_MatchPoints							True to update the match points
+ */
+Void SetupClansScoresUI(Boolean _RoundPoints, Boolean _MapPoints, Boolean _MatchPoints) {
+	G_ClansScoresUI = [
+		C_Level_Round => _RoundPoints,
+		C_Level_Map => _MapPoints,
+		C_Level_Match => _MatchPoints
+	];
+}
+
+// ---------------------------------- //
+/** Enable or disable the possiblity
+ *	to have a negative amount of match, map
+ *	or round points for the player
+ *
+ *	@param	_RoundPoints							Set for round points
+ *	@param	_MapPoints								Set for map points
+ *	@param	_MatchPoints							Set for match points
+ */
+Void EnablePlayerNegativePoints(Boolean _RoundPoints, Boolean _MapPoints, Boolean _MatchPoints) {
+	G_EnableNegativeRoundPoints = _RoundPoints;
+	G_EnableNegativeMapPoints = _MapPoints;
+	G_EnableNegativeMatchPoints = _MatchPoints;
+	
+	if (!G_EnableNegativeRoundPoints) {
+		foreach (Score in Scores) {
+			if (GetPlayerRoundPoints(Score) < 0) SetPlayerRoundPoints(Score, 0);
+		}
+	}
+	if (!G_EnableNegativeMapPoints) {
+		foreach (Score in Scores) {
+			if (GetPlayerMapPoints(Score) < 0) SetPlayerMapPoints(Score, 0);
+		}
+	}
+	if (!G_EnableNegativeMatchPoints) {
+		foreach (Score in Scores) {
+			if (GetPlayerMatchPoints(Score) < 0) SetPlayerMatchPoints(Score, 0);
+		}
+	}
+}
+
+// ---------------------------------- //
+/** Save the score's id of the winner
+ *
+ *	@param	_Score										The score of the winner
+ */
+Void SetPlayerWinner(CTmScore _Score) {
+	if (_Score == Null) G_PlayerWinner = NullId;
+	else G_PlayerWinner = _Score.Id;
+}
+
+// ---------------------------------- //
+/** Get the score of the winner
+ *
+ *	@return														The score of the winner if any, Null otherwise
+ */
+CTmScore GetPlayerWinner() {
+	if (G_PlayerWinner == NullId || !Scores.existskey(G_PlayerWinner)) return Null;
+	return Scores[G_PlayerWinner];
+}
+
+// ---------------------------------- //
+/** Get the score's id of the winner
+ *
+ *	@return														The score's id of the winner if any, NullId otherwise
+ */
+Ident GetPlayerWinnerId() {
+	return G_PlayerWinner;
+}
+
+// ---------------------------------- //
+/// Reset the player winner
+Void ResetPlayerWinner() {
+	G_PlayerWinner = NullId;
+}
+
+// ---------------------------------- //
+/** Save which clan won
+ *
+ *	@param	_Clan											The clan that won
+ */
+Void SetClanWinner(Integer _Clan) {
+	G_ClanWinner = _Clan;
+}
+
+// ---------------------------------- //
+/** Get the clan that won
+ *
+ *	@return														The clan that won
+ */
+Integer GetClanWinner() {
+	return G_ClanWinner;
+}
+
+// ---------------------------------- //
+/// Reset the clan winner
+Void ResetClanWinner() {
+	G_ClanWinner = 0;
+}
+
+// ---------------------------------- //
+/// Unspawn players who lost the game
+Void UnspawnLosers() {
+	if (UseClans) {
+		foreach (Player in Players) {
+			if (Player.CurrentClan != GetClanWinner()) {
+				TM::WaitRace(Player);
+			}
+		}
+	} else {
+		foreach (Player in Players) {
+			if (Player.Score == Null || Player.Score.Id != GetPlayerWinnerId()) {
+				TM::WaitRace(Player);
+			}
+		}
+	}
+}
+
+// ---------------------------------- //
+/// Unspawn players who won the game
+Void UnspawnWinners() {
+	if (UseClans) {
+		foreach (Player in Players) {
+			if (Player.CurrentClan == GetClanWinner()) {
+				TM::WaitRace(Player);
+			}
+		}
+	} else {
+		foreach (Player in Players) {
+			if (Player.Score == Null || Player.Score.Id == GetPlayerWinnerId()) {
+				TM::WaitRace(Player);
+			}
+		}
+	}
+}
+
+// ---------------------------------- //
+/** Get the amount of LP awarded after
+ *	the closing of the ladder match
+ *
+ *	@return														Amount of LP won
+ */
+Real GetLP(CTmScore _Score) {
+	if (_Score == Null) return 0.;
+	return _Score.LadderScore;
+}
+
+// ---------------------------------- //
+/** Set the ladder match score value of a score
+ *
+ *	@param	_Score										The score to update
+ *	@param	_Value										The value of the ladder score
+ */
+Void SetLadderScore(CTmScore _Score, Real _Value) {
+	if (_Score == Null) return;
+	_Score.LadderMatchScoreValue = _Value;
+}
+
+// ---------------------------------- //
+/** Get the ladder match score value of a score
+ *
+ *	@param	_Score										The score to check
+ *
+ *	@return														The value of the ladder score
+ */
+Real GetLadderScore(CTmScore _Score) {
+	if (_Score == Null) return 0.;
+	return _Score.LadderMatchScoreValue;
+}
+
+// ---------------------------------- //
+/** Set the ladder clan of a score
+ *
+ *	@param	_Score										The score to update
+ *	@param	_Clan											The clan to assign
+ */
+Void SetLadderClan(CTmScore _Score, Integer _Clan) {
+	if (_Score == Null) return;
+	_Score.LadderClan = _Clan;
+}
+
+// ---------------------------------- //
+/** Get the ladder clan of a score
+ *
+ *	@param	_Score										The score to check
+ *
+ *	@return														The clan
+ */
+Integer GetLadderClan(CTmScore _Score) {
+	if (_Score == Null) return 0;
+	return _Score.LadderClan;
+}
+
+// ---------------------------------- //
+/** Assign a ladder rank sort value
+ *	to the given score
+ *
+ *	@param	_Score										The score to update
+ *	@param	_Value										The sort value
+ */
+Void SetLadderRank(CTmScore _Score, Integer _Value) {
+	if (_Score == Null) return;
+	_Score.LadderRankSortValue = _Value;
+}
+
+// ---------------------------------- //
+/** Get the ladder rank sort value
+ *	of the given score
+ *
+ *	@param	_Score										The score to check
+ *
+ *	@return														The sort value
+ */
+Integer GetLadderRank(CTmScore _Score) {
+	if (_Score == Null) return 0;
+	return _Score.LadderRankSortValue;
+}
+
+Void SetupLadder(CTmScore _Score, Integer _LadderRank, Integer _LadderClan, Real _LadderScore) {
+	SetLadderRank(_Score, _LadderRank);
+	SetLadderScore(_Score, _LadderScore);
+	SetLadderClan(_Score, _LadderClan);
+	Log::Log("""[Score] Setup ladder for {{{_Score.User.Login}}} > Rank : {{{_LadderRank}}} | Clan : {{{_LadderClan}}} | Score : {{{_LadderScore}}}""");
+}
+
+// ---------------------------------- //
+/** Compute ranking for ladder points
+ *	Similar to the Ladder_ComputeRank()
+ *	function from CTmMode
+ *
+ *	@param	_SortCriteria							The criteria used to sort the ranking
+ *	@param	_Order										< 0 Descending order, >= 0 ascending order
+ */
+Void ComputeLadder(Integer _SortCriteria, Integer _Order) {
+	Log::Log("""[Scores] Compute ladder with the following sort criteria : {{{_SortCriteria}}} and order: {{{_Order}}}""");
+	foreach (Score in Scores) {
+		declare Points = 0;
+		declare Time = -1;
+		switch (_SortCriteria) {
+			case C_Sort_MatchPoints: {
+				Points = GetPlayerMatchPoints(Score);
+			}
+			case C_Sort_MapPoints: {
+				Points = GetPlayerMapPoints(Score);
+			}
+			case C_Sort_RoundPoints: {
+				Points = GetPlayerRoundPoints(Score);
+			}
+			case C_Sort_BestRaceTime: {
+				Points = GetPlayerBestRaceTime(Score);
+			}
+			case C_Sort_BestLapTime: {
+				Points = GetPlayerBestLapTime(Score);
+			}
+			case C_Sort_BestRaceStunts: {
+				Points = GetPlayerBestRaceStunts(Score);
+			}
+			case C_Sort_BestRaceNbRespawns: {
+				Points = GetPlayerBestRaceNbRespawns(Score);
+			}
+			case C_Sort_BestRaceCheckpointsProgress: {
+				Points = GetPlayerBestRaceCheckpointsProgress(Score);
+				Time = Private_GetPlayerLastCheckpointTime(Score.BestRace);
+			}
+			case C_Sort_PrevRaceTime: {
+				Points = GetPlayerPrevRaceTime(Score);
+			}
+		}
+		
+		declare LadderRank = 0;
+		if (((_SortCriteria == C_Sort_BestRaceCheckpointsProgress && Time < 0) || Points < 0) && !Private_PointsCanBeNegative(_SortCriteria)) {
+			LadderRank = 0;
+			Points = 0;
+			Time = -1;
+		} else {
+			if (_Order == C_Order_Ascending) LadderRank = 1 + Points;
+			else LadderRank = -1 - Points;
+		}
+		
+		declare LadderClan = 0;
+		if (UseClans) {
+			LadderClan = GetMostContributedClan(Score);
+			if (LadderClan == 0) {
+				LadderClan = Score.TeamNum;
+			}
+		}
+		
+		declare LadderPoints = Points*1.;
+		if (UseClans && LadderClan == GetClanWinner()) {
+			LadderPoints *= 2.;
+		} 
+		
+		SetupLadder(Score, LadderRank, LadderClan, LadderPoints);
+	}
+}
+
+// ---------------------------------- //
+/** Compute ranking for ladder points
+ *	using the sort criteria default order
+ *
+ *	@param	_SortCriteria							The criteria used to sort the ranking
+ */
+Void ComputeLadder(Integer _SortCriteria) {
+	switch (_SortCriteria) {
+		case C_Sort_MatchPoints									: ComputeLadder(_SortCriteria, C_Order_Descending);
+		case C_Sort_MapPoints										: ComputeLadder(_SortCriteria, C_Order_Descending);
+		case C_Sort_RoundPoints									: ComputeLadder(_SortCriteria, C_Order_Descending);
+		case C_Sort_BestRaceTime									: ComputeLadder(_SortCriteria, C_Order_Ascending);
+		case C_Sort_BestLapTime									: ComputeLadder(_SortCriteria, C_Order_Ascending);
+		case C_Sort_BestRaceStunts								: ComputeLadder(_SortCriteria, C_Order_Descending);
+		case C_Sort_BestRaceNbRespawns						: ComputeLadder(_SortCriteria, C_Order_Ascending);
+		case C_Sort_BestRaceCheckpointsProgress	: ComputeLadder(_SortCriteria, C_Order_Descending);
+		case C_Sort_PrevRaceTime									: ComputeLadder(_SortCriteria, C_Order_Ascending);
+	}
+}
+
+// ---------------------------------- //
+/** Compute ranking for ladder points
+ *	using the sort criteria default order
+ *
+ *	@param	_SortCriteria							The criteria used to sort the ranking
+ */
+Void ComputeLadder() {
+	ComputeLadder(G_DefaultLadderSorting);
+}
+
+// ---------------------------------- //
+/** Select the sort criteria that will 
+ *	be applied when calling ComputeLadder()
+ *	without arguments
+ */
+Void SetDefaultLadderSort(Integer _SortCriteria) {
+	G_DefaultLadderSorting = _SortCriteria;
+}
+
+// ---------------------------------- //
+/** Get the default ladder sort criteria
+ *
+ *	@return														The default ladder sort criteria
+ */
+Integer GetDefaultLadderSort() {
+	return G_DefaultLadderSorting;
+}
+
+// ---------------------------------- //
+/** Reset a player's score
+ *
+ *	@param	_Score										The score to reset
+ */
+Void ResetPlayer(CTmScore _Score) {
+	if (_Score == Null) return;
+	
+	SetPlayerRoundPoints(_Score, 0);
+	SetPlayerMapPoints(_Score, 0);
+	SetPlayerMatchPoints(_Score, 0);
+	ResetClansContribution(_Score);
+	SetupLadder(_Score, 0, _Score.TeamNum, 0.);
+	SetPlayerBestRace(_Score, Null);
+	SetPlayerBestLap(_Score, Null);
+	SetPlayerPrevRace(_Score, Null);
+}
+
+// ---------------------------------- //
+/** Reset all scores
+ *
+ *	@param	_Level										The level of reset
+ */
+Void Clear(Integer _Level) {
+	/** This reset the ladder registration and
+	 *	destroy Score objects of the players that are
+	 *	not here anymore
+	 */
+	if (_Level <= C_Level_Match) Scores_Clear();
+	
+	foreach (Score in Scores) {
+		if (_Level <= C_Level_Round) SetPlayerRoundPoints(Score, 0);
+		if (_Level <= C_Level_Map) {
+			SetPlayerMapPoints(Score, 0);
+			ResetClansContribution(Score);
+			SetupLadder(Score, 0, Score.TeamNum, 0.);
+			SetPlayerBestRace(Score, Null);
+			SetPlayerBestLap(Score, Null);
+			SetPlayerPrevRace(Score, Null);
+		}
+		if (_Level <= C_Level_Match) SetPlayerMatchPoints(Score, 0);
+	}
+	for (Clan, 1, 2) {
+		if (_Level <= C_Level_Round) SetClanRoundPoints(Clan, 0);
+		if (_Level <= C_Level_Map) SetClanMapPoints(Clan, 0);
+		if (_Level <= C_Level_Match) SetClanMatchPoints(Clan, 0);
+	}
+	
+	if (_Level <= C_Level_Round) {
+		ResetPlayerWinner();
+		ResetClanWinner();
+	}
+}
+
+// ---------------------------------- //
+/// Reset all scores
+Void Clear() {
+	Clear(C_Level_Server);
+}
+
+// ---------------------------------- //
+/// Start a new match
+Void StartMatch() {
+	Clear(C_Level_Match);
+}
+
+
+// ---------------------------------- //
+/// End the current match
+Void EndMatch() {
+	
+}
+
+
+// ---------------------------------- //
+/// Start a new map
+Void StartMap() {
+	Clear(C_Level_Map);
+}
+
+
+// ---------------------------------- //
+/// End the current map
+Void EndMap() {
+
+}
+
+
+// ---------------------------------- //
+/// Start a new round
+Void StartRound() {
+	Clear(C_Level_Round);
+}
+
+
+// ---------------------------------- //
+/// End the current round
+Void EndRound() {
+	AffectPlayersRoundToMapPoints();
+}
+
+// ---------------------------------- //
+/** Setup how the points will be distributed
+ *	at the end of the round
+ *
+ *	@param	_Points										The points repartition
+ *																		[10, 6, 4, 3, 2, 1] =>
+ *																		1st will get 10 points, 2nd 6 points,
+ *																		3rd 4 points, etc ...
+ */
+Void SetPointsRepartition(Integer[] _Points) {
+	G_PointsRepartition = _Points;
+}
+
+// ---------------------------------- //
+/** Get the current points repartition
+ *
+ *	@return														The points repartition
+ */
+Integer[] GetPointsRepartition() {
+	return G_PointsRepartition;
+}
+
+// ---------------------------------- //
+/** Get info about a clan score in
+ *	JSON format
+ *
+ *	@param	_Clan											The clan to export
+ *
+ *	@return														The clan's score JSON
+ */
+Text Private_XmlRpc_GetClan(Integer _Clan) {
+	declare Name = "";
+	declare TeamId = _Clan - 1;
+	if (Teams.existskey(TeamId)) {
+		Name = Teams[TeamId].Name;
+	}
+	
+	return """{
+		"id": {{{dump(TeamId)}}},
+		"name": {{{XmlRpc::JsonGetText(Name)}}},
+		"roundpoints": {{{dump(GetClanRoundPoints(_Clan))}}},
+		"mappoints": {{{dump(GetClanMapPoints(_Clan))}}},
+		"matchpoints": {{{dump(GetClanMatchPoints(_Clan))}}}
+	}""";
+}
+
+// ---------------------------------- //
+/** Concatenates all clans JSON info
+ *
+ *	@return														Clans' JSON concatenated
+ */
+Text Private_XmlRpc_GetClans() {
+	declare ClansJSON = "";
+	for (Clan, 1, 2) {
+		if (ClansJSON != "") ClansJSON ^= ",";
+		ClansJSON ^= Private_XmlRpc_GetClan(Clan);
+	}
+	return ClansJSON;
+}
+
+// ---------------------------------- //
+/** Get info about a score in JSON format
+ *
+ *	@param	_Score										The score to export
+ *	@param	_Rank											The rank of the score
+ *
+ *	@return														The score's JSON
+ */
+Text Private_XmlRpc_GetScore(CTmScore _Score, Integer _Rank) {
+	if (_Score == Null) return "{}";
+	
+	declare BestRaceTime = -1;
+	declare StuntsScore = 0;
+	declare BestRaceRespawns = 0;
+	declare BestRaceCheckpoints = Integer[];
+	if (_Score.BestRace != Null) {
+		BestRaceTime = _Score.BestRace.Time;
+		StuntsScore = _Score.BestRace.Score;
+		BestRaceRespawns = _Score.BestRace.NbRespawns;
+		foreach (Checkpoint in _Score.BestRace.Checkpoints) {
+			BestRaceCheckpoints.add(Checkpoint);
+		}
+	}
+	declare BestLapTime = -1;
+	declare BestLapRespawns = 0;
+	declare BestLapCheckpoints = Integer[];
+	if (_Score.BestLap != Null) {
+		BestLapTime = _Score.BestLap.Time;
+		BestLapRespawns = _Score.BestLap.NbRespawns;
+		foreach (Checkpoint in _Score.BestLap.Checkpoints) {
+			BestLapCheckpoints.add(Checkpoint);
+		}
+	}
+	
+	return """{
+		"login": {{{dump(_Score.User.Login)}}},
+		"name": {{{XmlRpc::JsonGetText(_Score.User.Name)}}},
+		"rank": {{{dump(_Rank)}}},
+		"roundpoints": {{{dump(GetPlayerRoundPoints(_Score))}}},
+		"mappoints": {{{dump(GetPlayerMapPoints(_Score))}}},
+		"matchpoints": {{{dump(GetPlayerMatchPoints(_Score))}}},
+		"bestracetime": {{{dump(BestRaceTime)}}},
+		"bestracerespawns": {{{dump(BestRaceRespawns)}}},
+		"bestracecheckpoints": {{{dump(BestRaceCheckpoints)}}},
+		"bestlaptime": {{{dump(BestLapTime)}}},
+		"bestlaprespawns": {{{dump(BestLapRespawns)}}},
+		"bestlapcheckpoints": {{{dump(BestLapCheckpoints)}}},
+		"stuntsscore": {{{dump(StuntsScore)}}}
+	}""";
+}
+
+// ---------------------------------- //
+/** Concatenates all scores JSON info
+ *
+ *	@return														Scores' JSON concatenated
+ */
+Text Private_XmlRpc_GetScores() {
+	declare ScoresJSON = "";
+	declare ScoresLadderRank = Integer[Ident];
+	declare ScoresRank = Integer[Ident];
+	
+	foreach (Score in Scores) {
+		ScoresLadderRank[Score.Id] = Score.LadderRankSortValue;
+	}
+	ScoresLadderRank = ScoresLadderRank.sort();
+	declare Rank = 1;
+	foreach (ScoreId => LadderRank in ScoresLadderRank) {
+		ScoresRank[ScoreId] = Rank;
+		Rank += 1;
+	}
+	
+	foreach (Score in Scores) {
+		if (ScoresJSON != "") ScoresJSON ^= ",";
+		ScoresJSON ^= Private_XmlRpc_GetScore(Score, ScoresRank[Score.Id]);
+	}
+	return ScoresJSON;
+}
+
+// ---------------------------------- //
+/** Send teams and players scores
+ *
+ *	@param	_Section									The section in which the callback was sent
+ *	@param	_ResponseId								Id to insert in the response callback
+ */
+Void XmlRpc_SendScores(Text _Section, Text _ResponseId) {
+	declare WinnerLogin = "";
+	declare WinnerScore <=> GetPlayerWinner();
+	if (WinnerScore != Null) {
+		WinnerLogin = WinnerScore.User.Login;
+	}
+	
+	declare Response = """{
+	"responseid": {{{dump(_ResponseId)}}},
+	"section": {{{XmlRpc::JsonGetText(_Section)}}},
+	"useteams": {{{XmlRpc::JsonGetBoolean(UseClans)}}},
+	"winnerteam": {{{dump(GetClanWinner() - 1)}}},
+	"winnerplayer": {{{dump(WinnerLogin)}}},
+	"teams": [{{{Private_XmlRpc_GetClans()}}}],
+	"players": [{{{Private_XmlRpc_GetScores()}}}]
+}""";
+
+	XmlRpc::SendCallback(C_Callback_Scores, [Response]);
+}
+Void XmlRpc_SendScores() {
+	XmlRpc_SendScores(C_Section_Null, "");
+}
+
+// ---------------------------------- //
+/** Send teams and players scores
+ *
+ *	@param	_ResponseId								Id to insert in the response callback
+ */
+Void XmlRpc_SendPointsRepartition(Text _ResponseId) {
+	declare Response = """{
+	"responseid": {{{dump(_ResponseId)}}},
+	"pointsrepartition": {{{dump(GetPointsRepartition())}}}
+}""";
+	
+	XmlRpc::SendCallback(C_Callback_PointsRepartition, [Response]);
+}
+
+// ---------------------------------- //
+/** Function to call at each yield
+ *	to update the library
+ */
+Void Yield() {
+	if (G_EnableClansScoresUI) {
+		if (G_ClansScoresUIAutoUpdate <= Now) {
+			G_ClansScoresUINeedUpdate = (
+				UIManager.UIAll.ScoreSummary_Player1 == NullId ||
+				UIManager.UIAll.ScoreSummary_Player2 == NullId ||
+				!Players.existskey(UIManager.UIAll.ScoreSummary_Player1) ||
+				!Players.existskey(UIManager.UIAll.ScoreSummary_Player2) ||
+				Players[UIManager.UIAll.ScoreSummary_Player1].CurrentClan != 1 ||
+				Players[UIManager.UIAll.ScoreSummary_Player2].CurrentClan != 2
+			);
+			G_ClansScoresUIAutoUpdate = Now + C_ClansScoresUIAutoUpdateInterval;
+		}
+		
+		if (G_ClansScoresUINeedUpdate) {
+			G_ClansScoresUINeedUpdate = False;
+			UpdateClansScoresUI();
+		}
+	}
+	
+	foreach (Event in XmlRpc.PendingEvents) {
+		if (Event.Type == CXmlRpcEvent::EType::CallbackArray) {
+			switch (Event.ParamArray1) {
+				case C_Method_GetScores: {
+					declare ResponseId = "";
+					if (Event.ParamArray2.existskey(0)) ResponseId = Event.ParamArray2[0];
+					XmlRpc_SendScores(C_Section_Null, ResponseId);
+				}
+				case C_Method_SetPointsRepartition: {
+					if (Event.ParamArray2.count > 0) {
+						declare PointsRepartition = Integer[];
+						foreach (Point in Event.ParamArray2) {
+							PointsRepartition.add(TL::ToInteger(Point));
+						}
+						if (PointsRepartition.count >= 1) {
+							SetPointsRepartition(PointsRepartition);
+						}
+					}
+				}
+				case C_Method_GetPointsRepartition: {
+					declare ResponseId = "";
+					if (Event.ParamArray2.existskey(0)) ResponseId = Event.ParamArray2[0];
+					XmlRpc_SendPointsRepartition(ResponseId);
+				}
+				case C_Method_SetPlayerPoints: {
+					if (Semver::Compare(XmlRpc::GetApiVersion(), ">=", "2.1.0")) {
+						declare Login = "";
+						if (Event.ParamArray2.existskey(0)) Login = Event.ParamArray2[0];
+						
+						foreach (Score in Scores) {
+							if (Score.User.Login == Login) {
+								if (Event.ParamArray2.existskey(1) && Event.ParamArray2[1] != "") {
+									SetPlayerRoundPoints(Score, TL::ToInteger(Event.ParamArray2[1]));
+								}
+								if (Event.ParamArray2.existskey(2)) {
+									SetPlayerMapPoints(Score, TL::ToInteger(Event.ParamArray2[2]));
+								}
+								if (Event.ParamArray2.existskey(3)) {
+									SetPlayerMatchPoints(Score, TL::ToInteger(Event.ParamArray2[3]));
+								}
+								
+								break;
+							}
+						}
+					}
+				}
+				case C_Method_SetTeamPoints: {
+					if (Semver::Compare(XmlRpc::GetApiVersion(), ">=", "2.1.0")) {
+						declare Clan = 0;
+						if (Event.ParamArray2.existskey(0)) Clan = TL::ToInteger(Event.ParamArray2[0]);
+						
+						if (Event.ParamArray2.existskey(1) && Event.ParamArray2[1] != "") {
+							SetClanRoundPoints(Clan, TL::ToInteger(Event.ParamArray2[1]));
+						}
+						if (Event.ParamArray2.existskey(2)) {
+							SetClanMapPoints(Clan, TL::ToInteger(Event.ParamArray2[2]));
+						}
+						if (Event.ParamArray2.existskey(3)) {
+							SetClanMatchPoints(Clan, TL::ToInteger(Event.ParamArray2[3]));
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+// ---------------------------------- //
+/// Unload the library
+Void Unload() {
+	G_EnableNegativeRoundPoints = False;
+	G_EnableNegativeMapPoints = False;
+	G_EnableNegativeMatchPoints = False;
+	G_EnableClansScoresUI = False;
+	G_ClansScoresUINeedUpdate = False;
+	G_ClansScoresUIAutoUpdate = -1;
+	G_ClansScores_RoundPoints = C_DefaultClansScores_RoundPoints;
+	G_ClansScores_MapPoints = C_DefaultClansScores_MapPoints;
+	G_ClansScores_MatchPoints = C_DefaultClansScores_MatchPoints;
+	G_PlayerWinner = NullId;
+	G_ClanWinner = 0;
+	G_ClansScoresUI = [
+		C_Level_Round => True,
+		C_Level_Map => True,
+		C_Level_Match => True
+	];
+	G_DefaultLadderSorting = C_Sort_BestRaceTime;
+	
+	SaveInScore(C_Points_Map);
+	
+	// Unregister callbacks
+	XmlRpc::UnregisterCallback(C_Callback_Scores);
+	XmlRpc::UnregisterCallback(C_Callback_PointsRepartition);
+	// Unregister methods
+	XmlRpc::UnregisterMethod(C_Method_GetScores);
+	XmlRpc::UnregisterMethod(C_Method_SetPointsRepartition);
+	XmlRpc::UnregisterMethod(C_Method_GetPointsRepartition);
+	XmlRpc::UnregisterMethod(C_Method_SetPlayerPoints);
+	XmlRpc::UnregisterMethod(C_Method_SetTeamPoints);
+}
+
+// ---------------------------------- //
+/// Load the library
+Void Load() {
+	Unload();
+	
+	// Register callbacks
+	XmlRpc::RegisterCallback(C_Callback_Scores, """
+* Name: {{{C_Callback_Scores}}}
+* Type: CallbackArray
+* Description: Teams and players scores.
+* Data:
+	- Version >=2.0.0: 
+	```
+	[
+		"{
+			"responseid": "xyz", //< Facultative id passed by a script event
+			"section": "EndRound", //< Current progress of the match. Can be "" | "EndRound" | "EndMap" | "EndMatch"
+			"useteams": true, //< The game mode use teams or not
+			"winnerteam": 1, //< The team who won the match, can be -1 (no winner), 0 or 1
+			"winnerplayer": "PlayerLogin1", //< Login of the player who won the match
+			"teams": [ //< Scores of the teams
+				{
+					"id": 0,
+					"name": "blue",
+					"roundpoints": 498, 
+					"mappoints": 46,
+					"matchpoints": 9,
+				},
+				{
+					"id": 1,
+					"name": "red",
+					"roundpoints": 365,
+					"mappoints": 45,
+					"matchpoints": 2,
+				}
+			],
+			"players": [ //< Scores of the players
+				{
+					"login": "PlayerLogin1",
+					"name": "Player#1",
+					"rank": 1, //< Rank of the player in the match
+					"roundpoints": 456,
+					"mappoints": 345,
+					"matchpoints": 64,
+					"bestracetime": 456789, //< Best race time in milliseconds
+					"bestracerespawns": 2, //< Number of respawn during best race
+					"bestracecheckpoints": [1230, 7546, 19045, 456789], //< Checkpoints times during best race
+					"bestlaptime": 68942, //< Best lap time in milliseconds
+					"bestlaprespawns": 1, //< Number of respawn during best lap
+					"bestlapcheckpoints": [2458, 9874], //< Checkpoints times during best lap
+					"stuntsscore": 492
+				},
+				{
+					"login": "PlayerLogin2",
+					"name": "Player#2",
+					"rank": 2,
+					"roundpoints": 234,
+					"mappoints": 123,
+					"matchpoints": 32,
+					"bestracetime": 49854, //< Best race time in milliseconds
+					"bestracerespawns": 5, //< Number of respawn during best race
+					"bestracecheckpoints": [3215, 94562, 26845, 49854], //< Checkpoints times during best race
+					"bestlaptime": 23254, //< Best lap time in milliseconds
+					"bestlaprespawns": 2, //< Number of respawn during best lap
+					"bestlapcheckpoints": [4582, 15624], //< Checkpoints times during best lap
+					"stuntsscore": 9874
+				}
+			]
+		}"
+	]
+	```
+	- Version >=2.1.1: 
+	The section parameter can take one new value: "PreEndRound".
+	```
+	[
+		"{
+			...
+			"section": "EndRound", //< Current progress of the match. Can be "" | "PreEndRound" | "EndRound" | "EndMap" | "EndMatch"
+			...
+		}"
+	]
+	```
+	""");
+	XmlRpc::RegisterCallback(C_Callback_PointsRepartition, """
+* Name: {{{C_Callback_PointsRepartition}}}
+* Type: CallbackArray
+* Description: Points repartition in rounds based modes.
+* Data:
+	- Version >=2.0.0:
+	```
+	[
+		"{
+			"responseid": "xyz", //< Facultative id passed by a script event
+			"pointsrepartition": [10, 6, 4, 3, 2, 1]	//< The points repartition
+		}"
+	]
+	```
+	""");
+	// Register methods
+	XmlRpc::RegisterMethod(C_Method_GetScores, """
+* Name: {{{C_Method_GetScores}}}
+* Type: TriggerModeScriptEventArray
+* Description: Request the current scores. This method will trigger the "{{{C_Callback_Scores}}}" callback.
+* Data:
+	- Version >=2.0.0: 
+	```
+	[
+		"responseid" //< Facultative id that will be passed to the "{{{C_Callback_Scores}}}" callback.
+	]
+	```
+	""");
+XmlRpc::RegisterMethod(C_Method_GetPointsRepartition, """
+* Name: {{{C_Method_GetPointsRepartition}}}
+* Type: TriggerModeScriptEventArray
+* Description: Request the current points repartition. This method will trigger the "{{{C_Callback_PointsRepartition}}}" callback.
+* Data:
+	- Version >=2.0.0:
+	```
+	[
+		"responseid" //< Facultative id that will be passed to the "{{{C_Callback_PointsRepartition}}}" callback.
+	]
+	```
+	""");
+XmlRpc::RegisterMethod(C_Method_SetPointsRepartition, """
+* Name: {{{C_Method_SetPointsRepartition}}}
+* Type: TriggerModeScriptEventArray
+* Description: Update the points repartition.
+* Data:
+	- Version >=2.0.0:
+	```
+	[
+		"10", "9", "8", "7", "6", "5" //< An array of points
+	]
+	```
+	""");
+XmlRpc::RegisterMethod(C_Method_SetPlayerPoints, """
+* Name: {{{C_Method_SetPlayerPoints}}}
+* Type: TriggerModeScriptEventArray
+* Description: Set the points of the player. It overrides its current points. Different game modes will use different types of points.
+* Data:
+	- Version >=2.1.0:
+	```
+	[
+		"PlayerLogin", //< Login of the player to update
+		"10", //< The round points, use an empty string to not update.
+		"96", //< The map points, use an empty string to not update.
+		"2" //< The match points, use an empty string to not update.
+	]
+	```
+	""");
+XmlRpc::RegisterMethod(C_Method_SetTeamPoints, """
+* Name: {{{C_Method_SetTeamPoints}}}
+* Type: TriggerModeScriptEventArray
+* Description: Set the points of a team. It overrides their current points. Different game modes will use different types of points.
+* Data:
+	- Version >=2.1.0:
+	```
+	[
+		"1", //< Id of the team t. Can be 1 or 2.
+		"5", //< The round points, use an empty string to not update.
+		"70", //< The map points, use an empty string to not update.
+		"2" //< The match points, use an empty string to not update.
+	]
+	```
+	""");
+}

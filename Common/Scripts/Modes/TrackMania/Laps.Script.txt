@@ -1,0 +1,370 @@
+/**
+ *	Laps mode
+ */
+#Extends "Modes/TrackMania/Base/ModeTrackmania.Script.txt"
+
+#Const	CompatibleMapTypes	"Race"
+#Const	Version							"2017-06-08"
+#Const	ScriptName					"Modes/TrackMania/Laps/Laps.Script.txt"
+
+// ---------------------------------- //
+// Includes
+// ---------------------------------- //
+#Include "TextLib" as TL
+#Include "MathLib" as ML
+
+// ---------------------------------- //
+// Settings
+// ---------------------------------- //
+#Setting S_TimeLimit				0		as _("Time limit :")
+#Setting S_ForceLapsNb			5		as _("Number of Laps :")
+#Setting S_FinishTimeout		-1	as _("Finish timeout :")
+#Setting S_WarmUpNb				0	as _("Number of warm up :")
+#Setting S_WarmUpDuration	0	as _("Duration of one warm up :")
+
+#Setting S_ScriptEnvironment "production"/*/"development"*/
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_NbBots 0
+#Const C_HudModulePath "Nadeo/TrackMania/Laps/Hud.Module.Gbx" ///< Path to the hud module
+#Const C_ManiaAppUrl "file://Media/ManiaApps/Nadeo/TrackMania/Laps/Laps.Script.txt"
+
+#Const Description _("""$fffIn $f00Laps$fff mode, the goal is to drive as far as possible by passing $f00checkpoints$fff.
+
+The laps mode takes place on multilap (cyclical) maps, and is played in one go for every map.
+
+When the time is up, the $f00winner$fff is the player who passed the most $f00checkpoints$fff. In case of draws, the winner is the player who passed the last checkpoint first.""")
+
+
+// ---------------------------------- //
+// Extends
+// ---------------------------------- //
+***Match_LogVersion***
+***
+MB_LogVersion(ScriptName, Version);
+***
+
+***Match_Settings***
+***
+MB_Settings_UseDefaultHud = False;
+***
+
+***Match_Rules***
+***
+ModeInfo::SetName("Laps");
+ModeInfo::SetType(ModeInfo::C_Type_FreeForAll);
+ModeInfo::SetRules(Description);
+ModeInfo::SetStatusMessage("");
+***
+
+***Match_LoadHud***
+***
+ClientManiaAppUrl = C_ManiaAppUrl;
+Hud_Load(C_HudModulePath);
+MB_SortScores(CTmMode::ETmScoreSortOrder::BestRace_CheckpointsProgress);
+
+// Initialize UI modules
+UI::LoadModules([
+	UIModules::C_Module_TimeGap,
+	UIModules::C_Module_SmallScoresTable,
+	UIModules::C_Module_Chrono,
+	UIModules::C_Module_CheckpointTime,
+	UIModules::C_Module_PrevBestTime,
+	UIModules::C_Module_SpeedAndDistance,
+	UIModules::C_Module_Countdown,
+	UIModules::C_Module_Laps,
+	UIModules::C_Module_MapInfo,
+	UIModules::C_Module_MapRanking,
+	UIModules::C_Module_LiveInfo,
+	UIModules::C_Module_SpectatorInfo
+]);
+UI::DisplayTimeDiff(False);
+***
+
+***Match_InitServer***
+***
+declare Integer PrevTimeLimit;
+declare Integer StartTime;
+***
+
+***Match_StartServer***
+***
+// ---------------------------------- //
+// Initialize mode
+PrevTimeLimit = S_TimeLimit;
+SetLapsNb(S_ForceLapsNb, StartTime);
+StartTime = -1;
+WarmUp::SetAvailability(True);
+ChannelProgression::Enable(S_IsChannelServer);
+
+// ---------------------------------- //
+// Force round/lap synchro of the cars
+// In time attack mode the synchro of the car is less strict, 
+// creating a small delay between the real position of the player 
+// and the position of his car on the screen
+UiLaps = True;
+UiRounds = True;
+***
+
+***Match_InitMap***
+***
+declare FirstFinish = True;
+declare CheckpointsNb = 0;
+SetLapsNb(S_ForceLapsNb, StartTime);
+
+// ---------------------------------- //
+// Initialize scores
+Scores_Clear();
+***
+
+***Match_StartMap***
+***
+// ---------------------------------- //
+// Initialize map
+Users_SetNbFakeUsers (C_NbBots, 0);
+
+// ---------------------------------- //
+// Warm up
+declare WarmUpDuration = S_WarmUpDuration * 1000;
+MB_WarmUp(S_WarmUpNb, WarmUpDuration);
+
+// ---------------------------------- //
+// Initialize race
+StartTime = Now + 3000;
+SetTimeLimit(StartTime);
+UIManager.UIAll.UISequence = CUIConfig::EUISequence::Playing;
+
+// ---------------------------------- //
+// Initialize scores
+foreach (Score in Scores) {
+	declare CanSpawn for Score = True;
+	CanSpawn = True;
+}
+
+// ---------------------------------- //
+// Spawn players for the race
+foreach (Player in Players) {
+	if (Player.Score == Null) continue;
+	
+	declare CanSpawn for Player.Score = True;
+	TM::StartRace(Player, StartTime);
+	CanSpawn = False;
+}
+***
+
+***Match_PlayLoop***
+***
+// ---------------------------------- //
+// Update the map duration setting
+if (PrevTimeLimit != S_TimeLimit) {
+	PrevTimeLimit = S_TimeLimit;
+	SetTimeLimit(StartTime);
+}
+
+// ---------------------------------- //
+// Spawn players joining during the race
+foreach (Player in Players) {
+	if (Player.Score == Null) continue;
+	
+	declare CanSpawn for Player.Score = True;
+	if (TM::IsWaiting(Player) && CanSpawn) {
+		TM::StartRace(Player, StartTime);
+		CanSpawn = False;
+	}
+}
+
+foreach (Event in PendingEvents) {
+	Events::Valid(Event);
+	
+	// ---------------------------------- //
+	// Waypoint
+	if (Event.Type == CTmModeEvent::EType::WayPoint) {
+		
+		if (Event.IsEndRace) {
+			if (Event.Player.Score !=  Null) Event.Player.Score.PrevRace = Event.Player.CurRace;
+			TM::EndRace(Event.Player);
+			
+			// ---------------------------------- //
+			// Start the countdown if it's the first player to finish
+			if (FirstFinish) {
+				FirstFinish = False;
+				CutOffTimeLimit = GetFinishTimeout();
+				CheckpointsNb = Event.Player.CurRace.Checkpoints.count;
+			}
+		}
+		
+		if (Event.Player.Score !=  Null) {
+			Event.Player.Score.BestRace = Event.Player.CurRace;
+			
+			// ---------------------------------- //
+			// Save the best lap time
+			if (Event.IsEndLap) {
+				if (Event.Player.Score.BestLap.Compare(Event.Player.CurLap, CTmResult::ETmRaceResultCriteria::Time) <= 0) {
+						Event.Player.Score.BestLap = Event.Player.CurLap;
+				}
+			}
+		}
+		MB_SortScores(CTmMode::ETmScoreSortOrder::BestRace_CheckpointsProgress);
+	}
+	// ---------------------------------- //
+	// GiveUp
+	else if (Event.Type == CTmModeEvent::EType::GiveUp) {
+		TM::WaitRace(Event.Player);
+	}
+}
+
+// ---------------------------------- //
+// End the map 
+// If All players finished
+if (Players.count > 0 && PlayersRacing.count <= 0) MB_StopMap();
+// If time limit is reached
+if (CutOffTimeLimit > 0 && Now >= CutOffTimeLimit) MB_StopMap();
+***
+
+***Match_EndMap***
+***
+TM::WaitRaceAll();
+CutOffTimeLimit = -1;
+
+MB_SortScores(CTmMode::ETmScoreSortOrder::BestRace_CheckpointsProgress);
+Scores::SetDefaultLadderSort(Scores::C_Sort_BestRaceCheckpointsProgress);
+Scores::SetPlayerWinner(Scores::GetBestPlayer(Scores::C_Sort_BestRaceCheckpointsProgress, Scores::Order_Descending()));
+Scores::UnspawnLosers();
+MB_Sleep(1000);
+TM::WaitRaceAll();
+MB_StopMatch();
+***
+
+***Match_BeforeCloseLadder***
+***
+if (ChannelProgression::IsEnabled()) {
+	declare ReferenceTime = Map.MapInfo.TMObjective_AuthorTime;
+	declare BronzeTime = Map.MapInfo.TMObjective_BronzeTime;
+	if (
+		Map.MapInfo.TMObjective_IsLapRace &&
+		Map.TMObjective_NbLaps > 0 &&
+		NbLaps > 0 &&
+		Map.TMObjective_NbLaps != NbLaps
+	) {
+		declare LapTime = Map.MapInfo.TMObjective_AuthorTime / Map.TMObjective_NbLaps;
+		ReferenceTime = LapTime * NbLaps;
+		LapTime = Map.MapInfo.TMObjective_BronzeTime / Map.TMObjective_NbLaps;
+		BronzeTime = LapTime * NbLaps;
+	}
+	declare BestRaceTime = ReferenceTime;
+	if (CheckpointsNb > 0) {
+		foreach (Score in Scores) {
+			if (Scores::GetPlayerBestRaceCheckpointsProgress(Score) >= CheckpointsNb) {
+				declare RaceTime = Scores::GetPlayerBestRaceTime(Score);
+				if (RaceTime > 0 && RaceTime < BestRaceTime) BestRaceTime = RaceTime;
+			}
+		}
+		if (BestRaceTime > 0 && BestRaceTime < ReferenceTime) ReferenceTime = BestRaceTime;
+	}
+	
+	declare LastFinishReference = -2.;
+	
+	foreach (Score in Scores) {
+		declare Performance = 0.;
+		declare PlayerBestRace <=> Scores::GetPlayerBestRace(Score);
+		
+		if (PlayerBestRace != Null && CheckpointsNb > 0 && PlayerBestRace.Checkpoints.count >= CheckpointsNb) {
+			declare PlayerBestRaceTime = Scores::GetPlayerBestRaceTime(Score);
+			
+			if (
+				PlayerBestRaceTime > 0 &&
+				ReferenceTime > 0 &&
+				PlayerBestRaceTime <= BronzeTime &&
+				ReferenceTime <= BronzeTime
+			) {
+				declare A = (BronzeTime - PlayerBestRaceTime) * 1.;
+				declare B = BronzeTime - ReferenceTime;
+				Performance = ((A / B) * 0.9) + 0.1;
+			}
+				
+			if (LastFinishReference < -1. || Performance < LastFinishReference) {
+				LastFinishReference = Performance;
+			}
+			
+			Log::Log("""[Laps] Performance > {{{Score.User.Login}}} > MapLaps : {{{Map.TMObjective_NbLaps}}} | EffectiveLaps : {{{NbLaps}}} | BronzeTime : {{{Map.MapInfo.TMObjective_BronzeTime}}} | EffectiveBronzeTime : {{{BronzeTime}}} | AuthorTime : {{{Map.MapInfo.TMObjective_AuthorTime}}} | BestRaceTime : {{{BestRaceTime}}} | ReferenceTime : {{{ReferenceTime}}} | PlayerBestRaceTime : {{{PlayerBestRaceTime}}} | LastFinishReference : {{{LastFinishReference}}} | Performance: {{{Performance}}}""");
+		}
+		
+		ChannelProgression::SetPlayerPerformance(Score, Performance);
+	}
+	
+	if (LastFinishReference > 0. && CheckpointsNb > 0) {
+		foreach (Score in Scores) {
+			declare PlayerBestRace <=> Scores::GetPlayerBestRace(Score);
+			
+			if (PlayerBestRace != Null && PlayerBestRace.Checkpoints.count > 0 && PlayerBestRace.Checkpoints.count < CheckpointsNb) {
+				declare Performance = (PlayerBestRace.Checkpoints.count / (CheckpointsNb * 1.)) * LastFinishReference;
+				
+				Log::Log("""[Laps] Performance > {{{Score.User.Login}}} > Checkpoints count : {{{PlayerBestRace.Checkpoints.count}}} | CheckpointsNb : {{{CheckpointsNb}}} | LastFinishReference : {{{LastFinishReference}}} | Performance: {{{Performance}}}""");
+				
+				ChannelProgression::SetPlayerPerformance(Score, Performance);
+			}
+		}
+	}
+}
+***
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+// ---------------------------------- //
+/** Get the time left to the players to finish the map after the first player
+ *
+ *	@return 		The time left in ms
+ */
+Integer GetFinishTimeout() {
+	declare FinishTimeout = 0;
+	
+	if (S_FinishTimeout >= 0) {
+		FinishTimeout = S_FinishTimeout * 1000;
+	} else {
+		declare ObjectiveNbLaps = Map.TMObjective_NbLaps;
+		if (ObjectiveNbLaps <= 0 || !Map.TMObjective_IsLapRace) ObjectiveNbLaps = 1;
+		FinishTimeout = 5000 + (((Map.TMObjective_AuthorTime / ObjectiveNbLaps) * NbLaps) / 6);
+	}
+	
+	return Now + FinishTimeout;
+}
+
+// ---------------------------------- //
+/** Set the time limit
+ *
+ *	@param	_StartTime	The time at which the race started
+ */
+Void SetTimeLimit(Integer _StartTime) {
+	// User define time limit with a setting
+	if (S_TimeLimit > 0) {
+		CutOffTimeLimit = _StartTime + (S_TimeLimit * 1000);
+	} 
+	// No time limit
+	else if (S_TimeLimit == 0) {
+		CutOffTimeLimit = -1;
+	} 
+	// Time limit auto adjusted
+	else {
+		declare ObjectiveNbLaps = Map.TMObjective_NbLaps;
+		if (ObjectiveNbLaps <= 0) ObjectiveNbLaps = 1;
+		declare TimePerLap = ML::NearestInteger((Map.TMObjective_BronzeTime + (Map.TMObjective_BronzeTime * 0.1)) / ObjectiveNbLaps);
+		CutOffTimeLimit = _StartTime + (TimePerLap * NbLaps);
+	}
+}
+
+// ---------------------------------- //
+/** Set the number of laps 
+ *
+ *	@param _LapsNb	The number of laps
+ *	@param _StartTime	The time at which the race started
+ */
+Void SetLapsNb(Integer _LapsNb, Integer _StartTime) {
+	if (_LapsNb > 0) NbLaps = _LapsNb;
+	else NbLaps = -1;
+	SetTimeLimit(_StartTime);
+	
+	if (Hud != Null) Hud.ScoresTable.SetFooterText(TL::Compose("%1 "^NbLaps, _("Number of Laps :")));
+}

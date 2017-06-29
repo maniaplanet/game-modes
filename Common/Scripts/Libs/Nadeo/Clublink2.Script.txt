@@ -1,0 +1,528 @@
+/**
+ *	Clublink library
+ *	Manage players clublink in team modes
+ */
+#Const	Version			"2017-03-28"
+#Const	ScriptName	"Libs/Nadeo/Clublink2.Script.txt"
+
+// ---------------------------------- //
+// Libraries
+// ---------------------------------- //
+#Include "TextLib" as TL
+#Include "Libs/Nadeo/Env.Script.txt" as Env
+#Include "Libs/Nadeo/Log.Script.txt" as Log
+#Include "Libs/Nadeo/Layers2.Script.txt" as Layers
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_RequestTimeout 5000 //< Http requests timeout
+#Const C_DefaultNames [1 => "Blue", 2 => "Red"]
+#Const C_DefaultColors [1 => <0., 0., 1.>, 2 => <1., 0., 0.>]
+#Const C_SponsorLayer "LibClublink2_Sponsors"
+// Info index
+#Const C_Info_Name		0
+#Const C_Info_Zone		1
+#Const C_Info_City		2
+#Const C_Info_Emblem	3
+#Const C_Info_ColorPrimary		4
+#Const C_Info_ColorSecondary	5
+#Const C_DefaultInfo [0 => "", 1 => "", 2 => "", 3 => "", 4 => "", 5 => ""]
+
+// ---------------------------------- //
+// Globales
+// ---------------------------------- //
+declare Boolean G_Enabled; //< Library enabled or not
+declare Boolean G_UseClans; //< Clans enabled or not
+declare Boolean G_UseClublinks; //< Use clublinks if G_Enabled and G_UseClans are True
+declare Boolean G_DisplaySponsors; //< Display the teams sponsors
+declare Text[Integer] G_DefaultNames; //< Default teams names
+declare Vec3[Integer] G_DefaultColors; //< Default teams colors
+declare Ident[Integer] G_Requests; //< Ongoing http requests
+declare Text[][Integer] G_Logins; //< Logins authorized in the clublinks
+declare Text[][Integer] G_Sponsors; //< Sponsors of the teams
+declare Text[Integer][Integer] G_Info; //< Information about the teams
+declare Boolean[Integer] G_ClubEnabled; //< Clublink activated or not
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+// ---------------------------------- //
+// Private
+// ---------------------------------- //
+// ---------------------------------- //
+/** Set the team info
+ *
+ *	@param	_Team											The team to update
+ *	@param	_Name
+ *	@param	_ZonePath
+ *	@param	_City
+ *	@param	_EmblemUrl
+ *	@param	_ColorPrimary
+ *	@param	_ColorSecondary
+ */
+Void Private_SetTeamInfo(CTeam _Team, Text _Name, Text _ZonePath, Text _City, Text _EmblemUrl, Vec3 _ColorPrimary, Vec3 _ColorSecondary) {
+	_Team.Name = _Name;
+	_Team.ZonePath = _ZonePath;
+	_Team.City = _City;
+	_Team.EmblemUrl = _EmblemUrl;
+	_Team.ColorPrimary = _ColorPrimary;
+	_Team.ColorSecondary = _ColorSecondary;
+}
+
+// ---------------------------------- //
+/** Destroy an ongoing request for a given clan
+ *
+ *	@param	_Clan											The clan to check
+ */
+Void Private_DestroyRequest(Integer _Clan) {
+	if (!G_Requests.existskey(_Clan)) return;
+	declare RequestId = G_Requests[_Clan];
+	if (!Http.Requests.existskey(RequestId)) return;
+	Http.Destroy(Http.Requests[RequestId]);
+	declare Removed = G_Requests.removekey(_Clan);
+}
+
+// ---------------------------------- //
+/** Create a request for a given clan
+ *
+ *	@param	_Clan											The requesting clan
+ *	@param	_Url											The request url
+ */
+Void Private_CreateRequest(Integer _Clan, Text _Url) {
+	if (!Http.IsValidUrl(_Url)) {
+		Log::Error("[Clublink] Http request failed : Invalid url : "^_Url);
+		return;
+	}
+	if (Http.SlotsAvailable <= 0) {
+		Log::Error("[Clublink] Http request failed : no slot available");
+		return;
+	}
+	
+	Private_DestroyRequest(_Clan);
+	declare Request = Http.CreateGet(_Url);
+	if (Request == Null) {
+		Log::Error("[Clublink] Http request failed : request creation failed");
+	} else {
+		G_Requests[_Clan] = Request.Id;
+		declare LibClublink_Timeout for Request = 0;
+		LibClublink_Timeout = Now + C_RequestTimeout;
+	}
+}
+
+// ---------------------------------- //
+/** Get the sponsors manialink
+ *
+ *	@return														The sponsors manialink
+ */
+Text Private_GetSponsorsML() {
+	return """
+<manialink version="3" name="Lib:Clublink2:Sponsors">
+<frame id="Frame_Global">
+	<frame pos="0 40" id="Frame_Sponsors" hidden="1">
+		<quad pos="-159 0" size="40 20" id="Quad_SponsorClan1" />
+		<quad pos="159 0" size="40 20" halign="right" id="Quad_SponsorClan2" />
+</frame>
+</frame>
+<script><!--
+#Const C_CyclingDuration 5000
+
+main() {
+	declare Frame_Sponsors <=> (Page.GetFirstChild("Frame_Sponsors") as CMlFrame);
+	declare Quads_Sponsor = [
+		(Frame_Sponsors.GetFirstChild("Quad_SponsorClan1") as CMlQuad),
+		(Frame_Sponsors.GetFirstChild("Quad_SponsorClan2") as CMlQuad)
+	];
+	
+	while (True) {
+		sleep(1000);
+		if (!PageIsVisible) continue;
+		
+		Frame_Sponsors.Visible = (
+			UI.UISequence == CUIConfig::EUISequence::Podium ||
+			UI.UISequence == CUIConfig::EUISequence::EndRound
+		);
+		
+		if (Frame_Sponsors.Visible) {
+			for (I, 0, 1) {
+				declare netread Net_LibClublink2_Sponsors for Teams[I] = Text[];
+				declare Sponsor = "";
+				if (Net_LibClublink2_Sponsors.count > 0) {
+					Sponsor = Net_LibClublink2_Sponsors[(Now / C_CyclingDuration) % Net_LibClublink2_Sponsors.count];
+				}
+				Quads_Sponsor[I].ImageUrl = Sponsor;
+			}
+		}
+	}
+}
+--></script>
+</manialink>	
+""";
+}
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+// ---------------------------------- //
+/**	Return the version number of the script
+ *
+ *	@return														The version number of the script
+ */
+Text GetScriptVersion() {
+	return Version;
+}
+
+// ---------------------------------- //
+/**	Return the name of the script
+ *
+ *	@return														The name of the script
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+// ---------------------------------- //
+/** Set the default name of a team
+ *
+ *	@param	_Clan											The clan to update
+ *	@param	_Name											The new default name
+ */
+Void SetTeamDefaultName(Integer _Clan, Text _Name) {
+	if (!Teams.existskey(_Clan-1)) return;
+	G_DefaultNames[_Clan] = _Name;
+}
+
+// ---------------------------------- //
+/** Set the color of the default clan
+ *
+ *	@param	_Clan											The clan to update
+ *	@param	_Color										The new default color
+ */
+Void SetTeamDefaultColor(Integer _Clan, Vec3 _Color) {
+	if (!Teams.existskey(_Clan-1)) return;
+	G_DefaultColors[_Clan] = _Color;
+}
+
+// ---------------------------------- //
+/** Set the clublink url of a given clan
+ *
+ *	@param	_Clan											The clan to update
+ *	@param	_Url											The clublink url
+ */
+Void SetUrl(Integer _Clan, Text _Url) {
+	if (!Teams.existskey(_Clan-1)) return;
+	if (Teams[_Clan-1].ClubLinkUrl == _Url) return;
+	
+	Teams[_Clan-1].ClubLinkUrl = _Url;
+	Private_CreateRequest(_Clan, _Url);
+}
+
+// ---------------------------------- //
+/** Enable of disable the clublink of a clan
+ *
+ *	@param	_Clan											The clan to update
+ *	@param	_Enabled									The new status of the clublink
+ */
+Void Enable(Integer _Clan, Boolean _Enabled) {
+	if (!Teams.existskey(_Clan-1)) return;
+	if (!G_ClubEnabled.existskey(_Clan) || G_ClubEnabled[_Clan] == _Enabled) return;
+	
+	G_ClubEnabled[_Clan] = _Enabled;
+	declare Team <=> Teams[_Clan-1];
+	if (_Enabled) {
+		if (G_Info.existskey(_Clan)) {
+			Private_SetTeamInfo(
+				Team,
+				G_Info[_Clan][C_Info_Name],
+				G_Info[_Clan][C_Info_Zone],
+				G_Info[_Clan][C_Info_City],
+				G_Info[_Clan][C_Info_Emblem],
+				TL::ToColor(G_Info[_Clan][C_Info_ColorPrimary]),
+				TL::ToColor(G_Info[_Clan][C_Info_ColorSecondary])
+			);
+		}
+	} else {
+		if (G_DefaultNames.existskey(_Clan) && G_DefaultColors.existskey(_Clan)) {
+			Private_SetTeamInfo(Team, G_DefaultNames[_Clan], "", "", "", G_DefaultColors[_Clan], G_DefaultColors[_Clan]);
+		}
+	}
+	
+	TweakTeamColorsToAvoidHueOverlap();
+		
+	if (_Enabled && G_DisplaySponsors) {
+		Layers::Attach(C_SponsorLayer);
+	} else {
+		Layers::Detach(C_SponsorLayer);
+	}
+}
+
+// ---------------------------------- //
+/** Reset the clublink of a given clan
+ *
+ *	@param	_Clan											The clan to reset
+ */
+Void Reset(Integer _Clan) {
+	if (!Teams.existskey(_Clan-1)) return;
+	
+	Enable(_Clan, False);
+	
+	Teams[_Clan-1].ClubLinkUrl = "";
+	Private_DestroyRequest(_Clan);
+	declare Removed = G_Info.removekey(_Clan);
+	Removed = G_Logins.removekey(_Clan);
+	Removed = G_Sponsors.removekey(_Clan);
+	Removed = G_ClubEnabled.removekey(_Clan);
+}
+
+// ---------------------------------- //
+/// Reset all clublinks
+Void Reset() {
+	for (Clan, 1, 2) {
+		Reset(Clan);
+	}
+}
+
+// ---------------------------------- //
+/** Set a clublink to a given clan
+ *
+ *	@param	_Clan											The clan to update
+ *	@param	_Clublink									The clublink to set
+ */
+Void Set(Integer _Clan, Text _Clublink) {
+	if (!Teams.existskey(_Clan-1)) return;
+	
+	if (Xml.Documents.count > Xml.DocumentsSlotsLimit) {
+		Log::Error("[Clublink] Xml reading faile : no slot available");
+		return;
+	}
+	
+	declare Logins = Text[];
+	declare Sponsors = Text[];
+	G_Logins[_Clan] = Logins;
+	G_Sponsors[_Clan] = Sponsors;
+	G_Info[_Clan] = C_DefaultInfo;
+	G_ClubEnabled[_Clan] = False;
+	
+	Enable(_Clan, False);
+	
+	declare Doc <=> Xml.Create(_Clublink);
+	if (Doc == Null || Doc.Root == Null) {
+		Log::Error("[Clublink] Xml reading failed : documentation creation failed");
+	} else {
+		foreach (Node in Doc.Root.Children) {
+			switch (Node.Name) {
+				case "name": {
+					G_Info[_Clan][C_Info_Name] = Node.TextContents;
+				}
+				case "city": {
+					G_Info[_Clan][C_Info_City] = Node.TextContents;
+				}
+				case "zone": {
+					G_Info[_Clan][C_Info_Zone] = Node.TextContents;
+				}
+				case "color": {
+					declare ColorPrimary = Node.GetAttributeText("primary", "");
+					declare ColorSecondary = Node.GetAttributeText("secondary", "");
+					if (ColorPrimary != "") G_Info[_Clan][C_Info_ColorPrimary] = ColorPrimary;
+					if (ColorSecondary != "") G_Info[_Clan][C_Info_ColorSecondary] = ColorSecondary;
+				}
+				case "emblem": {
+					if (Http.IsValidUrl(Node.TextContents)) {
+						G_Info[_Clan][C_Info_Emblem] = Node.TextContents;
+					}
+				}
+				case "players": {
+					foreach (NodePlayer in Node.Children) {
+						declare Login = NodePlayer.GetAttributeText("login", "");
+						if (Login != "") Logins.add(Login);
+					}
+				}
+				case "sponsors": {
+					foreach (NodeSponsor in Node.Children) {
+						declare NodeImageUrl = NodeSponsor.GetFirstChild("image_2x1");
+						if (NodeImageUrl.TextContents != "" && Http.IsValidUrl(NodeImageUrl.TextContents)) {
+							Sponsors.add(NodeImageUrl.TextContents);
+						}
+					}
+				}
+			}
+		}
+	}
+	Xml.Destroy(Doc);
+	
+	G_Logins[_Clan] = Logins;
+	G_Sponsors[_Clan] = Sponsors;
+	
+	declare netwrite Net_LibClublink2_Sponsors for Teams[_Clan-1] = Text[];
+	Net_LibClublink2_Sponsors = Sponsors;
+}
+
+// ---------------------------------- //
+/** Get the sponsors of a team
+ *
+ *	@param	_Clan											The clan to check
+ *
+ *	@return														The sponsors of the team
+ */
+Text[] GetTeamSponsors(Integer _Clan) {
+	if (!Teams.existskey(_Clan-1)) return Text[];
+	
+	declare netwrite Net_LibClublink2_Sponsors for Teams[_Clan-1] = Text[];
+	return Net_LibClublink2_Sponsors;
+}
+
+// ---------------------------------- //
+/** Update the library
+ *
+ *	@param	_Enabled									Are Clublinks enabled in the mode?
+ *	@param	_DisplaySponsors					Display the teams sponsors
+ */
+Void Yield(Boolean _Enabled, Boolean _DisplaySponsors) {
+	// Update library status
+	if (G_Enabled != _Enabled || G_UseClans != UseClans || G_DisplaySponsors != _DisplaySponsors) {
+		G_Enabled = _Enabled;
+		G_UseClans = UseClans;
+		G_UseClublinks = G_Enabled && G_UseClans;
+		G_DisplaySponsors = _DisplaySponsors;
+		
+		if (!G_UseClublinks) {
+			Reset();
+		}
+	}
+	
+	// Update teams clublinks
+	if (G_UseClublinks) {
+		// Forced clublinks
+		if (ForcedClubLinkUrl1 != "" && ForcedClubLinkUrl1 != Teams[0].ClubLinkUrl) {
+			SetUrl(1, ForcedClubLinkUrl1);
+		}
+		if (ForcedClubLinkUrl2 != "" && ForcedClubLinkUrl2 != Teams[1].ClubLinkUrl) {
+			SetUrl(2, ForcedClubLinkUrl2);
+		}
+		
+		// Players clublinks
+		if (ForcedClubLinkUrl1 == "" || ForcedClubLinkUrl2 == "") {
+			declare ClublinkUrl = [Teams[0].ClubLinkUrl, Teams[1].ClubLinkUrl];
+			declare Skip = [False, False];
+			
+			for (Clan, 1, 2) {
+				if (ClansNbPlayers[Clan] <= 0) ClublinkUrl[Clan-1] = "";
+			}
+			
+			foreach (Player in Players) {
+				if (
+					(ForcedClubLinkUrl1 != "" && Player.CurrentClan == 1) ||
+					(ForcedClubLinkUrl2 != "" && Player.CurrentClan == 2)
+				) continue;
+				declare Team = Player.CurrentClan-1;
+				if (!ClublinkUrl.existskey(Team)) continue;
+				if (Skip[Team]) continue;
+				
+				// The clublink of this player is different from the current one
+				if (ClublinkUrl[Team] != Player.User.ClubLink) {
+					// The clublink is empty, we can skip the rest of this clan
+					if (Player.User.ClubLink == "") {
+						ClublinkUrl[Team] = "";
+						Skip[Team] = True;
+					} else {
+						ClublinkUrl[Team] = Player.User.ClubLink;
+					}
+				} 
+				// The clublink is empty, we can skip the rest of this clan
+				else if (Player.User.ClubLink == "") {
+					ClublinkUrl[Team] = "";
+					Skip[Team] = True;
+				}
+				
+				// If we can skip both clans, then stop looping on the players
+				if (Skip[0] && Skip[1]) break;
+			}
+			
+			foreach (Team => Url in ClublinkUrl) {
+				if (Teams[Team].ClubLinkUrl != Url) {
+					if (Url == "") {
+						Reset(Team+1);
+					} else {
+						SetUrl(Team+1, Url);
+					}
+				}
+			}
+		}
+	}
+	
+	// Update ongoing request
+	if (G_Requests.count > 0) {
+		declare Integer[] ToRemove;
+		
+		foreach (Clan => RequestId in G_Requests) {
+			if (Http.Requests.existskey(RequestId)) {
+				declare Request <=> Http.Requests[RequestId];
+				if (Request.IsCompleted) {
+					ToRemove.add(Clan);
+					if (Request.StatusCode == 200) {
+						Set(Clan, Request.Result);
+					} else {
+						Log::Error("[Clublink] Http request failed : status "^Request.StatusCode);
+					}
+				} else {
+					declare LibClublink_Timeout for Request = 0;
+					if (Now >= LibClublink_Timeout) {
+						ToRemove.add(Clan);
+						Log::Error("[Clublink] Http request failed : timeout ("^Request.Url^")");
+					}
+				}
+			} else {
+				ToRemove.add(Clan);
+			}
+		}
+		
+		foreach (Clan in ToRemove) {
+			Private_DestroyRequest(Clan);
+		}
+	}
+	
+	// Check players list
+	if (G_Logins.count > 0) {
+		declare Valids = [ClansNbPlayers[1] > 0, ClansNbPlayers[2] > 0];
+		foreach (Player in Players) {
+			if (!G_Logins.existskey(Player.CurrentClan)) continue;
+			if (!Valids[Player.CurrentClan-1]) continue;
+			if (
+					(ForcedClubLinkUrl1 != "" && Player.CurrentClan == 1) ||
+					(ForcedClubLinkUrl2 != "" && Player.CurrentClan == 2)
+				) continue;
+			if (!G_Logins[Player.CurrentClan].exists(Player.User.Login)) {
+				Valids[Player.CurrentClan-1] = False;
+			}
+		}
+		foreach (Team => Valid in Valids) {
+			Enable(Team+1, Valid);
+		}
+	}
+}
+
+// ---------------------------------- //
+/// Unload the library
+Void Unload() {
+	G_Enabled = False;
+	G_UseClans = False;
+	G_UseClublinks = False;
+	G_DefaultNames = C_DefaultNames;
+	G_DefaultColors = C_DefaultColors;
+	
+	for (Clan, 1, 2) {
+		Private_SetTeamInfo(Teams[Clan-1], G_DefaultNames[Clan], "", "", "", G_DefaultColors[Clan], G_DefaultColors[Clan]);
+	}
+	
+	Reset();
+	
+	Layers::Destroy(C_SponsorLayer);
+}
+
+// ---------------------------------- //
+/// Load the library
+Void Load() {
+	Unload();
+	
+	Layers::Create(C_SponsorLayer, Private_GetSponsorsML());
+}

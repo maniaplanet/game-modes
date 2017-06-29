@@ -1,0 +1,155 @@
+/**
+ *	DEPRECATED - Use the new SpawnScreen library instead
+ *
+ *	Rules library
+ *	Show the rules in the spawn screen
+ */
+
+#Const Version		"2012-08-02"
+#Const ScriptName	"Rules.Script.txt"
+
+#Include "TextLib" as TextLib
+
+/* ------------------------------------- */
+// Globales
+/* ------------------------------------- */
+declare Text	G_LibRules_Name;			///< The name of the mode
+declare Text	G_LibRules_Rules;			///< The rules of the mode
+declare Ident	G_LibRules_LayerRulesId;	///< The id of the layer containing the rules
+
+/* ------------------------------------- */
+// Functions
+/* ------------------------------------- */
+
+/* ------------------------------------- */
+/** Return the version number of the script
+ *
+ *	@return		The version number of the script
+ */
+Text GetScriptVersion() {
+	return Version;
+}
+
+/* ------------------------------------- */
+/** Return the name of the script
+ *
+ *	@return		The name of the script
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+/* ------------------------------------- */
+/** Generate the rules manialink
+ *
+ *	@param	_Hidden		The rules are hidden by default
+ *	@return				The manialink Text
+ */
+Text GetRulesUI(Boolean _Hidden) {
+	declare ML = "";
+	
+	declare RulesTip = _("Press F1 to show rules");
+	
+	ML = """
+<script><!--
+	main () {
+		declare FrameRules	<=> Page.GetFirstChild("FrameRules");
+		declare FrameShow	<=> Page.GetFirstChild("FrameShow");
+		declare ShowRules = {{{ !_Hidden }}};
+			
+		while(True) {
+			yield;
+			
+			if (ShowRules) {
+				FrameRules.Show();
+				FrameShow.Hide();
+			} else {
+				FrameRules.Hide();
+				FrameShow.Show();
+			}
+
+			foreach (Event in PendingEvents) {
+				switch (Event.Type) {
+					case CMlEvent::Type::MouseClick :
+					{		
+						if (Event.ControlId == "FrameRules") ShowRules = !ShowRules;
+					}
+			
+					case CMlEvent::Type::KeyPress:
+					{
+						if (Event.KeyName == "F1") ShowRules = !ShowRules;	// F1
+					}
+				}
+			}
+		}
+	}
+--></script>
+<frame posn="0 -70 0" id="FrameShow">
+	<quad posn="0 0 10" sizen="140 20" halign="center" valign="center" style="Bgs1InRace" substyle="BgTitle3_5" />
+	<label posn="0 0 11" sizen="70 10" scale="2" halign="center" valign="center" style="TextTitle3" text="{{{ RulesTip }}}" />
+</frame>
+<frame posn="0 50 10" id="FrameRules">
+	<frame posn="0 0 5">
+		<quad posn="0 0 10" sizen="120 20" halign="center" valign="center" style="Bgs1InRace" substyle="BgTitle3_5" />
+		<label posn="0 0 11" sizen="60 10" scale="2" halign="center" valign="center" style="TextTitle3" textprefix="$fff" text="{{{ G_LibRules_Name }}}" />
+	</frame>
+	<frame posn="0 -10 5">
+		<quad posn="0 0 10" sizen="300 120" halign="center" bgcolor="222e" />
+		<label posn="-145 -5 11" sizen="145 5" scale="2" autonewline="1" style="TextCardSmallScores2" text="{{{ G_LibRules_Rules }}}" />
+	</frame>
+</frame>
+	""";
+	
+	return ML;
+}
+
+/// Destroy the rules in the spawn screen
+Void Destroy() {
+	if (G_LibRules_LayerRulesId != NullId && UIManager.UILayers.existskey(G_LibRules_LayerRulesId)) {
+		UIManager.UILayerDestroy(UIManager.UILayers[G_LibRules_LayerRulesId]);
+		G_LibRules_LayerRulesId = NullId;
+	}
+}
+
+/** Create the rules in the spawn screen
+ *
+ *	@param	_Name			The name of the mode
+ *	@param	_Rules			The rules of the mode
+ *	@param	_StartHidden	Start with the rules hidden
+ */
+Void Create(Text _Name, Text _Rules, Boolean _StartHidden) {
+	// Check if a rules layer was already created and destroy it if it's the case
+	Destroy();
+	
+	// Set the name and the rules of the mode
+	G_LibRules_Name = TextLib::MLEncode(_Name);
+	G_LibRules_Rules = TextLib::MLEncode(_Rules);
+	
+	// Create and assign the layer
+	declare LayerRules <=> UIManager.UILayerCreate();
+	LayerRules.Type = CUILayer::EUILayerType::ScreenIn3d;
+	LayerRules.ManialinkPage = GetRulesUI(_StartHidden);
+	G_LibRules_LayerRulesId = LayerRules.Id;
+	UIManager.UIAll.UILayers.add(LayerRules);
+}
+
+// Create Overload 
+Void Create(Text _Name, Text _Rules) {
+	Create(_Name, _Rules, True);
+}
+
+/// Attach the rules layer to all players
+Void Attach() {
+	if (UIManager.UIAll.UILayers.existskey(G_LibRules_LayerRulesId)) return;
+	if (!UIManager.UILayers.existskey(G_LibRules_LayerRulesId)) return;
+	
+	UIManager.UIAll.UILayers.add(UIManager.UILayers[G_LibRules_LayerRulesId]);
+}
+
+/// Detach the rules layer from all players
+Void Detach() {
+	if (!UIManager.UIAll.UILayers.existskey(G_LibRules_LayerRulesId)) return;
+	if (!UIManager.UILayers.existskey(G_LibRules_LayerRulesId)) return;
+	
+	declare Detached = UIManager.UIAll.UILayers.removekey(G_LibRules_LayerRulesId);
+}

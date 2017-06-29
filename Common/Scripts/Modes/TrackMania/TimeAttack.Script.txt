@@ -1,0 +1,281 @@
+/**
+ *	Time Attack mode
+ */
+#Extends "Modes/TrackMania/Base/ModeTrackmania.Script.txt"
+
+#Const	CompatibleMapTypes	"Race"
+#Const	Version							"2017-06-07"
+#Const	ScriptName					"Modes/TrackMania/TimeAttack/TimeAttack.Script.txt"
+
+// ---------------------------------- //
+// Includes
+// ---------------------------------- //
+#Include "TextLib" as TL
+
+// ---------------------------------- //
+// Settings
+// ---------------------------------- //
+#Setting S_TimeLimit				300	as _("Time limit :") ///< Time limit before going to the next map
+#Setting S_WarmUpNb				0	as _("Number of warm up :")
+#Setting S_WarmUpDuration	0	as _("Duration of one warm up :")
+
+#Setting S_ScriptEnvironment "production"/*/"development"*/
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const Description _("""$fffIn $f00Time Attack$fff mode, the goal is to set the $f00best time$fff.
+
+You have as many tries as you want, and you can $ff0retry$fff when you want by pressing the $ff0'Backspace'$fff key.
+
+When the time is up, the $f00winner$fff is the player with the $f00best time$fff.""")
+
+#Const C_HudModulePath "Nadeo/TrackMania/TimeAttack/Hud.Module.Gbx" ///< Path to the hud module
+#Const C_ManiaAppUrl "file://Media/ManiaApps/Nadeo/TrackMania/TimeAttack/TimeAttack.Script.txt"
+#Const C_BotsNb 0
+
+// ---------------------------------- //
+// Extends
+// ---------------------------------- //
+***Match_LogVersion***
+***
+MB_LogVersion(ScriptName, Version);
+***
+
+***Match_Settings***
+***
+MB_Settings_UseDefaultHud = False;
+***
+
+***Match_Rules***
+***
+ModeInfo::SetName("Time Attack");
+ModeInfo::SetType(ModeInfo::C_Type_FreeForAll);
+ModeInfo::SetRules(Description);
+ModeInfo::SetStatusMessage(_("TYPE: Free for all\nOBJECTIVE: Set the best time on the track."));
+***
+
+***Match_LoadHud***
+***
+ClientManiaAppUrl = C_ManiaAppUrl;
+Hud_Load(C_HudModulePath);
+MB_SortScores(CTmMode::ETmScoreSortOrder::BestRace_Time);
+
+// Initialize UI modules
+UI::LoadModules([
+	UIModules::C_Module_TimeGap, 
+	UIModules::C_Module_Chrono,
+	UIModules::C_Module_CheckpointTime,
+	UIModules::C_Module_PrevBestTime,
+	UIModules::C_Module_SpeedAndDistance,
+	UIModules::C_Module_Countdown,
+	UIModules::C_Module_MapInfo,
+	UIModules::C_Module_MapRanking,
+	UIModules::C_Module_LiveInfo,
+	UIModules::C_Module_SpectatorInfo
+]);
+UI::SetTimeGapMode("BestRace");
+UI::SetCheckpointTimeMode("BestRace");
+UI::SetIndependantLaps(True);
+***
+
+***Match_StartServer***
+***
+// Initialize mode
+UseClans = False;
+IndependantLaps = True;
+RespawnBehaviour::Set(CTmMode::ETMRespawnBehaviour::GiveUpBeforeFirstCheckPoint);
+WarmUp::SetAvailability(True);
+ChannelProgression::Enable(S_IsChannelServer);
+***
+
+***Match_InitMap***
+***
+declare Integer PrevTimeLimit;
+declare Integer StartTime;
+***
+
+***Match_StartMap***
+***
+// Add bot when necessary
+Users_SetNbFakeUsers(C_BotsNb, 0);
+
+// Warm up
+declare WarmUpDuration = S_WarmUpDuration * 1000;
+MB_WarmUp(S_WarmUpNb, WarmUpDuration);
+
+// Initialize race
+StartTime = Now + 3000;
+PrevTimeLimit = S_TimeLimit;
+SetTimeLimit(StartTime, S_TimeLimit);
+
+// Spawn players for the race
+foreach (Player in Players) {
+	TM::StartRace(Player, StartTime);
+}
+***
+
+***Match_PlayLoop***
+***
+// Manage events
+foreach (Event in PendingEvents) {
+	Events::Valid(Event);
+	
+	// Waypoint
+	if (Event.Type == CTmModeEvent::EType::WayPoint) {
+		declare Better = False;
+		
+		if (Event.IsEndRace) {
+			Better = Scores::SetPlayerBestRaceIfBetter(Event.Player.Score, Event.Player.CurRace, CTmResult::ETmRaceResultCriteria::Time);
+			if (Better) Scores::SetPlayerBestLap(Event.Player.Score, Event.Player.CurRace);
+			Scores::SetPlayerPrevRace(Event.Player.Score, Event.Player.CurRace);
+			TM::EndRace(Event.Player);
+			MB_SortScores(CTmMode::ETmScoreSortOrder::BestRace_Time);
+		} else if (Event.IsEndLap) {
+			Better = Scores::SetPlayerBestLapIfBetter(Event.Player.Score, Event.Player.CurLap, CTmResult::ETmRaceResultCriteria::Time);
+			if (Better) Scores::SetPlayerBestRace(Event.Player.Score, Event.Player.CurLap);
+			Scores::SetPlayerPrevRace(Event.Player.Score, Event.Player.CurLap);
+			MB_SortScores(CTmMode::ETmScoreSortOrder::BestRace_Time);
+		}
+		
+		if (Better && Event.Player != Null) {
+			foreach (Rank => Score in Scores) {
+				if (Score.Id == Event.Player.Score.Id) {
+					if (Rank <= 2) {
+						declare Message = "";
+						if (Rank == 0) {
+							//L16N [Time Attack] Message displayed when the player finishes the race in first place. %1 is the name of the player.
+							Message = _("$<%1$> takes 1st place!");
+						} else if (Rank == 1) {
+							//L16N [Time Attack] Message displayed when the player finishes the race in second place. %1 is the name of the player.
+							Message = _("$<%1$> takes 2nd place!");
+						} else if (Rank == 2) {
+							//L16N [Time Attack] Message displayed when the player finishes the race in third place. %1 is the name of the player.
+							Message = _("$<%1$> takes 3rd place!");
+						}
+						foreach (Player in AllPlayers) {
+							UI::SendLiveEvent(Player, TL::Compose(Message, Event.Player.User.Name), """file://Avatars/{{{Event.Player.User.Login}}}/Default""");
+						}
+					} else {
+						UI::SendLiveEvent(
+							Event.Player,
+							//L16N [Time Attack] Message displayed when the player finishes the race. %1 is the name of the player. %2 is its rank in the ranking.
+							TL::Compose(_("$<%1$> takes %2th place!"), Event.Player.User.Name, TL::ToText(Rank+1)),
+							"""file://Avatars/{{{Event.Player.User.Login}}}/Default"""
+						);
+					}
+					break;
+				}
+			}
+		}
+	}
+	// GiveUp
+	else if (Event.Type == CTmModeEvent::EType::GiveUp) {
+		TM::WaitRace(Event.Player);
+	}
+}
+
+// Spawn players
+foreach (Player in Players) {
+	if (TM::IsWaiting(Player)) {
+		TM::StartRace(Player);
+	}
+}
+
+// Update the map duration setting
+if (PrevTimeLimit != S_TimeLimit) {
+	PrevTimeLimit = S_TimeLimit;
+	SetTimeLimit(StartTime, S_TimeLimit);
+}
+
+// End the map when time limit is reached
+if (CutOffTimeLimit > 0 && Now >= CutOffTimeLimit) {
+	MB_StopMatch();
+}
+***
+
+***Match_EndMap***
+***
+// Ensure that we stop the match (after a vote for the next map, ...)
+MB_StopMatch();
+
+CutOffTimeLimit = -1;
+MB_SortScores(CTmMode::ETmScoreSortOrder::BestRace_Time);
+Scores::SetDefaultLadderSort(Scores::C_Sort_BestRaceTime);
+Scores::SetPlayerWinner(Scores::GetBestPlayer(Scores::Sort_BestRaceTime(), Scores::Order_Ascending()));
+Scores::UnspawnLosers();
+MB_Sleep(1000);
+TM::WaitRaceAll();
+***
+
+***Match_BeforeCloseLadder***
+***
+if (ChannelProgression::IsEnabled()) {
+	declare ReferenceTime = Map.MapInfo.TMObjective_AuthorTime;
+	declare BestRaceTime = ReferenceTime;
+	foreach (Score in Scores) {
+		declare RaceTime = Scores::GetPlayerBestRaceTime(Score);
+		if (RaceTime > 0 && RaceTime < BestRaceTime) BestRaceTime = RaceTime;
+	}
+	if (BestRaceTime < ReferenceTime) ReferenceTime = BestRaceTime;
+	
+	declare PlayersPerformances = 0.;
+	declare PlayersEchelons = 0;
+	foreach (Score in Scores) {
+		declare PlayerBestRaceTime = Scores::GetPlayerBestRaceTime(Score);
+		declare TimeAttack_Performance for Score = 0.;
+		
+		if (
+			PlayerBestRaceTime > 0 &&
+			ReferenceTime > 0 &&
+			PlayerBestRaceTime <= Map.MapInfo.TMObjective_BronzeTime &&
+			ReferenceTime <= Map.MapInfo.TMObjective_BronzeTime
+		) {
+			declare A = (Map.MapInfo.TMObjective_BronzeTime - PlayerBestRaceTime) * 1.;
+			declare B = Map.MapInfo.TMObjective_BronzeTime - ReferenceTime;
+			TimeAttack_Performance = ((A / B) * 0.9) + 0.1;
+		} else {
+			TimeAttack_Performance = 0.;
+		}
+		
+		PlayersPerformances += TimeAttack_Performance;
+		PlayersEchelons += 10 - Utils::EchelonToInteger(Score.User.Echelon);
+		
+		Log::Log("""[TimeAttack] TimeAttack_Performance > {{{Score.User.Login}}} > BronzeTime : {{{Map.MapInfo.TMObjective_BronzeTime}}} | AuthorTime : {{{Map.MapInfo.TMObjective_AuthorTime}}} | BestRaceTime : {{{BestRaceTime}}} | ReferenceTime : {{{ReferenceTime}}} | PlayerBestRaceTime : {{{PlayerBestRaceTime}}} | TimeAttack_Performance: {{{TimeAttack_Performance}}}""");
+	}
+	
+	declare PP = (((PlayersPerformances * 10.) + PlayersEchelons) / (Scores.count * 20.)) * 0.1;
+	Log::Log("""[TimeAttack] PP : ((({{{PlayersPerformances}}} * 10.) + {{{PlayersEchelons}}}) / ({{{Scores.count}}} * 20.)) * 0.1 = {{{PP}}}""");
+		
+	foreach (Score in Scores) {
+		declare TimeAttack_Performance for Score = 0.;
+		
+		declare P = PP * TimeAttack_Performance;
+		declare Performance = TimeAttack_Performance - P;
+		if (Performance < 0.) Performance = 0.;
+		
+		Log::Log("""[TimeAttack] Performance > {{{Score.User.Login}}} > PP : {{{PP}}} | TimeAttack_Performance : {{{TimeAttack_Performance}}} | P : {{{P}}} | Performance: {{{Performance}}}""");
+		
+		ChannelProgression::SetPlayerPerformance(Score, Performance);
+	}
+}
+***
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+// ---------------------------------- //
+/** Update the time limit
+ *
+ *	@param	_StartTime								The starting time of the map
+ *	@param	_NewTimeLimit							The time limit before going to the next map
+ */
+Void SetTimeLimit(Integer _StartTime, Integer _NewTimeLimit) {
+	if (_NewTimeLimit <= 0) {
+		CutOffTimeLimit = -1;
+		if (Hud != Null) Hud.ScoresTable.SetFooterText(TL::Compose("%1 -", _("Time Limit :")));
+	} else {
+		CutOffTimeLimit = _StartTime + (S_TimeLimit * 1000);
+		if (Hud != Null) Hud.ScoresTable.SetFooterText(TL::Compose("%1 "^TL::TimeToText(S_TimeLimit*1000, False), _("Time Limit :")));
+	}
+}

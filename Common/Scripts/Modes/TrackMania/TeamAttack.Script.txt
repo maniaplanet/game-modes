@@ -1,0 +1,561 @@
+/**
+ *	TeamAttack mode
+ */
+
+#Extends "Modes/TrackMania/Base/ModeBase.Script.txt"
+
+#Const	CompatibleMapTypes	"Race"
+#Const	Version		"2016-04-13"
+#Const	ScriptName	"TeamAttack.Script.txt"
+
+#Include "TextLib" as TL
+#Include "MathLib" as ML
+#Include "Libs/Nadeo/Layers2.Script.txt" as Layers
+#Include "Libs/Nadeo/Message.Script.txt" as Message
+#Include "Libs/Nadeo/Manialink.Script.txt" as Manialink
+#Include "Libs/Nadeo/TrackMania/MultiClans.Script.txt" as MultiClans
+#Include "Libs/Nadeo/TrackMania/UI/TeamModes.Script.txt" as UITeamModes
+
+
+// ---------------------------------- //
+// Settings
+// ---------------------------------- //
+#Setting S_TimeLimit 				300	as _("Time limit :")
+#Setting S_MinPlayerPerClan	3		as _("Minimum number of players per clan :")
+#Setting S_MaxPlayerPerClan	3		as _("Maximum number of players per clan :")
+#Setting S_MaxClanNb				-1	as _("Maximum number of clans :")
+#Setting S_HudModulePath  	"Nadeo/TrackMania/TeamAttack/Hud.Module.Gbx" as "<hidden>"
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_BotsNb 0
+#Const Description _("""$fffIn $f00Team Attack$fff mode, the goal is to set the $f00best time$fff with your team.
+
+You have as many tries as you want, and you can $ff0retry$fff when you want by pressing the $ff0'Backspace'$fff key.
+
+When the time is up, the $f00winner$fff is the team with the $f00best average time$fff.""")
+
+// ---------------------------------- //
+// Extend
+// ---------------------------------- //
+***LogVersion***
+***
+MB_LogVersion(ScriptName, Version);
+MB_LogVersion(Layers::GetScriptName(), Layers::GetScriptVersion());
+MB_LogVersion(Message::GetScriptName(), Message::GetScriptVersion());
+MB_LogVersion(Manialink::GetScriptName(), Manialink::GetScriptVersion());
+MB_LogVersion(MultiClans::GetScriptName(), MultiClans::GetScriptVersion());
+MB_LogVersion(UITeamModes::GetScriptName(), UITeamModes::GetScriptVersion());
+***
+
+***InitServer***
+***
+declare Integer PrevTimeLimit = S_TimeLimit;
+declare Integer StartTime;
+***
+
+***StartServer***
+***
+// ---------------------------------- //
+// Initialize mode
+PrevTimeLimit = S_TimeLimit;
+StartTime = -1;
+IndependantLaps = True;
+
+// ---------------------------------- //
+// Initialize UI
+UI::LoadModules(["TimeGap", "Chrono", "CheckpointTime", "PrevBestTime", "SpeedAndDistance", "Countdown"]);
+UI::SetTimeGapMode("BestRace");
+UI::SetIndependantLaps(IndependantLaps);
+Layers::Create("ClanSelection", UITeamModes::GetMLClanSelection());
+Layers::Attach("ClanSelection");
+Layers::Create("ClanInfo", UITeamModes::GetMLClanInfo("BestRace"));
+Layers::Attach("ClanInfo");
+declare netwrite Integer Net_TeamAttack_SynchroServer for Teams[0];
+Net_TeamAttack_SynchroServer = 10;
+
+// ---------------------------------- //
+// Create scores table
+/*ST2::SetStyle("LibST_TMBaseSolo");
+ST2::CreateCol("LibST_TMAverageTime", "", "???", 8., 70.);
+ST2::SetColTextAlign("LibST_TMAverageTime", CMlControl::AlignHorizontal::Right);
+ST2::SetModeIcon("Icons128x32_1|RT_TimeAttack");
+ST2::SetFooterText(TL::Compose("%1 "^TL::TimeToText(S_TimeLimit*1000, False), _("Time Limit :")));
+MB_SetScoresTableStyleFromXml(S_ScoresTableStylePath);
+ST2::Build("TM");*/
+Hud_Load(S_HudModulePath);
+UIManager.UIAll.ScoreTableOnlyManialink = True;
+***
+
+***InitMap***
+***
+// ---------------------------------- //
+// Initialize scores
+Scores_Clear();
+//ST2::ClearScores();
+if (Hud != Null) {
+	foreach (Score in Scores) {
+		Hud.ScoresTable.SetColumnValue(Score, "AverageTime", -1);
+	}
+}
+
+// ---------------------------------- //
+// Synchronize UI
+declare netwrite Integer Net_TeamAttack_SynchroServer for Teams[0];
+Net_TeamAttack_SynchroServer += 1;
+***
+
+***StartMap***
+***
+// ---------------------------------- //
+// Initialize map
+MB_Ladder_OpenMatch_All();
+Users_SetNbFakeUsers(C_BotsNb, 0);
+
+// ---------------------------------- //
+// Warm up
+declare ObjectiveNbLaps = Map.TMObjective_NbLaps;
+if (ObjectiveNbLaps <= 0 || !Map.TMObjective_IsLapRace) ObjectiveNbLaps = 1;
+declare MaxTime = (Map.TMObjective_AuthorTime / ObjectiveNbLaps) * S_WarmUpDuration;
+declare WarmUpTimeLimit = Now + 5000 + MaxTime + (MaxTime / 6);
+MB_WarmUp(WarmUpTimeLimit);
+
+// ---------------------------------- //
+// Initialize race
+StartTime = Now + 3000;
+CutOffTimeLimit = StartTime + (S_TimeLimit * 1000);
+UIManager.UIAll.UISequence = CUIConfig::EUISequence::Playing;
+
+// ---------------------------------- //
+// Initialize score
+foreach (Score in Scores) {
+	declare netwrite Net_TeamAttack_CurrentClan for Score = 0;
+	declare netwrite Net_TeamAttack_AverageTime for Score = -1;
+	Net_TeamAttack_CurrentClan = 0;
+	Net_TeamAttack_AverageTime = -1;
+}
+
+// ---------------------------------- //
+// Spawn players for the race
+foreach (Player in Players) {
+	if (MultiClans::GetPlayerClan(Player) > 0) TM2::StartRace(Player, StartTime);
+	
+	if (Player.Score != Null) {
+		declare netwrite Net_TeamAttack_CurrentClan for Player.Score = 0;
+		Net_TeamAttack_CurrentClan = MultiClans::GetPlayerClan(Player);
+	}
+}
+
+Message::CleanAllMessages();
+***
+
+***WarmUp***
+***
+if (S_WarmUpDuration > 0) {		
+	WarmUp::Begin();
+	WarmUp::SetProgression(1, 1);
+	CutOffTimeLimit = _TimeLimit;
+	
+	while (Now < CutOffTimeLimit && !WarmUp::Stop() && !ServerShutdownRequested && !MatchEndRequested) {
+		MB_Yield();
+		WarmUp::Loop();
+		WarmUp::ManageEvents();
+	}
+	WarmUp::End();
+	
+	UIManager.UIAll.BigMessage = _("End of warmup, match starting...");
+	UIManager.UIAll.UISequence = CUIConfig::EUISequence::EndRound;
+	CutOffTimeLimit = Now + 4000;
+	while (Now < CutOffTimeLimit && !ServerShutdownRequested && !MatchEndRequested) {
+		MB_Yield();
+	}
+	CutOffTimeLimit = -1;
+	UIManager.UIAll.BigMessage = "";
+	UIManager.UIAll.UISequence = CUIConfig::EUISequence::Playing;
+}
+***
+
+***Yield***
+***
+Message::Loop();
+
+// ---------------------------------- //
+// Set the min and max players limit
+declare netwrite Integer Net_TeamAttack_MinPlayerPerClan for Teams[0];
+declare netwrite Integer Net_TeamAttack_MaxPlayerPerClan for Teams[0];
+declare netwrite Integer Net_TeamAttack_MaxClanNb for Teams[0];
+declare PrevMinPlayerPerClan for This = -1;
+declare PrevMaxPlayerPerClan for This = -1;
+declare PrevMaxClanNb for This = -1;
+declare TeamAttack_ComputeLatestRaceScores for This = False;
+if (
+	PrevMinPlayerPerClan != S_MinPlayerPerClan 
+	|| PrevMaxPlayerPerClan != S_MaxPlayerPerClan
+	|| PrevMaxClanNb != S_MaxClanNb
+) {
+	Net_TeamAttack_MinPlayerPerClan = S_MinPlayerPerClan;
+	Net_TeamAttack_MaxPlayerPerClan = S_MaxPlayerPerClan;
+	Net_TeamAttack_MaxClanNb = S_MaxClanNb;
+	PrevMinPlayerPerClan = S_MinPlayerPerClan;
+	PrevMaxPlayerPerClan = S_MaxPlayerPerClan;
+	PrevMaxClanNb = S_MaxClanNb;
+	TeamAttack_ComputeLatestRaceScores = True;
+}
+
+// ---------------------------------- //
+// Set the players in their clan
+foreach (Player in AllPlayers) {
+	if (Player.Score == Null) continue;
+	
+	declare TeamAttack_PlayerUpdate for Player.Score = -1;
+	TeamAttack_PlayerUpdate = Now;
+	
+	declare UI <=> UIManager.GetUI(Player);
+	if (UI == Null) continue;
+	
+	declare netwrite Integer Net_TeamAttack_SynchroServer for Teams[0];
+	declare netread Integer Net_TeamAttack_SynchroClient for UI;
+	declare netread Integer Net_TeamAttack_UpdateJoin for UI;
+	declare netread Integer Net_TeamAttack_JoinClan for UI;
+	declare netread Integer Net_TeamAttack_UpdateCreate for UI;
+	declare PrevUpdateJoin for Player = Net_TeamAttack_UpdateJoin;
+	declare PrevUpdateCreate for Player = Net_TeamAttack_UpdateCreate;
+	declare netwrite Net_TeamAttack_CurrentClan for Player.Score = 0;
+	declare OldClan = -1;
+	declare NewClan = -1;
+	
+	// ---------------------------------- //
+	// Restore the clan of a disconnected player
+	if (Net_TeamAttack_CurrentClan != MultiClans::GetPlayerClan(Player)) {
+		if (S_MaxPlayerPerClan <= 0 || MultiClans::GetClanNbPlayers(Net_TeamAttack_CurrentClan) < S_MaxPlayerPerClan) {
+			MultiClans::SetPlayerClan(Player, Net_TeamAttack_CurrentClan);
+		} else {
+			Net_TeamAttack_CurrentClan = 0;
+			MultiClans::SetPlayerClan(Player, 0);
+		}
+	}
+	
+	// ---------------------------------- //
+	// Player request a new clan
+	if (
+		PrevUpdateJoin != Net_TeamAttack_UpdateJoin
+		&& Net_TeamAttack_SynchroServer == Net_TeamAttack_SynchroClient
+		&& Net_TeamAttack_JoinClan != MultiClans::GetPlayerClan(Player)
+	) {
+		PrevUpdateJoin = Net_TeamAttack_UpdateJoin;
+		
+		if (S_MaxPlayerPerClan <= 0 || MultiClans::GetClanNbPlayers(Net_TeamAttack_JoinClan) < S_MaxPlayerPerClan) {
+			MultiClans::SetPlayerClan(Player, Net_TeamAttack_JoinClan);
+			OldClan = Net_TeamAttack_CurrentClan;
+			Net_TeamAttack_CurrentClan = Net_TeamAttack_JoinClan;
+			NewClan = Net_TeamAttack_CurrentClan;
+			Player.Score.BestRace = Null;
+			
+			TeamAttack_ComputeLatestRaceScores = True;
+		}
+	}
+	
+	// ---------------------------------- //
+	// Player create a new clan
+	if (
+		PrevUpdateCreate != Net_TeamAttack_UpdateCreate
+		&& Net_TeamAttack_SynchroServer == Net_TeamAttack_SynchroClient
+	) {
+		PrevUpdateCreate = Net_TeamAttack_UpdateCreate;
+		
+		if (S_MaxClanNb <= 0 || MultiClans::GetClansNbTotal() < S_MaxClanNb) {
+			declare PlayerClan = MultiClans::GetPlayerClan(Player);
+			if (PlayerClan <= 0 || MultiClans::GetClanNbPlayers(PlayerClan) > 1) {
+				declare I = 1;
+				declare Clans = MultiClans::GetClans().sort();
+				foreach (Clan in Clans) {
+					if (Clan != I) break;
+					I += 1;
+				}
+				MultiClans::SetPlayerClan(Player, I);
+				OldClan = PlayerClan;
+				Net_TeamAttack_CurrentClan = I;
+				NewClan = Net_TeamAttack_CurrentClan;
+				Player.Score.BestRace = Null;
+				
+				declare TeamAttack_ComputeLatestRaceScores for This = False;
+				TeamAttack_ComputeLatestRaceScores = True;
+			}
+		}
+	}
+	
+	// ---------------------------------- //
+	// Get the names of the old and new clans players
+	declare OldNames = "";
+	if (OldClan > 0) {
+		declare OldPlayers = MultiClans::GetClanPlayers(OldClan);
+		OldNames = " (";
+		declare First = True;
+		foreach (OldPlayer in OldPlayers) {
+			if (!First) OldNames ^= ", ";
+			First = False;
+			OldNames ^= "$<"^OldPlayer.User.Name^"$>";
+		}
+		OldNames ^= ")";
+	}
+	declare NewNames = "";
+	if (NewClan > 0) {
+		declare NewPlayers = MultiClans::GetClanPlayers(NewClan);
+		NewNames = " (";
+		declare First = True;
+		foreach (NewPlayer in NewPlayers) {
+			if (!First) NewNames ^= ", ";
+			First = False;
+			NewNames ^= "$<"^NewPlayer.User.Name^"$>";
+		}
+		NewNames ^= ")";
+	}
+	
+	// ---------------------------------- //
+	// Send a chat message
+	if (OldClan > 0 && NewClan > 0) {
+		UIManager.UIAll.SendChat(TL::Compose(_("$<%1$> leaves team $<%2$> and joins team $<%3$>."), Player.User.Name, OldClan^OldNames, NewClan^NewNames));
+	} else {
+		if (OldClan > 0) {
+			UIManager.UIAll.SendChat(TL::Compose(_("$<%1$> leaves team $<%2$>."), Player.User.Name, OldClan^OldNames));
+		}
+		if (NewClan > 0) {
+			UIManager.UIAll.SendChat(TL::Compose(_("$<%1$> joins team $<%2$>."), Player.User.Name, NewClan^NewNames));
+		}
+	}
+}
+
+// ---------------------------------- //
+// Remove the players without a best time
+// from their clan when they leave
+foreach (Score in Scores) {
+	if (Score.BestRace == Null) continue;
+	if (Score.BestRace.Time > 0) continue;
+	
+	declare netwrite Net_TeamAttack_CurrentClan for Score = 0;	
+	if (Net_TeamAttack_CurrentClan <= 0) continue;
+	
+	declare OldClan = Net_TeamAttack_CurrentClan;
+	
+	
+	declare TeamAttack_PlayerUpdate for Score = -1;
+	if (TeamAttack_PlayerUpdate >= Now) continue;
+	
+	Net_TeamAttack_CurrentClan = 0;
+	TeamAttack_ComputeLatestRaceScores = True;
+	
+	declare OldNames = "";
+	declare ClanPlayers = MultiClans::GetClanPlayers(OldClan);
+	OldNames = " (";
+	declare First = True;
+	foreach (ClanPlayer in ClanPlayers) {
+		if (ClanPlayer.User.Id == Score.User.Id) continue;
+		if (!First) OldNames ^= ", ";
+		First = False;
+		OldNames ^= "$<"^ClanPlayer.User.Name^"$>";
+	}
+	OldNames ^= ")";
+	
+	// ---------------------------------- //
+	// Send a chat message
+	UIManager.UIAll.SendChat(TL::Compose(_("$<%1$> leaves team $<%2$>."), Score.User.Name, OldClan^OldNames));
+}
+***
+
+***PlayLoop***
+***
+// ---------------------------------- //
+// Invoke the ComputeLatestRaceScores() function
+declare TeamAttack_ComputeLatestRaceScores for This = False;
+if (TeamAttack_ComputeLatestRaceScores) {
+	TeamAttack_ComputeLatestRaceScores = False;
+	ComputeLatestRaceScores();
+}
+
+// ---------------------------------- //
+// Update the map duration setting
+if (PrevTimeLimit != S_TimeLimit) {
+	PrevTimeLimit = S_TimeLimit;
+	CutOffTimeLimit = StartTime + (S_TimeLimit * 1000);
+	//ST2::SetFooterText(TL::Compose("%1 "^TL::TimeToText(S_TimeLimit*1000, False), _("Time Limit :")));
+	if (Hud != Null) Hud.ScoresTable.SetFooterText(TL::Compose("%1 "^TL::TimeToText(S_TimeLimit*1000, False), _("Time Limit :")));
+}
+
+// ---------------------------------- //
+// Spawn players
+foreach (Player in Players) {
+	if (TM2::IsWaiting(Player) && MultiClans::GetPlayerClan(Player) > 0) {
+		TM2::StartRace(Player);
+	}
+}
+
+// ---------------------------------- //
+// Manage events
+foreach (Event in PendingEvents) {
+	PassOn(Event);
+	XmlRpc::PassOn(Event);
+	
+	// ---------------------------------- //
+	// Waypoint
+	if (Event.Type == CTmModeEvent::EType::WayPoint) {
+		if (Event.IsEndRace) {
+			if (Event.Player.Score != Null) {
+				if (Event.Player.Score.BestRace.Compare(Event.Player.CurRace, CTmResult::ETmRaceResultCriteria::Time) <= 0) {
+					Event.Player.Score.BestRace = Event.Player.CurRace;
+					Event.Player.Score.BestLap = Event.Player.CurRace;
+				}
+			}
+			Event.Player.Score.PrevRace = Event.Player.CurRace;
+			TM2::EndRace(Event.Player);
+			ComputeLatestRaceScores();
+			Scores_Sort(CTmMode::ETmScoreSortOrder::TotalPoints);
+		} else if (Event.IsEndLap) {
+			if (Event.Player.Score != Null) {
+				if (Event.Player.Score.BestLap.Compare(Event.Player.CurLap, CTmResult::ETmRaceResultCriteria::Time) <= 0) {
+					Event.Player.Score.BestLap = Event.Player.CurLap;
+					Event.Player.Score.BestRace = Event.Player.CurLap;
+				}
+			}
+			Event.Player.Score.PrevRace = Event.Player.CurLap;
+			ComputeLatestRaceScores();
+			Scores_Sort(CTmMode::ETmScoreSortOrder::TotalPoints);
+		}
+	}
+	// ---------------------------------- //
+	// GiveUp
+	else if (Event.Type == CTmModeEvent::EType::GiveUp) {
+		declare Clan = MultiClans::GetPlayerClan(Event.Player);
+		if (Clan > 0 && TM2::IsRacing(Event.Player)) {
+			declare ClanPlayers = MultiClans::GetClanPlayers(Clan);
+			foreach (Player in ClanPlayers) {
+				TM2::WaitRace(Player);
+				Message::SendBigMessage(Player, TL::Compose(_("$<%1$> retired!"), Event.Player.User.Name), 3000, 1);
+			}
+		} else {
+			TM2::WaitRace(Event.Player);
+		}
+	}
+}
+
+// ---------------------------------- //
+// End the map when time limit is reached
+if (Now >= CutOffTimeLimit) {
+	MB_StopMap = True;
+}
+***
+
+***EndMap***
+***
+TM2::WaitRaceAll();
+Message::CleanAllMessages();
+
+// ---------------------------------- //
+// Close ladder
+// Do not grant LP if the map was skipped
+if (Now >= CutOffTimeLimit) {
+	ComputeLatestRaceScores();
+	Ladder_ComputeRank(CTmMode::ETmScoreSortOrder::TotalPoints);
+	MB_Ladder_CloseMatch();
+} else {
+	MB_Ladder_CancelMatch();
+}
+
+Scores_Sort(CTmMode::ETmScoreSortOrder::TotalPoints);
+if (Scores.existskey(0) &&  Scores[0].Points > 0) {
+	declare netwrite Net_TeamAttack_CurrentClan for Scores[0] = 0;
+	if (Net_TeamAttack_CurrentClan > 0) {
+		MB_VictoryMessage = TL::Compose(_("$<%1 %2$> wins the map!"), _("Team"), TL::ToText(Net_TeamAttack_CurrentClan));
+	}
+}
+XmlRpc::ScoresReady();
+***
+
+***EndServer***
+***
+Layers::Destroy("ClanSelection");
+Layers::Destroy("ClanInfo");
+***
+
+// ---------------------------------- //
+/// Compute the latest race scores
+Void ComputeLatestRaceScores() {
+	// Aggregate players times by clan
+	declare ClansTimes = Integer[CUser][Integer];
+	foreach (Score in Scores) {
+		declare netwrite Net_TeamAttack_CurrentClan for Score = 0;
+		if (Net_TeamAttack_CurrentClan <= 0) continue;
+		
+		if (!ClansTimes.existskey(Net_TeamAttack_CurrentClan)) ClansTimes[Net_TeamAttack_CurrentClan] = Integer[CUser];
+		
+		if (Score.BestRace.Time > 0) ClansTimes[Net_TeamAttack_CurrentClan][Score.User] = Score.BestRace.Time;
+		else ClansTimes[Net_TeamAttack_CurrentClan][Score.User] = -1;
+	}
+	
+	// Compute average time for each clan
+	declare ClansAverages = Real[Integer];
+	foreach (Clan => Times in ClansTimes) {
+		if (Times.exists(-1)) {
+			ClansAverages[Clan] = -1.;
+		} else if (S_MinPlayerPerClan > 0 && Times.count < S_MinPlayerPerClan) {
+			ClansAverages[Clan] = -1.;
+		} else {
+			declare TotalTimes = 0.;
+			declare TotalCoefs = 0.;
+			declare SortedTimes = Times.sort();
+			declare N = SortedTimes.count;
+			declare MeanEchelon = 0.;
+			foreach (User => Time in SortedTimes) {
+				MeanEchelon += Mode::EchelonToInteger(User.Echelon);
+			}
+			MeanEchelon /= SortedTimes.count;
+			foreach (User => Time in SortedTimes) {
+				// Apply coef. to the players' times
+				// (1 + MeanEchelon) ^ N
+				//declare Coef = ML::Pow((1 + Mode::EchelonToInteger(User.Echelon))*1., N*1.);
+				declare Coef = ML::Pow((1 + MeanEchelon)*1., N*1.);
+				TotalCoefs += Coef;
+				TotalTimes += Time * Coef;
+				N -= 1;
+			}
+			declare Average = TotalTimes / TotalCoefs;
+			ClansAverages[Clan] = Average;
+		}
+	}
+	ClansAverages = ClansAverages.sort();
+	
+	// Compute clans scores
+	declare ClansScores = Integer[Integer];
+	declare I = ClansAverages.count;
+	foreach (Clan => Average in ClansAverages) {
+		if (Average > 0) {
+			ClansScores[Clan] = I;
+			I -= 1;
+		} else {
+			ClansScores[Clan] = 0;
+		}
+	}
+	
+	// Update the scores table
+	foreach (Score in Scores) {
+		declare netwrite Net_TeamAttack_CurrentClan for Score = 0;
+		if (Net_TeamAttack_CurrentClan <= 0) {
+			Score.Points = 0;
+		} else if (!ClansScores.existskey(Net_TeamAttack_CurrentClan)) {
+			Score.Points = 0;
+		} else {
+			Score.Points = ClansScores[Net_TeamAttack_CurrentClan];
+		}
+		
+		declare netwrite Net_TeamAttack_AverageTime for Score = -1;
+		if (ClansAverages.existskey(Net_TeamAttack_CurrentClan) && ClansAverages[Net_TeamAttack_CurrentClan] > 0) {
+			Net_TeamAttack_AverageTime = ML::NearestInteger(ClansAverages[Net_TeamAttack_CurrentClan]);
+			//ST2::SetColValue("LibST_TMAverageTime", Score, TM2::TimeToText(Net_TeamAttack_AverageTime));
+			if (Hud != Null && AllPlayers.count > 0) Hud.ScoresTable.SetColumnValue(Score, "AverageTime", Net_TeamAttack_AverageTime);
+		} else {
+			Net_TeamAttack_AverageTime = -1;
+			//ST2::SetColValue("LibST_TMAverageTime", Score, TM2::TimeToText(Net_TeamAttack_AverageTime));
+			if (Hud != Null && AllPlayers.count > 0) Hud.ScoresTable.SetColumnValue(Score, "AverageTime", Net_TeamAttack_AverageTime);
+		}
+	}
+}

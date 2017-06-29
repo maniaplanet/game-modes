@@ -1,0 +1,370 @@
+/**
+ *	WeaponSwitch library
+ *	Allow players to dynamically switch weapon while playing
+ *	Needs to be in title pack
+ */
+#Const	Version		"2014-04-25"
+#Const	ScriptName	"WeaponSwitch.Script.txt"
+
+// ---------------------------------- //
+// Constant
+// ---------------------------------- //
+#Const C_LibWeaponSwitch_AutoSwitch False
+#Const C_LibWeaponSwitch_EffectOnSwitch 0
+#Const C_LibWeaponSwitch_AvailableWeapons [
+	CSmMode::EWeapon::Laser => 1.,
+	CSmMode::EWeapon::Nucleus => 1.,
+	CSmMode::EWeapon::Arrow => 1.,
+	CSmMode::EWeapon::Rocket => 1.
+]
+
+// ---------------------------------- //
+// Globales
+// ---------------------------------- //
+declare Boolean G_LibWeaponSwitch_AutoSwitch;
+declare Integer G_LibWeaponSwitch_EffectOnSwitch;
+declare Real[CSmMode::EWeapon] G_LibWeaponSwitch_AvailableWeapons;
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+// ---------------------------------- //
+// Private
+// ---------------------------------- //
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Return the version number of the script
+ *
+ *	@return		The version number of the script
+ */
+Text GetScriptVersion() {
+	return Version;
+}
+
+// ---------------------------------- //
+/** Return the name of the script
+ *
+ *	@return		The name of the script
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+// ---------------------------------- //
+/// Unload the library
+Void Unload() {
+	
+}
+
+// ---------------------------------- //
+/// Load the library
+Void Load() {
+	Unload();
+	
+	G_LibWeaponSwitch_AutoSwitch = C_LibWeaponSwitch_AutoSwitch;
+	G_LibWeaponSwitch_EffectOnSwitch = C_LibWeaponSwitch_EffectOnSwitch;
+	G_LibWeaponSwitch_AvailableWeapons = C_LibWeaponSwitch_AvailableWeapons;
+	
+	// Reset players default weapons
+	foreach (Player in AllPlayers) {
+		declare LibWeaponSwitch_RestrictedWeapons for Player = False;
+		declare LibWeaponSwitch_AvailableWeapons for Player = G_LibWeaponSwitch_AvailableWeapons;
+		LibWeaponSwitch_RestrictedWeapons = False;
+		LibWeaponSwitch_AvailableWeapons = G_LibWeaponSwitch_AvailableWeapons;
+	}
+}
+
+// ---------------------------------- //
+/** Set the effect to use when switching weapon
+ *	-1 : empty ammo
+ *	0 : nothing
+ *	1 : reload ammo
+ *
+ *	@param	_Effect			The effect to use
+ */
+Void SetEffectOnSwitch(Integer _Effect) {
+	G_LibWeaponSwitch_EffectOnSwitch = _Effect;
+}
+
+// ---------------------------------- //
+/** Get the current weapon of a player
+ *
+ *	@param	_Player			The player to get
+ */
+CSmMode::EWeapon GetWeapon(CSmPlayer _Player) {
+	if (_Player == Null) return CSmMode::EWeapon::Rocket;
+	
+	foreach (Weapon => ReloadRate in C_LibWeaponSwitch_AvailableWeapons) {
+		if (GetWeaponNum(Weapon) == _Player.CurWeapon) return Weapon;
+	}
+	
+	return CSmMode::EWeapon::Rocket;
+}
+
+// ---------------------------------- //
+/// Reset the weapons available to all players
+Void ResetAvailableWeapons() {
+	G_LibWeaponSwitch_AutoSwitch = C_LibWeaponSwitch_AutoSwitch;
+}
+
+// ---------------------------------- //
+/// Reset the weapons available to a specific player
+Void ResetAvailableWeapons(CSmPlayer _Player) {
+	if (_Player == Null) return;
+	
+	declare LibWeaponSwitch_RestrictedWeapons for _Player = False;
+	declare LibWeaponSwitch_AvailableWeapons for _Player = G_LibWeaponSwitch_AvailableWeapons;
+	LibWeaponSwitch_RestrictedWeapons = False;
+	LibWeaponSwitch_AvailableWeapons = G_LibWeaponSwitch_AvailableWeapons;
+}
+
+// ---------------------------------- //
+/** Get the weapons available and reload rates of all players
+ *
+ *	@return		An array with the available weapons
+ */
+Real[CSmMode::EWeapon] GetAvailableWeapons() {
+	return G_LibWeaponSwitch_AvailableWeapons;
+}
+
+// ---------------------------------- //
+/** Get the weapons available and reload rates of a specific player
+ *
+ *	@param	_Player		The player to get
+ *
+ *	@return		An array with the available weapons
+ */
+Real[CSmMode::EWeapon] GetAvailableWeapons(CSmPlayer _Player) {
+	declare Empty = Real[CSmMode::EWeapon];
+	if (_Player == Null) return Empty;
+	
+	declare LibWeaponSwitch_RestrictedWeapons for _Player = False;
+	if (LibWeaponSwitch_RestrictedWeapons) {
+		declare LibWeaponSwitch_AvailableWeapons for _Player = G_LibWeaponSwitch_AvailableWeapons;
+		return LibWeaponSwitch_AvailableWeapons;
+	} else {
+		return GetAvailableWeapons();
+	}
+	
+	return Empty;
+}
+
+// ---------------------------------- //
+/** Set the weapon of one player
+ * and enable/disable the environmental switch of weapons
+ * eg: Laser on laser pad, nucleus underground, ...
+ *
+ *	@param	_Player			The player to update
+ *	@param	_Weapon			The weapon to use
+ *	@param	_AutoSwitch		Enable/disable the environmental switch
+ */
+Void SetWeapon(CSmPlayer _Player, CSmMode::EWeapon _Weapon, Boolean _AutoSwitch) {
+	if (_Player == Null) return;
+	
+	declare AvailableWeapons = GetAvailableWeapons(_Player);
+	
+	if (!AvailableWeapons.existskey(_Weapon)) return;
+	
+	declare ReloadRate = AvailableWeapons[_Weapon];
+	_Player.AmmoGain = ReloadRate;
+	SetPlayerWeapon(_Player, _Weapon, _AutoSwitch);
+	if (_Player.SpawnStatus != CSmPlayer::ESpawnStatus::NotSpawned) {
+		switch (G_LibWeaponSwitch_EffectOnSwitch) {
+			case -1: SetPlayerAmmo(_Player, _Weapon, 0);
+			case 1: SetPlayerAmmo(_Player, _Weapon, _Player.CurAmmoMax);
+		}
+	}
+}
+
+// ---------------------------------- //
+/** Set the weapon of one player
+ * and disable the environmental switch of weapons
+ *
+ *	@param	_Player			The player to update
+ *	@param	_Weapon			The weapon to use
+ */
+Void SetWeapon(CSmPlayer _Player, CSmMode::EWeapon _Weapon) {
+	if (_Player == Null) return;
+	
+	SetWeapon(_Player, _Weapon, False);
+}
+
+// ---------------------------------- //
+/** Set the weapon of all players 
+ * and enable/disable the environmental switch of weapons
+ * eg: Laser on laser pad, nucleus underground, ...
+ *
+ *	@param	_Weapon			The weapon to use
+ *	@param	_AutoSwitch		Enable/disable the environmental switch
+ */
+Void SetWeapon(CSmMode::EWeapon _Weapon, Boolean _AutoSwitch) {
+	foreach (Player in AllPlayers) {
+		SetWeapon(Player, _Weapon, _AutoSwitch);
+	}
+}
+
+// ---------------------------------- //
+/** Set the weapon of all players 
+ *	and disable the environmental switch
+ *
+ *	@param	_Weapon			The weapon to use
+ */
+Void SetWeapon(CSmMode::EWeapon _Weapon) {
+	SetWeapon(_Weapon, False);
+}
+
+// ---------------------------------- //
+/** Set the weapons available and reload rates of all players
+ *
+ *	The order of the weapons in the array will impact
+ *	the switch button (1, 2, 3, 4) on the keyboard
+ *	and cycle order of the weapons
+ *	eg: [Rocket, Nucleus, Arrow]
+ *	- switch : Rocket = key 1, Nucleus = key 2, Arrow = key 3
+ *	- cycle : Rocket -> Nucleus -> Arrow -> Rocket -> Arrow -> Nucleus -> ...
+ *
+ *	@param	_Weapons		List of available weapons and reload rates
+ */
+Void SetAvailableWeapons(Real[CSmMode::EWeapon] _Weapons) {
+	if (_Weapons.count <= 0) return;
+	
+	G_LibWeaponSwitch_AvailableWeapons = _Weapons;
+	
+	// Check that each player is equiped with an available weapon
+	foreach (Player in AllPlayers) {
+		declare LibWeaponSwitch_RestrictedWeapons for Player = False;
+		if (LibWeaponSwitch_RestrictedWeapons) continue;
+		declare CurrentWeapon = GetWeapon(Player);
+		if (!G_LibWeaponSwitch_AvailableWeapons.existskey(CurrentWeapon)) {
+			foreach (Weapon => RealoadRate in G_LibWeaponSwitch_AvailableWeapons) {
+				SetWeapon(Player, Weapon, Player.AutoSwitchWeapon);
+				break;
+			}
+		}
+	}
+}
+
+// ---------------------------------- //
+/** Set the weapons available and reload rates of a specific player
+ *
+ *	The order of the weapons in the array will impact
+ *	the switch button (1, 2, 3, 4) on the keyboard
+ *	and cycle order of the weapons
+ *	eg: [Rocket => 1., Nucleus => 0.5, Arrow => 0.7]
+ *	- switch : Rocket = key 1, Nucleus = key 2, Arrow = key 3
+ *	- cycle : Rocket -> Nucleus -> Arrow -> Rocket -> Arrow -> Nucleus -> ...
+ *
+ *	@param	_Player			The player to update
+ *	@param	_Weapons		List of available weapons
+ */
+Void SetAvailableWeapons(CSmPlayer _Player, Real[CSmMode::EWeapon] _Weapons) {
+	if (_Player == Null || _Weapons.count <= 0) return;
+	
+	declare LibWeaponSwitch_RestrictedWeapons for _Player = False;
+	declare LibWeaponSwitch_AvailableWeapons for _Player = G_LibWeaponSwitch_AvailableWeapons;
+	LibWeaponSwitch_RestrictedWeapons = True;
+	LibWeaponSwitch_AvailableWeapons = _Weapons;
+	
+	declare CurrentWeapon = GetWeapon(_Player);
+	if (!LibWeaponSwitch_AvailableWeapons.existskey(CurrentWeapon)) {
+		foreach (Weapon => RealoadRate in LibWeaponSwitch_AvailableWeapons) {
+			SetWeapon(_Player, Weapon, _Player.AutoSwitchWeapon);
+			break;
+		}
+	}
+}
+
+// ---------------------------------- //
+/** Switch directly to another weapon
+ *
+ *	@param	_Player			The player to update
+ *	@param	_ActionInput	The input used
+ */
+Void SwitchWeapon(CSmPlayer _Player, CSmModeEvent::EActionInput _ActionInput) {
+	if (_Player == Null) return;
+	
+	declare Key = -1;
+	switch (_ActionInput) {
+		case CSmModeEvent::EActionInput::Activable1: Key = 0;
+		case CSmModeEvent::EActionInput::Activable2: Key = 1;
+		case CSmModeEvent::EActionInput::Activable3: Key = 2;
+		case CSmModeEvent::EActionInput::Activable4: Key = 3;
+	}
+	if (Key == -1) return;
+	
+	declare I = 0;
+	declare AvailableWeapons = GetAvailableWeapons(_Player);
+	foreach (Weapon => ReloadRates in AvailableWeapons) {
+		if (I == Key && GetWeaponNum(Weapon) != _Player.CurWeapon) {
+			SetWeapon(_Player, Weapon);
+		}
+		I += 1;
+	}
+}
+
+// ---------------------------------- //
+/** Cycle through weapons
+ *
+ *	@param	_Player			The player to update
+ *	@param	_ActionChange	In which direction to cycle
+ */
+Void CycleWeapon(CSmPlayer _Player, Integer _ActionChange) {
+	if (_Player == Null) return;
+	
+	declare AvailableWeapons = GetAvailableWeapons(_Player);
+	
+	if (AvailableWeapons.count <= 0) return;
+	
+	declare CurrentWeapon = GetWeapon(_Player);
+	
+	declare Key = -1;
+	if (!AvailableWeapons.existskey(CurrentWeapon)) {
+		if (AvailableWeapons.count > 0) {
+			Key = 0;
+		}
+	} else {
+		declare I = 0;
+		foreach (Weapon => ReloadRates in AvailableWeapons) {
+			if (Weapon == CurrentWeapon) Key = I;
+			I += 1;
+		}
+		if (_ActionChange > 0) {
+			Key += 1;
+			if (Key > AvailableWeapons.count - 1) Key = 0;
+		} else {
+			Key -= 1;
+			if (Key < 0) Key = AvailableWeapons.count - 1;
+		}
+	}
+	
+	if (Key == -1) return;
+	
+	declare I = 0;
+	foreach (Weapon => ReloadRates in AvailableWeapons) {
+		if (I == Key && GetWeaponNum(Weapon) != _Player.CurWeapon) {
+			SetWeapon(_Player, Weapon);
+		}
+		I += 1;
+	}
+}
+
+// ---------------------------------- //
+/// Automatically handle weapons switch and cycle
+Void Loop() {
+	foreach (Event in PendingEvents) {
+		// ---------------------------------- //
+		// Switch weapon
+		if (Event.Type == CSmModeEvent::EType::OnActionEvent) {
+			SwitchWeapon(Event.Player, Event.ActionInput);
+		}
+		// ---------------------------------- //
+		// cycle weapon
+		else if (Event.Type == CSmModeEvent::EType::OnPlayerRequestActionChange) {
+			CycleWeapon(Event.Player, Event.ActionChange);
+		}
+	}
+}

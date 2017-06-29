@@ -1,0 +1,1668 @@
+/**
+ *	Manialink library
+ *	Contains different modules and functions for the manialink: animations, easing, tooltips, ...
+ *	Documentation : http://maniaplanet.github.io/documentation/maniascript/libraries/library-manialink.html
+ */
+
+/**
+ * Available easing:
+ *	- Linear
+ *	- Quad
+ *	- Cubic
+ *	- Quart
+ *	- Quint
+ *	- Sine
+ *	- Exp
+ *	- Circ
+ *	- Back
+ *	- Elastic
+ *	- Bounce
+ */
+
+/**
+ *	Not all properties can be animated, this is the list of the available ones.
+ *
+ *	CMlControl :
+ *	- Position
+ *	- Size
+ *	- Scale
+ *	- Rotation
+ *	
+ *	CMlQuad :
+ *	- Opacity
+ *	- Colorize
+ *	- BgColor
+ *	
+ *	CMlLabel :
+ *	- Opacity
+ *	- TextColor
+ *
+ *	CMlGauge :
+ *	- Ratio
+ *	- Color
+ */
+
+/*
+ *
+ * TERMS OF USE - EASING EQUATIONS
+ * 
+ * Open source under the BSD License. 
+ * 
+ * Copyright © 2001 Robert Penner
+ * All rights reserved.
+ * 
+ * Redistribution and use in source and binary forms, with or without modification, 
+ * are permitted provided that the following conditions are met:
+ * 
+ * Redistributions of source code must retain the above copyright notice, this list of 
+ * conditions and the following disclaimer.
+ *
+ * Redistributions in binary form must reproduce the above copyright notice, this list 
+ * of conditions and the following disclaimer in the documentation and/or other materials 
+ * provided with the distribution.
+ * 
+ * Neither the name of the author nor the names of contributors may be used to endorse 
+ * or promote products derived from this software without specific prior written permission.
+ * 
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY 
+ * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
+ * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+ * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE
+ * GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED 
+ * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+ * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED 
+ * OF THE POSSIBILITY OF SUCH DAMAGE. 
+ *
+ */
+
+#Const Version		"2016-08-12"
+#Const ScriptName	"Manialink3WPrevAnims.Script.txt"
+
+// ---------------------------------- //
+// Contants
+// ---------------------------------- //
+
+#Const C_POSITION 	0
+#Const C_SIZE 		1
+#Const C_SCALE 		2
+#Const C_ROTATION 	3
+#Const C_OPACITY 	4
+#Const C_COLORIZE 	5
+#Const C_BGCOLOR 	6
+#Const C_TEXTCOLOR 	7
+#Const C_RATIO 		8
+#Const C_GAUGECOLOR 9
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+// ---------------------------------- //
+// Private
+// ---------------------------------- //
+declare Text G_NowType;
+
+Text Private_IsAnimated() {
+	return """
+Boolean LibManialink_IsAnimated(CMlControl _Control) {
+	declare CMlControl[] LibManialink_Anims for Page;
+	return LibManialink_Anims.exists(_Control);
+}
+
+Boolean LibManialink_IsAnimated(Text _ControlId) {
+	declare Control <=> Page.GetFirstChild(_ControlId);
+	if (Control == Null) return False;
+	
+	declare CMlControl[] LibManialink_Anims for Page;
+	return LibManialink_Anims.exists(Control);
+}
+""";
+}
+
+// Todo -> reprend l'anime là où elle s'était arrêtée
+Text Private_AnimPlay() {
+	return """
+
+""";
+}
+
+// Todo -> met l'anime en pause
+Text Private_AnimPause() {
+	return """
+
+""";
+}
+
+// ---------------------------------- //
+/** Animation repeat module
+ *
+ *	@return		The animation repeat module
+ */
+Text Private_AnimRepeat() {
+	return """
+Void LibManialink_AnimRepeatStart(Integer _RepeatTime, Integer _RepeatNb) {
+	declare Boolean LibManialink_IsRepeating for Page;
+	declare Integer LibManialink_RepeatTime for Page;
+	declare Integer LibManialink_RepeatNb for Page;
+	LibManialink_IsRepeating = True;
+	LibManialink_RepeatTime = _RepeatTime;
+	LibManialink_RepeatNb = _RepeatNb;
+}
+
+Void LibManialink_AnimRepeatStart(Integer _RepeatTime) {
+	LibManialink_AnimRepeatStart(_RepeatTime, -1);
+}
+
+Void LibManialink_AnimRepeatEnd() {
+	declare Boolean LibManialink_IsRepeating for Page;
+	LibManialink_IsRepeating = False;
+}
+""";
+}
+
+// ---------------------------------- //
+/** Animation module
+ *
+ *	@return		The animation module
+ */
+Text Private_Anim() {
+	return """
+Void LibManialink_AnimStop(CMlControl _Control, Integer _AnimId) {
+	declare Integer[Integer] LibManialink_AnimQueue for _Control;
+	
+	declare Integer[Integer]	LibManialink_AnimStarTime		for _Control;
+	declare Real[Integer]		LibManialink_AnimDuration		for _Control;
+	declare Integer[Integer]	LibManialink_AnimEndTime		for _Control;
+	declare Text[Integer]		LibManialink_AnimEasing			for _Control;
+	declare Text[Integer]		LibManialink_Visibility			for _Control;
+	declare Boolean[Integer]	LibManialink_AnimRunning		for _Control;
+	declare Integer[Integer]	LibManialink_AnimStyle			for _Control;
+	declare Integer[Integer]	LibManialink_AnimReapeatTime	for _Control;
+	declare Integer[Integer]	LibManialink_AnimReapeatNb		for _Control;
+	
+	
+	declare Boolean[][Integer]	LibManialink_AnimActive			for _Control;
+	
+	
+	if (_AnimId < 0) {
+	
+		
+		foreach(I => Anim in LibManialink_AnimActive) 
+		{
+			
+			if (Anim[{{{C_POSITION}}}]) {
+				declare Vec2[Integer]		LibManialink_AnimStart_Position		for _Control;
+				declare Vec2[Integer]		LibManialink_AnimEnd_Position		for _Control;
+				declare Vec2[Integer]		LibManialink_AnimDiff_Position		for _Control;
+				LibManialink_AnimStart_Position.removekey(I);
+				LibManialink_AnimEnd_Position.removekey(I);
+				LibManialink_AnimDiff_Position.removekey(I);
+			}
+			
+			if (Anim[{{{C_SIZE}}}]) {
+				declare Vec2[Integer]		LibManialink_AnimStart_Size			for _Control;
+				declare Vec2[Integer]		LibManialink_AnimEnd_Size			for _Control;
+				declare Vec2[Integer]		LibManialink_AnimDiff_Size			for _Control;
+				LibManialink_AnimStart_Size.removekey(I);
+				LibManialink_AnimEnd_Size.removekey(I);
+				LibManialink_AnimDiff_Size.removekey(I);
+			}
+			
+			if (Anim[{{{C_SCALE}}}]) {
+				declare Real[Integer]		LibManialink_AnimStart_Scale		for _Control;
+				declare Real[Integer]		LibManialink_AnimEnd_Scale			for _Control;
+				declare Real[Integer]		LibManialink_AnimDiff_Scale			for _Control;
+				LibManialink_AnimStart_Scale.removekey(I);
+				LibManialink_AnimEnd_Scale.removekey(I);
+				LibManialink_AnimDiff_Scale.removekey(I);
+			}
+			
+			if (Anim[{{{C_ROTATION}}}]) {
+				declare Real[Integer]		LibManialink_AnimStart_Rotation		for _Control;
+				declare Real[Integer]		LibManialink_AnimEnd_Rotation		for _Control;
+				declare Real[Integer]		LibManialink_AnimDiff_Rotation		for _Control;
+				LibManialink_AnimStart_Rotation.removekey(I);
+				LibManialink_AnimEnd_Rotation.removekey(I);
+				LibManialink_AnimDiff_Rotation.removekey(I);
+			}
+			
+			if (Anim[{{{C_OPACITY}}}]) {
+				declare Real[Integer]		LibManialink_AnimStart_Opacity		for _Control;
+				declare Real[Integer]		LibManialink_AnimEnd_Opacity		for _Control;
+				declare Real[Integer]		LibManialink_AnimDiff_Opacity		for _Control;
+				LibManialink_AnimStart_Opacity.removekey(I);
+				LibManialink_AnimEnd_Opacity.removekey(I);
+				LibManialink_AnimDiff_Opacity.removekey(I);
+			}
+			
+			if (Anim[{{{C_COLORIZE}}}]) {
+				declare Vec3[Integer]		LibManialink_AnimStart_Colorize		for _Control;
+				declare Vec3[Integer]		LibManialink_AnimEnd_Colorize		for _Control;
+				declare Vec3[Integer]		LibManialink_AnimDiff_Colorize		for _Control;
+				LibManialink_AnimStart_Colorize.removekey(I);
+				LibManialink_AnimEnd_Colorize.removekey(I);
+				LibManialink_AnimDiff_Colorize.removekey(I);
+			}
+			
+			if (Anim[{{{C_BGCOLOR}}}]) {
+				declare Vec3[Integer]		LibManialink_AnimStart_BgColor		for _Control;
+				declare Vec3[Integer]		LibManialink_AnimEnd_BgColor		for _Control;
+				declare Vec3[Integer]		LibManialink_AnimDiff_BgColor		for _Control;
+				LibManialink_AnimStart_BgColor.removekey(I);
+				LibManialink_AnimEnd_BgColor.removekey(I);
+				LibManialink_AnimDiff_BgColor.removekey(I);
+			}
+			
+			if (Anim[{{{C_TEXTCOLOR}}}]) {
+				declare Vec3[Integer]		LibManialink_AnimStart_TextColor 	for _Control;
+				declare Vec3[Integer]		LibManialink_AnimEnd_TextColor		for _Control;
+				declare Vec3[Integer]		LibManialink_AnimDiff_TextColor		for _Control;
+				LibManialink_AnimStart_TextColor.removekey(I);
+				LibManialink_AnimEnd_TextColor.removekey(I);
+				LibManialink_AnimDiff_TextColor.removekey(I);
+			}
+			
+			if (Anim[{{{C_RATIO}}}]) {
+				declare Real[Integer]		LibManialink_AnimStart_Ratio		for _Control;
+				declare Real[Integer]		LibManialink_AnimEnd_Ratio			for _Control;
+				declare Real[Integer]		LibManialink_AnimDiff_Ratio			for _Control;
+				LibManialink_AnimStart_Ratio.removekey(I);
+				LibManialink_AnimEnd_Ratio.removekey(I);
+				LibManialink_AnimDiff_Ratio.removekey(I);
+			}
+			
+			if (Anim[{{{C_GAUGECOLOR}}}]) {
+				declare Vec3[Integer]		LibManialink_AnimStart_GaugeColor 	for _Control;
+				declare Vec3[Integer]		LibManialink_AnimEnd_GaugeColor		for _Control;
+				declare Vec3[Integer]		LibManialink_AnimDiff_GaugeColor 	for _Control;
+				LibManialink_AnimStart_GaugeColor.removekey(I);
+				LibManialink_AnimEnd_GaugeColor.removekey(I);
+				LibManialink_AnimDiff_GaugeColor.removekey(I);
+			}
+		
+		}
+		
+		LibManialink_AnimQueue.clear();
+		
+		LibManialink_AnimStarTime.clear();
+		LibManialink_AnimDuration.clear();
+		LibManialink_AnimEndTime.clear();
+		LibManialink_AnimEasing.clear();
+		LibManialink_Visibility.clear();
+		LibManialink_AnimRunning.clear();
+		LibManialink_AnimStyle.clear();
+		LibManialink_AnimActive.clear();
+		LibManialink_AnimReapeatNb.clear();
+		LibManialink_AnimReapeatTime.clear();
+		
+		declare CMlControl[] LibManialink_Anims for Page;
+		LibManialink_Anims.remove(_Control);
+	} else {
+		declare Integer[] AnimatedIds for _Control;
+		AnimatedIds.remove(_AnimId);
+		
+		if (LibManialink_AnimActive.existskey(_AnimId) && LibManialink_AnimActive[_AnimId][{{{C_POSITION}}}]) {
+			declare Vec2[Integer]		LibManialink_AnimStart_Position		for _Control;
+			declare Vec2[Integer]		LibManialink_AnimEnd_Position		for _Control;
+			declare Vec2[Integer]		LibManialink_AnimDiff_Position		for _Control;
+			LibManialink_AnimStart_Position.removekey(_AnimId);
+			LibManialink_AnimEnd_Position.removekey(_AnimId);
+			LibManialink_AnimDiff_Position.removekey(_AnimId);
+		}
+		
+		if (LibManialink_AnimActive.existskey(_AnimId) && LibManialink_AnimActive[_AnimId][{{{C_SIZE}}}]) {
+			declare Vec2[Integer]		LibManialink_AnimStart_Size			for _Control;
+			declare Vec2[Integer]		LibManialink_AnimEnd_Size			for _Control;
+			declare Vec2[Integer]		LibManialink_AnimDiff_Size			for _Control;
+			LibManialink_AnimStart_Size.removekey(_AnimId);
+			LibManialink_AnimEnd_Size.removekey(_AnimId);
+			LibManialink_AnimDiff_Size.removekey(_AnimId);
+		}
+		
+		if (LibManialink_AnimActive.existskey(_AnimId) && LibManialink_AnimActive[_AnimId][{{{C_SCALE}}}]) {
+			declare Real[Integer]		LibManialink_AnimStart_Scale		for _Control;
+			declare Real[Integer]		LibManialink_AnimEnd_Scale			for _Control;
+			declare Real[Integer]		LibManialink_AnimDiff_Scale			for _Control;
+			LibManialink_AnimStart_Scale.removekey(_AnimId);
+			LibManialink_AnimEnd_Scale.removekey(_AnimId);
+			LibManialink_AnimDiff_Scale.removekey(_AnimId);
+		}
+		
+		if (LibManialink_AnimActive.existskey(_AnimId) && LibManialink_AnimActive[_AnimId][{{{C_ROTATION}}}]) {
+			declare Real[Integer]		LibManialink_AnimStart_Rotation		for _Control;
+			declare Real[Integer]		LibManialink_AnimEnd_Rotation		for _Control;
+			declare Real[Integer]		LibManialink_AnimDiff_Rotation		for _Control;
+			LibManialink_AnimStart_Rotation.removekey(_AnimId);
+			LibManialink_AnimEnd_Rotation.removekey(_AnimId);
+			LibManialink_AnimDiff_Rotation.removekey(_AnimId);
+		}
+		
+		if (LibManialink_AnimActive.existskey(_AnimId) && LibManialink_AnimActive[_AnimId][{{{C_OPACITY}}}]) {
+			declare Real[Integer]		LibManialink_AnimStart_Opacity		for _Control;
+			declare Real[Integer]		LibManialink_AnimEnd_Opacity		for _Control;
+			declare Real[Integer]		LibManialink_AnimDiff_Opacity		for _Control;
+			LibManialink_AnimStart_Opacity.removekey(_AnimId);
+			LibManialink_AnimEnd_Opacity.removekey(_AnimId);
+			LibManialink_AnimDiff_Opacity.removekey(_AnimId);
+		}
+		
+		if (LibManialink_AnimActive.existskey(_AnimId) && LibManialink_AnimActive[_AnimId][{{{C_COLORIZE}}}]) {
+			declare Vec3[Integer]		LibManialink_AnimStart_Colorize		for _Control;
+			declare Vec3[Integer]		LibManialink_AnimEnd_Colorize		for _Control;
+			declare Vec3[Integer]		LibManialink_AnimDiff_Colorize		for _Control;
+			LibManialink_AnimStart_Colorize.removekey(_AnimId);
+			LibManialink_AnimEnd_Colorize.removekey(_AnimId);
+			LibManialink_AnimDiff_Colorize.removekey(_AnimId);
+		}
+		
+		if (LibManialink_AnimActive.existskey(_AnimId) && LibManialink_AnimActive[_AnimId][{{{C_BGCOLOR}}}]) {
+			declare Vec3[Integer]		LibManialink_AnimStart_BgColor		for _Control;
+			declare Vec3[Integer]		LibManialink_AnimEnd_BgColor		for _Control;
+			declare Vec3[Integer]		LibManialink_AnimDiff_BgColor		for _Control;
+			LibManialink_AnimStart_BgColor.removekey(_AnimId);
+			LibManialink_AnimEnd_BgColor.removekey(_AnimId);
+			LibManialink_AnimDiff_BgColor.removekey(_AnimId);
+		}
+		
+		if (LibManialink_AnimActive.existskey(_AnimId) && LibManialink_AnimActive[_AnimId][{{{C_TEXTCOLOR}}}]) {
+			declare Vec3[Integer]		LibManialink_AnimStart_TextColor 	for _Control;
+			declare Vec3[Integer]		LibManialink_AnimEnd_TextColor		for _Control;
+			declare Vec3[Integer]		LibManialink_AnimDiff_TextColor		for _Control;
+			LibManialink_AnimStart_TextColor.removekey(_AnimId);
+			LibManialink_AnimEnd_TextColor.removekey(_AnimId);
+			LibManialink_AnimDiff_TextColor.removekey(_AnimId);
+		}
+		
+		if (LibManialink_AnimActive.existskey(_AnimId) && LibManialink_AnimActive[_AnimId][{{{C_RATIO}}}]) {
+			declare Real[Integer]		LibManialink_AnimStart_Ratio		for _Control;
+			declare Real[Integer]		LibManialink_AnimEnd_Ratio			for _Control;
+			declare Real[Integer]		LibManialink_AnimDiff_Ratio			for _Control;
+			LibManialink_AnimStart_Ratio.removekey(_AnimId);
+			LibManialink_AnimEnd_Ratio.removekey(_AnimId);
+			LibManialink_AnimDiff_Ratio.removekey(_AnimId);
+		}
+		
+		if (LibManialink_AnimActive.existskey(_AnimId) && LibManialink_AnimActive[_AnimId][{{{C_GAUGECOLOR}}}]) {
+			declare Vec3[Integer]		LibManialink_AnimStart_GaugeColor 	for _Control;
+			declare Vec3[Integer]		LibManialink_AnimEnd_GaugeColor		for _Control;
+			declare Vec3[Integer]		LibManialink_AnimDiff_GaugeColor 	for _Control;
+			LibManialink_AnimStart_GaugeColor.removekey(_AnimId);
+			LibManialink_AnimEnd_GaugeColor.removekey(_AnimId);
+			LibManialink_AnimDiff_GaugeColor.removekey(_AnimId);
+		}
+		
+		LibManialink_AnimQueue.removekey(_AnimId);
+		
+		LibManialink_AnimStarTime.removekey(_AnimId);
+		LibManialink_AnimDuration.removekey(_AnimId);
+		LibManialink_AnimEndTime.removekey(_AnimId);
+		LibManialink_AnimEasing.removekey(_AnimId);
+		LibManialink_Visibility.removekey(_AnimId);
+		LibManialink_AnimRunning.removekey(_AnimId);
+		LibManialink_AnimStyle.removekey(_AnimId);
+		LibManialink_AnimActive.removekey(_AnimId);
+		LibManialink_AnimReapeatNb.removekey(_AnimId);
+		LibManialink_AnimReapeatTime.removekey(_AnimId);
+	}
+}
+
+Void LibManialink_AnimStop(CMlControl _Control)
+{
+	LibManialink_AnimStop(_Control, -1);
+}
+
+Void LibManialink_AnimStop(Text _ControlId) {
+	LibManialink_AnimStop(Page.GetFirstChild(_ControlId), -1);
+}
+
+Void LibManialink_Private_AnimComputeDiff(CMlControl _Control, Integer _AnimId) {
+	
+	declare Boolean[][Integer]	LibManialink_AnimActive			for _Control;
+	
+	if (LibManialink_AnimActive[_AnimId][{{{C_POSITION}}}]) {
+		declare Vec2[Integer]		LibManialink_AnimStart_Position		for _Control;
+		declare Vec2[Integer]		LibManialink_AnimEnd_Position		for _Control;
+		declare Vec2[Integer]		LibManialink_AnimDiff_Position		for _Control;
+		
+		LibManialink_AnimStart_Position[_AnimId]	= _Control.RelativePosition_V3;
+		LibManialink_AnimDiff_Position[_AnimId]		= <0., 0.>;
+		
+		LibManialink_AnimDiff_Position[_AnimId] 	= LibManialink_AnimEnd_Position[_AnimId] - LibManialink_AnimStart_Position[_AnimId];
+	}
+	if (LibManialink_AnimActive[_AnimId][{{{C_SIZE}}}]) {
+		declare Vec2[Integer]		LibManialink_AnimStart_Size			for _Control;
+		declare Vec2[Integer]		LibManialink_AnimEnd_Size			for _Control;
+		declare Vec2[Integer]		LibManialink_AnimDiff_Size			for _Control;
+		
+		LibManialink_AnimStart_Size[_AnimId]		= _Control.Size;
+		LibManialink_AnimDiff_Size[_AnimId]			= <0., 0.>;
+		
+		LibManialink_AnimDiff_Size[_AnimId] 		= LibManialink_AnimEnd_Size[_AnimId] - LibManialink_AnimStart_Size[_AnimId];
+	}
+	if (LibManialink_AnimActive[_AnimId][{{{C_SCALE}}}]) {
+		declare Real[Integer]		LibManialink_AnimStart_Scale		for _Control;
+		declare Real[Integer]		LibManialink_AnimEnd_Scale			for _Control;
+		declare Real[Integer]		LibManialink_AnimDiff_Scale			for _Control;
+		
+		LibManialink_AnimStart_Scale[_AnimId]		= _Control.RelativeScale;
+		LibManialink_AnimDiff_Scale[_AnimId]		= 0.;
+		
+		LibManialink_AnimDiff_Scale[_AnimId]		= LibManialink_AnimEnd_Scale[_AnimId] - LibManialink_AnimStart_Scale[_AnimId];
+	}
+	if (LibManialink_AnimActive[_AnimId][{{{C_ROTATION}}}]) {
+		declare Real[Integer]		LibManialink_AnimStart_Rotation		for _Control;
+		declare Real[Integer]		LibManialink_AnimEnd_Rotation		for _Control;
+		declare Real[Integer]		LibManialink_AnimDiff_Rotation		for _Control;
+		
+		LibManialink_AnimStart_Rotation[_AnimId]	= _Control.RelativeRotation;
+		LibManialink_AnimDiff_Rotation[_AnimId]		= 0.;
+		
+		LibManialink_AnimDiff_Rotation[_AnimId]		= LibManialink_AnimEnd_Rotation[_AnimId] - LibManialink_AnimStart_Rotation[_AnimId];
+	}
+	if (LibManialink_AnimActive[_AnimId][{{{C_OPACITY}}}]) {
+		declare Real[Integer]		LibManialink_AnimStart_Opacity		for _Control;
+		declare Real[Integer]		LibManialink_AnimEnd_Opacity		for _Control;
+		declare Real[Integer]		LibManialink_AnimDiff_Opacity		for _Control;
+		
+		LibManialink_AnimStart_Opacity[_AnimId]		= 0.;
+		LibManialink_AnimDiff_Opacity[_AnimId]		= 0.;
+		if (_Control is CMlQuad) {
+			declare Quad <=> (_Control as CMlQuad);
+			LibManialink_AnimStart_Opacity[_AnimId]		= Quad.Opacity;
+		} else if (_Control is CMlLabel) {
+			declare Label <=> (_Control as CMlLabel);
+			LibManialink_AnimStart_Opacity[_AnimId]		= Label.Opacity;
+		}
+		
+		LibManialink_AnimDiff_Opacity[_AnimId] = LibManialink_AnimEnd_Opacity[_AnimId] - LibManialink_AnimStart_Opacity[_AnimId];
+	}
+	if (LibManialink_AnimActive[_AnimId][{{{C_COLORIZE}}}]) {
+		declare Vec3[Integer]		LibManialink_AnimStart_Colorize		for _Control;
+		declare Vec3[Integer]		LibManialink_AnimEnd_Colorize		for _Control;
+		declare Vec3[Integer]		LibManialink_AnimDiff_Colorize		for _Control;
+		
+		LibManialink_AnimStart_Colorize[_AnimId]	= <0., 0., 0.>;
+		LibManialink_AnimDiff_Colorize[_AnimId]		= <0., 0., 0.>;
+		if (_Control is CMlQuad) {
+			declare Quad <=> (_Control as CMlQuad);
+			LibManialink_AnimStart_Colorize[_AnimId]	= Quad.Colorize;
+		} 
+		
+		LibManialink_AnimDiff_Colorize[_AnimId] = LibManialink_AnimEnd_Colorize[_AnimId] - LibManialink_AnimStart_Colorize[_AnimId];
+	}
+	if (LibManialink_AnimActive[_AnimId][{{{C_BGCOLOR}}}]) {
+		declare Vec3[Integer]		LibManialink_AnimStart_BgColor		for _Control;
+		declare Vec3[Integer]		LibManialink_AnimEnd_BgColor		for _Control;
+		declare Vec3[Integer]		LibManialink_AnimDiff_BgColor		for _Control;
+		
+		LibManialink_AnimStart_BgColor[_AnimId]		= <0., 0., 0.>;
+		LibManialink_AnimDiff_BgColor[_AnimId]		= <0., 0., 0.>;
+		if (_Control is CMlQuad) {
+			declare Quad <=> (_Control as CMlQuad);
+			LibManialink_AnimStart_BgColor[_AnimId]		= Quad.BgColor;
+		} 
+		
+		LibManialink_AnimDiff_BgColor[_AnimId] = LibManialink_AnimEnd_BgColor[_AnimId] - LibManialink_AnimStart_BgColor[_AnimId];
+	}
+	if (LibManialink_AnimActive[_AnimId][{{{C_TEXTCOLOR}}}]) {
+		declare Vec3[Integer]		LibManialink_AnimStart_TextColor 	for _Control;
+		declare Vec3[Integer]		LibManialink_AnimEnd_TextColor		for _Control;
+		declare Vec3[Integer]		LibManialink_AnimDiff_TextColor		for _Control;
+		
+		LibManialink_AnimStart_TextColor[_AnimId]	= <0., 0., 0.>;
+		LibManialink_AnimDiff_TextColor[_AnimId]	= <0., 0., 0.>;
+		if (_Control is CMlLabel) {
+			declare Label <=> (_Control as CMlLabel);
+			LibManialink_AnimStart_TextColor[_AnimId]	= Label.TextColor;
+		}
+		
+		LibManialink_AnimDiff_TextColor[_AnimId] = LibManialink_AnimEnd_TextColor[_AnimId] - LibManialink_AnimStart_TextColor[_AnimId];
+	}
+	if (LibManialink_AnimActive[_AnimId][{{{C_RATIO}}}]) {
+		declare Real[Integer]		LibManialink_AnimStart_Ratio		for _Control;
+		declare Real[Integer]		LibManialink_AnimEnd_Ratio			for _Control;
+		declare Real[Integer]		LibManialink_AnimDiff_Ratio			for _Control;
+		
+		LibManialink_AnimStart_Ratio[_AnimId]		= 0.;
+		LibManialink_AnimDiff_Ratio[_AnimId]		= 0.;
+		if (_Control is CMlGauge) {
+			declare Gauge <=> (_Control as CMlGauge);
+			LibManialink_AnimStart_Ratio[_AnimId]		= Gauge.Ratio;
+		}
+	
+		LibManialink_AnimDiff_Ratio[_AnimId] = LibManialink_AnimEnd_Ratio[_AnimId] - LibManialink_AnimStart_Ratio[_AnimId];
+	}
+	if (LibManialink_AnimActive[_AnimId][{{{C_GAUGECOLOR}}}]) {
+		declare Vec3[Integer]		LibManialink_AnimStart_GaugeColor 	for _Control;
+		declare Vec3[Integer]		LibManialink_AnimEnd_GaugeColor		for _Control;
+		declare Vec3[Integer]		LibManialink_AnimDiff_GaugeColor 	for _Control;
+	
+		LibManialink_AnimStart_GaugeColor[_AnimId]	= <0., 0., 0.>;
+		LibManialink_AnimDiff_GaugeColor[_AnimId]	= <0., 0., 0.>;
+
+		if (_Control is CMlGauge) {
+			declare Gauge <=> (_Control as CMlGauge);
+			LibManialink_AnimStart_GaugeColor[_AnimId]	= Gauge.Color;
+		}
+
+		LibManialink_AnimDiff_GaugeColor[_AnimId] = LibManialink_AnimEnd_GaugeColor[_AnimId] - LibManialink_AnimStart_GaugeColor[_AnimId];
+	}
+}
+
+Void LibManialink_Private_AnimTargetProperties(
+	CMlControl _Control,
+	Integer _AnimId,
+	Vec2 _Position,
+	Vec2 _Size,
+	Real _Scale,
+	Real _Rotation,
+	Real _Opacity,
+	Vec3 _Colorize,
+	Vec3 _BgColor,
+	Vec3 _TextColor,
+	Real _Ratio,
+	Vec3 _GaugeColor
+) {
+	
+	declare Vec2[Integer]		LibManialink_AnimEnd_Position	for _Control;
+	declare Vec2[Integer]		LibManialink_AnimEnd_Size		for _Control;
+	declare Real[Integer]		LibManialink_AnimEnd_Scale		for _Control;
+	declare Real[Integer]		LibManialink_AnimEnd_Rotation	for _Control;
+	declare Real[Integer]		LibManialink_AnimEnd_Opacity	for _Control;
+	declare Vec3[Integer]		LibManialink_AnimEnd_Colorize	for _Control;
+	declare Vec3[Integer]		LibManialink_AnimEnd_BgColor	for _Control;
+	declare Vec3[Integer]		LibManialink_AnimEnd_TextColor	for _Control;
+	declare Real[Integer]		LibManialink_AnimEnd_Ratio		for _Control;
+	declare Vec3[Integer]		LibManialink_AnimEnd_GaugeColor	for _Control;
+	
+	LibManialink_AnimEnd_Position[_AnimId]	= _Position;
+	LibManialink_AnimEnd_Size[_AnimId]		= _Size;
+	LibManialink_AnimEnd_Scale[_AnimId]		= _Scale;
+	LibManialink_AnimEnd_Rotation[_AnimId]	= _Rotation;
+	LibManialink_AnimEnd_Opacity[_AnimId]	= _Opacity;
+	LibManialink_AnimEnd_Colorize[_AnimId]	= _Colorize;
+	LibManialink_AnimEnd_BgColor[_AnimId]	= _BgColor;
+	LibManialink_AnimEnd_TextColor[_AnimId]	= _TextColor;
+	LibManialink_AnimEnd_Ratio[_AnimId]		= _Ratio;
+	LibManialink_AnimEnd_GaugeColor[_AnimId]= _GaugeColor;
+}
+
+Void LibManialink_Private_Anim(
+	CMlControl _Control,
+	Boolean[] _Active,
+	Vec2 _Position,
+	Vec2 _Size,
+	Real _Scale,
+	Real _Rotation,
+	Real _Opacity,
+	Vec3 _Colorize,
+	Vec3 _BgColor,
+	Vec3 _TextColor,
+	Real _Ratio,
+	Vec3 _GaugeColor,
+	Integer _StartTime,
+	Integer _Duration,
+	Text _Easing,
+	Text _Visibility,
+	Integer _Style, 
+	Boolean _UpdateTarget
+) {	
+	declare Integer[Integer] LibManialink_AnimQueue for _Control;
+	
+	declare Integer[Integer]	LibManialink_AnimStarTime		for _Control;
+	declare Real[Integer]		LibManialink_AnimDuration		for _Control;
+	declare Integer[Integer]	LibManialink_AnimEndTime		for _Control;
+	declare Text[Integer]		LibManialink_AnimEasing			for _Control;
+	declare Text[Integer]		LibManialink_Visibility			for _Control;
+	declare Boolean[Integer]	LibManialink_AnimRunning		for _Control;
+	declare Integer[Integer]	LibManialink_AnimStyle			for _Control;
+	declare Boolean[][Integer]	LibManialink_AnimActive			for _Control;
+	declare Integer				LibManialink_NextAnimId			for _Control;
+	
+	declare AnimStartTime = 0;
+	declare AnimId = 0;
+	LibManialink_NextAnimId = -1;
+
+	// Anim
+	if (_Style < 0) {
+		if(_UpdateTarget)
+		{
+			LibManialink_AnimStop(_Control);
+		}
+		AnimStartTime = {{{G_NowType}}};
+	} 
+	// Anim chain
+	else if (_Style == 0) {
+		declare AnimEndTime = {{{G_NowType}}};
+		foreach (Id => StartTime in LibManialink_AnimQueue) {
+			AnimEndTime = LibManialink_AnimEndTime[Id];
+			if (AnimEndTime > AnimStartTime) AnimStartTime = AnimEndTime;
+		}
+	} 
+	// Anim Insert
+	else {
+		AnimStartTime = {{{G_NowType}}} + _StartTime;
+	}
+	
+	LibManialink_AnimQueue = LibManialink_AnimQueue.sortkey();
+	foreach (Id => StartTime in LibManialink_AnimQueue) {
+		if (AnimId != Id) break;
+		AnimId += 1;
+	}
+	
+	
+	LibManialink_AnimQueue[AnimId] = AnimStartTime;
+	
+	LibManialink_AnimStarTime[AnimId]	= AnimStartTime;
+	LibManialink_AnimDuration[AnimId]	= _Duration*1.;
+	LibManialink_AnimEndTime[AnimId]	= LibManialink_AnimStarTime[AnimId] + ML::NearestInteger(LibManialink_AnimDuration[AnimId]);
+	LibManialink_AnimEasing[AnimId]		= _Easing;
+	LibManialink_Visibility[AnimId]		= _Visibility;
+	LibManialink_AnimRunning[AnimId]	= False;
+	LibManialink_AnimStyle[AnimId]		= _Style;
+	LibManialink_AnimActive[AnimId]		= _Active;
+	
+	declare Boolean LibManialink_IsRepeating for Page;
+	if (LibManialink_IsRepeating) 
+	{
+		declare Integer LibManialink_RepeatTime for Page;
+		declare Integer LibManialink_RepeatNb 	for Page;
+		declare Integer[Integer]	LibManialink_AnimReapeatNb		for _Control;
+		declare Integer[Integer]	LibManialink_AnimReapeatTime	for _Control;
+		LibManialink_AnimReapeatNb[AnimId]		= LibManialink_RepeatNb;
+		LibManialink_AnimReapeatTime[AnimId]	= LibManialink_RepeatTime;
+	} 
+	else 
+	{
+	}
+	
+	
+	if(_UpdateTarget) {
+		LibManialink_Private_AnimTargetProperties(
+			_Control, AnimId, _Position, _Size, _Scale, _Rotation, _Opacity, _Colorize, _BgColor, _TextColor, _Ratio, _GaugeColor
+		);
+	}
+	
+	LibManialink_Private_AnimComputeDiff(_Control, AnimId);
+	declare Integer[] AnimatedIds for _Control;
+	if(!AnimatedIds.exists(AnimId)) AnimatedIds.add(AnimId);
+	
+	declare CMlControl[] LibManialink_Anims for Page;
+	declare CopyControl = _Control;
+	if (!LibManialink_Anims.exists(_Control)) LibManialink_Anims.add(CopyControl);
+}
+
+Void LibManialink_Private_Anim(
+	CMlControl _Control,
+	Boolean[] _Active,
+	Vec2 _Position,
+	Vec2 _Size,
+	Real _Scale,
+	Real _Rotation,
+	Real _Opacity,
+	Vec3 _Colorize,
+	Vec3 _BgColor,
+	Vec3 _TextColor,
+	Real _Ratio,
+	Vec3 _GaugeColor,
+	Integer _StartTime,
+	Integer _Duration,
+	Text _Easing,
+	Text _Visibility,
+	Integer _Style
+) {
+	LibManialink_Private_Anim(_Control, _Active, _Position, _Size, _Scale, _Rotation, _Opacity, _Colorize, _BgColor, _TextColor, _Ratio, _GaugeColor, _StartTime, _Duration, _Easing, _Visibility, _Style, True);
+}
+
+Integer LibManialink_Private_FindNextId(CMlControl _Control)
+{
+	declare Integer[Integer] LibManialink_AnimQueue for _Control;
+	declare Integer AnimId = 0;
+	
+	LibManialink_AnimQueue = LibManialink_AnimQueue.sortkey();
+	foreach (Id => StartTime in LibManialink_AnimQueue) {
+		if (AnimId != Id) break;
+		AnimId += 1;
+	}
+	return AnimId;
+}
+
+
+Integer LibManialink_Private_RetrieveId(CMlControl _Control)
+{
+	declare Integer LibManialink_NextAnimId for _Control = 0;
+	if(LibManialink_NextAnimId < 0)
+	{
+		LibManialink_NextAnimId = LibManialink_Private_FindNextId(_Control);
+	}
+	
+	declare Integer[] AnimatedIds for _Control;
+	if(AnimatedIds.exists(LibManialink_NextAnimId)) 
+	{
+		LibManialink_AnimStop(_Control, LibManialink_NextAnimId);
+	}
+	return LibManialink_NextAnimId;
+}
+
+Void LibManialink_Private_Anim(
+	CMlControl _Control,
+	Integer _StartTime,
+	Integer _Duration,
+	Text _Easing,
+	Integer _Style
+) {
+	declare Boolean[][Integer] LibManialink_AnimActive for _Control;
+	declare AnimId = LibManialink_Private_RetrieveId(_Control);
+	LibManialink_Private_Anim(_Control, LibManialink_AnimActive[AnimId], <0., 0.>, <0., 0.>, 0., 0., 0., <0., 0., 0.>, <0., 0., 0.>, <0., 0., 0.>, 0., <0., 0., 0.>, _StartTime, _Duration, _Easing, "Show", _Style, False);
+}
+
+Void LibManialink_Private_Anim(
+	Text  _ControlId,
+	Integer _StartTime,
+	Integer _Duration,
+	Text _Easing,
+	Integer _Style
+) {
+	declare CMlControl Control <=> Page.GetFirstChild(_ControlId);
+	declare Boolean[][Integer] LibManialink_AnimActive for Control;
+	declare AnimId = LibManialink_Private_RetrieveId(Control);
+	
+	LibManialink_Private_Anim(Control, LibManialink_AnimActive[AnimId], <0., 0.>, <0., 0.>, 0., 0., 0., <0., 0., 0.>, <0., 0., 0.>, <0., 0., 0.>, 0., <0., 0., 0.>, _StartTime, _Duration, _Easing, "Show", _Style, False);
+}
+
+
+
+Void LibManialink_PresetAnim(CMlControl _Control, Integer _Duration, Text _Easing) {
+	LibManialink_Private_Anim(_Control, -1, _Duration, _Easing, -1);
+}
+
+Void LibManialink_PresetAnimChain(CMlControl _Control, Integer _Duration, Text _Easing) {
+	LibManialink_Private_Anim(_Control, -1, _Duration, _Easing, 0);
+}
+
+Void LibManialink_PresetAnimInsert(CMlControl _Control, Integer _StartTime, Integer _Duration, Text _Easing) {
+	LibManialink_Private_Anim(_Control, _StartTime, _Duration, _Easing, 1);
+}
+
+Void LibManialink_PresetAnim(Text _ControlId, Integer _Duration, Text _Easing) {
+	LibManialink_Private_Anim(_ControlId, -1, _Duration, _Easing, -1);
+}
+
+Void LibManialink_PresetAnimChain(Text _ControlId, Integer _Duration, Text _Easing) {
+	LibManialink_Private_Anim(_ControlId, -1, _Duration, _Easing, 0);
+}
+
+Void LibManialink_PresetAnimInsert(Text _ControlId, Integer _StartTime, Integer _Duration, Text _Easing) {
+	LibManialink_Private_Anim(_ControlId, _StartTime, _Duration, _Easing, 1);
+}
+
+Void LibManialink_Private_SetActive(CMlControl _Control, Integer _AnimId, Integer _ActiveId)
+{
+	declare Boolean[][Integer] LibManialink_AnimActive for _Control;
+	if(!LibManialink_AnimActive.existskey(_AnimId))
+	{
+		LibManialink_AnimActive[_AnimId] = [False, False, False, False, False, False, False, False, False, False];
+	}
+	assert(_ActiveId <= LibManialink_AnimActive[_AnimId].count, "ActiveId "^_ActiveId^" does not exist (Max Id = "^LibManialink_AnimActive[_AnimId].count^").");
+
+	LibManialink_AnimActive[_AnimId][_ActiveId] = True;
+}
+
+
+Void LibManialink_SetTargetPosition(CMlControl _Control, Vec2 _Position)
+{
+	declare Integer AnimId = LibManialink_Private_RetrieveId(_Control);
+	declare Vec2[Integer] LibManialink_AnimEnd_Position	for _Control;
+	
+	LibManialink_AnimEnd_Position[AnimId] = _Position;
+	LibManialink_Private_SetActive(_Control, AnimId, {{{C_POSITION}}});
+}
+
+Void LibManialink_SetTargetPosition(Text _ControlId, Vec2 _Position)
+{
+	declare CMlControl Control <=> Page.GetFirstChild(_ControlId);
+	LibManialink_SetTargetPosition(Control, _Position);
+}
+
+Void LibManialink_SetTargetSize(CMlControl _Control, Vec2 _Size)
+{
+	declare Integer AnimId = LibManialink_Private_RetrieveId(_Control);
+	declare Vec2[Integer] LibManialink_AnimEnd_Size for _Control;
+	
+	LibManialink_AnimEnd_Size[AnimId] = _Size;
+	LibManialink_Private_SetActive(_Control, AnimId, {{{C_SIZE}}});
+}
+
+Void LibManialink_SetTargetSize(Text _ControlId, Vec2 _Size)
+{
+	declare CMlControl Control <=> Page.GetFirstChild(_ControlId);
+	LibManialink_SetTargetSize(Control, _Size);
+}
+
+Void LibManialink_SetTargetScale(CMlControl _Control, Real _Scale)
+{
+	declare Integer AnimId = LibManialink_Private_RetrieveId(_Control);
+	declare Real[Integer] LibManialink_AnimEnd_Scale for _Control;
+	
+	LibManialink_AnimEnd_Scale[AnimId] = _Scale;
+	LibManialink_Private_SetActive(_Control, AnimId, {{{C_SCALE}}});
+}
+
+Void LibManialink_SetTargetScale(Text _ControlId, Real _Scale)
+{
+	declare CMlControl Control <=> Page.GetFirstChild(_ControlId);
+	LibManialink_SetTargetScale(Control, _Scale);
+}
+
+Void LibManialink_SetTargetRotation(CMlControl _Control, Real _Rotation)
+{
+	declare Integer AnimId = LibManialink_Private_RetrieveId(_Control);
+	declare Real[Integer] LibManialink_AnimEnd_Rotation for _Control;
+	
+	LibManialink_AnimEnd_Rotation[AnimId] = _Rotation;
+	LibManialink_Private_SetActive(_Control, AnimId, {{{C_ROTATION}}});
+}
+
+Void LibManialink_SetTargetRotation(Text _ControlId, Real _Rotation)
+{
+	declare CMlControl Control <=> Page.GetFirstChild(_ControlId);
+	LibManialink_SetTargetRotation(Control, _Rotation);
+}
+
+Void LibManialink_SetTargetOpacity(CMlControl _Control, Real _Opacity)
+{
+	declare Integer AnimId = LibManialink_Private_RetrieveId(_Control);
+	declare Real[Integer] LibManialink_AnimEnd_Opacity for _Control;
+	
+	LibManialink_AnimEnd_Opacity[AnimId] = _Opacity;
+	LibManialink_Private_SetActive(_Control, AnimId, {{{C_OPACITY}}});
+}
+
+Void LibManialink_SetTargetOpacity(Text _ControlId, Real _Opacity)
+{
+	declare CMlControl Control <=> Page.GetFirstChild(_ControlId);
+	LibManialink_SetTargetOpacity(Control, _Opacity);
+}
+
+Void LibManialink_SetTargetColorize(CMlControl _Control, Vec3 _Colorize)
+{
+	declare Integer AnimId = LibManialink_Private_RetrieveId(_Control);
+	declare Vec3[Integer] LibManialink_AnimEnd_Colorize for _Control;
+	
+	LibManialink_AnimEnd_Colorize[AnimId] = _Colorize;
+	LibManialink_Private_SetActive(_Control, AnimId, {{{C_COLORIZE}}});
+}
+
+Void LibManialink_SetTargetColorize(Text _ControlId, Vec3 _Colorize)
+{
+	declare CMlControl Control <=> Page.GetFirstChild(_ControlId);
+	LibManialink_SetTargetColorize(Control, _Colorize);
+}
+
+Void LibManialink_SetTargetBgColor(CMlControl _Control, Vec3 _BgColor)
+{
+	declare Integer AnimId = LibManialink_Private_RetrieveId(_Control);
+	declare Vec3[Integer] LibManialink_AnimEnd_BgColor for _Control;
+	
+	LibManialink_AnimEnd_BgColor[AnimId] = _BgColor;
+	LibManialink_Private_SetActive(_Control, AnimId, {{{C_BGCOLOR}}});
+}
+
+Void LibManialink_SetTargetBgColor(Text _ControlId, Vec3 _BgColor)
+{
+	declare CMlControl Control <=> Page.GetFirstChild(_ControlId);
+	LibManialink_SetTargetBgColor(Control, _BgColor);
+}
+
+Void LibManialink_SetTargetTextColor(CMlControl _Control, Vec3 _TextColor)
+{
+	declare Integer AnimId = LibManialink_Private_RetrieveId(_Control);
+	declare Vec3[Integer] LibManialink_AnimEnd_TextColor for _Control;
+	
+	LibManialink_AnimEnd_TextColor[AnimId] = _TextColor;
+	LibManialink_Private_SetActive(_Control, AnimId, {{{C_TEXTCOLOR}}});
+}
+
+Void LibManialink_SetTargetTextColor(Text _ControlId, Vec3 _TextColor)
+{
+	declare CMlControl Control <=> Page.GetFirstChild(_ControlId);
+	LibManialink_SetTargetTextColor(Control, _TextColor);
+}
+
+Void LibManialink_SetTargetRatio(CMlControl _Control, Real _Ratio)
+{
+	declare Integer AnimId = LibManialink_Private_RetrieveId(_Control);
+	declare Real[Integer] LibManialink_AnimEnd_Ratio for _Control;
+	
+	LibManialink_AnimEnd_Ratio[AnimId] = _Ratio;
+	LibManialink_Private_SetActive(_Control, AnimId, {{{C_RATIO}}});
+}
+
+Void LibManialink_SetTargetRatio(Text _ControlId, Real _Ratio)
+{
+	declare CMlControl Control <=> Page.GetFirstChild(_ControlId);
+	LibManialink_SetTargetRatio(Control, _Ratio);
+}
+
+Void LibManialink_SetTargetGaugeColor(CMlControl _Control, Vec3 _GaugeColor)
+{
+	declare Integer AnimId = LibManialink_Private_RetrieveId(_Control);
+	declare Vec3[Integer] LibManialink_AnimEnd_GaugeColor for _Control;
+	
+	LibManialink_AnimEnd_GaugeColor[AnimId] = _GaugeColor;
+	LibManialink_Private_SetActive(_Control, AnimId, {{{C_GAUGECOLOR}}});
+}
+
+Void LibManialink_SetTargetGaugeColor(Text _ControlId, Vec3 _GaugeColor)
+{
+	declare CMlControl Control <=> Page.GetFirstChild(_ControlId);
+	LibManialink_SetTargetGaugeColor(Control, _GaugeColor);
+}
+
+""";
+}
+
+// ---------------------------------- //
+/** The AnimLoop() function, update the running animations
+ *
+ *	@return		The AnimLoop() function
+ */
+Text Private_AnimLoop() {
+	return """
+Void LibManialink_AnimLoop() {
+	declare CMlControl[] LibManialink_Anims for Page;
+	declare CMlControl[] ControlsToRemove;
+	
+	foreach (Control in LibManialink_Anims) {
+		declare Boolean[][Integer] 	LibManialink_AnimActive 			for Control;
+		declare Integer[Integer] 	LibManialink_AnimQueue 				for Control;
+	
+		declare Integer[Integer]	LibManialink_AnimStarTime			for Control;
+		declare Real[Integer]		LibManialink_AnimDuration			for Control;
+		declare Integer[Integer]	LibManialink_AnimEndTime			for Control;
+		declare Text[Integer]		LibManialink_AnimEasing				for Control;
+		declare Text[Integer]		LibManialink_Visibility				for Control;
+		declare Boolean[Integer]	LibManialink_AnimRunning			for Control;
+		declare Integer[Integer]	LibManialink_AnimStyle				for Control;
+		
+		
+		declare Integer[] AnimsToRemove;
+		declare Integer[] AnimsToRepeat;
+		
+		foreach (AnimId => AnimStartTime in LibManialink_AnimQueue) {
+			if (AnimStartTime > {{{G_NowType}}}) continue;
+			
+			if (!LibManialink_AnimRunning[AnimId]) {
+				LibManialink_AnimRunning[AnimId] = True;
+				if (LibManialink_Visibility[AnimId] == "Show") {
+					//Control.Visible = True;
+				}
+				
+				// LibManialink_AnimStyle
+				// -1	-> Start new anim
+				// 0	-> Chain anim
+				// 1	-> Insert anim
+				if (LibManialink_AnimStyle[AnimId] != -1) {
+					LibManialink_Private_AnimComputeDiff(Control, AnimId);
+				}
+			}
+			
+			if (!LibManialink_AnimQueue.existskey(AnimId)) continue;
+			
+			declare AnimationCurrentTime = ({{{G_NowType}}} - LibManialink_AnimStarTime[AnimId])*1.;
+			if (AnimationCurrentTime > LibManialink_AnimDuration[AnimId]) AnimationCurrentTime = LibManialink_AnimDuration[AnimId];
+			
+			// Position
+			if (LibManialink_AnimActive[AnimId][{{{C_POSITION}}}]) 
+			{
+				declare Vec2[Integer]		LibManialink_AnimStart_Position		for Control;
+				declare Vec2[Integer]		LibManialink_AnimDiff_Position		for Control;
+				if (LibManialink_AnimDiff_Position[AnimId].X != 0.) Control.RelativePosition_V3.X = AL::Ease(LibManialink_AnimEasing[AnimId], AnimationCurrentTime, LibManialink_AnimStart_Position[AnimId].X, LibManialink_AnimDiff_Position[AnimId].X, LibManialink_AnimDuration[AnimId]);
+				if (LibManialink_AnimDiff_Position[AnimId].Y != 0.) Control.RelativePosition_V3.Y = AL::Ease(LibManialink_AnimEasing[AnimId], AnimationCurrentTime, LibManialink_AnimStart_Position[AnimId].Y, LibManialink_AnimDiff_Position[AnimId].Y, LibManialink_AnimDuration[AnimId]);
+			}
+			
+			// Size
+			if (LibManialink_AnimActive[AnimId][{{{C_SIZE}}}]) 
+			{
+				declare Vec2[Integer]		LibManialink_AnimStart_Size			for Control;
+				declare Vec2[Integer]		LibManialink_AnimDiff_Size			for Control;
+				if (LibManialink_AnimDiff_Size[AnimId].X != 0.) Control.Size.X = AL::Ease(LibManialink_AnimEasing[AnimId], AnimationCurrentTime, LibManialink_AnimStart_Size[AnimId].X, LibManialink_AnimDiff_Size[AnimId].X, LibManialink_AnimDuration[AnimId]);
+				if (LibManialink_AnimDiff_Size[AnimId].Y != 0.) Control.Size.Y = AL::Ease(LibManialink_AnimEasing[AnimId], AnimationCurrentTime, LibManialink_AnimStart_Size[AnimId].Y, LibManialink_AnimDiff_Size[AnimId].Y, LibManialink_AnimDuration[AnimId]);
+			}
+			
+			// Scale
+			
+			if (LibManialink_AnimActive[AnimId][{{{C_SCALE}}}]) 
+			{
+				declare Real[Integer]		LibManialink_AnimStart_Scale		for Control;
+				declare Real[Integer]		LibManialink_AnimDiff_Scale			for Control;
+				if (LibManialink_AnimDiff_Scale[AnimId] != 0.) Control.RelativeScale = AL::Ease(LibManialink_AnimEasing[AnimId], AnimationCurrentTime, LibManialink_AnimStart_Scale[AnimId], LibManialink_AnimDiff_Scale[AnimId], LibManialink_AnimDuration[AnimId]);
+			}
+			
+			// Rotation
+			if (LibManialink_AnimActive[AnimId][{{{C_ROTATION}}}]) 
+			{
+				declare Real[Integer]		LibManialink_AnimStart_Rotation		for Control;
+				declare Real[Integer]		LibManialink_AnimDiff_Rotation		for Control;
+				if (LibManialink_AnimDiff_Rotation[AnimId] != 0.) Control.RelativeRotation = AL::Ease(LibManialink_AnimEasing[AnimId], AnimationCurrentTime, LibManialink_AnimStart_Rotation[AnimId], LibManialink_AnimDiff_Rotation[AnimId], LibManialink_AnimDuration[AnimId]);
+			}
+			
+			if (Control is CMlQuad) {
+				declare Quad <=> (Control as CMlQuad);
+				
+				// Opacity
+				if (LibManialink_AnimActive[AnimId][{{{C_OPACITY}}}]) 
+				{
+					declare Real[Integer]		LibManialink_AnimStart_Opacity		for Control;
+					declare Real[Integer]		LibManialink_AnimDiff_Opacity		for Control;
+					if (LibManialink_AnimDiff_Opacity[AnimId] != 0.) Quad.Opacity = AL::Ease(LibManialink_AnimEasing[AnimId], AnimationCurrentTime, LibManialink_AnimStart_Opacity[AnimId], LibManialink_AnimDiff_Opacity[AnimId], LibManialink_AnimDuration[AnimId]);
+				}
+				
+				// Colorize
+				if (LibManialink_AnimActive[AnimId][{{{C_COLORIZE}}}]) 
+				{
+					declare Vec3[Integer]		LibManialink_AnimStart_Colorize		for Control;
+					declare Vec3[Integer]		LibManialink_AnimDiff_Colorize		for Control;
+					declare NewColorize = Quad.Colorize;
+					declare UpdateColorize = False;
+					if (LibManialink_AnimDiff_Colorize[AnimId].X != 0.) {
+						NewColorize.X = AL::Ease(LibManialink_AnimEasing[AnimId], AnimationCurrentTime, LibManialink_AnimStart_Colorize[AnimId].X, LibManialink_AnimDiff_Colorize[AnimId].X, LibManialink_AnimDuration[AnimId]);
+						if (NewColorize.X > 1.) NewColorize.X = 1.;
+						else if (NewColorize.X < 0.) NewColorize.X = 0.;
+						UpdateColorize = True;
+					}
+					if (LibManialink_AnimDiff_Colorize[AnimId].Y != 0.) {
+						NewColorize.Y = AL::Ease(LibManialink_AnimEasing[AnimId], AnimationCurrentTime, LibManialink_AnimStart_Colorize[AnimId].Y, LibManialink_AnimDiff_Colorize[AnimId].Y, LibManialink_AnimDuration[AnimId]);
+						if (NewColorize.Y > 1.) NewColorize.Y = 1.;
+						else if (NewColorize.Y < 0.) NewColorize.Y = 0.;
+						UpdateColorize = True;
+					}
+					if (LibManialink_AnimDiff_Colorize[AnimId].Z != 0.) {
+						NewColorize.Z = AL::Ease(LibManialink_AnimEasing[AnimId], AnimationCurrentTime, LibManialink_AnimStart_Colorize[AnimId].Z, LibManialink_AnimDiff_Colorize[AnimId].Z, LibManialink_AnimDuration[AnimId]);
+						if (NewColorize.Z > 1.) NewColorize.Z = 1.;
+						else if (NewColorize.Z < 0.) NewColorize.Z = 0.;
+						UpdateColorize = True;
+					}
+					if (UpdateColorize) Quad.Colorize = NewColorize;
+				}
+				
+				// BgColor
+				if (LibManialink_AnimActive[AnimId][{{{C_BGCOLOR}}}]) 
+				{
+					declare Vec3[Integer]		LibManialink_AnimStart_BgColor		for Control;
+					declare Vec3[Integer]		LibManialink_AnimDiff_BgColor		for Control;
+					declare NewBgColor = Quad.BgColor;
+					declare UpdateColor = False;
+					if (LibManialink_AnimDiff_BgColor[AnimId].X != 0.) {
+						NewBgColor.X = AL::Ease(LibManialink_AnimEasing[AnimId], AnimationCurrentTime, LibManialink_AnimStart_BgColor[AnimId].X, LibManialink_AnimDiff_BgColor[AnimId].X, LibManialink_AnimDuration[AnimId]);
+						if (NewBgColor.X > 1.) NewBgColor.X = 1.;
+						else if (NewBgColor.X < 0.) NewBgColor.X = 0.;
+						UpdateColor = True;
+					}
+					if (LibManialink_AnimDiff_BgColor[AnimId].Y != 0.) {
+						NewBgColor.Y = AL::Ease(LibManialink_AnimEasing[AnimId], AnimationCurrentTime, LibManialink_AnimStart_BgColor[AnimId].Y, LibManialink_AnimDiff_BgColor[AnimId].Y, LibManialink_AnimDuration[AnimId]);
+						if (NewBgColor.Y > 1.) NewBgColor.Y = 1.;
+						else if (NewBgColor.Y < 0.) NewBgColor.Y = 0.;
+						UpdateColor = True;
+					}
+					if (LibManialink_AnimDiff_BgColor[AnimId].Z != 0.) {
+						NewBgColor.Z = AL::Ease(LibManialink_AnimEasing[AnimId], AnimationCurrentTime, LibManialink_AnimStart_BgColor[AnimId].Z, LibManialink_AnimDiff_BgColor[AnimId].Z, LibManialink_AnimDuration[AnimId]);
+						if (NewBgColor.Z > 1.) NewBgColor.Z = 1.;
+						else if (NewBgColor.Z < 0.) NewBgColor.Z = 0.;
+						UpdateColor = True;
+					}
+					if (UpdateColor) Quad.BgColor = NewBgColor;
+				}
+			}
+			
+			if (Control is CMlLabel) {
+				declare Label <=> (Control as CMlLabel);
+				
+				// Opacity
+				if (LibManialink_AnimActive[AnimId][{{{C_OPACITY}}}]) 
+				{
+					declare Real[Integer]		LibManialink_AnimStart_Opacity		for Control;
+					declare Real[Integer]		LibManialink_AnimDiff_Opacity		for Control;
+					if (LibManialink_AnimDiff_Opacity[AnimId] != 0.) Label.Opacity = AL::Ease(LibManialink_AnimEasing[AnimId], AnimationCurrentTime, LibManialink_AnimStart_Opacity[AnimId], LibManialink_AnimDiff_Opacity[AnimId], LibManialink_AnimDuration[AnimId]);
+				}
+				
+				// TextColor
+				if (LibManialink_AnimActive[AnimId][{{{C_TEXTCOLOR}}}]) 
+				{
+					declare Vec3[Integer]		LibManialink_AnimStart_TextColor 	for Control;
+					declare Vec3[Integer]		LibManialink_AnimDiff_TextColor		for Control;
+					declare NewTextColor = Label.TextColor;
+					declare UpdateTextColor = False;
+					if (LibManialink_AnimDiff_TextColor[AnimId].X != 0.) {
+						NewTextColor.X = AL::Ease(LibManialink_AnimEasing[AnimId], AnimationCurrentTime, LibManialink_AnimStart_TextColor[AnimId].X, LibManialink_AnimDiff_TextColor[AnimId].X, LibManialink_AnimDuration[AnimId]);
+						if (NewTextColor.X > 1.) NewTextColor.X = 1.;
+						else if (NewTextColor.X < 0.) NewTextColor.X = 0.;
+						UpdateTextColor = True;
+					}
+					if (LibManialink_AnimDiff_TextColor[AnimId].Y != 0.) {
+						NewTextColor.Y = AL::Ease(LibManialink_AnimEasing[AnimId], AnimationCurrentTime, LibManialink_AnimStart_TextColor[AnimId].Y, LibManialink_AnimDiff_TextColor[AnimId].Y, LibManialink_AnimDuration[AnimId]);
+						if (NewTextColor.Y > 1.) NewTextColor.Y = 1.;
+						else if (NewTextColor.Y < 0.) NewTextColor.Y = 0.;
+						UpdateTextColor = True;
+					}
+					if (LibManialink_AnimDiff_TextColor[AnimId].Z != 0.) {
+						NewTextColor.Z = AL::Ease(LibManialink_AnimEasing[AnimId], AnimationCurrentTime, LibManialink_AnimStart_TextColor[AnimId].Z, LibManialink_AnimDiff_TextColor[AnimId].Z, LibManialink_AnimDuration[AnimId]);
+						if (NewTextColor.Z > 1.) NewTextColor.Z = 1.;
+						else if (NewTextColor.Z < 0.) NewTextColor.Z = 0.;
+						UpdateTextColor = True;
+					}
+					if (UpdateTextColor) Label.TextColor = NewTextColor;
+				}
+			}
+			
+			if (Control is CMlGauge) {
+				declare Gauge <=> (Control as CMlGauge);
+				
+				// Ratio
+				if (LibManialink_AnimActive[AnimId][{{{C_RATIO}}}]) 
+				{
+					declare Real[Integer]		LibManialink_AnimStart_Ratio		for Control;
+					declare Real[Integer]		LibManialink_AnimDiff_Ratio			for Control;
+					declare NewRatio = Gauge.Ratio;
+					if (LibManialink_AnimDiff_Ratio[AnimId] != 0.) NewRatio = AL::Ease(LibManialink_AnimEasing[AnimId], AnimationCurrentTime, LibManialink_AnimStart_Ratio[AnimId], LibManialink_AnimDiff_Ratio[AnimId], LibManialink_AnimDuration[AnimId]);
+					if (NewRatio > 1.) NewRatio = 1.;
+					else if (NewRatio < 0.) NewRatio = 0.;
+					Gauge.Ratio = NewRatio;
+				}
+				
+				// GaugeColor
+				if (LibManialink_AnimActive[AnimId][{{{C_GAUGECOLOR}}}]) 
+				{
+					declare Vec3[Integer]		LibManialink_AnimStart_GaugeColor 	for Control;
+					declare Vec3[Integer]		LibManialink_AnimDiff_GaugeColor 	for Control;
+					declare NewGaugeColor = Gauge.Color;
+					declare UpdateGaugeColor = False;
+					if (LibManialink_AnimDiff_GaugeColor[AnimId].X != 0.) {
+						NewGaugeColor.X = AL::Ease(LibManialink_AnimEasing[AnimId], AnimationCurrentTime, LibManialink_AnimStart_GaugeColor[AnimId].X, LibManialink_AnimDiff_GaugeColor[AnimId].X, LibManialink_AnimDuration[AnimId]);
+						if (NewGaugeColor.X > 1.) NewGaugeColor.X = 1.;
+						else if (NewGaugeColor.X < 0.) NewGaugeColor.X = 0.;
+						UpdateGaugeColor = True;
+					}
+					if (LibManialink_AnimDiff_GaugeColor[AnimId].Y != 0.) {
+						NewGaugeColor.Y = AL::Ease(LibManialink_AnimEasing[AnimId], AnimationCurrentTime, LibManialink_AnimStart_GaugeColor[AnimId].Y, LibManialink_AnimDiff_GaugeColor[AnimId].Y, LibManialink_AnimDuration[AnimId]);
+						if (NewGaugeColor.Y > 1.) NewGaugeColor.Y = 1.;
+						else if (NewGaugeColor.Y < 0.) NewGaugeColor.Y = 0.;
+						UpdateGaugeColor = True;
+					}
+					if (LibManialink_AnimDiff_GaugeColor[AnimId].Z != 0.) {
+						NewGaugeColor.Z = AL::Ease(LibManialink_AnimEasing[AnimId], AnimationCurrentTime, LibManialink_AnimStart_GaugeColor[AnimId].Z, LibManialink_AnimDiff_GaugeColor[AnimId].Z, LibManialink_AnimDuration[AnimId]);
+						if (NewGaugeColor.Z > 1.) NewGaugeColor.Z = 1.;
+						else if (NewGaugeColor.Z < 0.) NewGaugeColor.Z = 0.;
+						UpdateGaugeColor = True;
+					}
+					if (UpdateGaugeColor)Gauge.Color = NewGaugeColor;
+				}
+			}
+			
+			if ({{{G_NowType}}} >= LibManialink_AnimEndTime[AnimId]) {
+				declare Boolean LibManialink_IsRepeating for Page;
+				if (LibManialink_IsRepeating) 
+				{
+					declare Integer[Integer]	LibManialink_AnimReapeatNb			for Control;
+					if (LibManialink_AnimReapeatNb[AnimId] > 1 || LibManialink_AnimReapeatNb[AnimId] < 0) {
+						if (LibManialink_AnimReapeatNb[AnimId] > 0) LibManialink_AnimReapeatNb[AnimId] -= 1;
+						AnimsToRepeat.add(AnimId);
+					} else {
+						AnimsToRemove.add(AnimId);
+					}
+				} else {
+					AnimsToRemove.add(AnimId);
+				}
+				
+				LibManialink_AnimRunning[AnimId] = False;
+				if (LibManialink_Visibility[AnimId] == "Hide") {
+					Control.Visible = False;
+				}
+			}
+		}
+		
+		foreach (AnimId in AnimsToRemove) {
+			LibManialink_AnimStop(Control, AnimId);
+		}
+		
+		declare Boolean LibManialink_IsRepeating for Page;
+		if (LibManialink_IsRepeating) 
+		{
+			foreach (AnimId in AnimsToRepeat) {
+				declare Integer[Integer]	LibManialink_AnimReapeatTime		for Control;
+				LibManialink_AnimStarTime[AnimId]	+= LibManialink_AnimReapeatTime[AnimId];
+				LibManialink_AnimEndTime[AnimId]	= LibManialink_AnimStarTime[AnimId] + ML::NearestInteger(LibManialink_AnimDuration[AnimId]);
+				LibManialink_AnimStyle[AnimId]		= 0;
+				LibManialink_AnimQueue[AnimId]		= LibManialink_AnimStarTime[AnimId];
+			}
+		}
+		
+		if (LibManialink_AnimQueue.count <= 0) {
+			ControlsToRemove.add(Control);
+		}
+	}
+	
+	foreach (Control in ControlsToRemove) {
+		LibManialink_Anims.remove(Control);
+	}
+}
+""";
+}
+
+// ---------------------------------- //
+/** Tooltip module
+ *
+ *	@return		The tooltip module
+ */
+Text Private_Tooltip() {
+	return """
+// ---------------------------------- //
+// Tooltip Start
+// ---------------------------------- //
+Void LibManialink_TooltipShow(Text _Id, CMlControl _Control, Text _Text) {
+	Page.GetClassChildren("LibManialink_Tooltip", Page.MainFrame, True);
+	foreach (Control in Page.GetClassChildren_Result) {
+		if (Control.ControlId != _Id) continue;
+		
+		declare Frame_Tooltip	<=> (Control as CMlFrame);
+		if (Frame_Tooltip == Null) return;
+		declare Tooltip_Message		<=> (Frame_Tooltip.GetFirstChild("Tooltip_Message")		as CMlLabel);
+		declare Tooltip_BoundingBox	<=> (Frame_Tooltip.GetFirstChild("Tooltip_BoundingBox")	as CMlQuad);
+		
+		declare Vec2 Pos;
+		Pos.X = (_Control.AbsolutePosition_V3.X - Frame_Tooltip.AbsolutePosition_V3.X) + Frame_Tooltip.RelativePosition_V3.X;
+		Pos.Y = (_Control.AbsolutePosition_V3.Y - Frame_Tooltip.AbsolutePosition_V3.Y) + Frame_Tooltip.RelativePosition_V3.Y;
+		
+		if (_Control.HorizontalAlign == CMlControl::AlignHorizontal::HCenter) {
+			Pos.X -= (_Control.Size.X / 2.);
+		} else if (_Control.HorizontalAlign == CMlControl::AlignHorizontal::Right) {
+			Pos.X -= (_Control.Size.X);
+		}
+		
+		if (_Control.VerticalAlign == CMlControl::AlignVertical::Top) {
+			Pos.Y -= _Control.Size.Y;
+		} else if (_Control.VerticalAlign == CMlControl::AlignVertical::VCenter || _Control.VerticalAlign == CMlControl::AlignVertical::VCenter2) {
+			Pos.Y -= _Control.Size.Y / 2.;
+		}
+		
+		if (Tooltip_BoundingBox != Null) {
+			if (Tooltip_BoundingBox.HorizontalAlign == CMlControl::AlignHorizontal::HCenter) {
+				Pos.X += (Tooltip_BoundingBox.Size.X / 2.);
+			} else if (Tooltip_BoundingBox.HorizontalAlign == CMlControl::AlignHorizontal::Right) {
+				Pos.X += (Tooltip_BoundingBox.Size.X);
+			}
+			
+			if (Tooltip_BoundingBox.VerticalAlign == CMlControl::AlignVertical::Bottom) {
+				Pos.Y -= Tooltip_BoundingBox.Size.Y;
+			} else if (Tooltip_BoundingBox.VerticalAlign == CMlControl::AlignVertical::VCenter) {
+				Pos.Y -= Tooltip_BoundingBox.Size.Y / 2.;
+			}
+		}
+		
+		if (Tooltip_BoundingBox != Null) {
+			declare PosMax = <160., 90.>;
+			declare PosMin = <-160., -90.>;
+			
+			if (Tooltip_BoundingBox.HorizontalAlign == CMlControl::AlignHorizontal::HCenter) {
+				PosMax.X = ((160. - Tooltip_BoundingBox.Size.X / 2.) - Frame_Tooltip.AbsolutePosition_V3.X) + Frame_Tooltip.RelativePosition_V3.X;
+				PosMin.X = ((-160. + Tooltip_BoundingBox.Size.X / 2.) - Frame_Tooltip.AbsolutePosition_V3.X) + Frame_Tooltip.RelativePosition_V3.X;
+			} else if (Tooltip_BoundingBox.HorizontalAlign == CMlControl::AlignHorizontal::Right) {
+				PosMin.X = ((-160. + Tooltip_BoundingBox.Size.X) - Frame_Tooltip.AbsolutePosition_V3.X) + Frame_Tooltip.RelativePosition_V3.X;
+			} else {
+				PosMax.X = ((160. - Tooltip_BoundingBox.Size.X) - Frame_Tooltip.AbsolutePosition_V3.X) + Frame_Tooltip.RelativePosition_V3.X;
+			}
+			
+			if (Tooltip_BoundingBox.VerticalAlign == CMlControl::AlignVertical::VCenter) {
+				PosMax.Y = ((90. - Tooltip_BoundingBox.Size.Y / 2.) - Frame_Tooltip.AbsolutePosition_V3.Y) + Frame_Tooltip.RelativePosition_V3.Y;
+				PosMin.Y = ((-90. + Tooltip_BoundingBox.Size.Y / 2.) - Frame_Tooltip.AbsolutePosition_V3.Y) + Frame_Tooltip.RelativePosition_V3.Y;
+			} else if (Tooltip_BoundingBox.VerticalAlign == CMlControl::AlignVertical::Bottom) {
+				PosMax.Y = ((90. - Tooltip_BoundingBox.Size.Y) - Frame_Tooltip.AbsolutePosition_V3.Y) + Frame_Tooltip.RelativePosition_V3.Y;
+			} else {
+				PosMin.Y = ((-90. + Tooltip_BoundingBox.Size.Y) - Frame_Tooltip.AbsolutePosition_V3.Y) + Frame_Tooltip.RelativePosition_V3.Y;
+			}
+			
+			if (Pos.X > PosMax.X) Pos.X = PosMax.X;
+			if (Pos.X < PosMin.X) Pos.X = PosMin.X;
+			if (Pos.Y > PosMax.Y) Pos.Y = PosMax.Y;
+			if (Pos.Y < PosMin.Y) Pos.Y = PosMin.Y;
+		}
+			
+		Frame_Tooltip.RelativePosition_V3 = Pos;
+		Frame_Tooltip.Visible = True;
+		if (Tooltip_Message != Null) Tooltip_Message.Value = _Text;
+	}
+}
+
+Void LibManialink_TooltipHide(Text _Id) {
+	Page.GetClassChildren("LibManialink_Tooltip", Page.MainFrame, True);
+	foreach (Control in Page.GetClassChildren_Result) {
+		if (Control.ControlId != _Id) continue;
+		Control.Visible = False;
+	}
+}
+
+Void LibManialink_TooltipLoop() {
+	foreach (Event in PendingEvents) {
+		if (Event.Type == CMlEvent::Type::MouseOver) {
+			if (Event.Control.HasClass("LibManialink_TooltipShow")) {
+				declare Text LibManialink_TooltipMessage for Event.Control;
+				LibManialink_TooltipShow(Event.ControlId, Event.Control, LibManialink_TooltipMessage);
+			}
+		} else if (Event.Type == CMlEvent::Type::MouseOut) {
+			if (Event.Control.HasClass("LibManialink_TooltipShow")) {
+				LibManialink_TooltipHide(Event.ControlId);
+			}
+		}
+	}
+}
+
+Void LibManialink_SetTooltipMessage(Text _Id, Text _Message) {
+	Page.GetClassChildren("LibManialink_TooltipShow", Page.MainFrame, True);
+	foreach (Control in Page.GetClassChildren_Result) {
+		if (Control.ControlId != _Id) continue;
+		declare Text LibManialink_TooltipMessage for Control;
+		LibManialink_TooltipMessage = _Message;
+	}
+}
+// ---------------------------------- //
+// Tooltip Stop
+// ---------------------------------- //
+""";
+}
+
+// ---------------------------------- //
+/** Draggable module
+ *
+ *	@return		The draggable module
+ */
+Text Private_Draggable() {
+	return """
+// ---------------------------------- //
+// Draggable Start
+// ---------------------------------- //
+Real[] LibManialink_PrivateDraggableGetOffset(CMlControl _Control) {
+	declare Offset = [0., 0., 0., 0.];
+	if (_Control == Null) return Offset;
+					
+	if (_Control.HorizontalAlign == CMlControl::AlignHorizontal::HCenter) {
+		Offset[0] -= _Control.Size.X / 2.;
+		Offset[1] += _Control.Size.X / 2.;
+	} else if (_Control.HorizontalAlign == CMlControl::AlignHorizontal::Right) {
+		Offset[0] -= _Control.Size.X;
+	} else {
+		Offset[1] += _Control.Size.X;
+	}
+	
+	if (_Control.VerticalAlign == CMlControl::AlignVertical::VCenter) {
+		Offset[2] -= _Control.Size.Y / 2.;
+		Offset[3] += _Control.Size.Y / 2.;
+	} else if (_Control.VerticalAlign == CMlControl::AlignVertical::Bottom) {
+		Offset[3] += _Control.Size.Y;
+	} else {
+		Offset[2] -= _Control.Size.Y;
+	}
+	
+	return Offset;
+}
+
+Void LibManialink_DraggableLoop() {
+	declare Boolean LibManialink_DragMouseLeftButton for Page;
+	declare Boolean LibManialink_IsDragging for Page;
+	declare Text LibManialink_Draggable for Page;
+	declare CMlControl[Integer] LibManialink_Dragging for Page;
+	declare Real[] LibManialink_DragLimit for Page;
+	declare CMlControl LibManialink_DragBoundingBox for Page;
+	declare Real[] LibManialink_DragBoundingBoxOffset for Page;
+	
+	if (LibManialink_DragMouseLeftButton != MouseLeftButton) {
+		LibManialink_DragMouseLeftButton = MouseLeftButton;
+		
+		if (MouseLeftButton && LibManialink_Draggable != "") {
+			LibManialink_IsDragging = True;
+			LibManialink_Dragging.clear();
+			LibManialink_DragLimit = [-160., 160., -90., 90.];
+			LibManialink_DragBoundingBox = Null;
+			
+			Page.GetClassChildren("LibManialink_Draggable", Page.MainFrame, True);
+			foreach (Key => Control in Page.GetClassChildren_Result) {
+				if (Control.ControlId == LibManialink_Draggable) {
+					declare Vec2 LibManialink_DragOffset for Control;
+					LibManialink_DragOffset = <Control.RelativePosition_V3.X - MouseX, Control.RelativePosition_V3.Y - MouseY>;
+					LibManialink_Dragging[Key] = Control;
+				}
+			}
+			
+			Page.GetClassChildren("LibManialink_DraggableArea", Page.MainFrame, True);
+			foreach (Control in Page.GetClassChildren_Result) {
+				if (Control.ControlId == LibManialink_Draggable) {
+					LibManialink_DragLimit = [Control.AbsolutePosition_V3.X, Control.AbsolutePosition_V3.X, Control.AbsolutePosition_V3.Y, Control.AbsolutePosition_V3.Y];
+					declare Offset = LibManialink_PrivateDraggableGetOffset(Control);
+					
+					for (I, 0, 3) {
+						LibManialink_DragLimit[I] += Offset[I];
+					}
+					
+					break;
+				}
+			}
+			
+			Page.GetClassChildren("LibManialink_DraggableBoundingBox", Page.MainFrame, True);
+			foreach (Control in Page.GetClassChildren_Result) {
+				if (Control.ControlId == LibManialink_Draggable) {
+					LibManialink_DragBoundingBox = Control;
+					LibManialink_DragBoundingBoxOffset = LibManialink_PrivateDraggableGetOffset(Control);
+					
+					break;
+				}
+			}
+		} else {
+			LibManialink_IsDragging = False;
+			LibManialink_Dragging.clear();
+		}
+	}
+	
+	foreach (Event in PendingEvents) {
+		if (Event.Type == CMlEvent::Type::MouseOver) {
+			if (Event.Control.HasClass("LibManialink_DraggableHandle")) {
+				LibManialink_Draggable = Event.ControlId;
+			} else {
+				LibManialink_Draggable = "";
+			}
+		} else if (Event.Type == CMlEvent::Type::MouseOut) {
+			LibManialink_Draggable = "";
+		}
+	}
+	
+	if (LibManialink_IsDragging && LibManialink_Dragging.count > 0) {
+		foreach (Control in LibManialink_Dragging) {
+			declare Vec2 LibManialink_DragOffset for Control;
+			Control.RelativePosition_V3.X = MouseX + LibManialink_DragOffset.X;
+			Control.RelativePosition_V3.Y = MouseY + LibManialink_DragOffset.Y;
+		}
+		
+		if (LibManialink_DragBoundingBox != Null) {
+			declare Box = [
+				LibManialink_DragBoundingBox.AbsolutePosition_V3.X + LibManialink_DragBoundingBoxOffset[0],
+				LibManialink_DragBoundingBox.AbsolutePosition_V3.X + LibManialink_DragBoundingBoxOffset[1],
+				LibManialink_DragBoundingBox.AbsolutePosition_V3.Y + LibManialink_DragBoundingBoxOffset[2],
+				LibManialink_DragBoundingBox.AbsolutePosition_V3.Y + LibManialink_DragBoundingBoxOffset[3]
+			];
+			declare Shift = <0., 0.>;
+			if (Box[0] < LibManialink_DragLimit[0]) Shift.X += LibManialink_DragLimit[0] - Box[0];
+			if (Box[1] > LibManialink_DragLimit[1]) Shift.X += LibManialink_DragLimit[1] - Box[1];
+			if (Box[2] < LibManialink_DragLimit[2]) Shift.Y += LibManialink_DragLimit[2] - Box[2];
+			if (Box[3] > LibManialink_DragLimit[3]) Shift.Y += LibManialink_DragLimit[3] - Box[3];
+			
+			foreach (Control in LibManialink_Dragging) {
+				Control.RelativePosition_V3.X += Shift.X;
+				Control.RelativePosition_V3.Y += Shift.Y;
+			}
+		}
+	}
+}
+// ---------------------------------- //
+// Draggable Stop
+// ---------------------------------- //
+""";
+}
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Return the version number of the script
+ *
+ *	@return		The version number of the script
+ */
+Text GetScriptVersion() {
+	return Version;
+}
+
+// ---------------------------------- //
+/** Return the name of the script
+ *
+ *	@return		The name of the script
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+// ---------------------------------- //
+/** Insert the #Include statement at the beginning of your maniascript
+ *
+ *	@return		One include
+ */
+Text Include(Text _Path, Text _Namespace) {
+	return """#Include "{{{_Path}}}" as {{{_Namespace}}}""";
+}
+
+// ---------------------------------- //
+/** Insert the #Include statements at the beginning of your maniascript
+ *
+ *	@return		Several includes
+ */
+Text Includes(Text[Text] _Libs) {
+	declare Includes = "";
+	foreach (Path => Namespace in _Libs) {
+		Includes ^= Include(Path, Namespace)^"""
+""";
+	}
+	return Includes;
+}
+
+// ---------------------------------- //
+/** Insert a function inside your maniascript
+ *
+ *	@return		The function
+ */
+Text Function(Text _FunctionName) {	
+	switch (_FunctionName) {
+		case "Anim"				: return Private_Anim();
+		case "AnimPause"		: return Private_AnimPause();
+		case "AnimPlay"			: return Private_AnimPlay();
+		case "AnimRepeat"		: return Private_AnimRepeat();
+		case "IsAnimated"		: return Private_IsAnimated();
+		case "AnimLoop"			: return Private_AnimLoop();
+		case "Tooltip"			: return Private_Tooltip();
+		case "Draggable"		: return Private_Draggable();
+	}
+	
+	return "";
+}
+
+// ---------------------------------- //
+/** Insert several functions inside your maniascript
+ *
+ *	@return		The functions
+ */
+Text Functions(Text[] _FunctionsNames) {
+	declare FunctionsContent = "";
+	foreach (FunctionName in _FunctionsNames) {
+		FunctionsContent ^= Function(FunctionName);
+	}
+	return FunctionsContent;
+}
+
+// ---------------------------------- //
+/** Insert the animation module inside your maniascript
+ *
+ *	@param	_Easings		An array of easing functions to insert in the animation module
+ *
+ *	@return		The animation module with the given easing functions
+ */
+Text Load(Text _NowType) {
+	G_NowType = _NowType;
+	return """
+// ---------------------------------- //
+// Animations Start
+// ---------------------------------- //
+"""^Function("Anim")^Function("AnimLoop")^"""
+// ---------------------------------- //
+// Animations Stop
+// ---------------------------------- //
+""";
+}
+
+Text Load() {
+	return Load("Now");
+}
+
+// ---------------------------------- //
+/** Inject a Text between """ """ in your manialink
+ *
+ *	@param	_In		The Text to inject
+ *
+ *	@return		The Text
+ */
+Text Inject(Text _In) {
+	declare Out = "\"\"\"";
+	Out ^= _In;
+	Out ^= "\"\"\"";
+	return Out;
+}
+
+// ---------------------------------- //
+/** Create a tooltip frame
+ *
+ *	@param	_Id			The id of the tooltip
+ *	@param	_Size		The size of the tooltip
+ *	@param	_LinesNb	The number of text lines in the tooltip
+ *
+ *	@return		The tooltip manialink frame
+ */
+Text Tooltip(Text _Id, Vec2 _Size, Integer _LinesNb) {
+	declare Autonewline = 0;
+	return """
+<frame hidden="1" class="LibManialink_Tooltip" id="{{{_Id}}}">
+	<label z-index="1" size="{{{_Size.X - 2.}}} {{{_Size.Y - 2.}}}" halign="center" valign="center2" autonewline="{{{Autonewline}}}" maxline="{{{_LinesNb}}}" textsize="1.5" textcolor="aaa" id="Tooltip_Message" />
+	<quad size="{{{_Size.X}}} {{{_Size.Y}}}" halign="center" valign="center" bgcolor="000d" id="Tooltip_BoundingBox" />
+</frame>
+""";
+}
+
+// ---------------------------------- //
+/** Create the default tooltip frame
+ *
+ *	@param	_Id			The id of the tooltip
+ *
+ *	@return		The tooltip manialink frame
+ */
+Text Tooltip(Text _Id) {
+	return Tooltip(_Id, <50., 6.>, 1);
+}
+
+Text GetIncludes() 
+{
+	return Includes(["MathLib" => "ML", "TextLib" => "TL", "AnimLib" => "AL"]);
+}
+
+// ---------------------------------- //
+/** Dump all the functions of the library
+ *
+ *	@return		The complete library
+ */
+Text DumpLib() {
+	G_NowType = "Now";	
+	return GetIncludes()^Functions(["AnimPause", "AnimPlay", "AnimRepeat", "IsAnimated", "Tooltip", "Draggable"])^Load();
+}

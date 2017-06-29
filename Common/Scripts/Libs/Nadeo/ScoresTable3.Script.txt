@@ -1,0 +1,3384 @@
+/** 
+ *	ScoresTable library
+ *
+ *	The library has a list of default columns ready to use,
+ *	you can check the CreateCol() function to have more details:
+ *	General -> LibST_Avatar, LibST_Name, LibST_ManiaStars, LibST_Tools, LibST_Tags
+ *	TM -> LibST_TMBestTime, LibST_TMPrevTime, LibST_TMBestLapTime, LibST_TMStunts, LibST_TMRespawns, LibST_TMCheckpoints, LibST_TMPoints, LibST_TMPrevRaceDeltaPoints
+ *	SM -> LibST_SMPoints, LibST_SMRoundPoints
+ *
+ *	The library has a list of default styles ready to use,
+ *	you can check the SetStyle() function to have more details:
+ *	- LibST_Base, add basic columns: avatar, name, ManiaStars and tools
+ *	- LibST_Reset, remove all the previous styles
+ *	- LibST_TMBaseSolo, basic free for all scores table for TrackMania
+ *	- LibST_TMBaseTeam, basic teams scores table for TrackMania
+ *	- LibST_TMWithLegends, add a space for columns legends in the header
+ *	- LibST_SMBaseSolo, basic free for all scores table for ShootMania
+ *	- LibST_SMBaseTeams, basic teams scores table for ShootMania
+ *	- LibST_SMBaseOneColumn, same as LibST_SMBaseSolo but with only one players column
+ *	- LibST_SMBasePoints, add the RoundPoints and Points columns
+ *	- LibST_SMWithLegends, add a space for columns legends in the header
+ */
+
+#Const Version		"2015-03-24"
+#Const ScriptName	"ScoresTable.Script.txt"
+
+#Include "TextLib" as TL
+#Include "MathLib" as ML
+#Include "Libs/Nadeo/Manialink.Script.txt" as Manialink
+#Include "Libs/Nadeo/Window.Script.txt" as Window
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_LibST_ScoresTablePos			<0., 38., 0.>
+#Const C_LibST_SizesRatio 				<1., 1.>
+#Const C_LibST_SizesDefault				[<160., 9.>, <160., 74.>, <158., 6.>]
+#Const C_LibST_Sizes							[<160., 9.>, <160., 74.>, <158., 6.>]
+#Const C_LibST_HeaderSize					<160., 9.>
+#Const C_LibST_TableSize					<160., 74.>
+#Const C_LibST_FooterSize					<158., 6.>
+#Const C_LibST_TableColsNb				2
+#Const C_LibST_TableLinesNb				6
+#Const C_LibST_MaxFame						5
+#Const C_LibST_Scale							1.
+#Const C_LibST_TextScale					1.
+#Const C_LibST_TabName						"ScoresTab"
+#Const C_LibST_UseTeamsMode				False
+#Const C_LibST_UseRevert					True
+#Const C_LibST_UsePlayerDarkening	False
+#Const C_LibST_TeamsScoresVisible True
+#Const C_LibST_PlayerInfoVisible	True
+#Const C_LibST_ServerNameVisible	True
+#Const C_LibST_ModeIcon						"Icons128x32_1|RT_Script"
+
+#Const C_LibST_DefaultColTextStyle	"TextRaceMessage"
+#Const C_LibST_DefaultColTextSize		2.
+#Const C_LibST_DefaultColHAlign			"center"
+#Const C_LibST_DefaultColScript			""
+
+#Const C_LibST_ColLegend				0
+#Const C_LibST_ColDefaultValue	1
+#Const C_LibST_ColTextStyle			2
+#Const C_LibST_ColHAlign				3
+#Const C_LibST_ColScript				4
+#Const C_LibST_ColWeight				0
+#Const C_LibST_ColWidth					1
+#Const C_LibST_ColTextSize			2
+
+#Const C_LibST_Header	0
+#Const C_LibST_Table	1
+#Const C_LibST_Footer	2
+
+#Const C_LibST_IdleThreshold	60000
+
+#Const C_LibST_RequestTimeout	5000
+
+// ---------------------------------- //
+// Globales
+// ---------------------------------- //
+declare Ident	G_LibST_LayerScoresTableId; 		///< Scores table layer id
+declare Text[Integer][Text]	G_LibST_ColsText;	///< List of the Text columns properties
+declare Real[Integer][Text]	G_LibST_ColsReal;	///< List of the Real columns properties
+// Scores table manialink properties
+declare Vec3 G_LibST_ScoresTablePos;					///< Position of the scores table
+declare Vec2 G_LibST_SizesRatios;							///< Sizes ratio
+declare Vec2[] G_LibST_SizesDefault;					///< Sizes before ratio
+declare Vec2[] G_LibST_Sizes;									///< Sizes after ratio
+declare Integer G_LibST_TableColsNb;					///< Number of players columns
+declare Integer G_LibST_TableLinesNb;					///< Number of players lines
+declare Real G_LibST_Scale;										///< Scores table scale
+declare Real G_LibST_TextScale;								///< Players table text scale
+declare Text G_LibST_TabName;									///< Name of the tab containing the scores table (see the TabsServer.Script.txt library)
+declare Boolean G_LibST_UseTeamsMode;					///< Use the teams mode for the scores table
+declare Boolean G_LibST_UseRevert;						///< Revert the player cards of team 2 in teams mode
+declare Boolean G_LibST_TeamsScoresVisible;		///< Display the teams scores in the header
+declare Boolean G_LibST_PlayerInfoVisible;		///< Display the player info in the footer
+declare Boolean G_LibST_ServerNameVisible;		///< Display the server name in the footer
+declare Text G_LibST_ModeIcon;								///< Mode icon path
+declare Text G_LibST_FooterScript;						///< Script used to update the footer text
+declare Text[Integer] G_LibST_CustomImagePath;///< Custom image file path
+declare Vec2[Integer] G_LibST_CustomImagePos;	///< Custom image position
+declare Vec2[Integer] G_LibST_CustomImageSizeOriginal;	///< Custom image size before ratio
+declare Vec2[Integer] G_LibST_CustomImageSize;///< Custom image after size
+declare Text[Integer] G_LibST_CustomImageColor;///< Custom image color
+declare Text[Integer] G_LibST_CustomPlayerCard;///< Custom images for the player card
+// Xml load
+declare Ident G_LibST_RequestId;				///< Id of the request to the xml file
+declare Integer G_LibST_RequestEndTime;	///< Timeout for the request
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+// Private
+// ---------------------------------- //
+// ---------------------------------- //
+/** Resize while keeping image ratio
+ *
+ *	@param	_From	Original size
+ *	@param	_To		Desired size
+ *
+ *	@return		The closest size to _To while keeping the original image ratio
+ */
+Vec2 Private_ResizeKeepRatio(Vec2 _From, Vec2 _To) {
+	declare Size = _From;
+	declare Ratio = _From.X/_From.Y;
+	
+	if (Size.X < _To.X) {
+		Size.X = _To.X;
+		Size.Y = Size.X / Ratio;
+	}
+	
+	if (Size.Y < _To.Y) {
+		Size.Y = _To.Y;
+		Size.X = Size.Y * Ratio;
+	}
+	
+	if (Size.X > _To.X) {
+		Size.X = _To.X;
+		Size.Y = Size.X / Ratio;
+	}
+	
+	if (Size.Y > _To.Y) {
+		Size.Y = _To.Y;
+		Size.X = Size.Y * Ratio;
+	}
+	
+	return Size;
+}
+
+// ---------------------------------- //
+/** Get the opposite alignment
+ *
+ *	@param _Halign	The alignment
+ *	@param	_Side	1: do not revert, 2: revert
+ *
+ *	@return		The reverted side
+ */
+Text Private_GetRevert(Text _HAlign, Integer _Side) {
+	if (_Side != 2) return _HAlign;
+	
+	if (_HAlign == "left") return "right";
+	else if (_HAlign == "right") return "left";
+	
+	return "center";
+}
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Return the version number of the script
+ *
+ *	@return		The version number of the script
+ */
+Text GetScriptVersion() {
+	return Version;
+}
+
+// ---------------------------------- //
+/** Return the name of the script
+ *
+ *	@return		The name of the script
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+// ---------------------------------- //
+/** Clear one custom score values
+ *
+ *	@param	_Score		The score to clear
+ */
+Void ResetScore(CScore _Score) {
+	declare netwrite Text[Text] Net_LibST_ColsValues for _Score;
+	declare netwrite Integer Net_LibST_Update for _Score;
+	Net_LibST_ColsValues.clear();
+	Net_LibST_Update = Now;
+}
+
+// ---------------------------------- //
+/// Clear the custom scores values
+Void ResetScores() {
+	foreach (Score in Scores) {
+		ResetScore(Score);
+	}
+}
+
+// ---------------------------------- //
+/** Unload the scores table library
+ *
+ *	@param	_Full	Do a complete unload or only reset the properties to their default values
+ */
+Void Unload(Boolean _Full) {
+	if (_Full) {
+		// Destroy the scores table layer
+		if (UIManager.UILayers.existskey(G_LibST_LayerScoresTableId)) {
+			declare LayerScoresTable = UIManager.UILayers[G_LibST_LayerScoresTableId];
+			declare Removed = UIManager.UIAll.UILayers.remove(LayerScoresTable);
+			UIManager.UILayerDestroy(LayerScoresTable);
+		}
+		
+		// Destroy an ongoing request
+		if (G_LibST_RequestId != NullId && Http.Requests.existskey(G_LibST_RequestId)) Http.Destroy(Http.Requests[G_LibST_RequestId]);
+		G_LibST_RequestId = NullId;
+		G_LibST_RequestEndTime = -1;
+		
+		// Enable the default scores table
+		UIManager.UIAll.ScoreTableOnlyManialink = False;
+	}
+	
+	declare netwrite Net_LibST_FilterLogins for Teams[0] = Text[];
+	declare netwrite Net_LibST_FooterText for Teams[0] = Text;
+	declare netwrite Net_LibST_UIScoresPointsLimit for Teams[0] = Integer;
+	declare netwrite Net_LibST_UsePlayerDarkening for Teams[0] = Boolean;
+	declare netwrite Net_LibST_CollectionUpdate for Teams[0] = Integer;
+	declare netwrite Net_LibST_BackgroundCollection for Teams[0] = Text[Text];
+	declare netwrite Net_LibST_ForegroundCollection for Teams[0] = Text[Text];
+	declare netwrite Net_LibST_TeamsCollection for Teams[0] = Text[Text][Integer];
+	declare netwrite Net_LibST_ColorsUpdate for Teams[0] = Integer;
+	declare netwrite Net_LibST_Colors for Teams[0] = Vec3[Text];
+	Net_LibST_FilterLogins.clear();
+	Net_LibST_FooterText = "";
+	Net_LibST_UIScoresPointsLimit = -1;
+	Net_LibST_UsePlayerDarkening = C_LibST_UsePlayerDarkening;
+	Net_LibST_CollectionUpdate = 0;
+	Net_LibST_BackgroundCollection.clear();
+	Net_LibST_ForegroundCollection.clear();
+	Net_LibST_TeamsCollection.clear();
+	Net_LibST_ColorsUpdate = 0;
+	Net_LibST_Colors.clear();
+	
+	ClearScores();
+	
+	G_LibST_ColsText.clear();
+	G_LibST_ColsReal.clear();
+}
+
+// ---------------------------------- //
+/** Load the scores table library
+ *
+ *	@param	_Full	Do a complete load or only reload the default properties
+ */
+Void Load(Boolean _Full) {
+	Unload(_Full);
+	
+	if (_Full) {
+		// Create the scores table layer
+		declare LayerScoresTable	= UIManager.UILayerCreate();
+		G_LibST_LayerScoresTableId	= LayerScoresTable.Id;
+		LayerScoresTable.Type		= CUILayer::EUILayerType::ScoresTable;
+		UIManager.UIAll.UILayers.add(LayerScoresTable);
+	}
+	
+	// Initialize scores table properties
+	G_LibST_ScoresTablePos		= C_LibST_ScoresTablePos;
+	G_LibST_SizesRatios			= C_LibST_SizesRatio;
+	G_LibST_SizesDefault		= C_LibST_SizesDefault;
+	G_LibST_Sizes				= C_LibST_Sizes;
+	G_LibST_TableColsNb			= C_LibST_TableColsNb;
+	G_LibST_TableLinesNb		= C_LibST_TableLinesNb;
+	G_LibST_Scale				= C_LibST_Scale;
+	G_LibST_TextScale			= C_LibST_TextScale;
+	G_LibST_TabName				= C_LibST_TabName;
+	G_LibST_UseTeamsMode		= C_LibST_UseTeamsMode;
+	G_LibST_UseRevert			= C_LibST_UseRevert;
+	G_LibST_TeamsScoresVisible 	= C_LibST_TeamsScoresVisible;
+	G_LibST_PlayerInfoVisible 	= C_LibST_PlayerInfoVisible;
+	G_LibST_ServerNameVisible 	= C_LibST_ServerNameVisible;
+	G_LibST_ModeIcon			= C_LibST_ModeIcon;
+	G_LibST_FooterScript		= "";
+	G_LibST_CustomImagePath		= [-1 => "", 0 => "", 1 => "", 2 => ""];
+	G_LibST_CustomImagePos		= [-1 => <0., 0.>, 0 => <0., 0.>, 1 => <0., 0.>, 2 => <0., 0.>];
+	G_LibST_CustomImageSizeOriginal = [-1 => <100., 100.>, 0 => <100., 100.>, 1 => <100., 100.>, 2 => <100., 100.>];
+	G_LibST_CustomImageSize		= [-1 => <100., 100.>, 0 => <100., 100.>, 1 => <100., 100.>, 2 => <100., 100.>];
+	G_LibST_CustomImageColor	= [-1 => "", 0 => ""];
+	G_LibST_CustomPlayerCard	= [0 => "", 1 => "", 2 => ""];
+}
+
+// ---------------------------------- //
+/// Soft unload, only reset the scores table properties
+Void Unload() {
+	Unload(True);
+}
+
+// ---------------------------------- //
+/// Soft load, only set the scores table properties
+Void Load() {
+	Load(True);
+}
+
+// ---------------------------------- //
+/// Reset the scores table to its default state
+Void Reset() {	
+	Load(False);
+}
+
+// ---------------------------------- //
+/** Destroy a column
+ *
+ *	@param	_ColId		The name of the column to destroy
+ */
+Void DestroyCol(Text _ColId) {
+	declare ColId = TL::MLEncode(_ColId);
+	declare Removed = G_LibST_ColsText.removekey(ColId);
+	declare Removed2 = G_LibST_ColsReal.removekey(ColId);
+	
+	if (Removed || Removed2) {
+		foreach (Score in Scores) {
+			declare netwrite Text[Text] Net_LibST_ColsValues for Score;
+			declare netwrite Integer Net_LibST_Update for Score;
+			declare RemovedFromScore = Net_LibST_ColsValues.removekey(ColId);
+			Net_LibST_Update = Now;
+		}
+	}
+}
+
+// ---------------------------------- //
+/** Create a new column
+ *
+ *	@param	_Id				The id of the column
+ *							Some ids are already used by default, using one of this id will create a special column: 
+ *								General -> LibST_Avatar, LibST_Name, LibST_ManiaStars, LibST_Tools, LibST_Tags
+ *								TM -> LibST_TMBestTime, LibST_TMPrevTime, LibST_TMBestLapTime, LibST_TMStunts, LibST_TMRespawns, LibST_TMCheckpoints, LibST_TMPoints, LibST_TMPrevRaceDeltaPoints
+ *								SM -> LibST_SMPoints, LibST_SMRoundPoints
+ *							When using an already created column name, the previous column will be destroyed and replaced by the new one
+ *	@param	_Legend			The legend displayed above the column
+ *	@param	_DefaultValue	The default value of the column
+ *	@param	_Width			The width of the column
+ *	@param	_Weight			The weight used to order the column
+ */
+Void CreateCol(Text _Id, Text _Legend, Text _DefaultValue, Real _Width, Real _Weight) {
+	DestroyCol(_Id);
+	
+	declare EncodedId = TL::MLEncode(_Id);
+	
+	// Create the default script of the column
+	declare ColScript = C_LibST_DefaultColScript;
+	switch (EncodedId) {
+		case "LibST_Name": {
+			ColScript = """
+Label_Col.Value = _Score.User.Name;""";
+		}
+		case "LibST_TMBestTime": {
+			ColScript = """
+declare Score <=> (_Score as CTmScore);
+Label_Col.Value = LibST_TimeToText(Score.BestRace.Time);""";
+		}
+		case "LibST_TMPrevTime": {
+			ColScript = """
+declare Score <=> (_Score as CTmScore);
+Label_Col.Value = LibST_TimeToText(Score.PrevRace.Time);""";
+		}
+		case "LibST_TMBestLapTime": {
+			ColScript = """
+declare Score <=> (_Score as CTmScore);
+Label_Col.Value = LibST_TimeToText(Score.BestLap.Time);""";
+		}
+		case "LibST_TMStunts": {
+			ColScript = """
+declare Score <=> (_Score as CTmScore);
+Label_Col.Value = TL::ToText(Score.BestRace.StuntsScore);""";
+		}
+		case "LibST_TMRespawns": {
+			ColScript = """
+declare Score <=> (_Score as CTmScore);
+declare NbRespawns = 0;
+if (Score.BestRace.NbRespawns > 0) NbRespawns = Score.BestRace.NbRespawns;
+Label_Col.Value = TL::ToText(NbRespawns);""";
+		}
+		case "LibST_TMCheckpoints": {
+			ColScript = """
+declare Score <=> (_Score as CTmScore);
+Label_Col.Value = TL::ToText(Score.BestRace.Checkpoints.count);""";
+		}
+		case "LibST_TMPoints": {
+			ColScript = """
+declare Score <=> (_Score as CTmScore);
+declare netread Integer Net_LibST_UIScoresPointsLimit for Teams[0];
+if (Net_LibST_UIScoresPointsLimit >= 0 && Score.Points >= Net_LibST_UIScoresPointsLimit) {
+	if (Score.Points > Net_LibST_UIScoresPointsLimit) {
+		Label_Col.Value = TL::Compose("$090%1", _("Winner"));
+	} else {
+		Label_Col.Value = TL::Compose("$900%1", _("Finalist"));
+	}
+} else {
+	Label_Col.Value = TL::ToText(Score.Points);
+}""";
+		}
+		case "LibST_TMPrevRaceDeltaPoints": {
+			ColScript = """
+declare Score <=> (_Score as CTmScore);
+declare DeltaPoints = "";
+if (Score.PrevRaceDeltaPoints < 0) {
+	DeltaPoints = "$900"^Score.PrevRaceDeltaPoints;
+} else if (Score.PrevRaceDeltaPoints > 0) {
+	DeltaPoints = "$090+"^Score.PrevRaceDeltaPoints;
+}
+Label_Col.Value = DeltaPoints;""";
+		}
+		case "LibST_SMPoints": {
+			ColScript = """
+declare Score <=> (_Score as CSmScore);
+Label_Col.Value = TL::ToText(Score.Points);""";
+		}
+		case "LibST_SMRoundPoints": {
+			ColScript = """
+declare Score <=> (_Score as CSmScore);
+declare RoundPoints = "";
+if (Score.RoundPoints < 0) {
+	RoundPoints = "$900"^Score.RoundPoints;
+} else if (Score.RoundPoints > 0) {
+	RoundPoints = "$090+"^Score.RoundPoints;
+}
+Label_Col.Value = RoundPoints;""";
+		}
+	}
+	
+	// Set the column properties
+	G_LibST_ColsText[EncodedId] = [
+		C_LibST_ColLegend => TL::MLEncode(_Legend), 
+		C_LibST_ColDefaultValue => TL::MLEncode(_DefaultValue), 
+		C_LibST_ColTextStyle => C_LibST_DefaultColTextStyle,
+		C_LibST_ColHAlign => C_LibST_DefaultColHAlign,
+		C_LibST_ColScript => ColScript
+	];
+	G_LibST_ColsReal[EncodedId] = [
+		C_LibST_ColWeight => _Weight, 
+		C_LibST_ColWidth => _Width, 
+		C_LibST_ColTextSize => C_LibST_DefaultColTextSize
+	];
+}
+
+// ---------------------------------- //
+/** Set the text style of a column
+ *
+ *	@param	_ColId		The name of the column to udpate
+ *	@param	_TextStyle	The new text style of the column
+ */
+Void SetColTextStyle(Text _ColId, Text _TextStyle) {
+	declare ColId = TL::MLEncode(_ColId);
+	if (!G_LibST_ColsText.existskey(ColId)) return;
+	G_LibST_ColsText[ColId][C_LibST_ColTextStyle] = TL::MLEncode(_TextStyle);
+}
+
+// ---------------------------------- //
+/** Set the text size of a column
+ *
+ *	@param	_ColId		The name of the column to update
+ *	@param	_TextSize	The new text size of the column
+ */
+Void SetColTextSize(Text _ColId, Real _TextSize) {
+	declare ColId = TL::MLEncode(_ColId);
+	if (!G_LibST_ColsText.existskey(ColId)) return;
+	G_LibST_ColsReal[ColId][C_LibST_ColTextSize] = _TextSize;
+}
+
+// ---------------------------------- //
+/** Set the horizontal text align of a column
+ *
+ *	@param	_ColId		The name of the column to update
+ *	@param	_HAlign		The new text align of the column
+ */
+Void SetColTextAlign(Text _ColId, CMlControl::AlignHorizontal _HAlign) {
+	declare ColId = TL::MLEncode(_ColId);
+	if (!G_LibST_ColsText.existskey(ColId)) return;
+	
+	declare HAlign = C_LibST_DefaultColHAlign;
+	switch (_HAlign) {
+		case CMlControl::AlignHorizontal::Left: HAlign = "left";
+		case CMlControl::AlignHorizontal::HCenter: HAlign = "center";
+		case CMlControl::AlignHorizontal::Right: HAlign = "right";
+	}
+	G_LibST_ColsText[ColId][C_LibST_ColHAlign] = HAlign;
+}
+
+// ---------------------------------- //
+/** Set the text style, size and horizontal align of a column
+ *
+ *	@param	_ColId		The name of the column to update
+ *	@param	_TextStyle	The new text style of the column
+ *	@param	_TextSize	The new text size of the column
+ *	@param	_HAlign		The new text align of the column
+ */
+Void SetColStyle(Text _ColId, Text _TextStyle, Real _TextSize, CMlControl::AlignHorizontal _HAlign) {	
+	SetColTextStyle(_ColId, _TextStyle);
+	SetColTextSize(_ColId, _TextSize);
+	SetColTextAlign(_ColId, _HAlign);
+}
+
+// ---------------------------------- //
+/** Assign a script to a column, this script will be used to fill the column
+ *	during an update instead of the default one
+ *
+ *	You have access to the score being updated with _Score (class CScore)
+ *	and the column label with Label_Col (class CMlLabel)
+ *	eg: Label_Col.SetText("Player LP: "^_Score.LadderScore);
+ *	You can check the CreateCol() function for more examples
+ *
+ *	@param	_ColId		The name of the column to script
+ *	@param	_Script		The script to use
+ */
+Void SetColScript(Text _ColId, Text _Script) {
+	declare ColId = TL::MLEncode(_ColId);
+	if (!G_LibST_ColsText.existskey(ColId)) return;
+	G_LibST_ColsText[ColId][C_LibST_ColScript] = _Script;
+}
+
+// ---------------------------------- //
+/** Get the scores table layer
+ *
+ *	@return		The scores table layer
+ */
+CUILayer GetLayer() {
+	if (UIManager.UILayers.existskey(G_LibST_LayerScoresTableId)) {
+		return UIManager.UILayers[G_LibST_LayerScoresTableId];
+	}
+	return Null;
+}
+
+// ---------------------------------- //
+/// Attach the scores table layer
+Void Attach() {	
+	if (UIManager.UIAll.UILayers.existskey(G_LibST_LayerScoresTableId)) return;
+	if (!UIManager.UILayers.existskey(G_LibST_LayerScoresTableId)) return;
+	
+	UIManager.UIAll.UILayers.add(UIManager.UILayers[G_LibST_LayerScoresTableId]);
+}
+
+// ---------------------------------- //
+/// Detach the scores table layer
+Void Detach() {
+	declare Removed = UIManager.UIAll.UILayers.removekey(G_LibST_LayerScoresTableId);
+}
+
+// ---------------------------------- //
+/// Show the scores table layer
+Void Show() {
+	declare Layer <=> GetLayer();
+	if (Layer != Null && !Layer.IsVisible) Layer.IsVisible = True;
+}
+
+// ---------------------------------- //
+/// Hide the scores table layer
+Void Hide() {
+	declare Layer <=> GetLayer();
+	if (Layer != Null && Layer.IsVisible) Layer.IsVisible = False;
+}
+
+// ---------------------------------- //
+/** Check if the scores table layer is visible
+ *
+ *	@return		True if the layer exists and is visible, false otherwise
+ */
+Boolean IsVisible() {
+	declare Layer <=> GetLayer();
+	if (Layer != Null) return Layer.IsVisible;
+	return False;
+}
+
+// ---------------------------------- //
+/** Show the scores table layer for one player
+ *
+ *	@param	_Player		The player to update
+ */
+Void Show(CPlayer _Player) {
+	declare UI <=> UIManager.GetUI(_Player);
+	if (UI == Null) return;
+	declare netwrite Boolean Net_LibST_HiddenForPlayer for UI;
+	Net_LibST_HiddenForPlayer = False;
+}
+
+// ---------------------------------- //
+/** Hide the scores table layer for one player
+ *
+ *	@param	_Player		The player to update
+ */
+Void Hide(CPlayer _Player) {
+	declare UI <=> UIManager.GetUI(_Player);
+	if (UI == Null) return;
+	declare netwrite Boolean Net_LibST_HiddenForPlayer for UI;
+	Net_LibST_HiddenForPlayer = True;
+}
+
+// ---------------------------------- //
+/** Check if the scores table layer is visible for one player
+ * /!\ Warning :
+ *	If the scores table layer is hidden globally (-> IsVisible() == False)
+ *	this function can still return true 
+ *
+ *	@param	_Player		The player to check
+ *
+ *	@return		The scores table visibility for the selected player
+ */
+Boolean IsVisible(CPlayer _Player) {
+	declare UI <=> UIManager.GetUI(_Player);
+	if (UI == Null) return False;
+	declare netwrite Boolean Net_LibST_HiddenForPlayer for UI;
+	return Net_LibST_HiddenForPlayer;
+}
+
+// ---------------------------------- //
+/** Set the legend of a column
+ *
+ *	@param	_ColId		The name of the column to set
+ *	@param	_Legend		The legend to use
+ */
+Void SetColLegend(Text _ColId, Text _Legend) {
+	declare ColId = TL::MLEncode(_ColId);
+	if (!G_LibST_ColsText.existskey(ColId)) return;
+	
+	G_LibST_ColsText[ColId][C_LibST_ColLegend] = TL::MLEncode(_Legend);
+}
+
+// ---------------------------------- //
+/** Set the width of a column
+ *
+ *	@param	_ColId		The name of the column to set
+ *	@param	_Width		The new width of the column
+ */
+Void SetColWidth(Text _ColId, Real _Width) {
+	declare ColId = TL::MLEncode(_ColId);
+	if (!G_LibST_ColsText.existskey(ColId)) return;
+	
+	G_LibST_ColsReal[ColId][C_LibST_ColWidth] = _Width;
+}
+
+// ---------------------------------- //
+/** Set the weight of a column
+ *	The smallest numbers are on the left and the biggest on the right
+ *
+ *	@param	_ColId		The name of the column to set
+ *	@param	_Weight		The new weight of the column
+ */
+Void SetColWeight(Text _ColId, Real _Weight) {
+	declare ColId = TL::MLEncode(_ColId);
+	if (!G_LibST_ColsText.existskey(ColId)) return;
+	
+	G_LibST_ColsReal[ColId][C_LibST_ColWeight] = _Weight;
+}
+
+// ---------------------------------- //
+/** Set the default value of a column
+ *
+ *	@param	_ColId		The name of the column to set
+ *	@param	_Value		The new default value of the column
+ */
+Void SetColDefaultValue(Text _ColId, Text _Value) {
+	declare ColId = TL::MLEncode(_ColId);
+	if (!G_LibST_ColsText.existskey(ColId)) return;
+	
+	G_LibST_ColsText[ColId][C_LibST_ColDefaultValue] = TL::MLEncode(_Value);
+}
+
+// ---------------------------------- //
+/** Set the value of a column for a player
+ *
+ *	@param	_ColId		The name of the column to set
+ *	@param	_Score		The score object of the player to update
+ *	@param	_Value		The new value of the column
+ */
+Void SetColValue(Text _ColId, CScore _Score, Text _Value) {
+	if (_Score == Null) return;
+	
+	declare netwrite Text[Text] Net_LibST_ColsValues for _Score;
+	declare netwrite Integer Net_LibST_Update for _Score;
+	declare ColId = TL::MLEncode(_ColId);
+	if (!G_LibST_ColsText.existskey(ColId)) return;
+	Net_LibST_ColsValues[ColId] = _Value;
+	Net_LibST_Update = Now;
+}
+
+// ---------------------------------- //
+/** Set the text displayed in the footer
+ *
+ *	@param	_Value		The new text to display
+ */
+Void SetFooterText(Text _Value) {
+	declare netwrite Net_LibST_FooterText for Teams[0] = "";
+	Net_LibST_FooterText = _Value;
+}
+
+// ---------------------------------- //
+/** Override the default script used to update the footer text
+ *
+ *	@param	_Script		The new script to use
+ */
+Void SetFooterScript(Text _Script) {
+	G_LibST_FooterScript = _Script;
+}
+
+// ---------------------------------- //
+/** Set the sizes of the different scores table sections
+ *	Use a negative value to not modify a size
+ *
+ *	@param	_HeaderSize		The new size of the header section
+ *	@param	_TableSize		The new size of the players table section
+ *	@param	_FooterSize		The new size of the footer section
+ */
+Void SetSize(Vec2 _HeaderSize, Vec2 _TableSize, Vec2 _FooterSize) {
+	if (_HeaderSize.X > 0) {
+		G_LibST_SizesDefault[C_LibST_Header].X = _HeaderSize.X;
+		G_LibST_Sizes[C_LibST_Header].X = _HeaderSize.X * G_LibST_SizesRatios.X;
+	} if (_HeaderSize.Y > 0) {
+		G_LibST_SizesDefault[C_LibST_Header].Y = _HeaderSize.Y;
+		G_LibST_Sizes[C_LibST_Header].Y = _HeaderSize.Y * G_LibST_SizesRatios.Y;
+	}
+	if (_TableSize.X > 0) {
+		G_LibST_SizesDefault[C_LibST_Table].X = _TableSize.X;
+		G_LibST_Sizes[C_LibST_Table].X = _TableSize.X * G_LibST_SizesRatios.X;
+	}
+	if (_TableSize.Y > 0) {
+		G_LibST_SizesDefault[C_LibST_Table].Y = _TableSize.Y;
+		G_LibST_Sizes[C_LibST_Table].Y = _TableSize.Y * G_LibST_SizesRatios.Y;
+	}
+	if (_FooterSize.X > 0) {
+		G_LibST_SizesDefault[C_LibST_Footer].X = _FooterSize.X;
+		G_LibST_Sizes[C_LibST_Footer].X = _FooterSize.X * G_LibST_SizesRatios.X;
+	}
+	if (_FooterSize.Y > 0) {
+		G_LibST_SizesDefault[C_LibST_Footer].Y = _FooterSize.Y;
+		G_LibST_Sizes[C_LibST_Footer].Y = _FooterSize.Y * G_LibST_SizesRatios.Y;
+	}
+}
+
+// ---------------------------------- //
+/** Set the position of the scores table
+ *
+ *	@param	_Pos	The new position of the scores table
+ */
+Void SetPos(Vec3 _Pos) {
+	G_LibST_ScoresTablePos = _Pos;
+}
+
+// ---------------------------------- //
+/** Change the global scale of the scores table
+ *
+ *	@param	_Scale		The new global scores table scale
+ */
+Void SetScale(Real _Scale) {
+	G_LibST_Scale = _Scale;
+}
+
+// ---------------------------------- //
+/** Set the number of columns and lines in the players table
+ *
+ *	@param	_ColsNb		The number of columns
+ *	@param	_LinesNb	The number of lines
+ */
+Void SetFormat(Integer _ColsNb, Integer _LinesNb) {
+	G_LibST_TableColsNb = _ColsNb;
+	G_LibST_TableLinesNb = _LinesNb;
+}
+
+// ---------------------------------- //
+/** Set the name of the tab (used by the TabsServer.Script.txt library)
+ *
+ *	@param	_TabName	The new name of the tab
+ */
+Void SetTabName(Text _TabName) {
+	G_LibST_TabName = TL::MLEncode(_TabName);
+}
+
+// ---------------------------------- //
+/** Change the global scale of the text in the scores table
+ *
+ *	@param	_Scale		The new global text scale
+ */
+Void SetTextScale(Real _Scale) {
+	G_LibST_TextScale = _Scale;
+}
+
+// ---------------------------------- //
+/**	Set the path to the background image of the scores table
+ *
+ *	@param	_ImgPath		The path to the background file
+ */
+Void SetBackgroundFilePath(Text _ImgPath) {
+	if (!Http.IsValidUrl(_ImgPath)) return;
+	G_LibST_CustomImagePath[-1]	= TL::MLEncode(_ImgPath);
+}
+
+// ---------------------------------- //
+/**	Set the background position and size of the scores table
+ *
+ *	@param	_Pos			The position of the background
+ *	@param	_Size			The size of the background
+ */
+Void SetBackgroundProperties(Vec2 _Pos, Vec2 _Size) {
+	G_LibST_CustomImagePos[-1]			= _Pos;
+	G_LibST_CustomImageSizeOriginal[-1]	= _Size;
+	G_LibST_CustomImageSize[-1]			= <_Size.X * G_LibST_SizesRatios.X, _Size.Y * G_LibST_SizesRatios.Y>;
+}
+
+// ---------------------------------- //
+/** Colorize the background
+ *
+ *	@param	_Color			The color of the background
+ */
+Void SetBackgroundColor(Text _Color) {
+	declare Color = TL::MLEncode(_Color);
+	G_LibST_CustomImageColor[-1] = Color;
+}
+
+// ---------------------------------- //
+/**	Set the file path, position and size of the scores table background
+ *
+ *	@param	_ImgPath		The path to the background file
+ *	@param	_Pos			The position of the background
+ *	@param	_Size			The size of the background
+ */
+Void SetBackgroundImage(Text _ImgPath, Vec2 _Pos, Vec2 _Size) {
+	SetBackgroundFilePath(_ImgPath);
+	SetBackgroundProperties(_Pos, _Size);
+}
+
+// ---------------------------------- //
+/**	Set the file path, position, size and color of the scores table background
+ *
+ *	@param	_ImgPath		The path to the background file
+ *	@param	_Pos			The position of the background
+ *	@param	_Size			The size of the background
+ *	@param	_Color			The color of the background
+ */
+Void SetBackgroundImage(Text _ImgPath, Vec2 _Pos, Vec2 _Size, Text _Color) {
+	SetBackgroundFilePath(_ImgPath);
+	SetBackgroundProperties(_Pos, _Size);
+	SetBackgroundColor(_Color);
+}
+
+// ---------------------------------- //
+/**	Create a group of background to use
+ *	depending on the CollectionName
+ *	of the current map.
+ *	eg: set differents backgrounds for Canyon, Valley, Stadium, ...
+ *
+ *	@param	_Collection		The list of image file [Environment => Image path]
+ */
+Void SetBackgroundCollection(Text[Text] _Collection) {
+	declare netwrite Net_LibST_CollectionUpdate for Teams[0] = Integer;
+	declare netwrite Net_LibST_BackgroundCollection for Teams[0] = Text[Text];
+	Net_LibST_CollectionUpdate = Now;
+	Net_LibST_BackgroundCollection = _Collection;
+}
+
+// ---------------------------------- //
+/**	Set the path to the foreground image of the scores table
+ *
+ *	@param	_ImgPath		The path to the foreground file
+ */
+Void SetForegroundFilePath(Text _ImgPath) {
+	if (!Http.IsValidUrl(_ImgPath)) return;
+	G_LibST_CustomImagePath[0]	= TL::MLEncode(_ImgPath);
+}
+
+// ---------------------------------- //
+/**	Set the foreground position and size of the scores table
+ *
+ *	@param	_Pos			The position of the foreground
+ *	@param	_Size			The size of the foreground
+ */
+Void SetForegroundProperties(Vec2 _Pos, Vec2 _Size) {
+	G_LibST_CustomImagePos[0]			= _Pos;
+	G_LibST_CustomImageSizeOriginal[0]	= _Size;
+	G_LibST_CustomImageSize[0]			= <_Size.X * G_LibST_SizesRatios.X, _Size.Y * G_LibST_SizesRatios.Y>;
+}
+
+// ---------------------------------- //
+/** Colorize the foreground
+ *
+ *	@param	_Color			The color of the foreground
+ */
+Void SetForegroundColor(Text _Color) {
+	declare Color = TL::MLEncode(_Color);
+	G_LibST_CustomImageColor[0] = Color;
+}
+
+// ---------------------------------- //
+/**	Set the file path, position and size of the scores table foreground
+ *
+ *	@param	_ImgPath		The path to the foreground file
+ *	@param	_Pos			The position of the foreground
+ *	@param	_Size			The size of the foreground
+ *	@param	_Color			The color of the foreground
+ */
+Void SetForegroundImage(Text _ImgPath, Vec2 _Pos, Vec2 _Size, Text _Color) {
+	SetForegroundFilePath(_ImgPath);
+	SetForegroundProperties(_Pos, _Size);
+	SetForegroundColor(_Color);
+}
+
+// ---------------------------------- //
+/**	Set the file path, position and size of the scores table foreground
+ *
+ *	@param	_ImgPath		The path to the foreground file
+ *	@param	_Pos			The position of the foreground
+ *	@param	_Size			The size of the foreground
+ */
+Void SetForegroundImage(Text _ImgPath, Vec2 _Pos, Vec2 _Size) {
+	SetForegroundFilePath(_ImgPath);
+	SetForegroundProperties(_Pos, _Size);
+}
+
+// ---------------------------------- //
+/**	Create a group of foreground to use
+ *	depending on the CollectionName
+ *	of the current map.
+ *	eg: set differents foreground for Canyon, Valley, Stadium, ...
+ *
+ *	@param	_Collection		The list of image file [Environment => Image path]
+ */
+Void SetForegroundCollection(Text[Text] _Collection) {
+	declare netwrite Net_LibST_CollectionUpdate for Teams[0] = Integer;
+	declare netwrite Net_LibST_ForegroundCollection for Teams[0] = Text[Text];
+	Net_LibST_CollectionUpdate = Now;
+	Net_LibST_ForegroundCollection = _Collection;
+}
+
+// ---------------------------------- //
+/**	Set the path to the team image of the scores table
+ *
+ *	@param	_Team			The team to set
+ *	@param	_ImgPath		The path to the foreground file
+ */
+Void SetTeamFilePath(Integer _Team, Text _ImgPath) {
+	if (_Team != 1 && _Team != 2) return;
+	G_LibST_CustomImagePath[_Team]	= TL::MLEncode(_ImgPath);
+}
+
+// ---------------------------------- //
+/**	Set the team image position and size in the scores table
+ *
+ *	@param	_Team			The team to set
+ *	@param	_Pos			The position of the foreground
+ *	@param	_Size			The size of the foreground
+ */
+Void SetTeamProperties(Integer _Team, Vec2 _Pos, Vec2 _Size) {
+	if (_Team != 1 && _Team != 2) return;
+	G_LibST_CustomImagePos[_Team]			= _Pos;
+	G_LibST_CustomImageSizeOriginal[_Team]	= _Size;
+	G_LibST_CustomImageSize[_Team]			= <_Size.X * G_LibST_SizesRatios.X, _Size.Y * G_LibST_SizesRatios.Y>;
+}
+
+// ---------------------------------- //
+/** Set the pictures colorizable by the teams
+ * 
+ *	@param	_Team			The team to set
+ *	@param	_ImgPath		The path to the image file
+ *	@param	_Pos			The position of the image
+ *	@param	_Size			The size of the image
+ */
+Void SetTeamImage(Integer _Team, Text _ImgPath, Vec2 _Pos, Vec2 _Size) {
+	SetTeamFilePath(_Team, _ImgPath);
+	SetTeamProperties(_Team, _Pos, _Size);
+}
+
+// ---------------------------------- //
+/**	Create a group of team images to use
+ *	depending on the CollectionName
+ *	of the current map.
+ *	eg: set differents foreground for Canyon, Valley, Stadium, ...
+ *
+ *	@param	_Team			The team to set
+ *	@param	_Collection		The list of image file [Environment => Image path]
+ */
+Void SetTeamCollection(Integer _Team, Text[Text] _Collection) {
+	if (_Team != 1 && _Team != 2) return;
+	declare netwrite Net_LibST_CollectionUpdate for Teams[0] = Integer;
+	declare netwrite Net_LibST_TeamsCollection for Teams[0] = Text[Text][Integer];
+	Net_LibST_CollectionUpdate = Now;
+	Net_LibST_TeamsCollection[_Team] = _Collection;
+}
+
+// ---------------------------------- //
+/** Set the images used for the player cards
+ *	An empty path will remove the image
+ *	An non valid path will let the older path as is
+ *	A valid path will replace the old one
+ *
+ *	@param	_Square		The quad of the scores table
+ *	@param	_Left		The line of the scores table (left side)
+ *	@param	_Right		The line of the scores table (right side)
+ */
+Void SetPlayerCardImages(Text _Square, Text _Left, Text _Right) {	
+	if (Http.IsValidUrl(_Square) || _Square == "")	G_LibST_CustomPlayerCard[0] = _Square;
+	if (Http.IsValidUrl(_Left) || _Left == "")		G_LibST_CustomPlayerCard[1] = _Left;
+	if (Http.IsValidUrl(_Right) || _Right == "")	G_LibST_CustomPlayerCard[2] = _Right;
+}
+
+// ---------------------------------- //
+/**	Turn on/off the teams mode of the scores table
+ *
+ *	@param	_UseTeamsMode		True use the teams mode, false use the solo mode
+ */
+Void SetTeamsMode(Boolean _UseTeamsMode) {
+	G_LibST_UseTeamsMode = _UseTeamsMode;
+}
+
+// ---------------------------------- //
+/** Display or not the teams scores
+ *	Used only if TeamsMode is set to true
+ *
+ *	@param	_Visible	Turn on/off the visibility of the scores
+ */
+Void SetTeamsScoresVisibility(Boolean _Visible) {
+	G_LibST_TeamsScoresVisible = _Visible;
+}
+
+// ---------------------------------- //
+/** Set the ratios of the scores table
+ *
+ *	@param	_Ratios		The new ratios of the scores table
+ */
+Void SetSizeRatio(Vec2 _Ratios) {
+	G_LibST_SizesRatios = _Ratios;
+	SetSize(G_LibST_SizesDefault[C_LibST_Header], G_LibST_SizesDefault[C_LibST_Table], G_LibST_SizesDefault[C_LibST_Footer]);
+	SetBackgroundProperties(G_LibST_CustomImagePos[-1], G_LibST_CustomImageSizeOriginal[-1]);
+	SetForegroundProperties(G_LibST_CustomImagePos[0], G_LibST_CustomImageSizeOriginal[0]);
+	SetTeamProperties(1, G_LibST_CustomImagePos[1], G_LibST_CustomImageSizeOriginal[1]);
+	SetTeamProperties(2, G_LibST_CustomImagePos[2], G_LibST_CustomImageSizeOriginal[2]);
+}
+
+// ---------------------------------- //
+/**	Turn on/off the revert of the player cards of the second team in teams mode
+ *
+ *	@param	_UseRevert		True use the revert, false don't use the revert
+ */
+Void SetRevertPlayerCardInTeamsMode(Boolean _UseRevert) {
+	G_LibST_UseRevert = _UseRevert;
+}
+
+// ---------------------------------- //
+/**	Set the icon of the mode in the header
+ *
+ *	@param	_ImgPath		The path to the icon file or its style and substyle
+ *							path: "file://Media/Path/To/File.dds"
+ *							style/substyle: "Style|Substyle"
+ */
+Void SetModeIcon(Text _ImgPath) {
+	G_LibST_ModeIcon = TL::MLEncode(_ImgPath);
+}
+
+// ---------------------------------- //
+/** Colorize the background of a player card
+ *
+ *	@param	_Score		The score of the player to colorize
+ *	@param	_Color		The color to use in Vec3 format
+ */
+Void SetPlayerColor(CScore _Score, Vec3 _Color) {
+	if (_Score == Null) return;
+	
+	declare netwrite Integer Net_LibST_ColorsUpdate for Teams[0];
+	declare netwrite Vec3[Text] Net_LibST_Colors for Teams[0];
+	
+	// Remove color
+	if (_Color == <-1., -1., -1.>) {
+		declare Removed = Net_LibST_Colors.removekey(_Score.User.Login);
+		if (Removed) Net_LibST_ColorsUpdate = Now;
+	}
+	// Add/Edit color
+	else {
+		Net_LibST_Colors[_Score.User.Login] = _Color;
+		Net_LibST_ColorsUpdate = Now;
+	}
+}
+
+// ---------------------------------- //
+/** Colorize the background of a player card
+ *
+ *	@param	_Score		The score of the player to colorize
+ *	@param	_Color		The color to use in hexa format
+ */
+Void SetPlayerColor(CScore _Score, Text _Color) {
+	SetPlayerColor(_Score, TL::ToColor(_Color));
+}
+
+// ---------------------------------- //
+/** Colorize the background of a player card
+ *
+ *	@param	_Player		The player to colorize
+ *	@param	_Color		The color to use in Vec3 format
+ */
+Void SetPlayerColor(CPlayer _Player, Vec3 _Color) {
+	if (_Player == Null) return;
+	
+	declare netwrite Integer Net_LibST_ColorsUpdate for Teams[0];
+	declare netwrite Vec3[Text] Net_LibST_Colors for Teams[0];
+	
+	// Remove color
+	if (_Color == <-1., -1., -1.>) {
+		declare Removed = Net_LibST_Colors.removekey(_Player.User.Login);
+		if (Removed) Net_LibST_ColorsUpdate = Now;
+	}
+	// Add/Edit color
+	else {
+		Net_LibST_Colors[_Player.User.Login] = _Color;
+		Net_LibST_ColorsUpdate = Now;
+	}
+}
+
+// ---------------------------------- //
+/** Colorize the background of a player card
+ *
+ *	@param	_Player		The player to colorize
+ *	@param	_Color		The color to use in hexa format
+ */
+Void SetPlayerColor(CPlayer _Player, Text _Color) {
+	SetPlayerColor(_Player, TL::ToColor(_Color));
+}
+
+// ---------------------------------- //
+/** Remove the color of the background of a player card
+ *
+ *	@param	_Score		The score to uncolorize
+ */
+Void UnsetPlayerColor(CScore _Score) {
+	SetPlayerColor(_Score, <-1., -1., -1.>);
+}
+
+// ---------------------------------- //
+/** Remove the color of the background of a player card
+ *
+ *	@param	_Player		The player to uncolorize
+ */
+Void UnsetPlayerColor(CPlayer _Player) {
+	SetPlayerColor(_Player, <-1., -1., -1.>);
+}
+
+// ---------------------------------- //
+/**	Turn on/off the player darkening on unspawn
+ *
+ *	@param	_UsePlayerDarkening		Use the player darkening or not
+ */
+Void SetPlayerDarkening(Boolean _UsePlayerDarkening) {
+	declare netwrite Net_LibST_UsePlayerDarkening for Teams[0] = C_LibST_UsePlayerDarkening;
+	Net_LibST_UsePlayerDarkening = _UsePlayerDarkening;
+}
+
+// ---------------------------------- //
+/** Display or not the player info in the footer
+ *
+ *	@param	_Visible	Turn on/off the visibility of the player info
+ */
+Void SetPlayerInfoVisibility(Boolean _Visible) {
+	G_LibST_PlayerInfoVisible = _Visible;
+}
+
+// ---------------------------------- //
+/** Display or not the server name in the footer
+ *
+ *	@param	_Visible	Turn on/off the visibility of the server name
+ */
+Void SetServerNameVisibility(Boolean _Visible) {
+	G_LibST_ServerNameVisible = _Visible;
+}
+
+// ---------------------------------- //
+/**	Send the cup points limit to the UI (used in TM Cup mode)
+ *
+ *	@param	_PointsLimit	The new points limit
+ */
+Void SetUiScoresPointsLimit(Integer _PointsLimit) {
+	declare netwrite Net_LibST_UIScoresPointsLimit for Teams[0] = _PointsLimit;
+	Net_LibST_UIScoresPointsLimit = _PointsLimit;
+}
+
+// ---------------------------------- //
+/**	Filter the players displayed by logins
+ *
+ *	@param	_Logins		The logins of the players to display
+ */
+Void FilterLogins(Text[] _Logins) {
+	declare netwrite Net_LibST_FilterLogins for Teams[0] = Text[];
+	Net_LibST_FilterLogins = _Logins;
+}
+
+// ---------------------------------- //
+/**	Use a predefined style for the scores table
+ *
+ *	Available styles are:
+ *	- LibST_Base, add basic columns: avatar, name, ManiaStars and tools
+ *	- LibST_Reset, remove all the previous styles
+ *	- LibST_TMBaseSolo, basic free for all scores table for TrackMania
+ *	- LibST_TMBaseTeam, basic teams scores table for TrackMania
+ *	- LibST_TMWithLegends, add a space for columns legends in the header
+ *	- LibST_SMBaseSolo, basic free for all scores table for ShootMania
+ *	- LibST_SMBaseTeams, basic teams scores table for ShootMania
+ *	- LibST_SMBaseOneColumn, same as LibST_SMBaseSolo but with only one players column
+ *	- LibST_SMBasePoints, add the RoundPoints and Points columns
+ *	- LibST_SMWithLegends, add a space for columns legends in the header
+ *
+ *	@param	_Style		The name of the style to use
+ */
+Void SetStyle(Text _Style) {
+	if (_Style == "") return;
+	
+	if (_Style == "LibST_Base") {
+		CreateCol("LibST_Avatar", "", "", 3., 10.);
+		CreateCol("LibST_Name", "", "", 16., 20.);
+		CreateCol("LibST_Tags", "", "", 4., 25.);
+		CreateCol("LibST_ManiaStars", "", "", 3., 30.);
+		CreateCol("LibST_Tools", "", "", 2., 40.);
+		SetColTextAlign("LibST_Name", CMlControl::AlignHorizontal::Left);
+	} else if (_Style == "LibST_Reset") {
+		Reset();
+	} else if (_Style == "LibST_TMBaseSolo") {
+		SetStyle("LibST_Base");
+		SetFormat(2, 5);
+		SetColWidth("LibST_Avatar", 4.);
+		SetSize(<58., 9.>, <156., 60.>, <-1., 17.7>);
+		SetBackgroundImage("file://Media/Manialinks/Trackmania/ScoresTable/bg-canyon.dds", <0., 5.>, <195., 100.>);
+		SetBackgroundCollection([
+			"Canyon"	=> "file://Media/Manialinks/Trackmania/ScoresTable/bg-canyon.dds",
+			"Valley"	=> "file://Media/Manialinks/Trackmania/ScoresTable/bg-valley.dds",
+			"Stadium"	=> "file://Media/Manialinks/Trackmania/ScoresTable/bg-stadium.dds"
+		]);
+		SetPlayerCardImages(
+			"file://Media/Manialinks/Trackmania/ScoresTable/playerline-square.dds",
+			"file://Media/Manialinks/Trackmania/ScoresTable/playerline-left.dds",
+			"file://Media/Manialinks/Trackmania/ScoresTable/playerline-right.dds"
+		);
+	} else if (_Style == "LibST_TMBaseTeams") {
+		SetStyle("LibST_TMBaseSolo");
+		SetSize(<160., -1.>, <-1., -1.>, <-1., -1.>);
+		SetTeamImage(1, "file://Media/Manialinks/Trackmania/ScoresTable/teamversus-left.dds", <0., 3.2>, <97.5, 24.4>);
+		SetTeamImage(2, "file://Media/Manialinks/Trackmania/ScoresTable/teamversus-right.dds", <0., 3.2>, <97.5, 24.4>);
+		SetTeamsMode(True);
+	} else if (_Style == "LibST_TMWithLegends") {
+		SetSize(<-1., 10.6>, <-1., -1.>, <-1., 16.1>);
+	} else if (_Style == "LibST_SMBaseSolo") {
+		SetStyle("LibST_Base");
+		SetFormat(2, 5);
+		SetPos(<0., 39.2, 20.>);
+		SetSize(<68., 8.>, <182., 60.>, <184., 16.>);
+		SetBackgroundImage("file://Media/Manialinks/Shootmania/ScoresTable/bg-storm.dds", <0., 5.>, <228., 98.>);
+		SetPlayerCardImages(
+			"file://Media/Manialinks/Shootmania/ScoresTable/playerline-square.dds",
+			"file://Media/Manialinks/Shootmania/ScoresTable/playerline-left.dds",
+			"file://Media/Manialinks/Shootmania/ScoresTable/playerline-right.dds"
+		);
+		SetPlayerDarkening(True);
+		SetColWidth("LibST_ManiaStars", 2.6);
+	} else if (_Style == "LibST_SMBaseTeams") {
+		SetStyle("LibST_SMBaseSolo");
+		SetSize(<187.6, -1.>, <-1., -1.>, <-1., -1.>);
+		SetTeamImage(1, "file://Media/Manialinks/Shootmania/ScoresTable/teamversus-left.dds", <0., 3.8>, <114.1, 26.>);
+		SetTeamImage(2, "file://Media/Manialinks/Shootmania/ScoresTable/teamversus-right.dds", <0., 3.8>, <113.9, 26.>);
+		SetTeamsMode(True);
+		SetTeamsScoresVisibility(False);
+		SetPlayerDarkening(True);
+	} else if (_Style == "LibST_SMBaseOneColumn") {
+		SetStyle("LibST_SMBaseSolo");
+		SetBackgroundImage("file://Media/Manialinks/Shootmania/ScoresTable/bg-storm.dds", <0., 5.>, <190., 98.>);
+		SetSize(<55., -1.>, <150., -1.>, <152., -1.>);
+		SetFormat(1, 4);
+		SetColWidth("LibST_Avatar", 2.);
+		SetColWidth("LibST_ManiaStars", 1.5);
+		SetColWidth("LibST_Tools", 1.1);
+		SetColTextSize("LibST_Name", 3.);
+	} else if (_Style == "LibST_SMBasePoints") {
+		CreateCol("LibST_SMRoundPoints", "", "0", 3., 100.);
+		SetColTextAlign("LibST_SMRoundPoints", CMlControl::AlignHorizontal::Right);
+		CreateCol("LibST_SMPoints", "", "0", 3., 110.);
+		SetColTextAlign("LibST_SMPoints", CMlControl::AlignHorizontal::Right);
+		SetColTextSize("LibST_SMPoints", 3.);
+	} else if (_Style == "LibST_SMWithLegends") {
+		SetSize(<-1., 11.>, <-1., 58.>, <-1., 15.>);
+	}
+}
+
+// ---------------------------------- //
+/**	Read the XML file and set the style
+ *
+ *	@param	_Xml		The XML file
+ *	@param	_SafeMode	Allow or not scripts to be added to the scores table
+ */
+Void Private_ReadXml(CXmlDocument _Xml, Boolean _SafeMode) {
+	if (_Xml == Null) return;
+	if (_Xml.Root == Null) return;
+	if (_Xml.Root.Name != "scorestable") return;
+	
+	// Save last xml style applied
+	declare LibST_XmlStyleBackUp for This = "";
+	LibST_XmlStyleBackUp = _Xml.TextContents;
+	
+	// ---------------------------------- //
+	// Styles
+	declare NodeStyles <=> _Xml.Root.GetFirstChild("styles");
+	if (NodeStyles != Null) {
+		foreach (NodeStyle in NodeStyles.Children) {
+			declare StyleId = NodeStyle.GetAttributeText("id", "");
+			SetStyle(StyleId);
+		}
+	}
+	
+	// ---------------------------------- //
+	// Properties
+	declare NodeProperties <=> _Xml.Root.GetFirstChild("properties");
+	if (NodeProperties != Null) {
+		foreach (NodeProperty in NodeProperties.Children) {
+			switch (NodeProperty.Name) {
+				case "position": {
+					declare PosX = NodeProperty.GetAttributeReal("x", 0.);
+					declare PosY = NodeProperty.GetAttributeReal("y", 0.);
+					declare PosZ = NodeProperty.GetAttributeReal("z", 0.);
+					SetPos(<PosX, PosY, PosZ>);
+				}
+				case "globalscale": {
+					declare Scale = NodeProperty.GetAttributeReal("scale", 1.);
+					SetScale(Scale);
+				}
+				case "textscale": {
+					declare Scale = NodeProperty.GetAttributeReal("scale", 1.);
+					SetTextScale(Scale);
+				}
+				case "headersize": {
+					declare Size = Vec3;
+					Size.X = NodeProperty.GetAttributeReal("x", 1.);
+					Size.Y = NodeProperty.GetAttributeReal("y", 1.);
+					SetSize(<Size.X, Size.Y>, <-1., -1.>, <-1., -1.>);
+				}
+				case "modeicon": {
+					declare Path = NodeProperty.GetAttributeText("icon", "");
+					SetModeIcon(Path);
+				}
+				case "tablesize": {
+					declare Size = Vec3;
+					Size.X = NodeProperty.GetAttributeReal("x", 1.);
+					Size.Y = NodeProperty.GetAttributeReal("y", 1.);
+					SetSize(<-1., -1.>, <Size.X, Size.Y>, <-1., -1.>);
+				}
+				case "taleformat": {
+					declare ColumnsNb = NodeProperty.GetAttributeInteger("columns", 1);
+					declare LinesNb = NodeProperty.GetAttributeInteger("lines", 1);
+					SetFormat(ColumnsNb, LinesNb);
+				}
+				case "footersize": {
+					declare Size = Vec3;
+					Size.X = NodeProperty.GetAttributeReal("x", 1.);
+					Size.Y = NodeProperty.GetAttributeReal("y", 1.);
+					SetSize(<-1., -1.>, <-1., -1.>, <Size.X, Size.Y>);
+				}
+				case "footertext": {
+					declare FooterText = NodeProperty.GetAttributeText("text", "");
+					SetFooterText(FooterText);
+				}
+				case "tabname": {
+					declare TabName = NodeProperty.GetAttributeText("name", "");
+					SetTabName(TabName);
+				}
+			}
+		}
+	}
+	
+	// ---------------------------------- //
+	// Settings
+	declare NodeSettings <=> _Xml.Root.GetFirstChild("settings");
+	if (NodeSettings != Null) {
+		foreach (NodeSetting in NodeSettings.Children) {
+			switch (NodeSetting.GetAttributeText("name", "")) {
+				case "TeamsMode": {
+					declare UseTeamsMode = NodeSetting.GetAttributeBoolean("value", C_LibST_UseTeamsMode);
+					SetTeamsMode(UseTeamsMode);
+				}
+				case "TeamsScoresVisibility": {
+					declare TeamsScoresVisibile = NodeSetting.GetAttributeBoolean("value", C_LibST_TeamsScoresVisible);
+					SetTeamsScoresVisibility(TeamsScoresVisibile);
+				}
+				case "RevertPlayerCardInTeamsMode": {
+					declare UseRevert = NodeSetting.GetAttributeBoolean("value", C_LibST_UseRevert);
+					SetRevertPlayerCardInTeamsMode(UseRevert);
+				}
+				case "PlayerDarkening": {
+					declare UsePlayerDarkening = NodeSetting.GetAttributeBoolean("value", C_LibST_UsePlayerDarkening);
+					SetPlayerDarkening(UsePlayerDarkening);
+				}
+				case "PlayerInfoVisibility": {
+					declare PlayerInfoVisible = NodeSetting.GetAttributeBoolean("value", C_LibST_PlayerInfoVisible);
+					SetPlayerInfoVisibility(PlayerInfoVisible);
+				}
+				case "ServerNameVisibility": {
+					declare ServerNameVisible = NodeSetting.GetAttributeBoolean("value", C_LibST_ServerNameVisible);
+					SetServerNameVisibility(ServerNameVisible);
+				}
+			}
+		}
+	}
+	
+	// ---------------------------------- //
+	// Columns
+	declare NodeColumns <=> _Xml.Root.GetFirstChild("columns");
+	if (NodeColumns != Null) {
+		foreach (NodeColumn in NodeColumns.Children) {
+			declare ColumnId = NodeColumn.GetAttributeText("id", "");
+			declare Action = NodeColumn.GetAttributeText("action", "");
+			if (ColumnId != "" && Action != "") {
+				// Create
+				if (Action == "create") {
+					CreateCol(ColumnId, "", "", 10., 0.);
+				} 
+				// Create / Update
+				if (Action == "create" || Action == "update") {
+					foreach (NodeColumnProperty in NodeColumn.Children) {
+						switch (NodeColumnProperty.Name) {
+							case "legend": {
+								SetColLegend(ColumnId, NodeColumnProperty.TextContents);
+							}
+							case "defaultvalue": {
+								SetColDefaultValue(ColumnId, NodeColumnProperty.TextContents);
+							}
+							case "width": {
+								SetColWidth(ColumnId, TL::ToReal(NodeColumnProperty.TextContents));
+							}
+							case "weight": {
+								SetColWeight(ColumnId, TL::ToReal(NodeColumnProperty.TextContents));
+							}
+							case "textstyle": {
+								SetColTextStyle(ColumnId, NodeColumnProperty.TextContents);
+							}
+							case "textsize": {
+								SetColTextSize(ColumnId, TL::ToReal(NodeColumnProperty.TextContents));
+							}
+							case "textalign": {
+								declare HAlign = CMlControl::AlignHorizontal::HCenter;
+								switch (NodeColumnProperty.TextContents) {
+									case "left": HAlign = CMlControl::AlignHorizontal::Left;
+									case "center": HAlign = CMlControl::AlignHorizontal::HCenter;
+									case "right": HAlign = CMlControl::AlignHorizontal::Right;
+								}
+								SetColTextAlign(ColumnId, HAlign);
+							}
+						}
+					}
+				}
+				// Destroy
+				if (Action == "destroy") {
+					DestroyCol(ColumnId);
+				}
+			}
+		}
+	}
+	
+	// ---------------------------------- //
+	// Images
+	declare NodeImages <=> _Xml.Root.GetFirstChild("images");
+	if (NodeImages != Null) {
+		foreach (NodeImage in NodeImages.Children) {
+			if (NodeImage.Name == "playercard") continue;
+			
+			declare Path = "";
+			declare Position = <0., 0.>;
+			declare Size = <100., 100.>;
+			declare Color = "";
+			declare Collection = Text[Text];
+			
+			switch (NodeImage.Name) {
+				case "background": {
+					Path = G_LibST_CustomImagePath[-1];
+					Position = G_LibST_CustomImagePos[-1];
+					Size = G_LibST_CustomImageSize[-1];
+				}
+				case "foreground": {
+					Path = G_LibST_CustomImagePath[0];
+					Position = G_LibST_CustomImagePos[0];
+					Size = G_LibST_CustomImageSize[0];
+				}
+				case "team1": {
+					Path = G_LibST_CustomImagePath[1];
+					Position = G_LibST_CustomImagePos[1];
+					Size = G_LibST_CustomImageSize[1];
+				}
+				case "team2": {
+					Path = G_LibST_CustomImagePath[2];
+					Position = G_LibST_CustomImagePos[2];
+					Size = G_LibST_CustomImageSize[2];
+				}
+			}
+			
+			foreach (NodeImageProperty in NodeImage.Children) {
+				switch (NodeImageProperty.Name) {
+					case "image": {
+						Path = NodeImageProperty.GetAttributeText("path", "");
+					}
+					case "position": {
+						Position.X = NodeImageProperty.GetAttributeReal("x", 0.);
+						Position.Y = NodeImageProperty.GetAttributeReal("y", 0.);
+					}
+					case "size": {
+						Size.X = NodeImageProperty.GetAttributeReal("width", 100.);
+						Size.Y = NodeImageProperty.GetAttributeReal("height", 100.);
+					}
+					case "colorize": {
+						Color = NodeImageProperty.GetAttributeText("color", "");
+					}
+					case "collection": {
+						foreach (NodeCollection in NodeImageProperty.Children) {
+							declare CollectionEnvironment = NodeCollection.GetAttributeText("environment", "");
+							declare CollectionPath = NodeCollection.GetAttributeText("path", "");
+							if (CollectionEnvironment != "" && CollectionPath != "") {
+								Collection[CollectionEnvironment] = CollectionPath;
+							}
+						}
+					}
+				}
+			}
+			
+			switch (NodeImage.Name) {
+				case "background": {
+					SetBackgroundImage(Path, Position, Size, Color);
+					if (Collection.count > 0) SetBackgroundCollection(Collection);
+				}
+				case "foreground": {
+					SetForegroundImage(Path, Position, Size, Color);
+					if (Collection.count > 0) SetForegroundCollection(Collection);
+				}
+				case "team1": {
+					SetTeamImage(1, Path, Position, Size);
+					if (Collection.count > 0) SetTeamCollection(1, Collection);
+				}
+				case "team2": {
+					SetTeamImage(2, Path, Position, Size);
+					if (Collection.count > 0) SetTeamCollection(2, Collection);
+				}
+			}
+		}
+		
+		declare NodePlayerCard <=> NodeImages.GetFirstChild("playercard");
+		if (NodePlayerCard != Null) {
+			declare PathQuad = " ";
+			declare PathLeft = " ";
+			declare PathRight = " ";
+			
+			foreach (NodePlayerCardProperty in NodePlayerCard.Children) {
+				switch (NodePlayerCardProperty.Name) {
+					case "quad": {
+						PathQuad = NodePlayerCardProperty.GetAttributeText("path", "");
+					}
+					case "left": {
+						PathLeft = NodePlayerCardProperty.GetAttributeText("path", "");
+					}
+					case "right": {
+						PathRight = NodePlayerCardProperty.GetAttributeText("path", "");
+					}
+				}
+			}
+			
+			SetPlayerCardImages(PathQuad, PathLeft, PathRight);
+		}
+	}
+	
+	if (!_SafeMode) {
+		declare NodeScripts <=> _Xml.Root.GetFirstChild("scripts");
+		if (NodeScripts != Null) {
+			foreach (NodeScript in NodeScripts.Children) {
+				switch (NodeScript.Name) {
+					case "column": {
+						declare ColumnId = NodeScript.GetAttributeText("id", "");
+						declare ColumnScript = NodeScript.TextContents;
+						SetColScript(ColumnId, ColumnScript);
+					}
+					case "footer": {
+						declare FooterScript = NodeScript.TextContents;
+						SetFooterScript(FooterScript);
+					}
+				}
+			}
+		}
+	}
+}
+
+// ---------------------------------- //
+/**	Create a request for the XML style file
+ *
+ *	@param	_Style		The path to the XML file to use
+ *
+ *	@return				True if the request was created, false otherwise
+ */
+Boolean RequestStyleFromXml(Text _XmlPath) {
+	log(Now^"> LibScoresTable > RequestStyleFromXml() > Try to load XML : "^_XmlPath);	
+	// Destroy an ongoing request
+	if (G_LibST_RequestId != NullId && Http.Requests.existskey(G_LibST_RequestId)) Http.Destroy(Http.Requests[G_LibST_RequestId]);
+	G_LibST_RequestId = NullId;
+	G_LibST_RequestEndTime = -1;
+	
+	if (!Http.IsValidUrl(_XmlPath)) {
+		log(Now^"> LibScoresTable > RequestStyleFromXml() > Failed : url is not valid");
+		return False;
+	}
+	
+	declare Req <=> Http.CreateGet(_XmlPath);
+	if (Req == Null) {
+		log(Now^"> LibScoresTable > RequestStyleFromXml() > Failed : can't create a request");
+		return False;
+	}
+	
+	G_LibST_RequestId = Req.Id;
+	G_LibST_RequestEndTime = Now + C_LibST_RequestTimeout;
+	
+	return True;
+}
+
+// ---------------------------------- //
+/**	Wait for a response to the request
+ *
+ *	@return				True if the request is not completed, false otherwise
+ */
+Boolean WaitStyleFromXml() {
+	if (Now >= G_LibST_RequestEndTime) return False;
+	if (G_LibST_RequestId == NullId) return False;
+	if (!Http.Requests.existskey(G_LibST_RequestId)) return False;
+	if (Http.Requests[G_LibST_RequestId].IsCompleted) return False;
+	
+	return True;
+}
+
+// ---------------------------------- //
+/**	Read the XML file and set the style from it
+ *
+ *	@param	_SafeMode	Allow or not scripts to be added to the scores table
+ *
+ *	@return				True if the style was applied, false otherwise
+ */
+Boolean SetStyleFromXml(Boolean _SafeMode) {
+	if (!Http.Requests.existskey(G_LibST_RequestId)) {
+		log(Now^"> LibScoresTable > SetStyleFromXml() > Failed : can't find the request");
+		return False;
+	}
+	
+	declare Req <=> Http.Requests[G_LibST_RequestId];
+	
+	if (!Req.IsCompleted || Req.StatusCode != 200) {
+		log(Now^"> LibScoresTable > SetStyleFromXml() > Failed : request failed to complete with error code "^Req.StatusCode);
+		return False;
+	}
+	
+	declare StyleXml <=> Xml.Create(Req.Result);
+	Http.Destroy(Req);
+	G_LibST_RequestId = NullId;
+	G_LibST_RequestEndTime = -1;
+	
+	if (StyleXml == Null) {
+		log(Now^"> LibScoresTable > SetStyleFromXml() > Failed : the file is not a valid xml file");
+		return False;
+	}
+	
+	Private_ReadXml(StyleXml, _SafeMode);
+	Xml.Destroy(StyleXml);
+	StyleXml <=> Null;
+	
+	log(Now^"> LibScoresTable > SetStyleFromXml() > XML file loaded");
+	return True;
+}
+
+// ---------------------------------- //
+/// Restore the previous xml scores table style
+Void RestoreStyleFromXml() {
+	declare LibST_XmlStyleBackUp for This = "";
+	if (LibST_XmlStyleBackUp == "") return;
+	
+	declare StyleXml <=> Xml.Create(LibST_XmlStyleBackUp);
+	
+	if (StyleXml == Null) {
+		log(Now^"> LibScoresTable > RestoreStyleFromXml() > Failed : the file is not a valid xml file");
+	} else {
+		Private_ReadXml(StyleXml, True);
+		Xml.Destroy(StyleXml);
+		StyleXml <=> Null;
+		log(Now^"> LibScoresTable > RestoreStyleFromXml() > XML file loaded");
+	}
+}
+
+// ---------------------------------- //
+/// Reset the previous xml scores table style
+Void ResetStyleFromXml() {
+	declare LibST_XmlStyleBackUp for This = "";
+	LibST_XmlStyleBackUp = "";
+}
+
+// ---------------------------------- //
+/** Build the scores table manialink
+ *	/!\ Use with care, this function uses a lot of resources
+ *	/!\ Rebuild the scores table only when necessary
+ *
+ *	@param	_Game	Choose between SM and TM
+ */
+Void Build(Text _Game, Boolean _Restore) {
+	declare LayerScoresTable = GetLayer();
+	if (LayerScoresTable == Null) return;
+	
+	// Try to restore the latest style set from xml
+	if (_Restore) RestoreStyleFromXml();
+	
+	// Disable the default scores table
+	UIManager.UIAll.ScoreTableOnlyManialink = True;
+	
+	// ---------------------------------- //
+	// Send the default values to the UI
+	declare netwrite Net_LibST_ColsDefaultValues for Teams[0] = Text[Text];
+	foreach (ColId => ColProperties in G_LibST_ColsText) {
+		Net_LibST_ColsDefaultValues[ColId] = ColProperties[C_LibST_ColDefaultValue];
+	}
+	
+	declare ML_Part				= "";
+	declare ML_ScoresTable		= "";
+	declare ML_Background		= "";
+	declare ML_Foreground		= "";
+	declare ML_Teams			= "";
+	declare ML_Header			= "";
+	declare ML_Legend			= [1 => "", 2 => ""];
+	declare ML_Legends			= "";
+	declare ML_PlayerCard		= [1 => "", 2 => ""];
+	declare ML_PlayerCardRevert = "";
+	declare ML_Buttons			= "";
+	declare ML_Table			= "";
+	declare ML_SpecConfirm		= "";
+	declare ML_Hightlight		= "";
+	declare ML_Footer			= "";
+	declare ML_PlayerInfo		= "";
+	declare ML_Pager			= "";
+	declare ML_Settings			= "";
+	
+	// ---------------------------------- //
+	// Background
+	declare Largest = [G_LibST_Sizes[C_LibST_Header].X, G_LibST_Sizes[C_LibST_Table].X, G_LibST_Sizes[C_LibST_Footer].X];
+	Largest = Largest.sort();
+	declare Vec2 BGSize;
+	BGSize.X = Largest[2];
+	BGSize.Y = G_LibST_Sizes[C_LibST_Header].Y + G_LibST_Sizes[C_LibST_Table].Y + G_LibST_Sizes[C_LibST_Footer].Y;
+	declare BGMargin = <2., 2.>;
+	declare Colorize = "";
+	declare BGColor = "0007";
+	if (G_LibST_CustomImageColor[-1] != "") {
+		Colorize = """colorize="{{{G_LibST_CustomImageColor[-1]}}}" """;
+		BGColor = G_LibST_CustomImageColor[-1];
+	}
+	
+	if (G_LibST_CustomImagePath[-1] != "") {
+		ML_Background = """
+<quad posn="{{{G_LibST_CustomImagePos[-1].X}}} {{{G_LibST_CustomImagePos[-1].Y}}}" sizen="{{{G_LibST_CustomImageSize[-1].X}}} {{{G_LibST_CustomImageSize[-1].Y}}}" halign="center" image="{{{G_LibST_CustomImagePath[-1]}}}" {{{Colorize}}}id="Quad_Background"/>""";
+	} else {
+		ML_Background = """
+<quad posn="0 {{{BGMargin.Y/2.}}}" sizen="{{{BGSize.X+BGMargin.X}}} {{{BGSize.Y+BGMargin.Y}}}" halign="center" bgcolor="{{{BGColor}}}" id="Quad_Background" />""";
+	}
+	
+	// ---------------------------------- //
+	// Foreground
+	if (G_LibST_CustomImagePath[0] != "") {
+		if (G_LibST_CustomImageColor[0] != "") Colorize = """colorize="{{{G_LibST_CustomImageColor[0]}}}" """;
+		ML_Foreground = """
+<quad posn="{{{G_LibST_CustomImagePos[0].X}}} {{{G_LibST_CustomImagePos[0].Y}}}" sizen="{{{G_LibST_CustomImageSize[0].X}}} {{{G_LibST_CustomImageSize[0].Y}}}" halign="center" image="{{{G_LibST_CustomImagePath[0]}}}" {{{Colorize}}}id="Quad_Foreground"/>""";
+	}
+
+	// ---------------------------------- //
+	// Header
+	// Not in teams mode
+	if (!G_LibST_UseTeamsMode) {
+		ML_Header = "<frame>";
+		ML_Header ^= """<label posn="0 -0.3" sizen="{{{G_LibST_Sizes[C_LibST_Header].X}}} {{{G_LibST_Sizes[C_LibST_Header].Y}}}" scale="0.9" halign="center" style="TextButtonBig" textsize="2" text="{{{_("Ranking")}}}" id="Label_Header" />""";
+		if (Http.IsValidUrl(G_LibST_ModeIcon)) {
+			ML_Header ^= """<quad posn="{{{(G_LibST_Sizes[C_LibST_Header].X*0.47) + 5}}} -1.6" halign="right" valign="center" sizen="4.5 4.5" image="{{{G_LibST_ModeIcon}}}" />""";
+		} else if (G_LibST_ModeIcon != ""){
+			declare Styles = TL::Split("|", G_LibST_ModeIcon);
+			declare Style = "";
+			declare Substyle = "";
+			if (Styles.existskey(0)) Style = Styles[0];
+			if (Styles.existskey(1)) Substyle = Styles[1];
+			ML_Header ^= """<quad posn="{{{(G_LibST_Sizes[C_LibST_Header].X*0.47) + 5}}} -1.5" halign="right" valign="center" sizen="4.5 4.5" style="{{{Style}}}" substyle="{{{Substyle}}}" />""";
+		}
+		ML_Header ^= "</frame>";
+	} 
+	// In teams mode
+	else {
+		ML_Header = """<frame><format style="TextButtonBig" textsize="2" />""";
+		
+		declare CenterSizeX = G_LibST_Sizes[C_LibST_Header].X * 0.05;
+		declare ScoreSizeX = G_LibST_Sizes[C_LibST_Header].X * 0.118;
+		declare LogoSizeX = G_LibST_Sizes[C_LibST_Header].X * 0.056;
+		declare TeamSizeX = G_LibST_Sizes[C_LibST_Header].X * 0.232;
+		declare MarginSizeX = G_LibST_Sizes[C_LibST_Header].X * 0.01;
+		
+		declare ScorePosX = CenterSizeX + MarginSizeX + (ScoreSizeX/2.);
+		declare LogoPosX = ScorePosX + (ScoreSizeX /2.) + MarginSizeX + (LogoSizeX/2.);
+		declare TeamPosX = LogoPosX + (LogoSizeX/2.) + MarginSizeX + (TeamSizeX / 2.);
+		
+		declare LogoSizeY = [1 => LogoSizeX, 2 => LogoSizeX];
+		declare LogoPosY = [1 => 2.5, 2 => 2.5];
+		if (G_LibST_CustomImagePath[1] != "") {
+			LogoSizeY[1] = G_LibST_CustomImageSize[1].Y * 0.4;
+			LogoPosY[1] = G_LibST_CustomImagePos[1].Y-(G_LibST_CustomImageSize[1].Y*0.03);
+		}
+		if (G_LibST_CustomImagePath[2] != "") {
+			LogoSizeY[2] = G_LibST_CustomImageSize[2].Y * 0.4;
+			LogoPosY[2] = G_LibST_CustomImagePos[2].Y-(G_LibST_CustomImageSize[2].Y*0.03);
+		}
+		
+		// With scores
+		if (G_LibST_TeamsScoresVisible ) {
+			ML_Header ^= """
+<label posn="{{{-ScorePosX}}} -1.5 2" sizen="{{{ScoreSizeX}}} {{{G_LibST_Sizes[C_LibST_Header].Y}}}" halign="center" valign="center" text="0" textsize="6" opacity="0.83" id="Label_Team1Score" />
+<label posn="{{{ScorePosX}}} -1.5 2" sizen="{{{ScoreSizeX}}} {{{G_LibST_Sizes[C_LibST_Header].Y}}}" halign="center" valign="center" text="0" textsize="6" opacity="0.83" id="Label_Team2Score" />""";
+		}
+		
+		// Quad debug
+		/*ML_Header ^= """
+<quad posn="0 0 10" sizen="{{{CenterSizeX}}} 10" bgcolor="7077" />
+<quad posn="{{{ScorePosX}}} 0 10" sizen="{{{ScoreSizeX}}} 10" bgcolor="7077" />
+<quad posn="{{{LogoPosX}}} 0 10" sizen="{{{LogoSizeX}}} 10" halign="center" bgcolor="7077" />
+<quad posn="{{{LogoPosX}}} 0 0" sizen="{{{LogoSizeX + 5}}} 20" halign="center" valign="center" bgcolor="0f0" />
+<quad posn="{{{TeamPosX}}} 0 10" sizen="{{{TeamSizeX}}} 10" halign="center" bgcolor="7077" />""";*/
+		
+		ML_Header ^= """		
+<label posn="{{{-TeamPosX}}} -0.7 2" sizen="{{{TeamSizeX/0.85}}} {{{G_LibST_Sizes[C_LibST_Header].Y}}}" scale="0.85" halign="center" valign="center" textsize="2" text="{{{Teams[0].ColorizedName}}}" opacity="0.83" id="Label_Team1Name" />
+<label posn="{{{TeamPosX}}} -0.7 2" sizen="{{{TeamSizeX/0.85}}} {{{G_LibST_Sizes[C_LibST_Header].Y}}}" scale="0.85" halign="center" valign="center" textsize="2" text="{{{Teams[1].ColorizedName}}}" opacity="0.83" id="Label_Team2Name" />
+<quad posn="{{{-LogoPosX}}} {{{LogoPosY[1]}}} 0" sizen="{{{LogoSizeX*1.1}}} {{{LogoSizeY[1]*0.95}}}" halign="center" style="Emblems" substyle="#1" />
+<quad posn="{{{LogoPosX}}} {{{LogoPosY[2]}}} 0" sizen="{{{LogoSizeX*1.1}}} {{{LogoSizeY[2]*0.95}}}" halign="center" style="Emblems" substyle="#2" />
+</frame>""";
+	}
+	
+	// ---------------------------------- //
+	// Teams
+	if (G_LibST_CustomImagePath[1] != "") {
+		ML_Teams ^= """<quad posn="{{{G_LibST_CustomImagePos[1].X}}} {{{G_LibST_CustomImagePos[1].Y}}} 1" sizen="{{{G_LibST_CustomImageSize[1].X}}} {{{G_LibST_CustomImageSize[1].Y}}}" halign="right" image="{{{G_LibST_CustomImagePath[1]}}}" id="Quad_Team1Image" />""";
+	}
+	if (G_LibST_CustomImagePath[2] != "") {
+		ML_Teams ^= """<quad posn="{{{G_LibST_CustomImagePos[2].X}}} {{{G_LibST_CustomImagePos[2].Y}}} 1" sizen="{{{G_LibST_CustomImageSize[2].X}}} {{{G_LibST_CustomImageSize[2].Y}}}" image="{{{G_LibST_CustomImagePath[2]}}}" id="Quad_Team2Image" />""";
+	}
+	
+	// ---------------------------------- //
+	// Dimensions
+	declare ItemNbX = G_LibST_TableColsNb;
+	declare ItemNbY = G_LibST_TableLinesNb;
+	declare ItemsSizeX = G_LibST_Sizes[C_LibST_Table].X;
+	declare ItemsSizeY = G_LibST_Sizes[C_LibST_Table].Y;
+	declare ItemMarginX = 0.5;
+	declare ItemMarginY = 0.;
+	declare ItemSizeX = (ItemsSizeX - ((ItemNbX - 1) * ItemMarginX)) / ItemNbX;
+	declare ItemSizeY = (ItemsSizeY - ((ItemNbY - 1) * ItemMarginY)) / ItemNbY;
+	declare PosnX = 0.;
+	declare PosnY = 0.;
+	
+	declare NbItems = ItemNbX * ItemNbY;
+	declare NbOfSide = 1;
+	if (G_LibST_UseTeamsMode && G_LibST_UseRevert) NbOfSide = 2;
+	
+	declare EchelonSize				= Private_ResizeKeepRatio(<1., 4.>, <3., ItemSizeY*0.95>);
+	EchelonSize = <EchelonSize.X*0.7, EchelonSize.Y>; ///< To remove the empty part of the echelon image, also applied below on the manialink quad
+	declare PlayerCardLeftMargin	= 0.5;
+	declare PlayerCardRightMargin	= 2.;
+	declare PlayerCardTopMargin		= ItemSizeY*0.03;
+	declare PlayerCardBotMargin		= ItemSizeY*0.03;
+	declare PlayerCardColMargin		= 1.;
+	declare PlayerCardLeftShift		= EchelonSize.X + ItemSizeY;
+	declare PlayerCardRightShift	= ItemSizeX - PlayerCardLeftShift - PlayerCardRightMargin;
+	declare PlayerCardSizeX			= ItemSizeX - PlayerCardLeftShift - PlayerCardLeftMargin - PlayerCardRightMargin - ((G_LibST_ColsText.count - 1) * PlayerCardColMargin);
+	declare PlayerCardSizeY			= ItemSizeY - PlayerCardTopMargin - PlayerCardBotMargin;
+	declare PlayerCardTopSizeY		= PlayerCardSizeY * 0.73;
+	declare PlayerCardBotSizeY		= PlayerCardSizeY * 0.27;
+	
+	declare ColsWidth = 0.;
+	declare Ratio = 0.;
+	declare ShiftX = 0.;
+	declare ColsPosnX = Real[Text];
+	declare ColsSizeX = Real[Text];
+	declare ColsWeight = Real[Text];
+	
+	foreach (ColId => ColProperties in G_LibST_ColsReal) {
+		ColsWeight[ColId] = ColProperties[C_LibST_ColWeight];
+		ColsWidth += ColProperties[C_LibST_ColWidth];
+	}
+	
+	if (ColsWidth <= 1.) ColsWidth = 1.;
+	
+	Ratio = PlayerCardSizeX / ColsWidth;
+	ColsWeight = ColsWeight.sort();
+	foreach (ColId => ColWeight in ColsWeight) {
+		ColsPosnX[ColId] = ShiftX;
+		ColsSizeX[ColId] = G_LibST_ColsReal[ColId][C_LibST_ColWidth] * Ratio;
+		ShiftX += ColsSizeX[ColId] + PlayerCardColMargin;
+	}
+	
+	// ---------------------------------- //
+	// Legends	
+	for (Side, 1, NbOfSide) {
+		if (Side == 1) ML_Legend[Side] ^= """<framemodel id="Framemodel_Legend">""";
+		else ML_Legend[Side] ^= """<framemodel id="Framemodel_LegendRevert"><frame posn="{{{ItemSizeX-(2*PlayerCardLeftShift)}}} 0">""";
+		
+		declare PosX = 0.;
+		foreach (ColId => ColWeight in ColsWeight) {
+			if (Side == 1) PosX = ColsPosnX[ColId]+(ColsSizeX[ColId]/2.);
+			else PosX = -ColsPosnX[ColId]-(ColsSizeX[ColId]/2.);
+			ML_Legend[Side] ^= """<label posn="{{{PosX}}} 0" sizen="{{{ColsSizeX[ColId]}}} {{{G_LibST_Sizes[C_LibST_Header].Y}}}" halign="center" valign="bottom" textsize="1" text="{{{G_LibST_ColsText[ColId][C_LibST_ColLegend]}}}" />""";
+		}
+		
+		if (Side == 1) ML_Legend[Side] ^= """</framemodel>""";
+		else ML_Legend[Side] ^= """</frame></framemodel>""";
+	}
+	
+	PosnX = 0.;
+	PosnY = 0.;
+	declare Model = "Framemodel_Legend";
+	for (I, 1, ItemNbX) {
+		PosnX = PlayerCardLeftShift + ((I - 1) * (ItemSizeX + ItemMarginX));
+		if (G_LibST_UseTeamsMode && G_LibST_UseRevert && I > (ItemNbX / 2) + (ItemNbX % 2)) Model = "Framemodel_LegendRevert";
+		else Model = "Framemodel_Legend";
+		
+		ML_Legends ^= """
+<frame posn="{{{PosnX}}} {{{-G_LibST_Sizes[C_LibST_Header].Y+0.5}}}">
+	<frameinstance modelid="{{{Model}}}" />
+</frame>	""";
+	}
+	
+	// ---------------------------------- //
+	// Player card	
+	for (Side, 1, NbOfSide) {
+		declare Revert = 1;
+		if (Side == 2) Revert = -1;
+				
+		if (Side == 1) ML_PlayerCard[Side] ^= """
+<framemodel id="Framemodel_Player">
+	<frame posn="0 0 0">""";
+		else ML_PlayerCard[Side] ^= """
+<framemodel id="Framemodel_PlayerRevert">
+	<frame posn="{{{ItemSizeX}}} 0 0">""";
+		
+		declare EchelonSide = "";
+		if (Side == 2) EchelonSide = "_rev";
+		declare LineSquarePosX = EchelonSize.X-0.3;
+		if (Side == 2) LineSquarePosX = -EchelonSize.X+0.3;
+		declare LineRectanglePosX = PlayerCardLeftShift-1.;
+		if (Side == 2) LineRectanglePosX = -PlayerCardLeftShift+1.;
+		
+		declare PlayerLineSquareImage = G_LibST_CustomPlayerCard[0];
+		declare PlayerLineRectangleImage = G_LibST_CustomPlayerCard[1];
+		if (Side == 2) PlayerLineRectangleImage = G_LibST_CustomPlayerCard[2];
+		
+		declare PlayerLineSquareColor = "111";
+		declare PlayerLineRectangleColor = "777";
+		if (G_LibST_UseTeamsMode) {
+			if (Side == 1) {
+				PlayerLineSquareColor = TL::SubText(Teams[0].ColorText, 1, 20);
+				PlayerLineRectangleColor =TL::SubText(Teams[0].ColorText, 1, 20);
+			} else if (Side == 2) {
+				PlayerLineSquareColor = TL::SubText(Teams[1].ColorText, 1, 20);
+				PlayerLineRectangleColor = TL::SubText(Teams[1].ColorText, 1, 20);
+			}
+		}
+		
+		ML_PlayerCard[Side] ^= """
+		<frame posn="0 0 0">
+			<quad posn="{{{EchelonSize.X*Revert}}} {{{-ItemSizeY/2.}}} 2" sizen="{{{EchelonSize.X/0.7}}} {{{EchelonSize.Y}}}" halign="{{{Private_GetRevert("right", Side)}}}" valign="center" image="file://Media/Manialinks/Common/Echelons/small_echelon1{{{EchelonSide}}}.dds" id="Quad_Echelon" />
+			<quad posn="{{{LineSquarePosX}}} {{{-ItemSizeY/2.}}} 1" sizen="{{{ItemSizeY}}} {{{ItemSizeY}}}" halign="{{{Private_GetRevert("left", Side)}}}" valign="center" bgcolor="0007" image="{{{PlayerLineSquareImage}}}" colorize="{{{PlayerLineSquareColor}}}" id="Quad_PlayerLineSquare" />
+			<quad posn="{{{LineRectanglePosX}}} {{{-ItemSizeY/2.}}} 0" sizen="{{{ItemSizeX-PlayerCardLeftShift+1.}}} {{{ItemSizeY}}}" halign="{{{Private_GetRevert("left", Side)}}}" valign="center" bgcolor="0007" image="{{{PlayerLineRectangleImage}}}" colorize="{{{PlayerLineRectangleColor}}}" id="Quad_PlayerLineRectangle" />
+		</frame>
+		<frame posn="0 0 5">
+			<quad posn="{{{LineRectanglePosX}}} {{{-ItemSizeY/2.}}} 0" sizen="{{{ItemSizeX-PlayerCardLeftShift+1.}}} {{{ItemSizeY}}}" halign="{{{Private_GetRevert("left", Side)}}}" valign="center" image="{{{PlayerLineRectangleImage}}}" colorize="777" opacity="0.7" id="Quad_PlayerDarkening" />
+		</frame>
+		<frame posn="{{{LineSquarePosX}}} {{{-ItemSizeY/2.}}} 1">
+			<label posn="{{{(ItemSizeY/2.)*Revert}}} 0" sizen="{{{ItemSizeY/G_LibST_TextScale}}} {{{ItemSizeY-1.}}}" scale="{{{0.8*G_LibST_TextScale}}}" halign="center" valign="center2" textsize="5" opacity="0.4" textemboss="0" text="0" id="Label_LocalRank" />
+		</frame>
+		<frame posn="{{{(PlayerCardLeftShift+PlayerCardLeftMargin)*Revert}}} {{{-PlayerCardTopMargin}}} 1">""";
+	
+		declare DebugColor = 111;
+		foreach (ColId => ColWeight in ColsWeight) {
+			declare ShiftAlign = 0.;
+			switch (G_LibST_ColsText[ColId][C_LibST_ColHAlign]) {
+				case "center"	: ShiftAlign = ColsSizeX[ColId]/2.;
+				case "right"	: ShiftAlign = ColsSizeX[ColId];
+			}
+			
+			declare ColPosX = (ColsPosnX[ColId]+ShiftAlign)*Revert;
+			declare ColHAlign = Private_GetRevert(G_LibST_ColsText[ColId][C_LibST_ColHAlign], Side);
+			
+			// Debug square
+			/*DebugColor += 111;
+			ML_PlayerCard[Side] ^= """
+<frame posn="{{{ColPosX}}} {{{-PlayerCardTopSizeY/2.}}}">
+	<quad sizen="{{{ColsSizeX[ColId]}}} {{{PlayerCardTopSizeY}}}" halign="{{{ColHAlign}}}" valign="center" bgcolor="{{{DebugColor}}}" />
+</frame>""";*/
+		
+			switch (ColId) {
+				case "LibST_Avatar": {
+					declare AvatarSize = Private_ResizeKeepRatio(<10., 10.>, <ColsSizeX[ColId], PlayerCardTopSizeY>);
+					ML_PlayerCard[Side] ^= """
+<frame posn="{{{ColPosX}}} {{{-PlayerCardTopSizeY/2.}}}">
+	<quad sizen="{{{AvatarSize.X}}} {{{AvatarSize.Y}}}" halign="{{{ColHAlign}}}" valign="center" bgcolor="0007" id="Quad_LibST_Avatar" />
+</frame>""";
+				}
+				case "LibST_ManiaStars": {
+					declare StarSize = Private_ResizeKeepRatio(<10., 10.>, <ColsSizeX[ColId]/2., PlayerCardTopSizeY/2.>);
+					ML_PlayerCard[Side] ^= """
+<frame posn="{{{ColPosX}}} {{{-PlayerCardTopSizeY/2.}}}" id="Frame_LibST_ManiaStars">
+	<quad posn="0 0 1" sizen="{{{StarSize.X}}} {{{StarSize.Y}}}" halign="center" valign="center" style="BgRaceScore2" substyle="Fame" id="Quad_Star_1" />
+	<quad posn="{{{(-StarSize.X/2.)*Revert}}} {{{-StarSize.Y/2.}}} 0" sizen="{{{StarSize.X}}} {{{StarSize.Y}}}" halign="center" valign="center" style="BgRaceScore2" substyle="Fame" id="Quad_Star_2" />
+	<quad posn="{{{(StarSize.X/2.)*Revert}}} {{{StarSize.Y/2.}}} 0" sizen="{{{StarSize.X}}} {{{StarSize.Y}}}" halign="center" valign="center" style="BgRaceScore2" substyle="Fame" id="Quad_Star_3" />
+	<quad posn="{{{(StarSize.X/2.)*Revert}}} {{{-StarSize.Y/2.}}} 0" sizen="{{{StarSize.X}}} {{{StarSize.Y}}}" halign="center" valign="center" style="BgRaceScore2" substyle="Fame" id="Quad_Star_4" />
+	<quad posn="{{{(-StarSize.X/2.)*Revert}}} {{{StarSize.Y/2.}}} 0" sizen="{{{StarSize.X}}} {{{StarSize.Y}}}" halign="center" valign="center" style="BgRaceScore2" substyle="Fame" id="Quad_Star_5" />
+</frame>""";			
+				}
+				case "LibST_Tools": {
+					declare ButtonSize = Private_ResizeKeepRatio(<10., 10.>, <ColsSizeX[ColId], PlayerCardTopSizeY/2.>);
+					ML_PlayerCard[Side] ^= """
+<frame posn="{{{ColPosX}}} {{{(-PlayerCardTopSizeY/2.)-PlayerCardTopMargin+(PlayerCardTopSizeY*0.05)}}} 2">
+	<quad posn="0 {{{ButtonSize.Y/2.}}}" sizen="{{{ButtonSize.X}}} {{{ButtonSize.Y}}}" scale="1.3" halign="{{{ColHAlign}}}" valign="center" style="UIConstructionSimple_Buttons" substyle="Camera" scriptevents="1" id="Button_Spec" />
+	<quad posn="0 {{{-ButtonSize.Y/2.}}}" sizen="{{{ButtonSize.X}}} {{{ButtonSize.Y}}}" scale="1.3" halign="{{{ColHAlign}}}" valign="center" style="UIConstructionSimple_Buttons" substyle="Author" scriptevents="1" id="Button_Profile" />
+</frame>""";
+				}
+				case "LibST_Tags": {
+					declare TagSize = Private_ResizeKeepRatio(<4., 2.>, <ColsSizeX[ColId]*0.8, PlayerCardTopSizeY/3.>);
+					declare MedalSize = Private_ResizeKeepRatio(<1., 1.5>, <ColsSizeX[ColId]*0.3, TagSize.Y>);
+					MedalSize.Y *= 1.08;
+					declare MedalPosX = 0.;
+					declare TagPosX = MedalSize.X * 0.4;
+					switch (G_LibST_ColsText[ColId][C_LibST_ColHAlign]) {
+						case "center"	: { MedalPosX = -TagSize.X/2. * 0.8; TagPosX = MedalSize.X*0.4 / 2.; }
+						case "right"	: { MedalPosX = -TagSize.X * 0.8; TagPosX = 0.; }
+					}
+					ML_PlayerCard[Side] ^= """
+<frame posn="{{{ColPosX}}} {{{-PlayerCardTopSizeY/2.}}}" id="Frame_LibST_Tags">
+	<frame posn="0 {{{TagSize.Y}}}">
+		<quad posn="{{{MedalPosX}}} 0 2" sizen="{{{MedalSize.X}}} {{{MedalSize.Y}}}" halign="{{{ColHAlign}}}" valign="center" style="Icons64x64_1" substyle="TagTypeNone" />
+		<quad posn="{{{TagPosX}}} 0 1" sizen="{{{TagSize.X}}} {{{TagSize.Y}}}" halign="{{{ColHAlign}}}" valign="center" />
+	</frame>
+	<frame posn="0 0">
+		<quad posn="{{{MedalPosX}}} 0 2" sizen="{{{MedalSize.X}}} {{{MedalSize.Y}}}" halign="{{{ColHAlign}}}" valign="center" style="Icons64x64_1" substyle="TagTypeNone" />
+		<quad posn="{{{TagPosX}}} 0 1" sizen="{{{TagSize.X}}} {{{TagSize.Y}}}" halign="{{{ColHAlign}}}" valign="center" />
+	</frame>
+	<frame posn="0 {{{-TagSize.Y}}}">
+		<quad posn="{{{MedalPosX}}} 0 2" sizen="{{{MedalSize.X}}} {{{MedalSize.Y}}}" halign="{{{ColHAlign}}}" valign="center" style="Icons64x64_1" substyle="TagTypeNone" />
+		<quad posn="{{{TagPosX}}} 0 1" sizen="{{{TagSize.X}}} {{{TagSize.Y}}}" halign="{{{ColHAlign}}}" valign="center" />
+	</frame>
+</frame>""";
+				}
+				default : {
+					ML_PlayerCard[Side] ^= """
+<frame posn="{{{ColPosX}}} {{{-PlayerCardTopSizeY/2.}}}">
+	<label sizen="{{{ColsSizeX[ColId]/G_LibST_TextScale}}} {{{PlayerCardTopSizeY}}}" scale="{{{G_LibST_TextScale}}}" halign="{{{ColHAlign}}}" valign="center2" style="{{{G_LibST_ColsText[ColId][C_LibST_ColTextStyle]}}}" textsize="{{{G_LibST_ColsReal[ColId][C_LibST_ColTextSize]}}}" text="{{{G_LibST_ColsText[ColId][C_LibST_ColDefaultValue]}}}" class="CustomCol" id="Label_{{{ColId}}}" />
+</frame>""";
+				}
+			}
+		}
+	
+		declare PlayerCardBotSizeX = ItemSizeX - PlayerCardLeftShift - PlayerCardLeftMargin - PlayerCardRightMargin;
+		declare StatusSizeX = PlayerCardBotSizeY;
+		declare MultiRankSizeX = ((PlayerCardBotSizeX - PlayerCardBotSizeY) / 2.) - 1.;
+		declare LadderPointsSizeX = ((PlayerCardBotSizeX - PlayerCardBotSizeY) / 2.) - 1.;
+		declare LPSize = Private_ResizeKeepRatio(<1., 1.>, <LadderPointsSizeX*0.2, PlayerCardBotSizeY>);
+		
+		ML_PlayerCard[Side] ^= """
+			<frame posn="0 {{{-PlayerCardTopSizeY-(PlayerCardBotSizeY/2.)}}}" id="Frame_PlayerCardBot">
+				<quad sizen="{{{PlayerCardBotSizeY}}} {{{PlayerCardBotSizeY}}}" scale="0.9" halign="{{{Private_GetRevert("left", Side)}}}" valign="center" style="Icons64x64_2" substyle="DisconnectedLight" id="Quad_Status" />			
+				<label posn="{{{(PlayerCardBotSizeY+1.)*Revert}}} 0" sizen="{{{MultiRankSizeX/G_LibST_TextScale}}} {{{PlayerCardBotSizeY}}}" scale="{{{G_LibST_TextScale}}}" halign="{{{Private_GetRevert("left", Side)}}}" valign="center2" style="TextCardSmallScores2Rank" text="Other: -" id="Label_MultiRank" />
+				<frame id="Frame_LPGain">
+					<label posn="{{{(PlayerCardBotSizeX-(LPSize.X*1.5)-1.)*Revert}}} 0" sizen="{{{(LadderPointsSizeX-(LPSize.X*1.5))/G_LibST_TextScale}}} {{{PlayerCardBotSizeY}}}" scale="{{{G_LibST_TextScale}}}" halign="{{{Private_GetRevert("right", Side)}}}"  valign="center2" style="TextCardSmallScores2Rank" textcolor="bb8" text="+0.0" id="Label_LPGain" />
+					<quad posn="{{{(PlayerCardBotSizeX-(LPSize.X*1.5))*Revert}}} 0" sizen="{{{LPSize.X}}} {{{LPSize.Y}}}" scale="1.5" halign="{{{Private_GetRevert("left", Side)}}}" valign="center" style="Icons128x128_1" substyle="LadderPoints" />
+				</frame>
+			</frame>
+		</frame>
+	</frame>
+</framemodel>""";
+	}
+	
+	// ---------------------------------- //
+	// Table
+	PosnX = 0.;
+	PosnY = 0.;
+	declare K = 0;
+	
+	for (I, 1, ItemNbX) {
+		PosnX = (I - 1) * (ItemSizeX + ItemMarginX);
+		for (J, 1, ItemNbY) {
+			declare Model = "";
+			declare SpecConfirmShift = 0.;
+			if (G_LibST_UseTeamsMode && G_LibST_UseRevert && K > (NbItems / 2.)-1) {
+				Model = "Framemodel_PlayerRevert";
+			} else {
+				Model = "Framemodel_Player";
+				SpecConfirmShift = PlayerCardLeftShift-1;
+			}
+			
+			
+			PosnY = (J - 1) * (ItemSizeY + ItemMarginY) * -1.;
+			ML_Table ^= """
+<frame posn="{{{PosnX}}} {{{PosnY}}} 1" class="Frame_Player" id="{{{K}}}">
+	<label posn="{{{PosnX+SpecConfirmShift}}} {{{PosnY}}}" id="Label_SpecConfirmPos" />
+	<frameinstance modelid="{{{Model}}}" />
+</frame>""";
+			K += 1;
+		}
+	}
+	
+	// ---------------------------------- //
+	// Spectator mode confirmation
+	declare SpecConfirmSize = <ItemSizeX-PlayerCardLeftShift+1, ItemSizeY>;
+	ML_SpecConfirm = """
+<frame posn="0 0 4" hidden="1" id="Frame_SpecConfirm">
+	<quad posn="0 0" sizen="{{{SpecConfirmSize.X}}} {{{SpecConfirmSize.Y}}}" bgcolor="111e" scriptevents="1" />
+	<frame posn="0 {{{(-ItemSizeY/2.)-0.25}}} 1">
+		<label posn="3. 0" sizen="{{{SpecConfirmSize.X*0.6}}} 5" valign="center2" textsize="2" text="{{{_("Switch to spectator mode?")}}}" /> 
+		<format style="TextButtonNav" />
+		<label posn="{{{(SpecConfirmSize.X*0.6)+(SpecConfirmSize.X*0.15)}}} 0" sizen="{{{SpecConfirmSize.X*0.14}}} 5" halign="center" valign="center2" focusareacolor1="333f" focusareacolor2="eeef" textcolor="fff" text="{{{_("Yes")}}}" scriptevents="1" id="Button_SpecYes" />
+		<label posn="{{{(SpecConfirmSize.X*0.6)+(SpecConfirmSize.X*0.30)}}} 0" sizen="{{{SpecConfirmSize.X*0.14}}} 5" halign="center" valign="center2" focusareacolor1="333f" focusareacolor2="eeef" textcolor="fff" text="{{{_("No")}}}" scriptevents="1" id="Button_SpecNo" />
+	</frame>
+</frame>""";
+
+	// ---------------------------------- //
+	// Player highlight
+	declare HighlightSize = <ItemSizeX+1., ItemSizeY+0.5>;
+	ML_Hightlight = """
+<frame posn="0 0 0" hidden="1" id="Frame_Highlight">
+	<quad posn="-0.5 {{{-ItemSizeY/2.}}}" sizen="{{{HighlightSize.X}}} {{{HighlightSize.Y}}}" valign="center" style="Icons128x128_Blink" substyle="ShareBlink" />
+</frame>""";
+	
+	
+	// ---------------------------------- //
+	// Footer
+	declare FooterCenterSizeX	= G_LibST_Sizes[C_LibST_Footer].X * 0.4;
+	declare FooterLeftSizeX		= G_LibST_Sizes[C_LibST_Footer].X * 0.3;
+	declare FooterRightSizeX	= G_LibST_Sizes[C_LibST_Footer].X * 0.3;
+	declare FooterScale			= 1.;
+	if (G_LibST_Sizes[C_LibST_Footer].Y < 13.) FooterScale = G_LibST_Sizes[C_LibST_Footer].Y / 13.;
+	
+	ML_Footer = """
+<frame posn="0 {{{-G_LibST_Sizes[C_LibST_Footer].Y+1}}}" scale="{{{FooterScale}}}">
+	<label posn="0 3" sizen="{{{FooterCenterSizeX/FooterScale}}} 4" textsize="3" halign="center" valign="bottom" id="Label_ServerName" />
+	<label posn="0 2.5" sizen="{{{FooterCenterSizeX/FooterScale}}} 4" textsize="1" halign="center" valign="top" id="Label_Footer" />
+</frame>""";
+	
+	// ---------------------------------- //
+	// Pager
+	ML_Pager = """
+<frame posn="{{{(G_LibST_Sizes[C_LibST_Footer].X/2.)-(FooterRightSizeX/2.)}}} {{{-G_LibST_Sizes[C_LibST_Footer].Y+1}}}" scale="{{{FooterScale}}}" hidden="1" id="Frame_Pager">
+	<quad posn="0 9" sizen="6 6" halign="center" valign="center" style="Icons64x64_1" substyle="ShowUp" scriptevents="1" id="Button_PagePrev" />
+	<quad posn="0 9" sizen="6 6" halign="center" valign="center" style="Icons64x64_1" substyle="ShowUp" hidden="1" id="Button_PagePrevOff" />
+	<quad posn="0 5" sizen="5 5" halign="center" valign="center" style="Icons64x64_1" substyle="Maximize" scriptevents="1" id="Button_PagePlayer" />
+	<quad posn="0 1" sizen="6 6" halign="center"  valign="center" style="Icons64x64_1" substyle="ShowDown" scriptevents="1" id="Button_PageNext" />
+	<quad posn="0 1" sizen="6 6" halign="center"  valign="center" style="Icons64x64_1" substyle="ShowDown" hidden="1" id="Button_PageNextOff" />
+</frame>""";
+
+	// Settings
+	ML_Settings = """
+<frame posn="{{{(G_LibST_Sizes[C_LibST_Footer].X/2.)-(FooterRightSizeX*0.7)}}} {{{-G_LibST_Sizes[C_LibST_Footer].Y+6}}} 10" scale="{{{FooterScale}}}">
+	<quad posn="0 0 1" sizen="6 6" halign="center" valign="center" style="Icons128x32_1" substyle="Settings" scriptevents="1" id="Button_Settings" />
+	<frame scale="0" hidden="1" id="Frame_Settings">
+		<frame posn="-46.5 16.5 -2">
+			{{{Window::Create(_Game, <51., 21.>, 0.04)}}}
+		</frame>
+		<quad posn="4 -4 -1" sizen="51 19" halign="right" valign="bottom" scriptevents="1" />
+		<quad posn="0 6" sizen="6 6" halign="center" valign="center" style="Icons64x64_1" substyle="Check" scriptevents="1" data-settings="SortSpec" class="Settings" id="Button_Settings_SortSpec" />
+		<label posn="-4 6" sizen="42 6" halign="right" valign="center2" style="TextRaceMessage" textsize="2" text="{{{_("Sort spectators last")}}}" data-settings="SortSpec" class="Settings" />
+		<quad posn="0 12" sizen="6 6" halign="center" valign="center" style="Icons64x64_1" substyle="Check" scriptevents="1" data-settings="SortDisco" class="Settings" id="Button_Settings_SortDisco" />
+		<label posn="-4 12" sizen="42 6" halign="right" valign="center2" style="TextRaceMessage" textsize="2" text="{{{_("Sort disconnected last")}}}" data-settings="SortDisco" class="Settings" />
+	</frame>
+</frame>""";
+	
+	// ---------------------------------- //
+	// Player info
+	ML_PlayerInfo = """
+<frame posn="{{{-(G_LibST_Sizes[C_LibST_Footer].X/2.)+2}}} {{{-G_LibST_Sizes[C_LibST_Footer].Y+1}}}" scale="{{{FooterScale}}}" id="Frame_PlayerInfo">
+	<quad posn="0 0" sizen="11 11" valign="bottom" id="Quad_PIAvatar" />
+	<label posn="15 1.5" sizen="20 10" valign="bottom" style="TextRaceMessageBig" textsize="5" id="Label_PIRank" />
+</frame>""";
+	
+	
+	// ---------------------------------- //
+	// TM / SM Specific script
+	declare MLScript = Text[Integer];
+	for (I, 0, 10) {
+		MLScript[I] = "";
+	}
+	if (_Game == "TM") {
+		// Player status spawned / not spawned
+		MLScript[1] = """
+else if (Player.IsSpawned && LibST_Status != C_Status_Spawned) {
+	LibST_Status = C_Status_Spawned;
+} else if (!Player.IsSpawned && !Player.RequestsSpectate && LibST_Status != C_Status_NotSpawned) {
+	LibST_Status = C_Status_NotSpawned;
+}
+
+LibST_IdleDuration = 0;""";
+		
+		// Update table slot
+		MLScript[2] = "";
+		foreach (ColId => ColProperties in G_LibST_ColsText) {
+			switch (ColId) {
+				case "LibST_TMBestTime": {
+					MLScript[2] ^= """
+declare LibST_PrevTMBestTime for Score = -1;
+if (LibST_PrevTMBestTime != Score.BestRace.Time) {
+	LibST_PrevTMBestTime = Score.BestRace.Time;
+	SlotNeedUpdate = True;
+}""";
+				}
+				case "LibST_TMPrevTime": {
+					MLScript[2] ^= """
+declare LibST_PrevTMPrevTime for Score = -1;
+if (LibST_PrevTMPrevTime != Score.PrevRace.Time) {
+	LibST_PrevTMPrevTime = Score.PrevRace.Time;
+	SlotNeedUpdate = True;
+}""";
+				}
+				case "LibST_TMBestLapTime": {
+					MLScript[2] ^= """
+declare LibST_PrevTMBestLapTime for Score = -1;
+if (LibST_PrevTMBestLapTime != Score.BestLap.Time) {
+	LibST_PrevTMBestLapTime = Score.BestLap.Time;
+	SlotNeedUpdate = True;
+}""";
+				}
+				case "LibST_TMStunts": {
+					MLScript[2] ^= """
+declare LibST_PrevTMStunts for Score = -1;
+if (LibST_PrevTMStunts != Score.BestRace.StuntsScore) {
+	LibST_PrevTMStunts = Score.BestRace.StuntsScore;
+	SlotNeedUpdate = True;
+}""";
+				}
+				case "LibST_TMRespawns": {
+					MLScript[2] ^= """
+declare LibST_PrevTMRespawns for Score = -1;
+if (LibST_PrevTMRespawns != Score.BestRace.NbRespawns) {
+	LibST_PrevTMRespawns = Score.BestRace.NbRespawns;
+	SlotNeedUpdate = True;
+}""";
+				}
+				case "LibST_TMCheckpoints": {
+					MLScript[2] ^= """
+declare LibST_PrevTMCheckpoints for Score = -1;
+if (LibST_PrevTMCheckpoints != Score.BestRace.Checkpoints.count) {
+	LibST_PrevTMCheckpoints = Score.BestRace.Checkpoints.count;
+	SlotNeedUpdate = True;
+}""";
+				}
+				case "LibST_TMPoints": {
+					MLScript[2] ^= """
+declare LibST_PrevTMPoints for Score = -1;
+if (LibST_PrevTMPoints != Score.Points) {
+	LibST_PrevTMPoints = Score.Points;
+	SlotNeedUpdate = True;
+}""";
+				}
+				case "LibST_TMPrevRaceDeltaPoints": {
+					MLScript[2] ^= """
+declare LibST_PrevTMPrevRaceDeltaPoints for Score = -1;
+if (LibST_PrevTMPrevRaceDeltaPoints != Score.PrevRaceDeltaPoints) {
+	LibST_PrevTMPrevRaceDeltaPoints = Score.PrevRaceDeltaPoints;
+	SlotNeedUpdate = True;
+}""";
+				}
+			}
+		}
+		
+	} else if (_Game == "SM") {
+		// Player status spawned / not spawned
+		MLScript[1] = """
+else if (Player.SpawnStatus == CSmPlayer::ESpawnStatus::Spawned && LibST_Status != C_Status_Spawned) {
+	LibST_Status = C_Status_Spawned;
+} else if (Player.SpawnStatus != CSmPlayer::ESpawnStatus::Spawned && !Player.RequestsSpectate && LibST_Status != C_Status_NotSpawned) {
+	LibST_Status = C_Status_NotSpawned;
+}
+
+LibST_IdleDuration = Player.IdleDuration;""";
+
+		// Update table slot
+		MLScript[2] = "";
+		foreach (ColId => ColProperties in G_LibST_ColsText) {
+			switch (ColId) {
+				case "LibST_SMPoints": {
+					MLScript[2] ^= """
+declare LibST_PrevSMPoints for Score = -1;
+if (LibST_PrevSMPoints != Score.Points) {
+	LibST_PrevSMPoints = Score.Points;
+	SlotNeedUpdate = True;
+}""";
+				}
+				case "LibST_SMRoundPoints": {
+					MLScript[2] ^= """
+declare LibST_PrevSMRoundPoints for Score = -1;
+if (LibST_PrevSMRoundPoints != Score.RoundPoints) {
+	LibST_PrevSMRoundPoints = Score.RoundPoints;
+	SlotNeedUpdate = True;
+}""";
+				}
+			}
+		}
+	}
+	
+	// ---------------------------------- //
+	// Generic script
+	// Custom columns scripts
+	MLScript[0] = "switch (ColId) {";
+	foreach (ColId => ColProperties in G_LibST_ColsText) {
+		if (ColProperties[C_LibST_ColScript] == "") continue;
+		MLScript[0] ^= """case "{{{ColId}}}": {""";
+		MLScript[0] ^= ColProperties[C_LibST_ColScript];
+		MLScript[0] ^= "}";
+	}
+	MLScript[0] ^= """
+case "": {}
+default: {
+	if (Net_LibST_ColsValues.existskey(ColId)) Label_Col.Value = Net_LibST_ColsValues[ColId];
+	else Label_Col.Value = ColDefaultValue;
+}
+""";
+	MLScript[0] ^= "}";
+	
+	// Footer text
+	MLScript[3] = "";
+	if (G_LibST_FooterScript != "") {
+		MLScript[3] = G_LibST_FooterScript;
+	}
+	
+	// Teams name and scores in the header
+	MLScript[4] = "";
+	if (G_LibST_UseTeamsMode) {
+		MLScript[4] ^= """
+if (PrevTeam1Name != Teams[0].ColorizedName) {
+	PrevTeam1Name = Teams[0].ColorizedName;
+	if (Teams[0].ColorizedName == "$<$00fBlue$>") Label_Team1Name.Value = "$<$fffBlue$>";
+	else Label_Team1Name.Value = Teams[0].ColorizedName;
+}
+if (PrevTeam2Name != Teams[1].ColorizedName) {
+	PrevTeam2Name = Teams[1].ColorizedName;
+	if (Teams[1].ColorizedName == "$<$f00Red$>") Label_Team2Name.Value = "$<$fffRed$>";
+	else Label_Team2Name.Value = Teams[1].ColorizedName;
+}""";
+		if (G_LibST_TeamsScoresVisible) {
+			MLScript[4] ^= """
+if (PrevTeam1Score != ClanScores[1]) {
+	PrevTeam1Score = ClanScores[1];
+	Label_Team1Score.Value = TL::ToText(ClanScores[1]);
+}
+if (PrevTeam2Score != ClanScores[2]) {
+	PrevTeam2Score = ClanScores[2];
+	Label_Team2Score.Value = TL::ToText(ClanScores[2]);
+}""";
+		}
+	}
+	
+	// Teams image color
+	MLScript[5] = "";
+	if (G_LibST_CustomImagePath[1] != "") {
+		MLScript[5] ^= """
+if (PrevTeam1Color != Teams[0].ColorPrimary) {
+	PrevTeam1Color = Teams[0].ColorPrimary;
+	Quad_Team1Image.Colorize = Teams[0].ColorPrimary;
+	foreach (SlotNb => Frame_Player in Frames_Player) {
+		if (SlotNb + 1 <= G_PageRange) ColorizePlayerCard(Frame_Player, SlotNb + 1);
+	}
+	
+}""";
+	}
+	if (G_LibST_CustomImagePath[2] != "") {
+				MLScript[5] ^= """
+if (PrevTeam2Color != Teams[1].ColorPrimary) {
+	PrevTeam2Color = Teams[1].ColorPrimary;
+	Quad_Team2Image.Colorize = Teams[1].ColorPrimary;
+	foreach (SlotNb => Frame_Player in Frames_Player) {
+		if (SlotNb + 1 > G_PageRange) ColorizePlayerCard(Frame_Player, SlotNb + 1);
+	}
+}""";
+	}
+	
+	// Player rank
+	MLScript[6] = "";
+	if (G_LibST_PlayerInfoVisible) {
+		MLScript[6] = """
+if (InputPlayer.Score.Id == Score.Id && PrevRank != LocalRank) {
+	PrevRank = LocalRank;
+	Label_PIRank.Value = "#"^LocalRank;
+}""";
+	}
+	// Player avatar
+	MLScript[7] = "";
+	if (G_LibST_PlayerInfoVisible) {
+		MLScript[7] = """
+if (PrevLogin != InputPlayer.User.Login) {
+	PrevLogin = InputPlayer.User.Login;
+	Quad_PIAvatar.ImageUrl = "file://Avatars/"^InputPlayer.User.Login^"/Default";
+}""";
+	}
+	
+	// Server name
+	MLScript[8] = "";
+	if (G_LibST_ServerNameVisible) {
+		MLScript[8] = """
+if (PrevServerName != CurrentServerName) {
+	PrevServerName = CurrentServerName;
+	Label_ServerName.Value = CurrentServerName;
+}""";
+	}
+	
+	// Score class
+	declare ScoreClass = "CSmScore";
+	if (_Game == "TM") ScoreClass = "CTmScore";
+		
+	// ---------------------------------- //
+	// Scores table
+	ML_ScoresTable = """
+<manialink version="1" name="Lib_ScoresTable2:ScoresTable">
+{{{ML_Legend[1]}}}
+{{{ML_Legend[2]}}}
+{{{ML_PlayerCard[1]}}}
+{{{ML_PlayerCard[2]}}}
+<frame posn="{{{G_LibST_ScoresTablePos.X}}} {{{G_LibST_ScoresTablePos.Y}}} {{{G_LibST_ScoresTablePos.Z}}}" scale="{{{G_LibST_Scale}}}" id="Frame_ScoresTable">
+	<frame id="Frame_ScoresTablePlayer">
+		<frame id="Frame_ScoresTableTab">
+			<format textemboss="1" />
+			<frame posn="0 0 0">
+				{{{ML_Background}}}
+			</frame>
+			<frame posn="0 0 10">
+				{{{ML_Foreground}}}
+			</frame>
+			<frame posn="0 0 1">
+				<frame posn="0 0" id="Frame_Header">
+					{{{ML_Header}}}
+					{{{ML_Teams}}}
+				</frame>
+				<frame posn="{{{-G_LibST_Sizes[C_LibST_Table].X/2.}}} 0" id="Frame_Legends">
+					{{{ML_Legends}}}
+				</frame>
+				<frame posn="{{{-G_LibST_Sizes[C_LibST_Table].X/2.}}} {{{-G_LibST_Sizes[C_LibST_Header].Y}}}" id="Frame_Table">
+					{{{ML_Table}}}
+					{{{ML_SpecConfirm}}}
+					{{{ML_Hightlight}}}
+				</frame>
+				<frame posn="0 {{{-G_LibST_Sizes[C_LibST_Header].Y-G_LibST_Sizes[C_LibST_Table].Y}}}" id="Frame_Footer">
+					{{{ML_PlayerInfo}}}
+					{{{ML_Footer}}}
+					{{{ML_Pager}}}
+					{{{ML_Settings}}}
+				</frame>
+			</frame>
+		</frame>
+	</frame>
+</frame>
+<script><!--
+#Include "TextLib" as TL
+#Include "MathLib" as ML
+
+#Const C_RefreshInterval		250
+#Const C_HighlightDuration		1700
+#Const C_PageRange 				{{{G_LibST_TableColsNb*G_LibST_TableLinesNb}}}
+#Const C_Status_Disconnected	0
+#Const C_Status_Spawned			1
+#Const C_Status_NotSpawned		2
+#Const C_Status_Spectating		3
+
+declare CMlFrame[] Frames_Player;
+declare CMlFrame Frame_Pager;
+declare CMlQuad Button_PageNext;
+declare CMlQuad Button_PageNextOff;
+declare CMlQuad Button_PagePrev;
+declare CMlQuad Button_PagePrevOff;
+declare CMlFrame Frame_SpecConfirm;
+declare CMlFrame Frame_Highlight;
+
+declare Integer G_PageStart;
+declare Integer G_PageEnd;
+declare Integer G_PageRange;
+declare Boolean G_PageNeedUpdate;
+declare Integer G_NbScoresClan1;
+declare Integer G_NbScoresClan2;
+declare Text	G_RequestedSpecTarget;
+declare Text	G_RequestedHighlight;
+declare Integer G_HighlightEndTime;
+declare Boolean G_SettingsAreVisible;
+
+{{{Manialink::Animations(["EaseOutExp"])}}}
+
+Text GetEchelonPath(CUser::EEchelon _Echelon, Integer _Slot) {
+	declare EchelonSide = "";
+	if ({{{G_LibST_UseTeamsMode}}} && {{{G_LibST_UseRevert}}} && _Slot > (Frames_Player.count / 2.) - 1) EchelonSide = "_rev";
+	
+	switch (_Echelon) {
+		case CUser::EEchelon::Bronze1	: return "file://Media/Manialinks/Common/Echelons/small_echelon1"^EchelonSide^".dds";
+		case CUser::EEchelon::Bronze2	: return "file://Media/Manialinks/Common/Echelons/small_echelon2"^EchelonSide^".dds";
+		case CUser::EEchelon::Bronze3	: return "file://Media/Manialinks/Common/Echelons/small_echelon3"^EchelonSide^".dds";
+		case CUser::EEchelon::Silver1	: return "file://Media/Manialinks/Common/Echelons/small_echelon4"^EchelonSide^".dds";
+		case CUser::EEchelon::Silver2	: return "file://Media/Manialinks/Common/Echelons/small_echelon5"^EchelonSide^".dds";
+		case CUser::EEchelon::Silver3	: return "file://Media/Manialinks/Common/Echelons/small_echelon6"^EchelonSide^".dds";
+		case CUser::EEchelon::Gold1		: return "file://Media/Manialinks/Common/Echelons/small_echelon7"^EchelonSide^".dds";
+		case CUser::EEchelon::Gold2		: return "file://Media/Manialinks/Common/Echelons/small_echelon8"^EchelonSide^".dds";
+		case CUser::EEchelon::Gold3		: return "file://Media/Manialinks/Common/Echelons/small_echelon9"^EchelonSide^".dds";
+	}
+	
+	return "";
+}
+
+Void DisplaySpecButton(CScore _Score, CMlQuad _SpecButton, CMlQuad _ProfileButton) {
+	if (_Score == Null || _SpecButton == Null || _ProfileButton == Null) return;
+	
+	declare IsVisible = False;
+	
+	if (_Score.Id != InputPlayer.Score.Id) {
+		declare LibST_Status for _Score.User = C_Status_Disconnected;
+		if (LibST_Status == C_Status_Spawned) {
+			if (UI.SpectatorForcedClan == 1 || UI.SpectatorForcedClan == 2) {
+				declare Score <=> (_Score as {{{ScoreClass}}});
+				if (Score.TeamNum == UI.SpectatorForcedClan) IsVisible = True;
+			} else {
+				IsVisible = True;
+			}
+		}
+	}
+	
+	if (IsVisible) _ProfileButton.RelativePosition.Y = -_SpecButton.Size.X / 2.;
+	else _ProfileButton.RelativePosition.Y = 0.;
+	_SpecButton.Visible = IsVisible;
+}
+
+Text LibST_TimeToText(Integer _Time) {
+	if (_Time <= 0) return "???";
+	declare Time = TL::TimeToText(_Time, True);
+	if (_Time >= 0) Time ^= _Time%10;
+	return Time;
+}
+
+Void ColorizePlayerCard(CMlFrame _Frame, Integer _SlotNb) {
+	declare Quad_PlayerLineSquare		<=> (_Frame.GetFirstChild("Quad_PlayerLineSquare")		as CMlQuad);
+	declare Quad_PlayerLineRectangle	<=> (_Frame.GetFirstChild("Quad_PlayerLineRectangle")	as CMlQuad);
+	
+	if ({{{G_LibST_UseTeamsMode}}}) {
+		if (_SlotNb > C_PageRange / 2) {
+			Quad_PlayerLineSquare.Colorize = Teams[1].ColorPrimary;
+			Quad_PlayerLineRectangle.Colorize = Teams[1].ColorPrimary;
+		} else {
+			Quad_PlayerLineSquare.Colorize = Teams[0].ColorPrimary;
+			Quad_PlayerLineRectangle.Colorize = Teams[0].ColorPrimary;
+		}
+	} else {
+		Quad_PlayerLineSquare.Colorize = TL::ToColor("111");
+		Quad_PlayerLineRectangle.Colorize = TL::ToColor("777");
+	}
+	
+	declare LibST_Colorize for Quad_PlayerLineRectangle = <-1., -1., -1.>;
+	if (LibST_Colorize != <-1., -1., -1.>) {
+		Quad_PlayerLineRectangle.Colorize = LibST_Colorize;
+	}
+}
+	
+Void UpdateSlot(Integer _Slot, CScore _Score) {
+	if (!Frames_Player.existskey(_Slot) || _Score == Null) return;
+	
+	declare Frame_Player <=> Frames_Player[_Slot];
+	if (Frame_Player == Null) return;
+	
+	declare Quad_PlayerDarkening	<=> (Frame_Player.GetFirstChild("Quad_PlayerDarkening")		as CMlQuad);
+	declare Label_LocalRank			<=> (Frame_Player.GetFirstChild("Label_LocalRank")			as CMlLabel);
+	declare Quad_LibST_Avatar		<=> (Frame_Player.GetFirstChild("Quad_LibST_Avatar")		as CMlQuad);
+	declare Frame_LibST_ManiaStars	<=> (Frame_Player.GetFirstChild("Frame_LibST_ManiaStars")	as CMlFrame);
+	declare Quad_Status				<=> (Frame_Player.GetFirstChild("Quad_Status")				as CMlQuad);
+	declare Quad_Echelon			<=> (Frame_Player.GetFirstChild("Quad_Echelon")				as CMlQuad);
+	declare Label_MultiRank			<=> (Frame_Player.GetFirstChild("Label_MultiRank")			as CMlLabel);
+	declare Frame_LPGain			<=> (Frame_Player.GetFirstChild("Frame_LPGain")				as CMlFrame);
+	declare Label_LPGain			<=> (Frame_Player.GetFirstChild("Label_LPGain")				as CMlLabel);
+	declare Button_Spec				<=> (Frame_Player.GetFirstChild("Button_Spec")				as CMlQuad);
+	declare Button_Profile			<=> (Frame_Player.GetFirstChild("Button_Profile")			as CMlQuad);
+	declare Label_SpecConfirmPos	<=> (Frame_Player.GetFirstChild("Label_SpecConfirmPos")		as CMlLabel);
+	declare Frame_LibST_Tags		<=> (Frame_Player.GetFirstChild("Frame_LibST_Tags")			as CMlFrame);
+	declare Quad_PlayerLineRectangle<=> (Frame_Player.GetFirstChild("Quad_PlayerLineRectangle")	as CMlQuad);
+	
+	if (!Frame_Player.Visible) Frame_Player.Visible = True;
+	
+	declare netread Vec3[Text] Net_LibST_Colors for Teams[0];
+	declare LibST_Colorize for Quad_PlayerLineRectangle = <-1., -1., -1.>;
+	if (Net_LibST_Colors.existskey(_Score.User.Login)) LibST_Colorize = Net_LibST_Colors[_Score.User.Login];
+	else LibST_Colorize = <-1., -1., -1.>;
+	ColorizePlayerCard(Frame_Player, _Slot + 1);
+	
+	declare LibST_LocalRank for _Score.User = 0;
+	if (Label_LocalRank != Null) Label_LocalRank.Value = TL::ToText(LibST_LocalRank);
+	
+	if (Quad_LibST_Avatar != Null) Quad_LibST_Avatar.ImageUrl = "file://Avatars/"^_Score.User.Login^"/Default";
+	
+	if (Frame_LibST_ManiaStars != Null) {
+		declare Fame = _Score.User.FameStars;
+		if (Fame < 0) Fame = 0;
+		else if (Fame > {{{C_LibST_MaxFame}}}) Fame = {{{C_LibST_MaxFame}}};
+		
+		foreach (I => Control_Star in Frame_LibST_ManiaStars.Controls) {				
+			if (I == 0) {
+				if (Fame > 0 && Fame % 2 != 0) Control_Star.Visible = True;
+				else Control_Star.Visible = False;
+			} else if (I == 1 || I == 2) {
+				if (Fame > 1) Control_Star.Visible = True;
+				else Control_Star.Visible = False;
+			} else if (I == 3 || I == 4) {
+				if (Fame > 3) Control_Star.Visible = True;
+				else Control_Star.Visible = False;
+			} else {
+				Control_Star.Visible = False;
+			}
+		}
+	}
+	
+	if (Frame_LibST_Tags != Null) {
+		declare I = 0;
+		foreach (Control in Frame_LibST_Tags.Controls) {
+			if (I > _Score.User.Tags_Favored_Indices.count-1) Control.Visible = False;
+			else {
+				Control.Visible = True;
+				declare Frame_Tag <=> (Control as CMlFrame);
+				declare Quad_Medal <=> (Frame_Tag.Controls[0] as CMlQuad);
+				declare Quad_Tag <=> (Frame_Tag.Controls[1] as CMlQuad);
+				declare TagKey = _Score.User.Tags_Favored_Indices[I];
+				Quad_Tag.ImageUrl = "file://Tags/"^_Score.User.Login^"/"^_Score.User.Tags_Id[TagKey];
+				switch (_Score.User.Tags_Type[TagKey]) {
+					case CUser::ETagType::Bronze	: Quad_Medal.Substyle = "TagTypeBronze";
+					case CUser::ETagType::Silver	: Quad_Medal.Substyle = "TagTypeSilver";
+					case CUser::ETagType::Gold		: Quad_Medal.Substyle = "TagTypeGold";
+					case CUser::ETagType::Nadeo		: Quad_Medal.Substyle = "TagTypeNadeo";
+					default							: Quad_Medal.Substyle = "TagTypeNone";
+				}
+				
+				if (_Score.User.Tags_Favored_Indices.count == 3) {
+					if (I == 0) Frame_Tag.RelativePosition.Y = Quad_Tag.Size.Y;
+					else if (I == 1) Frame_Tag.RelativePosition.Y = 0.;
+					else Frame_Tag.RelativePosition.Y = -Quad_Tag.Size.Y;
+				} else if (_Score.User.Tags_Favored_Indices.count == 2) {
+					if (I == 0) Frame_Tag.RelativePosition.Y = Quad_Tag.Size.Y/2.;
+					else Frame_Tag.RelativePosition.Y = -Quad_Tag.Size.Y/2.;
+				} else {
+					Frame_Tag.RelativePosition.Y = 0.;
+				}
+			}
+			I += 1;
+		}
+	}
+	
+	if (Quad_Status != Null) {
+		declare LibST_Status for _Score.User = C_Status_Disconnected;
+		declare LibST_IsIdle for _Score.User = False;
+		declare Style = "Icons64x64_2";
+		declare SubStyle = "DisconnectedLight";
+		declare netread Boolean	Net_LibST_UsePlayerDarkening for Teams[0];
+		declare UsePlayerDarkening = Net_LibST_UsePlayerDarkening && UI.UISequence == CUIConfig::EUISequence::Playing;
+		if (!UsePlayerDarkening && Quad_PlayerDarkening.Visible) Quad_PlayerDarkening.Visible = False;
+		
+		switch (LibST_Status) {
+			case C_Status_Spawned: {
+				if (LibST_IsIdle) {
+					Style = "UIConstruction_Buttons";
+					SubStyle = "TestSm";
+				} else {
+					Style = "Icons64x64_1";
+					SubStyle = "LvlGreen";
+				}
+				if (UsePlayerDarkening && Quad_PlayerDarkening.Visible) Quad_PlayerDarkening.Visible = False;
+			}
+			case C_Status_NotSpawned: {
+				Style = "Icons64x64_1";
+				SubStyle = "LvlRed";
+				if (UsePlayerDarkening && !Quad_PlayerDarkening.Visible) Quad_PlayerDarkening.Visible = True;
+			}
+			case C_Status_Spectating: {
+				Style = "BgRaceScore2";
+				SubStyle = "Spectator";
+				if (UsePlayerDarkening && !Quad_PlayerDarkening.Visible) Quad_PlayerDarkening.Visible = True;
+			}
+			case C_Status_Disconnected: {
+				if (UsePlayerDarkening && !Quad_PlayerDarkening.Visible) Quad_PlayerDarkening.Visible = True;
+			}
+		}
+		
+		Quad_Status.Style = Style;
+		Quad_Status.Substyle = SubStyle;
+	}
+	
+	if (Quad_Echelon != Null) {
+		declare EchelonPath = GetEchelonPath(_Score.User.Echelon, _Slot);
+		if (EchelonPath != "" && Http.IsValidUrl(EchelonPath)) {
+			Quad_Echelon.Visible = True;
+			Quad_Echelon.ChangeImageUrl(EchelonPath);
+		} else {
+			Quad_Echelon.Visible = False;
+		}
+	}
+	
+	if (Label_MultiRank != Null) {
+		declare Zone = _("Other");
+		declare ZoneArray = TL::Split("|", _Score.User.LadderZoneName);
+		if (ZoneArray.existskey(2)) Zone = ZoneArray[2];
+		if (_Score.User.LadderRank > 0) Label_MultiRank.Value = TL::Compose("%1: %2", Zone, TL::ToText(_Score.User.LadderRank));
+		else Label_MultiRank.Value = TL::Compose("%1: %2", Zone, _("Not ranked"));
+	}
+	
+	if (Frame_LPGain != Null) {
+		if (UI.UISequence == CUIConfig::EUISequence::Podium && _Score.LadderScore != -1.) {
+			Frame_LPGain.Visible = True;
+			declare LadderPointsExplode = TL::Split(".", TL::ToText(_Score.LadderScore));
+			declare LadderPoints = "0.0";
+			if (LadderPointsExplode.existskey(0)) LadderPoints = LadderPointsExplode[0];
+			if (LadderPointsExplode.existskey(1)) LadderPoints ^= "."^TL::SubString(LadderPointsExplode[1], 0, 2);
+			if (_Score.LadderScore >= 0) Label_LPGain.Value = "+"^LadderPoints;
+			else Label_LPGain.Value = LadderPoints;
+		} else {
+			Frame_LPGain.Visible = False;
+		}
+	}
+	
+	declare netread Text[Text] Net_LibST_ColsDefaultValues for Teams[0];
+	declare netread Text[Text] Net_LibST_ColsValues for _Score;
+	foreach (ColId => ColDefaultValue in Net_LibST_ColsDefaultValues) {		
+		declare Label_Col <=> (Frame_Player.GetFirstChild("Label_"^ColId) as CMlLabel);
+		if (Label_Col != Null && Label_Col.HasClass("CustomCol")) {
+			{{{MLScript[0]}}}
+		}
+	}
+	
+	if (Frame_SpecConfirm.Visible && _Score.User.Login == G_RequestedSpecTarget) {
+		Frame_SpecConfirm.RelativePosition.X = Label_SpecConfirmPos.RelativePosition.X;
+		Frame_SpecConfirm.RelativePosition.Y = Label_SpecConfirmPos.RelativePosition.Y;
+	}
+	
+	if (Button_Spec != Null) {
+		declare LibST_Login for Button_Spec = _Score.User.Login;
+		declare LibST_FramePos for Button_Spec = Vec2;
+		LibST_Login = _Score.User.Login;
+		LibST_FramePos = <Label_SpecConfirmPos.RelativePosition.X, Label_SpecConfirmPos.RelativePosition.Y>;
+		
+		DisplaySpecButton(_Score, Button_Spec, Button_Profile);
+	}
+	if (Button_Profile != Null) {
+		declare LibST_Login for Button_Profile = _Score.User.Login;
+		LibST_Login = _Score.User.Login;
+	}
+	
+	if (Frame_Highlight != Null && Frame_Highlight.Visible && _Score.User.Login == G_RequestedHighlight) {
+		Frame_Highlight.RelativePosition.X = Frame_Player.RelativePosition.X;
+		Frame_Highlight.RelativePosition.Y = Frame_Player.RelativePosition.Y;
+	}
+}
+
+Void UpdatePager(Integer _Step) {
+	declare NbScoresClanMax = 0;
+	if (G_NbScoresClan1 >= G_NbScoresClan2) NbScoresClanMax = G_NbScoresClan1;
+	else NbScoresClanMax = G_NbScoresClan2;
+	
+	declare StartMax = 0;
+	declare Total = NbScoresClanMax;
+	if (NbScoresClanMax > 0 && NbScoresClanMax % G_PageRange == 0) Total -= G_PageRange;
+	StartMax = Total - (Total % G_PageRange);
+	if (G_PageStart > StartMax) G_PageStart = StartMax;
+	
+	declare NewPageStart = G_PageStart + (_Step * G_PageRange);
+	if (NewPageStart < 0) G_PageStart = 0;
+	else if (NewPageStart <= NbScoresClanMax - 1) G_PageStart = NewPageStart;
+	
+	G_PageEnd = G_PageStart + G_PageRange - 1;
+	if (G_PageEnd > NbScoresClanMax - 1) G_PageEnd = NbScoresClanMax - 1;
+	
+	G_PageNeedUpdate = True;
+	
+	if (NbScoresClanMax > G_PageRange) Frame_Pager.Visible = True;
+	else Frame_Pager.Visible = False;
+	
+	if (G_PageStart <= 0) {
+		Button_PagePrev.Visible = False;
+		//Button_PagePrevOff.Visible = True;
+	} else {
+		Button_PagePrev.Visible = True;
+		//Button_PagePrevOff.Visible = False;
+	}
+	
+	if (G_PageEnd >= NbScoresClanMax - 1) {
+		Button_PageNext.Visible = False;
+		//Button_PageNextOff.Visible = True;
+	} else {
+		Button_PageNext.Visible = True;
+		//Button_PageNextOff.Visible = False;
+	}
+	
+	if (_Step != 0 && Frame_SpecConfirm.Visible) Frame_SpecConfirm.Visible = False;
+	
+	foreach (Player in Players) {
+		declare LibST_IsDisplayed for Player.User = False;
+		LibST_IsDisplayed = True;
+	}
+}
+
+Integer[{{{ScoreClass}}}] GetSortedScores() {
+	declare persistent Boolean[Text] LibScoresTable2_Settings for This;
+	declare SortedScores = Integer[{{{ScoreClass}}}];
+	declare Count = 0;
+	
+	foreach (Score in Scores) {
+		declare LibST_Status for Score.User = C_Status_Disconnected;
+		declare Weight = Count;
+		if (
+			LibScoresTable2_Settings.existskey("SortSpec") &&
+			LibScoresTable2_Settings["SortSpec"] &&
+			LibST_Status == C_Status_Spectating
+		) Weight += Scores.count;
+		if (
+			LibScoresTable2_Settings.existskey("SortDisco") &&
+			LibScoresTable2_Settings["SortDisco"] &&
+			LibST_Status == C_Status_Disconnected
+		) Weight += 2 * Scores.count;
+		SortedScores[Score] = Weight;
+		Count += 1;
+	}
+	
+	return SortedScores.sort();
+}
+
+Void FindPlayer() {
+	if (InputPlayer == Null) return;
+	
+	declare TeamRank = 0;
+	declare SortedScores = GetSortedScores();
+	foreach (Score => Weight in SortedScores) {
+		if (Score.User.Id == InputPlayer.User.Id) break;
+		if ({{{G_LibST_UseTeamsMode}}} && Score.TeamNum == InputPlayer.Score.TeamNum) TeamRank += 1;
+		else if (!{{{G_LibST_UseTeamsMode}}}) TeamRank += 1;
+	}
+	
+	declare PageDesired = TeamRank / G_PageRange;
+	declare PageCurrent = G_PageStart / G_PageRange;
+	declare PageShift = PageDesired - PageCurrent;
+	
+	UpdatePager(PageShift);
+	
+	Frame_Highlight.Visible = True;
+	G_RequestedHighlight = InputPlayer.User.Login;
+	G_HighlightEndTime = Now + C_HighlightDuration;
+}
+
+/**
+ * Called By the client UI.
+ * Update a Manialink page, showing the frame of [Page] with Id [FrameTabId]
+ * if the tab [_TabKey] is selected.
+ *
+ * @param _TabKey 		The key associated to this tab, as defined in CreateTabPaneLayer.
+ * @param _FrameTab		The frame containing the tab page.
+ */
+Void UpdateFrameTab(Text _TabKey, CMlFrame _FrameTab) {
+	declare netread Boolean _TabsLib_UseTabs for UI;
+	if (! _TabsLib_UseTabs) return;
+	
+	declare Boolean _TabsLib_ScoresLayerIsVisible 	for UI;
+	declare Boolean _TabsLib_AltLayerIsVisible 		for UI;
+	declare Text 	_TabsLib_CurrentTab 			for UI;
+	declare netread Text _TabsLib_ScoresTableTab 	for UI;
+	
+	declare Boolean ShowCurrentTab = _TabsLib_AltLayerIsVisible && (_TabsLib_CurrentTab == _TabKey);
+	
+	if (_TabKey == _TabsLib_ScoresTableTab) 
+	{
+		ShowCurrentTab = _TabsLib_ScoresLayerIsVisible || 
+			(_TabsLib_AltLayerIsVisible && (_TabsLib_CurrentTab == _TabsLib_ScoresTableTab));
+	}
+
+	if (ShowCurrentTab && !_FrameTab.Visible) {
+		_FrameTab.Visible = True;
+	}
+	else if (!ShowCurrentTab && _FrameTab.Visible) {
+		_FrameTab.Visible = False;
+	}
+}
+
+Void ShowSettings(Boolean _Display) {
+	G_SettingsAreVisible = _Display;
+	
+	if (_Display) {
+		LibManialink_Anim({{{Manialink::Inject("""<frame scale="1" hidden="0" id="Frame_Settings" />""")}}}, 250, "EaseOutExp");
+		LibManialink_Anim({{{Manialink::Inject("""<quad rot="-110" id="Button_Settings" />""")}}}, 250, "EaseOutExp");
+	} else {
+		LibManialink_Anim({{{Manialink::Inject("""<frame scale="0" hidden="1" id="Frame_Settings" />""")}}}, 250, "EaseOutExp");
+		LibManialink_Anim({{{Manialink::Inject("""<quad rot="0" id="Button_Settings" />""")}}}, 250, "EaseOutExp");
+	}
+}
+
+Void ClickSettings(Text _Setting) {
+	declare persistent Boolean[Text] LibScoresTable2_Settings for This;
+	if (!LibScoresTable2_Settings.existskey(_Setting)) LibScoresTable2_Settings[_Setting] = False;
+	LibScoresTable2_Settings[_Setting] = !LibScoresTable2_Settings[_Setting];
+	
+	declare Button_Setting <=> (Page.GetFirstChild("Button_Settings_"^_Setting) as CMlQuad);
+	if (Button_Setting != Null) {
+		Button_Setting.StyleSelected = LibScoresTable2_Settings[_Setting];
+	}
+	
+	G_PageNeedUpdate = True;
+}
+
+Void RestoreSettings() {
+	declare persistent Boolean[Text] LibScoresTable2_Settings for This;
+	foreach (Setting => Selected in LibScoresTable2_Settings) {
+		declare Button_Setting <=> (Page.GetFirstChild("Button_Settings_"^Setting) as CMlQuad);
+		if (Button_Setting != Null) {
+			Button_Setting.StyleSelected = LibScoresTable2_Settings[Setting];
+		}
+	}
+}
+
+main() {
+	declare Frame_ScoresTable		<=> (Page.GetFirstChild("Frame_ScoresTable")					as CMlFrame);
+	declare Frame_ScoresTablePlayer	<=> (Frame_ScoresTable.GetFirstChild("Frame_ScoresTablePlayer")	as CMlFrame);
+	declare Frame_ScoresTableTab	<=> (Frame_ScoresTable.GetFirstChild("Frame_ScoresTableTab")	as CMlFrame);
+	declare Quad_Background			<=> (Frame_ScoresTable.GetFirstChild("Quad_Background")			as CMlQuad);
+	declare Quad_Foreground			<=> (Frame_ScoresTable.GetFirstChild("Quad_Foreground")			as CMlQuad);
+	declare Frame_Table				<=> (Frame_ScoresTable.GetFirstChild("Frame_Table")				as CMlFrame);
+	declare Label_Team1Name			<=> (Frame_ScoresTable.GetFirstChild("Label_Team1Name")			as CMlLabel);
+	declare Label_Team2Name			<=> (Frame_ScoresTable.GetFirstChild("Label_Team2Name")			as CMlLabel);
+	declare Label_Team1Score		<=> (Frame_ScoresTable.GetFirstChild("Label_Team1Score")		as CMlLabel);
+	declare Label_Team2Score		<=> (Frame_ScoresTable.GetFirstChild("Label_Team2Score")		as CMlLabel);
+	declare Quad_Team1Image			<=> (Frame_ScoresTable.GetFirstChild("Quad_Team1Image")			as CMlQuad);
+	declare Quad_Team2Image			<=> (Frame_ScoresTable.GetFirstChild("Quad_Team2Image")			as CMlQuad);
+	declare Label_ServerName		<=> (Frame_ScoresTable.GetFirstChild("Label_ServerName")		as CMlLabel);
+	declare Label_Footer			<=> (Frame_ScoresTable.GetFirstChild("Label_Footer")			as CMlLabel);
+	declare Quad_PIAvatar			<=> (Frame_ScoresTable.GetFirstChild("Quad_PIAvatar")			as CMlQuad);
+	declare Label_PIRank			<=> (Frame_ScoresTable.GetFirstChild("Label_PIRank")			as CMlLabel);
+	
+	Frame_Pager						<=> (Frame_ScoresTable.GetFirstChild("Frame_Pager")				as CMlFrame);
+	Button_PageNext					<=> (Frame_Pager.GetFirstChild("Button_PageNext")				as CMlQuad);
+	Button_PageNextOff				<=> (Frame_Pager.GetFirstChild("Button_PageNextOff")			as CMlQuad);
+	Button_PagePrev					<=> (Frame_Pager.GetFirstChild("Button_PagePrev")				as CMlQuad);
+	Button_PagePrevOff				<=> (Frame_Pager.GetFirstChild("Button_PagePrevOff")			as CMlQuad);
+	Frame_SpecConfirm				<=> (Frame_ScoresTable.GetFirstChild("Frame_SpecConfirm")		as CMlFrame);
+	Frame_Highlight					<=> (Frame_ScoresTable.GetFirstChild("Frame_Highlight")			as CMlFrame);
+	
+	declare FrameCount = 0;
+	Page.GetClassChildren("Frame_Player", Frame_Table, False);
+	foreach (Control in Page.GetClassChildren_Result) {
+		declare Frame <=> (Control as CMlFrame);
+		Frames_Player.add(Frame);
+		FrameCount += 1;
+		if ({{{G_LibST_UseTeamsMode}}}) {
+			ColorizePlayerCard(Frame, FrameCount);
+		}
+	}
+	
+	G_PageRange = C_PageRange;
+	if ({{{G_LibST_UseTeamsMode}}}) G_PageRange /= 2;
+	G_PageStart = 0;
+	G_PageEnd = G_PageStart + G_PageRange - 1;
+	G_PageNeedUpdate = True;
+	G_RequestedSpecTarget = "";
+	G_RequestedHighlight = "";
+	G_HighlightEndTime = -1;
+	G_SettingsAreVisible = False;
+	
+	declare netread Text[]		Net_LibST_FilterLogins			for Teams[0];
+	declare netread Text		Net_LibST_FooterText			for Teams[0];
+	declare netread Integer		Net_LibST_UIScoresPointsLimit	for Teams[0];
+	declare netread Boolean		Net_LibST_UsePlayerDarkening	for Teams[0];
+	declare netread Integer		Net_LibST_CollectionUpdate		for Teams[0];
+	declare netread Text[Text]	Net_LibST_BackgroundCollection	for Teams[0];
+	declare netread Text[Text]	Net_LibST_ForegroundCollection	for Teams[0];
+	declare netread Text[Text][Integer] Net_LibST_TeamsCollection for Teams[0];
+	declare netread Boolean		Net_LibST_HiddenForPlayer		for UI;
+	declare netread Integer		Net_LibST_ColorsUpdate			for Teams[0];
+	
+	declare NextRefresh = -1;
+	declare PrevNbScoresClan1 = -1;
+	declare PrevNbScoresClan2 = -1;
+	declare PrevIsSpectatorMode = False;
+	declare PrevUISequence = CUIConfig::EUISequence::None;
+	declare PrevServerName = "";
+	declare PrevServerModeName = "";
+	declare PrevFooterText = "";
+	declare PrevTeam1Name = "";
+	declare PrevTeam2Name = "";
+	declare PrevTeam1Score = 0;
+	declare PrevTeam2Score = 0;
+	declare PrevTeam1Color = Vec3;
+	declare PrevTeam2Color = Vec3;
+	declare PrevUIScoresPointsLimit = -1;
+	declare PrevUsePlayerDarkening = False;
+	declare PrevLogin = "";
+	declare PrevRank = -1;
+	declare PrevCollectionUpdate = -1;
+	declare PrevMapCollectionName = "";
+	declare PrevSpectatorForcedClan = -1;
+	declare PrevHiddenForPlayer = False;
+	declare PrevColorsUpdate = -1;
+	
+	Frame_ScoresTable.Visible = False;
+	Frame_ScoresTablePlayer.Visible = True;
+	Frame_ScoresTableTab.Visible = True;
+	
+	RestoreSettings();
+	
+	while (True) {
+		yield;
+		
+		if (!PageIsVisible || InputPlayer == Null) {
+			if (Frame_ScoresTable.Visible) {
+				Frame_ScoresTable.Visible = False;
+				ShowSettings(False);
+			}
+			continue;
+		}
+		
+		if (PrevHiddenForPlayer != Net_LibST_HiddenForPlayer) {
+			PrevHiddenForPlayer = Net_LibST_HiddenForPlayer;
+			Frame_ScoresTablePlayer.Visible = !Net_LibST_HiddenForPlayer;
+		}
+		if (!Frame_ScoresTablePlayer.Visible) continue;
+		
+		if (PrevIsSpectatorMode != IsSpectatorMode) {
+			PrevIsSpectatorMode = IsSpectatorMode;
+			if (IsSpectatorMode && Frame_SpecConfirm.Visible) Frame_SpecConfirm.Visible = False;
+		}
+		
+		if (!Frame_ScoresTable.Visible) Frame_ScoresTable.Visible = True;
+		
+		UpdateFrameTab("{{{G_LibST_TabName}}}", Frame_ScoresTableTab);
+		if (!Frame_ScoresTableTab.Visible) continue;
+		
+		LibManialink_AnimLoop();
+		
+		if (Now >= NextRefresh) {
+			NextRefresh = Now + C_RefreshInterval;
+			
+			{{{MLScript[8]}}}
+			
+			if (Net_LibST_FooterText != "") {
+				if (PrevFooterText != Net_LibST_FooterText) {
+					PrevFooterText = Net_LibST_FooterText;
+					Label_Footer.Value = Net_LibST_FooterText;
+				}
+			} else {
+				{{{MLScript[3]}}}
+			}
+			
+			{{{MLScript[4]}}}
+			
+			{{{MLScript[5]}}}
+		
+			if (PrevUISequence != UI.UISequence) {
+				PrevUISequence = UI.UISequence;
+				G_PageNeedUpdate = True;
+			}
+			
+			if (PrevUIScoresPointsLimit != Net_LibST_UIScoresPointsLimit) {
+				PrevUIScoresPointsLimit = Net_LibST_UIScoresPointsLimit;
+				G_PageNeedUpdate = True;
+			}
+			
+			if (PrevUsePlayerDarkening != Net_LibST_UsePlayerDarkening) {
+				PrevUsePlayerDarkening = Net_LibST_UsePlayerDarkening;
+				G_PageNeedUpdate = True;
+			}
+			
+			if (PrevSpectatorForcedClan != UI.SpectatorForcedClan) {
+				PrevSpectatorForcedClan = UI.SpectatorForcedClan;
+				G_PageNeedUpdate = True;
+			}
+			
+			if (PrevColorsUpdate != Net_LibST_ColorsUpdate) {
+				PrevColorsUpdate = Net_LibST_ColorsUpdate;
+				G_PageNeedUpdate = True;
+			}
+			
+			if (PrevCollectionUpdate != Net_LibST_CollectionUpdate || PrevMapCollectionName != Map.CollectionName) {
+				PrevCollectionUpdate = Net_LibST_CollectionUpdate;
+				PrevMapCollectionName = Map.CollectionName;
+				
+				if (Net_LibST_BackgroundCollection.count > 0 && Net_LibST_BackgroundCollection.existskey(Map.CollectionName)) {
+					if (Quad_Background!= Null) Quad_Background.ImageUrl = Net_LibST_BackgroundCollection[Map.CollectionName];
+				}
+				
+				if (Net_LibST_ForegroundCollection.count > 0 && Net_LibST_ForegroundCollection.existskey(Map.CollectionName)) {
+					if (Quad_Foreground != Null) Quad_Foreground.ImageUrl = Net_LibST_ForegroundCollection[Map.CollectionName];
+				}
+				
+				if (Net_LibST_TeamsCollection.existskey(1)) {
+					if (Net_LibST_TeamsCollection[1].count > 0 && Net_LibST_TeamsCollection[1].existskey(Map.CollectionName)) {
+						if (Quad_Team1Image != Null) Quad_Team1Image.ImageUrl = Net_LibST_TeamsCollection[1][Map.CollectionName];
+					}
+				}
+				if (Net_LibST_TeamsCollection.existskey(2)) {
+					if (Net_LibST_TeamsCollection[2].count > 0 && Net_LibST_TeamsCollection[2].existskey(Map.CollectionName)) {
+						if (Quad_Team2Image != Null) Quad_Team2Image.ImageUrl = Net_LibST_TeamsCollection[2][Map.CollectionName];
+					}
+				}
+			}
+			
+			{{{MLScript[7]}}}
+			
+			if (Frame_Highlight.Visible && G_HighlightEndTime <= Now) {
+				Frame_Highlight.Visible = False;
+				G_RequestedHighlight = "";
+				G_HighlightEndTime = -1;
+			}
+			
+			foreach (Player in Players) {
+				declare LibST_IsDisplayed for Player.User = False;
+				if (!LibST_IsDisplayed) continue;
+				
+				declare LibST_LastTick for Player.User = -1;
+				LibST_LastTick = Now;
+				
+				declare LibST_IdleDuration for Player.User = -1;
+				declare LibST_IsIdle for Player.User = False;
+				
+				declare LibST_Status for Player.User = C_Status_Disconnected;
+				if (Player.RequestsSpectate && LibST_Status != C_Status_Spectating) {
+					LibST_Status = C_Status_Spectating;
+				}
+				{{{MLScript[1]}}}
+				
+				if (LibST_IsIdle && LibST_IdleDuration < {{{C_LibST_IdleThreshold}}}) LibST_IsIdle = False;
+				else if (!LibST_IsIdle && LibST_IdleDuration > {{{C_LibST_IdleThreshold}}}) LibST_IsIdle = True;
+			}
+			
+			G_NbScoresClan1 = 0;
+			G_NbScoresClan2 = 0;
+			
+			declare LocalRank = 0;
+			declare TeamSlot = Integer[Integer];
+			TeamSlot[1] = 0;
+			if ({{{G_LibST_UseTeamsMode}}}) TeamSlot[2] = G_PageRange;
+			
+			declare SortedScores = GetSortedScores();
+			
+			foreach (Score => Weight in SortedScores) {
+				declare SlotNeedUpdate = False;
+				declare Skip = False;
+				declare PrevSlot for Score = -1;
+				declare LibST_IsDisplayed for Score.User = False;
+				declare LibST_LocalRank for Score.User = 0;
+				LibST_IsDisplayed = False;
+				
+				if (Net_LibST_FilterLogins.count > 0 && !Net_LibST_FilterLogins.exists(Score.User.Login)) {
+					PrevSlot = -1;
+					Skip = True;
+				}
+				
+				if (!Skip) {
+					LocalRank += 1;
+					if (LibST_LocalRank != LocalRank) SlotNeedUpdate = True;
+					LibST_LocalRank = LocalRank;
+					if ({{{G_LibST_UseTeamsMode}}} && Score.TeamNum == 2) G_NbScoresClan2 += 1;
+					else G_NbScoresClan1 += 1;
+					
+					{{{MLScript[6]}}}
+				}
+				
+				if ({{{G_LibST_UseTeamsMode}}}) {
+					if (Score.TeamNum == 2) {
+						if (G_NbScoresClan2 <= G_PageStart || G_NbScoresClan2 > G_PageEnd + 1) {
+							PrevSlot = -1;
+							Skip = True;
+						}
+					} else {
+						if (G_NbScoresClan1 <= G_PageStart || G_NbScoresClan1 > G_PageEnd + 1) {
+							PrevSlot = -1;
+							Skip = True;
+						}
+					}
+				} else {
+					if (G_NbScoresClan1 <= G_PageStart || G_NbScoresClan1 > G_PageEnd + 1) {
+						PrevSlot = -1;
+						Skip = True;
+					}
+				}
+				
+				if (Skip) {
+					if (Frame_Highlight.Visible && G_RequestedHighlight == Score.User.Login) {
+						Frame_Highlight.Visible = False;
+						G_RequestedHighlight = "";
+						G_HighlightEndTime = -1;
+					}
+					continue;
+				}
+				
+				LibST_IsDisplayed = True;
+				
+				declare LibST_LastTick for Score.User = -1;
+				declare LibST_Status for Score.User = C_Status_Disconnected;
+				if (LibST_LastTick != Now && LibST_Status != C_Status_Disconnected) {
+					LibST_Status = C_Status_Disconnected;
+					SlotNeedUpdate = True;
+				}
+				
+				declare LibST_PrevStatus for Score.User = C_Status_Disconnected;
+				if (LibST_PrevStatus != LibST_Status) {
+					LibST_PrevStatus = LibST_Status;
+					SlotNeedUpdate = True;
+				}
+				
+				declare LibST_IsIdle for Score.User = False;
+				declare LibST_PrevIsIdle for Score.User = False;
+				if (LibST_PrevIsIdle != LibST_IsIdle) {
+					LibST_PrevIsIdle = LibST_IsIdle;
+					SlotNeedUpdate = True;
+				}
+				
+				{{{MLScript[2]}}}
+				
+				declare Slot = 0;
+				if ({{{G_LibST_UseTeamsMode}}} && TeamSlot.existskey(Score.TeamNum)) {
+					Slot = TeamSlot[Score.TeamNum];
+					TeamSlot[Score.TeamNum] += 1;
+				} else {
+					Slot = TeamSlot[1];
+					TeamSlot[1] += 1;
+				}
+				
+				declare LibST_PrevUpdate for Score = -1;
+				declare netread Integer Net_LibST_Update for Score;
+				if (LibST_PrevUpdate != Net_LibST_Update || PrevSlot != Slot || G_PageNeedUpdate || SlotNeedUpdate) {
+					LibST_PrevUpdate = Net_LibST_Update;
+					PrevSlot = Slot;
+					
+					declare ShiftSlot = 0;
+					if ({{{G_LibST_UseTeamsMode}}} && C_PageRange % 2 != 0 && Score.TeamNum == 2) {
+						ShiftSlot = 1;
+					}
+					UpdateSlot(Slot+ShiftSlot, Score);
+				}
+			}
+		
+			if (PrevNbScoresClan1 != G_NbScoresClan1 || PrevNbScoresClan2 != G_NbScoresClan2) {
+				PrevNbScoresClan1 = G_NbScoresClan1;
+				PrevNbScoresClan2 = G_NbScoresClan2;
+				G_PageNeedUpdate = True;
+			}
+			
+			if (G_PageNeedUpdate) {
+				UpdatePager(0);
+				foreach (Clan => SlotNb in TeamSlot) {
+					declare End = 0;
+					if ({{{G_LibST_UseTeamsMode}}}) {
+						if (Clan == 2) {
+							End = (G_PageRange * 2) - 1;
+						} else {
+							End = G_PageRange - 1;
+						}
+					} else {
+						End = G_PageRange - 1;
+					}
+					declare ShiftSlot = 0;
+					if ({{{G_LibST_UseTeamsMode}}} && C_PageRange % 2 != 0) {
+						declare MidSlot = C_PageRange / 2;
+						if (!Frames_Player.existskey(MidSlot)) continue;
+						if (Frames_Player[MidSlot].Visible) Frames_Player[MidSlot].Visible = False;
+						if (Clan == 2) ShiftSlot = 1;
+					}
+					for (I, TeamSlot[Clan]+ShiftSlot, End+ShiftSlot) {
+						if (!Frames_Player.existskey(I)) continue;
+						if (Frames_Player[I].Visible) Frames_Player[I].Visible = False;
+					}
+				}
+			}
+			
+			G_PageNeedUpdate = False;
+		}
+		
+		foreach (Event in PendingEvents) {
+			if (Event.Type == CMlEvent::Type::KeyPress) {
+				if (Event.KeyName == "Next") {
+					UpdatePager(1);
+				} else if (Event.KeyName == "Prior") {
+					UpdatePager(-1);
+				} else if (Event.KeyName == "Home") {
+					FindPlayer();
+				}
+			} else if (Event.Type == CMlEvent::Type::MouseOver) {
+				if (Event.ControlId == "Button_PageNext") {
+					//Button_PageNext.ImageUrl = "file://Media/Manialinks/Common/Pager/pagerDownOn.dds";
+					Button_PageNext.Substyle = "ShowDown2";
+				} else if (Event.ControlId == "Button_PagePrev") {
+					//Button_PagePrev.ImageUrl = "file://Media/Manialinks/Common/Pager/pagerUpOn.dds";
+					Button_PagePrev.Substyle = "ShowUp2";
+				}
+			} else if (Event.Type == CMlEvent::Type::MouseOut) {
+				if (Event.ControlId == "Button_PageNext") {
+					//Button_PageNext.ImageUrl = "file://Media/Manialinks/Common/Pager/pagerDownOff.dds";
+					Button_PageNext.Substyle = "ShowDown";
+				} else if (Event.ControlId == "Button_PagePrev") {
+					//Button_PagePrev.ImageUrl = "file://Media/Manialinks/Common/Pager/pagerUpOff.dds";
+					Button_PagePrev.Substyle = "ShowUp";
+				}
+			} else if (Event.Type == CMlEvent::Type::MouseClick) {
+				if (Event.ControlId == "Button_PageNext") {
+					UpdatePager(1);
+				} else if (Event.ControlId == "Button_PagePrev") {
+					UpdatePager(-1);
+				} else if (Event.ControlId == "Button_PagePlayer") {
+					FindPlayer();
+				} else if (Event.ControlId == "Button_SpecYes") {
+					if (!IsSpectatorMode) IsSpectatorMode = True;
+					SetSpectateTarget(G_RequestedSpecTarget);
+					G_RequestedSpecTarget = "";
+				} else if (Event.ControlId == "Button_SpecNo") {
+					if (Frame_SpecConfirm.Visible) Frame_SpecConfirm.Visible = False;
+					G_RequestedSpecTarget = "";
+				} else if (Event.ControlId == "Button_Spec") {
+					declare LibST_Login for Event.Control = InputPlayer.User.Login;
+					declare LibST_PrevStatus for InputPlayer.User = C_Status_Disconnected;
+					if (IsSpectatorMode || LibST_PrevStatus == C_Status_NotSpawned) {
+						SetSpectateTarget(LibST_Login);
+					} else {
+						if (LibST_Login != "") {
+							declare LibST_FramePos for Event.Control = Vec2;
+							if (!Frame_SpecConfirm.Visible) Frame_SpecConfirm.Visible = True;
+							Frame_SpecConfirm.RelativePosition.X = LibST_FramePos.X;
+							Frame_SpecConfirm.RelativePosition.Y = LibST_FramePos.Y;
+							G_RequestedSpecTarget = LibST_Login;
+						}
+					}
+				} else if (Event.ControlId == "Button_Profile") {
+					declare LibST_Login for Event.Control = InputPlayer.User.Login;
+					if (LibST_Login != "") {
+						ShowProfile(LibST_Login);
+					}
+				} else if (Event.ControlId == "Button_Settings") {
+					ShowSettings(!G_SettingsAreVisible);
+				} else if (Event.Control.HasClass("Settings") && Event.Control.DataAttributeExists("settings")) {
+					ClickSettings(Event.Control.DataAttributeGet("settings"));
+				}
+			}
+		}
+	}
+}
+--></script>
+</manialink>
+""";
+
+	LayerScoresTable.ManialinkPage = ML_ScoresTable;
+}
+
+// ---------------------------------- //
+/// Build() function overload
+Void Build(Text _Game) {
+	Build(_Game, True);
+}
+
+// ---------------------------------- //
+/// Load a scores table style from an XmlRpc call
+Void XmlRpcLoop() {
+	foreach (Event in XmlRpc.PendingEvents) {
+		if (Event.ParamArray1 == "LibScoresTable2_SetStyleFromXml") {
+			declare Game = "";
+			declare XmlString = "";
+			if (Event.ParamArray2.existskey(0)) Game = Event.ParamArray2[0]; 
+			if (Event.ParamArray2.existskey(1)) XmlString = Event.ParamArray2[1];
+			
+			if (Game != "TM" && Game != "SM" && Game != "QM") {
+				log(Now^"> LibScoresTable > SetStyleFromXml() > Failed : game parameter not valid, select TM, SM or QM");
+				continue;
+			}
+			
+			declare StyleXml <=> Xml.Create(XmlString);
+			
+			if (StyleXml == Null) {
+				log(Now^"> LibScoresTable > SetStyleFromXml() > Failed : the file is not a valid xml file");
+			} else {
+				Private_ReadXml(StyleXml, True);
+				Xml.Destroy(StyleXml);
+				StyleXml <=> Null;
+				Build(Game, False);
+				log(Now^"> LibScoresTable > SetStyleFromXml() > XML file loaded");
+			}
+		}
+	}
+}

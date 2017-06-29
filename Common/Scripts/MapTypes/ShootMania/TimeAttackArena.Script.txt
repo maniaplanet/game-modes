@@ -1,0 +1,180 @@
+/**
+ *	Validation for the time attack maps
+ *
+ *	Exactly one spawn and one goal with any number of checkpoints
+ */
+ 
+#RequireContext CSmMapType
+#Const Version			"2013-11-07"
+#Const MapTypeVersion	1
+#Const ScriptName		"TimeAttackArena.Script.txt"
+
+#Include "Libs/Nadeo/Anchor.Script.txt" as Anchor
+#Include "Libs/Nadeo/MapType.Script.txt" as MapType
+
+// ---------------------------------- //
+// Globales
+// ---------------------------------- //
+declare Text Rules;
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+// ---------------------------------- //
+// Initialize the anchors
+Void InitAnchors() {
+	foreach (Data in AnchorData) {
+		if (   (Data.DefaultTag == "Goal" && Data.Tag != "Goal" && Data.Tag != "Checkpoint")
+			|| (Data.DefaultTag == "Checkpoint" && Data.Tag != "Goal" && Data.Tag != "Checkpoint")
+			|| (Data.DefaultTag != "Checkpoint" && Data.DefaultTag != "Goal") )
+		{
+			Data.Tag = Data.DefaultTag;
+		}
+		Data.Order = Data.DefaultOrder;
+	}
+}
+
+// ---------------------------------- //
+// Check if the map is valid
+Void UpdateValidability() {	 
+	Anchor::UpdateAnchorCounts(); 
+	if (!Anchor::HasExactlyOneAnchor("Spawn", 0, _("You must place exactly one Spawn."))) return;
+	if (!Anchor::HasAtLeastOneAnchor("Goal", 0, _("You must place at least one Goal."))) return;
+	//if (!Anchor::HasAtLeastOneAnchor("Checkpoint", 0, _("You must place at least one Checkpoint (use block property mode)."))) return;
+}
+
+// ---------------------------------- //
+// Return the manialink for anchor edition
+Text EditAnchorManialink() {
+	
+	declare MLText = 		
+	"""
+	<script><!--		
+		main() {
+			declare Buttons = [
+			(Page.GetFirstChild("Goal") as CMlLabel), 
+			(Page.GetFirstChild("Checkpoint") as CMlLabel)];
+			
+			declare Text AnchorTag for Page;
+			declare Boolean Finish for Page;
+			Finish = False;	
+			while(!Finish) {
+				yield;
+				foreach(Button in Buttons) {
+					if(AnchorTag == Button.ControlId)
+						Button.Value = "$090"^Button.ControlId;
+					else 
+						Button.Value = "$fff"^Button.ControlId;
+				}
+				
+				foreach(Event in PendingEvents) {
+					switch(Event.Type){
+						case CMlEvent::Type::MouseClick : {
+							if (Event.ControlId != "Cancel") AnchorTag = Event.ControlId;
+							Finish = True;
+						}	
+					}
+				}
+			}
+		}			
+	--></script>
+	<frame posn="120 35">
+		<quad posn="0 0 2" sizen="74 15" halign="center" valign="bottom" style="Bgs1InRace" substyle="BgTitle3_5"/>
+		<label posn="0 5 3" sizen="70 15" halign="center" valign="bottom" style="TextTitle3" textprefix="$fff" text="{{{_("Edit Goals and Checkpoints")}}}" />
+		<quad posn="0 0 -1" sizen="70 30" halign="center" style="Bgs1" substyle="BgWindow2"/>
+		<frame posn="0 -4">
+			<label id="Goal" posn="0 0" scale="1.5" halign="center" style="TextButtonMedium" ScriptEvents="true"/>
+			<label id="Checkpoint" posn="0 -8" scale="1.5" halign="center" style="TextButtonMedium" ScriptEvents="true"/>
+		</frame>
+		<label id="Cancel" text="{{{_("Cancel")}}}" posn="0 -19" halign="center" style="CardButtonSmall" ScriptEvents="true"/>
+    </frame>
+	<frame posn="120 -10">
+		<quad posn="0 0 2" sizen="74 15" halign="center" valign="bottom" style="Bgs1InRace" substyle="BgTitle3_5"/>
+		<label posn="0 5 3" halign="center" valign="bottom" style="TextTitle3" textprefix="$fff" text="{{{_("Rules")}}}" />
+		<quad posn="0 0 -1" sizen="70 23" halign="center" style="Bgs1" substyle="BgWindow2"/>
+		<frame posn="-30 -4">
+			<label posn="0 0" sizen="60 5" autonewline="1" style="TextCardSmallScores2" textcolor="fff" text="{{{ Rules }}}" />
+		</frame>
+	</frame>
+	""";
+  
+	return MLText;
+}
+
+// ---------------------------------- //
+// Manialink for non editable anchor
+Text NoEditManialink() {
+	return """
+		<script><!--			
+			main() {
+				declare Boolean Finish for Page;
+				Finish = False;	
+				while(!Finish) {
+					yield;
+					
+					foreach(Event in PendingEvents) {
+						switch(Event.Type){
+							case CMlEvent::Type::MouseClick : {
+								Finish = True;
+							}	
+						}
+					}
+				}
+			}			
+		--></script>
+		<frame posn="120 35">
+			<quad posn="0 0 -1" sizen="70 15" halign="center" style="Bgs1" substyle="BgWindow2"/>
+			<quad posn="0 0 2" sizen="74 15" halign="center" valign="bottom" style="Bgs1InRace" substyle="BgTitle3_5"/>
+			<label posn="0 5.5 3" scale="0.9" halign="center" valign="bottom" style="TextTitle3" textprefix="$fff" text="{{{_("This anchor is not editable")}}}" />
+			<label text="OK" posn="0 -3.5 3" halign="center" style="CardButtonMedium" ScriptEvents="true"/>
+	    </frame>
+		<frame posn="120 5">
+			<quad posn="0 0 2" sizen="74 15" halign="center" valign="bottom" style="Bgs1InRace" substyle="BgTitle3_5"/>
+			<label posn="0 5 3" halign="center" valign="bottom" style="TextTitle3" textprefix="$fff" text="{{{_("Rules")}}}" />
+			<quad posn="0 0 -1" sizen="70 30" halign="center" style="Bgs1" substyle="BgWindow2"/>
+			<frame posn="-30 -4">
+				<label posn="0 0" sizen="60 5" autonewline="1" style="TextCardSmallScores2" textcolor="fff" text="{{{ Rules }}}" />
+			</frame>
+		</frame>
+	""";
+}
+
+// ---------------------------------- //
+// Show the anchor edition manialink
+Void EditAnchorData(Ident _EditedAnchorDataId) {	
+	declare Text AnchorTag for ManialinkPage;
+	declare Boolean Finish for ManialinkPage;
+	if (AnchorData[_EditedAnchorDataId].DefaultTag != "Goal" && AnchorData[_EditedAnchorDataId].DefaultTag != "Checkpoint") ManialinkText = NoEditManialink();
+	else ManialinkText = EditAnchorManialink();
+	AnchorTag = AnchorData[_EditedAnchorDataId].Tag;
+	Finish = False;
+	while(!Finish) {
+		yield;
+	}
+	AnchorData[_EditedAnchorDataId].Tag = AnchorTag;
+	
+	UpdateValidability();
+}
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+main() {
+	MapType::SetVersion(MapTypeVersion);
+	
+	CustomEditAnchorData = True;
+	Rules = _("You must place exactly one Spawn, at least one Goal and as much Checkpoints as you want.");
+	InitAnchors();	
+	UpdateValidability();
+	while (True) {	
+		yield;
+		ManialinkText = "";			
+		foreach (Event in PendingEvents) {
+			if (Event.Type == CPluginEvent::Type::MapModified) {
+				UpdateValidability();			
+			} else if (Event.Type == CPluginEvent::Type::EditAnchor) {
+				EditAnchorData(Event.EditedAnchorDataId);
+			}
+		}		
+	}	
+}

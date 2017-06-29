@@ -1,0 +1,746 @@
+/** 
+ * Top library
+ *
+ *	/!\ Warning /!\
+ *	The slider of the Interface library depends on the way tops are handled in this library
+ *	You'll have to update both at the same time
+ */
+
+#Const Version		"2017-04-11"
+#Const ScriptName	"Top2.Script.txt"
+
+#Include "TextLib" as TL
+
+/* ------------------------------------- */
+// Constants
+/* ------------------------------------- */
+#Const C_LibTop_TopWidth				40.
+#Const C_LibTop_PlayerCardHeight		6.
+#Const C_LibTop_TabName					"TopTab"
+#Const C_LibTop_CommonBackgroundImage	""
+#Const C_LibTop_CommonBackgroundPos		<0., 0.>
+#Const C_LibTop_CommonBackgroundSize	<0., 0.>
+#Const C_LibTop_Colors [
+	"CommonBackground"	=> "0007",
+	"Background" 		=> "0007",
+	"PlayerCard" 		=> "222d"
+]
+
+/* ------------------------------------- */
+// Globales
+/* ------------------------------------- */
+declare Ident G_LibTop_LayerTopId; ///< Id of the top layer
+declare Text[] G_LibTop_TopId; ///< Ids of all the existing tops
+declare Text[] G_LibTop_TopUpdated; ///< Ids of the tops that haven't been sent to players yet
+declare Text[Text] G_LibTop_TopML; ///< Manialinks of each top
+declare Integer[Text] G_LibTop_TopSize; ///< Maximum number of entry in a top
+declare Text[Ident][Text] G_LibTop_TopValue; ///< TextValue[UserId][TopId] The text value of each entry in the tops
+declare Integer[Ident][Text] G_LibTop_TopSort; ///< SortValue[UserId][TopId] The sort value of each entry in the tops
+
+declare Text[Integer][Text] G_LibTop_NetTopValue; ///< All the top values sorted
+declare Text[Integer][Text] G_LibTop_NetTopName; ///< All the top names sorted
+declare Text[Integer][Text] G_LibTop_NetTopLogin; ///< All the top logins sorted
+
+declare Real G_LibTop_TopWidth; ///< Width of the top manialink
+declare Real G_LibTop_PlayerCardHeight; ///< Height of one player card
+declare Text G_LibTop_CommonBackgroundImage; ///< Background image used to surround the tops
+declare Vec2 G_LibTop_CommonBackgroundPos; ///< Position of this background
+declare Vec2 G_LibTop_CommonBackgroundSize; ///< Size of this background
+declare Text[Text] G_LibTop_Colors; ///< Colors of the manialink elements
+
+declare Text G_LibTop_Title; ///< A Title for the tops layer
+declare Text G_LibTop_TabName; ///< Name of the tab containing the tops (used by the tab library)
+declare Integer G_LibTop_ZIndex; ///< The z-index of the top layer
+
+/* ------------------------------------- */
+// Functions
+/* ------------------------------------- */
+
+/* ------------------------------------- */
+// Private
+/* ------------------------------------- */
+
+/* ------------------------------------- */
+/** Get the top layer
+ *
+ *	@return		The top layer
+ */
+CUILayer Private_GetLayerTop() {
+	if (UIManager.UILayers.existskey(G_LibTop_LayerTopId)) {
+		return UIManager.UILayers[G_LibTop_LayerTopId];
+	}
+	return Null;
+}
+
+/* ------------------------------------- */
+/// Create a common background for all the top
+Text Private_CreateBackgroundML() {
+	declare BackgroundML = "";
+	
+	declare Pos		= G_LibTop_CommonBackgroundPos.X^" "^G_LibTop_CommonBackgroundPos.Y;
+	declare Size	= G_LibTop_CommonBackgroundSize.X^" "^G_LibTop_CommonBackgroundSize.Y;
+		
+	if (G_LibTop_CommonBackgroundImage == "") {
+		BackgroundML = """
+<quad pos="{{{Pos}}}" z-index="0" size="{{{Size}}}" halign="center" bgcolor="{{{G_LibTop_Colors["CommonBackground"]}}}" />	
+""";
+	} 
+	// With an image
+	else {
+		BackgroundML = """
+<quad pos="{{{Pos}}}" z-index="0" size="{{{Size}}}" halign="center" image="{{{G_LibTop_CommonBackgroundImage}}}" />
+""";
+	}
+	
+	return BackgroundML;
+}
+
+/* ------------------------------------- */
+/// Add a title to the common top display
+Text Private_CreateTitleML() {
+	declare Text TitleML = "";
+	if(G_LibTop_Title != "") {	
+		TitleML = """
+		<label textemboss="true" text="{{{G_LibTop_Title}}}" halign="center" valign="top" pos="0 39" z-index="50" textsize="5" />""";
+	}
+	
+	return TitleML;
+}
+
+/* ------------------------------------- */
+/** Create a manialink for a top
+ *
+ *	@param	_TopId		Id of the top
+ *	@param	_Name		Name of the top
+ *	@param	_LinesNb	Number of lines in the top
+ *	@param	_Pos		The position of the top
+ */
+Text Private_CreateTopML(Text _TopId, Text _Name, Integer _LinesNb, Vec2 _Pos) {
+	declare TopId	= TL::MLEncode(_TopId);
+	declare Name	= TL::MLEncode(_Name);
+	
+	declare BGHeight = 6. + (_LinesNb * G_LibTop_PlayerCardHeight) - 0.25;
+	
+	declare CardSizeY	= G_LibTop_PlayerCardHeight - 0.5;
+	declare RankSizeX	= 10 * (G_LibTop_TopWidth / 100.);
+	declare NameSizeX	= 60 * (G_LibTop_TopWidth / 100.);
+	declare RecordSizeX	= 30 * (G_LibTop_TopWidth / 100.);
+	declare NamePosX	= RankSizeX;
+	declare RecordPosX	= NamePosX + NameSizeX + RecordSizeX;
+		
+		
+	declare PlayersList = "";
+	
+	PlayersList ^= """
+<framemodel id="PlayerCard">
+	<quad pos="0 0" z-index="0" size="{{{RankSizeX}}} {{{CardSizeY}}}" valign="center" bgcolor="000a" />
+	<label pos="{{{RankSizeX/2.}}} 0.3" z-index="10" size="{{{RankSizeX}}} {{{CardSizeY}}}" halign="center" valign="center" style="TextCardSmallScores2" textprefix="$s" text="XX" id="Label_Rank"/>
+	<quad pos="{{{NamePosX}}} 0" z-index="1" size="{{{NameSizeX+RecordSizeX}}} {{{CardSizeY}}}" valign="center" bgcolor="{{{G_LibTop_Colors["PlayerCard"]}}}" />
+	<label pos="{{{NamePosX+1.}}} 0.3" z-index="11" size="{{{NameSizeX-1.}}} {{{CardSizeY}}}" valign="center" style="TextCardSmallScores2" id="Label_Name" />
+	<label pos="{{{RecordPosX-1.}}} 0.3" z-index="12" size="{{{RecordSizeX-1.}}} {{{CardSizeY}}}" halign="right" valign="center" style="TextCardSmallScores2" id="Label_Record" />
+</framemodel>
+""";
+
+	for (I, 1, _LinesNb) {
+		declare CardPosY 	= ((I - 1) * -G_LibTop_PlayerCardHeight) - (G_LibTop_PlayerCardHeight/2.);	
+		PlayersList ^= """<frameinstance pos="{{{-G_LibTop_TopWidth/2.}}} {{{CardPosY}}}" id="Frame_Player_{{{I}}}" modelid="PlayerCard" hidden="1"/>""";
+	}
+	
+	return """
+<frame pos="{{{_Pos.X}}} {{{_Pos.Y}}}" z-index="40" id="Frame_LibTop_{{{TopId}}}">
+	<quad pos="0 0" z-index="0" size="{{{G_LibTop_TopWidth}}} {{{BGHeight}}}" halign="center" bgcolor="{{{G_LibTop_Colors["Background"]}}}" />
+	<label pos="0 -2.5" z-index="1" size="{{{G_LibTop_TopWidth}}} 5" halign="center" valign="center" textemboss="true" text="{{{Name}}}" />
+	<frame pos="0 -6" z-index="2">
+		{{{PlayersList}}}
+	</frame>
+</frame>
+""";
+}
+
+/* ------------------------------------- */
+/// Create the script for the top manialink
+Text Private_CreateScriptML() {
+	return """
+<script><!--
+#Include "TextLib" as TL
+
+Void UpdateTop(Text _TopId, Text[Integer] _TopName, Text[Integer] _TopValue) {
+	declare TopId = TL::MLEncode(_TopId);
+	declare Frame_Top <=> (Page.GetFirstChild("Frame_LibTop_"^TopId) as CMlFrame);
+	if (Frame_Top == Null) return;
+	
+	declare I = 0;
+	foreach (Rank => Name in _TopName) {
+		declare Frame_Player <=> (Frame_Top.GetFirstChild("Frame_Player_"^Rank) as CMlFrame);
+		if (Frame_Player == Null) continue;
+		declare Label_Name		<=> (Frame_Player.GetFirstChild("Label_Name")	as CMlLabel);
+		declare Label_Record	<=> (Frame_Player.GetFirstChild("Label_Record")	as CMlLabel);
+		declare Label_Rank		<=> (Frame_Player.GetFirstChild("Label_Rank")	as CMlLabel);
+		
+		Frame_Player.Show();
+		Label_Name.SetText(Name);
+		Label_Record.SetText(_TopValue[Rank]);
+		Label_Rank.SetText(""^Rank);
+		I = Rank;
+	}
+	
+	while (True) {
+		I += 1;
+		declare Frame_Player <=> (Frame_Top.GetFirstChild("Frame_Player_"^I) as CMlFrame);
+		if (Frame_Player == Null) break;
+		Frame_Player.Hide();
+	}
+}
+
+/**
+ * Called By the client UI.
+ * Update a Manialink page, showing the frame of [Page] with Id [FrameTabId]
+ * iff the tab [TabKey] is selected.
+ * @param UI		 	UI of the player (variable "UI" in client manialink).
+ * @param Page 			Manialink page containing the tab page (assumably variable "Page" in client manialink).
+ * @param TabKey 		The key associated to this tab, as defined in CreateTabPaneLayer.
+ * @param FrameTabId	Id of the frame containing the tab page.
+ */
+Void UpdateFrameTab(CUIConfig UI, CMlPage Page, Text TabKey, CMlFrame MainFrame) {
+	declare netread Boolean _TabsLib_UseTabs for UI;
+	if (! _TabsLib_UseTabs) return;
+	
+	declare Boolean _TabsLib_ScoresLayerIsVisible 	for UI;
+	declare Boolean _TabsLib_AltLayerIsVisible 		for UI;
+	declare Text 	_TabsLib_CurrentTab 			for UI;
+	declare netread Text _TabsLib_ScoresTableTab 	for UI;
+	
+	declare Boolean ShowCurrentTab = _TabsLib_AltLayerIsVisible && (_TabsLib_CurrentTab == TabKey);
+	
+	if(TabKey == _TabsLib_ScoresTableTab) 
+	{
+		ShowCurrentTab = _TabsLib_ScoresLayerIsVisible || 
+			(_TabsLib_AltLayerIsVisible && (_TabsLib_CurrentTab == _TabsLib_ScoresTableTab));
+	}
+
+	if(ShowCurrentTab) {
+		MainFrame.Show();
+	}
+	else {
+		MainFrame.Hide();
+	}
+}
+
+main() {
+	declare netread Integer				Net_LibTop_TopUpdate	for UI;
+	declare netread Text[Integer][Text]	Net_LibTop_TopValue		for UI;
+	declare netread Text[Integer][Text]	Net_LibTop_TopName		for UI;
+	declare netread Text[Integer][Text]	Net_LibTop_TopLogin		for UI;
+	
+	// Share the values with the Interface library
+	declare Integer				LibUI_TopUpdate		for UI;
+	declare Text[Integer][Text]	LibUI_TopValue		for UI;
+	declare Text[Integer][Text]	LibUI_TopName		for UI;
+	declare Text[Integer][Text]	LibUI_TopLogin		for UI;
+	
+	declare LastUpdate = Net_LibTop_TopUpdate;
+	declare LastLibUIUpdate = Net_LibTop_TopUpdate;
+	declare CMlFrame MainFrame <=> (Page.GetFirstChild("Frame_Top") as CMlFrame);
+	
+	while (True) {
+		yield;
+		
+		if (InputPlayer == Null) continue;
+		
+		// Share the values with the Interface library
+		if (LastLibUIUpdate != Net_LibTop_TopUpdate) {
+			LastLibUIUpdate	= Net_LibTop_TopUpdate;
+			
+			LibUI_TopUpdate	= Net_LibTop_TopUpdate;
+			LibUI_TopValue	= Net_LibTop_TopValue;
+			LibUI_TopName	= Net_LibTop_TopName;
+			LibUI_TopLogin	= Net_LibTop_TopLogin;
+		}
+		
+		if (!PageIsVisible) continue;
+		
+		UpdateFrameTab(UI, Page, "{{{G_LibTop_TabName}}}", MainFrame);
+		if (!MainFrame.Visible) continue;
+		
+		if (LastUpdate != Net_LibTop_TopUpdate) {
+			LastUpdate	= Net_LibTop_TopUpdate;
+			
+			foreach (TopId => TopValue in Net_LibTop_TopValue) {
+				UpdateTop(TopId, Net_LibTop_TopName[TopId], TopValue);
+			}
+		}
+	}
+}
+--></script>
+""";
+}
+
+/* ------------------------------------- */
+/// Merge all the tops manialinks
+Text Private_MergeML() {
+	declare ML = "";
+	ML ^= """<manialink version="3" name="Lib_Top2:Tops">""";
+	ML ^= """<frame id="Frame_Top" pos="0 0" z-index="{{{G_LibTop_ZIndex}}}" hidden="1">""";
+	ML ^= Private_CreateTitleML();
+	foreach (TopML in G_LibTop_TopML) {
+		ML ^= TopML;
+	}
+	ML ^= Private_CreateBackgroundML();
+	ML ^= """</frame>""";
+	ML ^= Private_CreateScriptML();
+	ML ^= """</manialink>""";
+	
+	return ML;
+}
+
+/* ------------------------------------- */
+/** Load the top data to send
+ *
+ *	@param _TopId		The ids of the top to load
+ */
+Void Private_LoadTop(Text[] _TopId) {
+	declare TopToUpdate = _TopId;
+	if (TopToUpdate.count <= 0) {
+		TopToUpdate = G_LibTop_TopId;
+	}
+		
+	foreach (TopId in TopToUpdate) {
+		if (!G_LibTop_TopId.exists(TopId)) continue;
+		
+		G_LibTop_TopSort[TopId] = G_LibTop_TopSort[TopId].sort();
+		
+		declare Rank = 1;
+		G_LibTop_NetTopValue[TopId]	= Text[Integer];
+		G_LibTop_NetTopName[TopId]	= Text[Integer];
+		G_LibTop_NetTopLogin[TopId] = Text[Integer];
+		
+		declare RemovedIds = Ident[];
+		foreach (UserId => Sort in G_LibTop_TopSort[TopId]) {
+			if (Rank <= G_LibTop_TopSize[TopId]) {
+				G_LibTop_NetTopValue[TopId][Rank]	= G_LibTop_TopValue[TopId][UserId];
+				if (Users.existskey(UserId)) {
+					G_LibTop_NetTopName[TopId][Rank]	= Users[UserId].Name;
+					G_LibTop_NetTopLogin[TopId][Rank]	= Users[UserId].Login;
+				} else {
+					G_LibTop_NetTopName[TopId][Rank]	= ""^UserId;
+					G_LibTop_NetTopLogin[TopId][Rank]	= ""^UserId;
+				}
+			} else {
+				RemovedIds.add(UserId);
+			}
+			Rank += 1;
+		}
+		
+		foreach (UserId in RemovedIds) {
+			declare Removed = G_LibTop_TopValue[TopId].removekey(UserId);
+			Removed = G_LibTop_TopSort[TopId].removekey(UserId);
+		}
+	}
+}
+
+/* ------------------------------------- */
+/** Send the loaded top data to one player
+ *
+ *	@param	_Player		The player to update
+ */
+Void Private_SendTopTo(CPlayer _Player) {	
+	declare UI <=> UIManager.GetUI(_Player);
+	if (UI == Null) return;
+		
+	declare netwrite Integer				Net_LibTop_TopUpdate	for UI;
+	declare netwrite Text[Integer][Text] 	Net_LibTop_TopValue		for UI;
+	declare netwrite Text[Integer][Text]	Net_LibTop_TopName		for UI;
+	declare netwrite Text[Integer][Text]	Net_LibTop_TopLogin		for UI;
+	
+	Net_LibTop_TopUpdate	= Now;
+	Net_LibTop_TopValue		= G_LibTop_NetTopValue;
+	Net_LibTop_TopName		= G_LibTop_NetTopName;
+	Net_LibTop_TopLogin		= G_LibTop_NetTopLogin;
+}
+
+/* ------------------------------------- */
+// Public
+/* ------------------------------------- */
+
+/* ------------------------------------- */
+/** Return the version number of the script
+ *
+ *	@return		The version number of the script
+ */
+Text GetScriptVersion() {
+	return Version;
+}
+
+/* ------------------------------------- */
+/** Return the name of the script
+ *
+ *	@return		The name of the script
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+/* ------------------------------------- */
+// Load the top library
+Void Load() {
+	// Create the top layer
+	declare LayerTop	= UIManager.UILayerCreate();
+	G_LibTop_LayerTopId	= LayerTop.Id;
+	UIManager.UIAll.UILayers.add(LayerTop);
+	
+	// Initialize the tops
+	G_LibTop_TopId		= Text[];
+	G_LibTop_TopUpdated	= Text[];
+	G_LibTop_TopML		= Text[Text];
+	G_LibTop_TopSize	= Integer[Text];
+	G_LibTop_TopValue	= Text[Ident][Text];
+	G_LibTop_TopSort	= Integer[Ident][Text];
+	
+	// Inialize the manialink properties
+	G_LibTop_TopWidth				= C_LibTop_TopWidth;
+	G_LibTop_PlayerCardHeight		= C_LibTop_PlayerCardHeight;
+	G_LibTop_CommonBackgroundImage	= C_LibTop_CommonBackgroundImage;
+	G_LibTop_CommonBackgroundPos	= C_LibTop_CommonBackgroundPos;
+	G_LibTop_CommonBackgroundSize	= C_LibTop_CommonBackgroundSize;
+	G_LibTop_Colors					= C_LibTop_Colors;
+	G_LibTop_TabName				= C_LibTop_TabName;
+}
+
+/* ------------------------------------- */
+/// Unload the top library
+Void Unload() {
+	// Destroy the top layer
+	if (UIManager.UILayers.existskey(G_LibTop_LayerTopId)) {
+		declare LayerTop = UIManager.UILayers[G_LibTop_LayerTopId];
+		declare Removed = UIManager.UIAll.UILayers.remove(LayerTop);
+		UIManager.UILayerDestroy(LayerTop);
+	}
+}
+
+/* ------------------------------------- */
+/** Create a new top
+ *
+ *	@param	_TopId		The id of the top
+ *	@param	_Name		The name of the top
+ *	@param	_Size		The number of entry in the top
+ *	@param	_Pos		THe position of the top
+ */
+Void Create(Text _TopId, Text _Name, Integer _Size, Vec2 _Pos) {
+	if (G_LibTop_TopId.exists(_TopId)) return;
+	
+	// Initialize the new top
+	G_LibTop_TopId.add(_TopId);
+	G_LibTop_TopML[_TopId]		= Private_CreateTopML(_TopId, _Name, _Size, _Pos);
+	G_LibTop_TopSize[_TopId]	= _Size;
+	G_LibTop_TopValue[_TopId]	= Text[Ident];
+	G_LibTop_TopSort[_TopId]	= Integer[Ident];
+	
+	// Create the new top manialink
+	declare LayerTop = Private_GetLayerTop();
+	if (LayerTop != Null) LayerTop.ManialinkPage = Private_MergeML();
+}
+
+/* ------------------------------------- */
+/** Update an existing top
+ *
+ *	@param	_TopId		The id of the top to update
+ *	@param	_Name		The updated name of the top
+ */
+Void Update(Text _TopId, Text _Name, Integer _Size, Vec2 _Pos) {
+	if (!G_LibTop_TopId.exists(_TopId)) return;
+	
+	G_LibTop_TopML[_TopId]		= Private_CreateTopML(_TopId, _Name, _Size, _Pos);
+	G_LibTop_TopSize[_TopId]	= _Size;
+	
+	// Update the top manialink
+	declare LayerTop = Private_GetLayerTop();
+	if (LayerTop != Null) LayerTop.ManialinkPage = Private_MergeML();
+}
+
+/* ------------------------------------- */
+/** Destroy an existing top
+ *
+ *	@param	_TopId		The id of the top to destroy
+ */
+Void Destroy(Text _TopId) {
+	if (!G_LibTop_TopId.exists(_TopId)) return;
+	
+	// Initialize the new top
+	declare Removed = G_LibTop_TopId.remove(_TopId);
+	Removed = G_LibTop_TopML.removekey(_TopId);
+	Removed = G_LibTop_TopSize.removekey(_TopId);
+	Removed = G_LibTop_TopValue.removekey(_TopId);
+	Removed = G_LibTop_TopSort.removekey(_TopId);
+	
+	// Create the new top manialink
+	declare LayerTop = Private_GetLayerTop();
+	if (LayerTop != Null) LayerTop.ManialinkPage = Private_MergeML();
+}
+
+/* ------------------------------------- */
+/** Set the type of layer used to display the tops
+ *
+ *	@param	_Type	The type of layer to use
+ */
+Void SetLayerType(CUILayer::EUILayerType _Type) {
+	declare LayerTop = Private_GetLayerTop();
+	LayerTop.Type = _Type;
+}
+
+/* ------------------------------------- */
+/** Set the top manialink width
+ *
+ *	@param	_Width		The new width
+ */
+Void SetTopWidth(Real _Width) {
+	G_LibTop_TopWidth = _Width;
+}
+
+/* ------------------------------------- */
+/** Set the playercard height
+ *
+ *	@param	_Height		The new height
+ */
+Void SetPlayerCardHeight(Real _Height) {
+	G_LibTop_PlayerCardHeight = _Height;
+}
+
+/* ------------------------------------- */
+/** Use a common background image for the tops
+ *	If _ImagePath is empty, then the solid background is used
+ *
+ *	@param	_ImagePath	The path to the image
+ *	@param	_Pos		The image position
+ *	@param	_Size		The image size
+ */
+Void SetCommonBackgroundImage(Text _ImagePath, Vec2 _Pos, Vec2 _Size) {
+	if (_ImagePath == "") {
+		G_LibTop_CommonBackgroundImage	= "";
+		G_LibTop_CommonBackgroundPos	= _Pos;
+		G_LibTop_CommonBackgroundSize	= _Size;
+	} else {
+		G_LibTop_CommonBackgroundImage	= TL::MLEncode(_ImagePath);
+		G_LibTop_CommonBackgroundPos	= _Pos;
+		G_LibTop_CommonBackgroundSize	= _Size;
+	}
+	
+	// Update the top manialink with the new background
+	declare LayerTop = Private_GetLayerTop();
+	if (LayerTop != Null) LayerTop.ManialinkPage = Private_MergeML();
+}
+
+/* ------------------------------------- */
+/** Set the colors of the top elements
+ *
+ *	@param	_Name	The name of the element to update
+ *	@param	_Value	The new color for this element
+ */
+Void SetColor(Text _Name, Text _Value) {
+	if (G_LibTop_Colors.existskey(_Name)) {
+		G_LibTop_Colors[_Name] = TL::MLEncode(_Value);
+	}
+}
+
+/* ------------------------------------- */
+/** Set the title of the common tops display
+ *
+ *	@param	_Title		The new title
+ */
+Void SetTitle(Text _Title) {
+	G_LibTop_Title = TL::MLEncode(_Title);
+}
+
+/* ------------------------------------- */
+/// Set a default title to the common tops display
+Void SetDefaultTitle() {
+	G_LibTop_Title = _("Tops");
+}
+
+/* ------------------------------------- */
+/** Set the name of the tab containing the tops (used by the tab library)
+ *
+ *	@param	_TabName	The new name of the tab
+ */
+Void SetTabName(Text _TabName) {
+	G_LibTop_TabName = _TabName;
+}
+
+/* ------------------------------------- */
+/** Set the z-index of the top layer
+ *
+ *	@param	_ZIndex		The new z-index
+ */
+Void SetZIndex(Integer _ZIndex) {
+	G_LibTop_ZIndex = _ZIndex;
+}
+
+/* ------------------------------------- */
+/** Set a new entry in a top for a player
+ *	After setting a record you must send it using SendRecords()
+ *	For performance reason you must call 
+ *	the SendRecords() function ONLY once per frame
+ *
+ *	@param	_Player		The player to add
+ *	@param	_TopId		The top to update
+ *	@param	_Value		The value to display in the top
+ *	@param	_SortValue	The value used to sort the top
+ */
+Void SetRecord(CPlayer _Player, Text _TopId, Text _Value, Integer _SortValue) {
+	if (_Player == Null) return;
+	if (!G_LibTop_TopId.exists(_TopId)) return;
+	
+	G_LibTop_TopValue[_TopId][_Player.User.Id] = _Value;
+	G_LibTop_TopSort[_TopId][_Player.User.Id] = _SortValue;
+	
+	if (!G_LibTop_TopUpdated.exists(_TopId)) G_LibTop_TopUpdated.add(_TopId);
+}
+
+/* ------------------------------------- */
+/** Remove an entry in a top for a player
+ *	After unsetting a record you must send it using SendRecords()
+ *	For performance reason you must call 
+ *	the SendRecords() function ONLY once per frame
+ *
+ *	@param	_Player		The player to remove
+ *	@param	_TopId		The top to update
+ */
+Void UnsetRecord(CPlayer _Player, Text _TopId) {
+	if (_Player == Null) return;
+	if (!G_LibTop_TopId.exists(_TopId)) return;
+	
+	declare Removed = False;
+	Removed = G_LibTop_TopValue[_TopId].removekey(_Player.User.Id);
+	Removed = G_LibTop_TopSort[_TopId].removekey(_Player.User.Id);
+	
+	if (!G_LibTop_TopUpdated.exists(_TopId)) G_LibTop_TopUpdated.add(_TopId);
+}
+
+/* ------------------------------------- */
+/** Find the record of a specific player in a top
+ *
+ *	@param	_Player		The player to search
+ *	@param	_TopId		In which top to search
+ *
+ *	@return				The top value if found, an empty string otherwise
+ */
+Text GetRecord(CPlayer _Player, Text _TopId) {
+	if (_Player == Null) return "";
+	if (!G_LibTop_TopValue.existskey(_TopId)) return "";
+	if (!G_LibTop_TopValue[_TopId].existskey(_Player.User.Id)) return "";
+		
+	return G_LibTop_TopValue[_TopId][_Player.User.Id];
+}
+
+/* ------------------------------------- */
+/** Find the n-th record in a top
+ *
+ *	@param	_TopId		In which top to search
+ *	@param	_Rank		The n-th record to get
+ *
+ *	@return				The top value
+ */
+Text GetRecord(Text _TopId, Integer _Rank) {
+	if (!G_LibTop_TopId.exists(_TopId)) return "";
+	if (G_LibTop_TopId.count < _Rank) return "";
+	
+	G_LibTop_TopSort[_TopId] = G_LibTop_TopSort[_TopId].sort();
+	declare EntryNb = 0;
+	foreach (UserId => SortValue in G_LibTop_TopSort[_TopId]) {
+		EntryNb += 1;
+		if (EntryNb < _Rank) continue;
+		return G_LibTop_TopValue[_TopId][UserId];
+		if (EntryNb >= _Rank) break;
+	}
+	
+	return "";
+}
+
+/* ------------------------------------- */
+/** Find the rank of a player in a top
+ *
+ *	@param	_Player		The player to search
+ *	@param	_TopId		In which top to search
+ *
+ *	@return				The rank of the player if found, 0 otherwise
+ */
+Integer GetRank(CPlayer _Player, Text _TopId) {
+	if (_Player == Null) return 0;
+	if (!G_LibTop_TopSort.existskey(_TopId)) return 0;
+	
+	G_LibTop_TopSort[_TopId] = G_LibTop_TopSort[_TopId].sort();
+	declare EntryNb = 0;
+	declare Rank = 0;
+	foreach (UserId => SortValue in G_LibTop_TopSort[_TopId]) {
+		EntryNb += 1;
+		if (_Player.User.Id == UserId) {
+			Rank = EntryNb;
+			break;
+		}
+	}
+	
+	return Rank;
+}
+
+/* ------------------------------------- */
+/// Send the latest top version to players and spectators if they need it
+Void Loop() {
+	if (G_LibTop_TopUpdated.count > 0) {
+		Private_LoadTop(G_LibTop_TopUpdated);
+	}
+	
+	declare FirstNewPlayer = True;
+	
+	foreach (Player in Players) {
+		declare LibTop_NewPlayer for Player = True;
+		if (LibTop_NewPlayer) {
+			if (FirstNewPlayer) Private_LoadTop(Text[]);
+			FirstNewPlayer = False;
+			Private_SendTopTo(Player);
+			LibTop_NewPlayer = False;
+		} else if (G_LibTop_TopUpdated.count > 0) Private_SendTopTo(Player);
+	}
+	foreach (Spectator in Spectators) {
+		declare LibTop_NewPlayer for Spectator = True;
+		if (LibTop_NewPlayer) {
+			if (FirstNewPlayer) Private_LoadTop(Text[]);
+			FirstNewPlayer = False;
+			Private_SendTopTo(Spectator);
+			LibTop_NewPlayer = False;
+		} else if (G_LibTop_TopUpdated.count > 0) Private_SendTopTo(Spectator);
+	}
+	
+	G_LibTop_TopUpdated.clear();
+}
+
+/* ------------------------------------- */
+/// Overload of the Loop() function
+Void SendRecords() {
+	Loop(); 
+}
+
+/* ------------------------------------- */
+/** Reset a top
+ *
+ *	@param	_TopId		The id of the top to reset
+ */
+Void Reset(Text _TopId) {
+	if (!G_LibTop_TopId.exists(_TopId)) return;
+	
+	G_LibTop_TopValue[_TopId]	= Text[Ident];
+	G_LibTop_TopSort[_TopId]	= Integer[Ident];
+	
+	G_LibTop_TopUpdated = [_TopId];
+	SendRecords();
+}
+
+/* ------------------------------------- */
+/// Reset all tops
+Void ResetAll() {
+	foreach (TopId in G_LibTop_TopId) {
+		G_LibTop_TopValue[TopId]= Text[Ident];
+		G_LibTop_TopSort[TopId]	= Integer[Ident];
+	}
+	
+	G_LibTop_TopUpdated = G_LibTop_TopId;
+	SendRecords();
+}

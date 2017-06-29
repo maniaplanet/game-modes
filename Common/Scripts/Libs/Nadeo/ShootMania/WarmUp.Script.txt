@@ -1,0 +1,1040 @@
+/**
+ *	DEPRECATED - Use the new WarmUp2 library instead
+ *
+ *	WarmUp lib
+ */
+
+#Include "TextLib" as TextLib
+#Include "Libs/Nadeo/ShootMania/SM.Script.txt" as SM
+
+#Const Version		"2013-06-26"
+#Const ScriptName	"WarmUp.Script.txt"
+
+#Const C_UIUpdateInterval 400
+#Const C_MaxSlots 9
+#Const C_KeyCode [
+	1 => [1 => "Numpad1", 2 => "1"],	// (Numpad) 1
+	2 => [1 => "Numpad2", 2 => "2"],	// (Numpad) 2
+	3 => [1 => "Numpad3", 2 => "3"],	// (Numpad) 3
+	4 => [1 => "Numpad4", 2 => "4"],	// (Numpad) 4
+	5 => [1 => "Numpad5", 2 => "5"],	// (Numpad) 5
+	6 => [1 => "Numpad6", 2 => "6"],	// (Numpad) 6
+	7 => [1 => "Numpad7", 2 => "7"],	// (Numpad) 7
+	8 => [1 => "Numpad8", 2 => "8"],	// (Numpad) 8
+	9 => [1 => "Numpad9", 2 => "9"]	// (Numpad) 9
+]
+
+
+/* ------------------------------------- */
+// Globales variables
+/* ------------------------------------- */
+declare Ident					G_WarmUpLayerId;	///< Id of the warm up layer
+declare Ident[Integer]			G_OrderLayerId;		///< Id of the clan order layer
+declare Boolean					G_UseTeamSelection;	///< Use the team selection UI
+declare Boolean					G_UseOrder;			///< Use the order UI
+declare Integer[Ident][Integer] G_Order;			///< Array with the order of the players
+declare Integer					G_RequiredPlayersNb;///< Number of slots in each clan
+declare Integer					G_Duration;			///< Duration of the warm up
+declare Integer 				G_CurrentBarrier;	///< Ensure synchronisation between server and player UI
+declare CUIConfig::EUISequence	G_OldSequence;		///< Save and restore the UISequence beofre and after the warm up
+declare Boolean					G_IsRunning;		///< Is the warm up currently running ?
+declare Boolean					G_EndWarmUp;		///< Ends the warm up
+declare Integer					G_UILastUpdate;		///< Last time the UI was updated
+declare Integer[Ident]			G_WaitingList;		///< Available players
+declare Boolean					G_OrderChanged;		///< True if the player order has changed during the frame
+declare Boolean					G_ReadyChanged;		///< True if the a player changed his ready state
+
+/* ------------------------------------- */
+// Functions
+/* ------------------------------------- */
+
+/* ------------------------------------- */
+/** Return the version number of the script
+ *
+ *	@return		The version number of the script
+ */
+Text GetScriptVersion() {
+	return Version;
+}
+
+/* ------------------------------------- */
+/** Return the name of the script
+ *
+ *	@return		The name of the script
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+/* ------------------------------------- */
+/** Check if a player is ready
+ *
+ *	@param	_Player		The player to check
+ *
+ *	@return 	True if the player is ready, false otherwise
+ */
+Boolean IsReady(CSmPlayer _Player) {
+	if (_Player.IsFakePlayer) return True;
+	
+	declare UI <=> UIManager.GetUI(_Player);
+	if (UI == Null) return True;
+	
+	declare netread WUNet_ReadyToPlay for UI = False;
+	declare netread WUNet_BarrierReached for UI = 0;
+	declare netwrite WUNet_Barrier for UI = 0;
+	
+	WUNet_Barrier = G_CurrentBarrier;
+	if (WUNet_ReadyToPlay && WUNet_BarrierReached == WUNet_Barrier) return True;
+	
+	return False;
+}
+
+// ---------------------------------- //
+/**	Create the warm up layer
+ *
+ *	@return		The warm up manialink
+ */
+Text CreateLayerWarmUp() {
+	declare ML = "";
+	declare JoinTeamButtons = "";
+	declare MouseClickEvent = "";
+	declare KeyPressEvent = "";	
+	
+	if (UseClans && G_UseTeamSelection) {
+		JoinTeamButtons =
+"""
+	<label posn="-41 0 4" halign="right" style="CardButtonMedium" text="(F3) Join {{{Teams[0].ColorizedName}}}" ScriptEvents="1" id="BtnJoinClan1" />
+	<label posn="41 0 4" halign="left" style="CardButtonMedium" text="(F4) Join {{{Teams[1].ColorizedName}}}" ScriptEvents="1" id="BtnJoinClan2" />
+""";
+		MouseClickEvent =
+"""
+	if (Event.ControlId == "BtnJoinClan1")	JoinTeam1();
+	if (Event.ControlId == "BtnJoinClan2")	JoinTeam2();
+""";
+		KeyPressEvent =
+"""
+	if (Event.KeyName == "F3") JoinTeam1(); // F3
+	if (Event.KeyName == "F4") JoinTeam2(); // F4
+""";
+	}
+
+	ML =
+"""
+<frame posn="0 -57 2" scale="0.85">
+	{{{ JoinTeamButtons }}}
+	<frame posn="0 0 0">
+		<label posn="0 0 4" halign="center" style="CardButtonMedium" text="  (F6) Ready"  id="BtnReady" ScriptEvents="1" />
+		<quad posn="-16 -1.4 5" sizen="5 5" style="Icons64x64_1"  id="IconReady" substyle="LvlGreen" />
+		<quad posn="-16 -1.4 5" sizen="5 5" style="Icons64x64_1"  id="IconNotReady" substyle="LvlRed" />
+	</frame>
+</frame>
+<script><!--
+	#Include "TextLib" as TL
+	
+	main () {
+		declare netread WUNet_Barrier for UI = 0;
+		declare netwrite WUNet_BarrierReached for UI = 0;
+		declare netwrite WUNet_ReadyToPlay for UI = False;
+		declare IconReady <=> Page.GetFirstChild("IconReady");
+		declare IconNotReady <=> Page.GetFirstChild("IconNotReady");
+		declare BtnJoinClan1 <=> (Page.GetFirstChild("BtnJoinClan1") as CMlLabel);
+		declare BtnJoinClan2 <=> (Page.GetFirstChild("BtnJoinClan2") as CMlLabel);
+		
+		WUNet_ReadyToPlay		= False;
+		declare PrevForcedTeam	= False;
+		declare PrevNameClan1	= "";
+		declare PrevNameClan2	= "";
+		
+		while (True) {
+			yield;
+			
+			WUNet_BarrierReached = WUNet_Barrier;
+			
+			if (PrevForcedTeam != IsForcedTeams) {
+				PrevForcedTeam = IsForcedTeams;
+				if (IsForcedTeams) {
+					if (BtnJoinClan1 != Null) BtnJoinClan1.Hide();
+					if (BtnJoinClan2 != Null) BtnJoinClan2.Hide();
+				} else {
+					if (BtnJoinClan1 != Null) BtnJoinClan1.Show();
+					if (BtnJoinClan2 != Null) BtnJoinClan2.Show();
+				}
+			}
+			
+			if (PrevNameClan1 != Teams[0].ColorizedName) {
+				PrevNameClan1 = Teams[0].ColorizedName;
+				if (BtnJoinClan1 != Null) BtnJoinClan1.SetText(TL::Compose(_("|(Shorcut) Join 'team name'|(F3) Join %1"), Teams[0].ColorizedName));
+			}
+			if (PrevNameClan2 != Teams[1].ColorizedName) {
+				PrevNameClan2 = Teams[1].ColorizedName;
+				if (BtnJoinClan2 != Null) BtnJoinClan2.SetText(TL::Compose(_("|(Shorcut) Join 'team name'|(F4) Join %1"), Teams[1].ColorizedName));
+			}
+			
+			// Update UI
+			if (WUNet_ReadyToPlay) {
+				IconReady.Show();
+				IconNotReady.Hide();
+			} else {
+				IconReady.Hide();
+				IconNotReady.Show();
+			}
+
+			// process events.
+			foreach(Event in PendingEvents)	{
+				switch(Event.Type){
+					case CMlEvent::Type::MouseClick :
+					{
+						{{{ MouseClickEvent }}}
+						if (Event.ControlId == "BtnReady") WUNet_ReadyToPlay = !WUNet_ReadyToPlay;
+					}
+			
+					case CMlEvent::Type::KeyPress:
+					{
+						if (Event.KeyName == "F6") WUNet_ReadyToPlay = !WUNet_ReadyToPlay;	// F6
+						{{{ KeyPressEvent }}}
+					}
+				}
+			}
+		}
+	}
+--></script>
+""";
+
+	return ML;
+}
+
+/* ------------------------------------- */
+/** Get the atk order manialink string.
+ * 
+ *	@param	_ClanNb		Clan to show the order
+ *
+ *	@return		The manialink string
+ */
+Text CreateLayerOrder(Integer _ClanNb) {	
+	if (_ClanNb != 1 && _ClanNb != 2) return "";
+	
+	declare ML = "";
+	declare KeyPressEvent = "";
+	declare MouseClickEvent = "";
+	declare PlayerList = "";
+	declare SlotList = "";
+	declare SlotSizeX = 50;
+	
+	if (G_RequiredPlayersNb <= 6) SlotSizeX = 50;
+	else if (G_RequiredPlayersNb == 7) SlotSizeX = 44;
+	else if (G_RequiredPlayersNb == 8) SlotSizeX = 39;
+	else if (G_RequiredPlayersNb >= 9) SlotSizeX = 35;
+	
+	declare PosX = 0 - ((G_RequiredPlayersNb * SlotSizeX) / 2);
+	declare SizeX = (G_RequiredPlayersNb * SlotSizeX) + 2;
+	
+	declare SlotsName = [
+		1 => _("First (Press 1)"),
+		2 => _("Second (Press 2)"),
+		3 => _("Third (Press 3)"),
+		4 => _("Fourth (Press 4)"),
+		5 => _("Fifth (Press 5)"),
+		6 => _("Sixth (Press 6)"),
+		7 => _("Seventh (Press 7)"),
+		8 => _("Eighth (Press 8)"),
+		9 => _("Ninth (Press 9)")
+	];
+	
+	//log(Now^"> CreateLayerOder() > G_Order: "^G_Order);
+	for (I, 1, G_RequiredPlayersNb) {
+		KeyPressEvent ^= 
+"""
+if (Event.KeyName == "{{{C_KeyCode[I][1]}}}" || Event.KeyName == "{{{C_KeyCode[I][2]}}}") {
+	WUNetPlayer_RequestedSlot = {{{I}}};
+	WUNetPlayer_UpdatedSlot = Now;
+}
+""";
+
+		MouseClickEvent ^= 
+"""
+if (Event.ControlId == "Quad_Slot_{{{I}}}") {
+	WUNetPlayer_RequestedSlot = {{{I}}};
+	WUNetPlayer_UpdatedSlot = Now;
+}
+""";
+
+		declare Pseudo = "";
+		declare SlotPosX = ((I - 1) * SlotSizeX) + (SlotSizeX/2.);
+		
+		// A player is in the slot
+		if (G_Order[_ClanNb].exists(I) && Players.existskey(G_Order[_ClanNb].keyof(I))) {
+			declare PlayerId = G_Order[_ClanNb].keyof(I);
+			Pseudo = Players[PlayerId].Name;
+			
+			if (IsReady(Players[PlayerId])) {
+				PlayerList ^= """<quad posn="{{{SlotPosX}}} 0 10" sizen="{{{SlotSizeX-2}}} 7" halign="center" valign="center" bgcolor="0a02" />""";
+			} else {
+				PlayerList ^= """<quad posn="{{{SlotPosX}}} 0 10" sizen="{{{SlotSizeX-2}}} 7" halign="center" valign="center" bgcolor="a002" />""";
+			}
+		}		
+		
+		PlayerList ^= 
+"""
+<label posn="{{{SlotPosX}}} 0.5 11" sizen="{{{SlotSizeX-4}}} 8" halign="center" valign="center" textemboss="1" text="{{{TextLib::MLEncode(Pseudo)}}}" />
+<label posn="{{{SlotPosX}}} 0 9" sizen="{{{SlotSizeX-1}}} 8" halign="center" valign="center" focusareacolor1="0007" focusareacolor2="0003" scriptevents="1" id="Quad_Slot_{{{I}}}" />
+""";
+		
+		declare SlotName = "";
+		if (SlotsName.existskey(I)) SlotName = SlotsName[I];
+		//SlotPosX = (PosX + (SlotSizeX / 2)) + SlotPosX;
+		
+		SlotList ^=
+"""
+<label posn="{{{SlotPosX}}} -0.5 4" sizen="{{{SlotSizeX-2}}} 5" halign="center" textsize="1" textemboss="1" text="{{{SlotName}}}" />
+""";
+		
+		if (I >= C_MaxSlots) break;
+	}
+	
+	declare PlayersOrderText = _("Players order");
+	ML = 
+"""
+<script><!--
+	main() {
+		declare netwrite WUNetPlayer_RequestedSlot for UI = -1;
+		declare netwrite WUNetPlayer_UpdatedSlot for UI = 0;
+				
+		while (True) {
+			yield;
+			
+			// Process events
+			foreach (Event in PendingEvents) {
+				if (Event.Type == CMlEvent::Type::KeyPress) {
+					{{{KeyPressEvent}}}
+				}
+				if (Event.Type == CMlEvent::Type::MouseClick) {
+					{{{MouseClickEvent}}}
+				}
+			}
+		}
+	}
+--></script>
+<frame posn="0 -48 1">
+	<quad posn="0 0.5 2" sizen="{{{SizeX+1}}} 19" halign="center" valign="center" style="Bgs1InRace" substyle="BgList" />
+	<frame posn="0 4 3">
+		<label posn="0 5 4" halign="center" textemboss="1" textsize="2" text="{{{PlayersOrderText}}}" />
+		<frame posn="{{{PosX}}} 1 3">
+			{{{SlotList}}}
+		</frame>
+	</frame>
+	<frame posn="{{{PosX}}} -3 3">
+		{{{PlayerList}}}
+	</frame>
+</frame>
+""";
+	
+	return ML;
+}
+
+
+// Update the players in the waiting lig
+Void UpdateWaitingList() {
+	foreach (Player in Players) {
+		declare WU_CurrentSlot for Player = -1;
+		
+		if (WU_CurrentSlot == -1) {
+			if (!G_WaitingList.existskey(Player.Id)) {
+				G_WaitingList[Player.Id] = Now;
+			}
+		} else {
+			if (G_WaitingList.existskey(Player.Id)) {
+				G_WaitingList.removekey(Player.Id);
+			}
+		}
+	}
+}
+
+// ---------------------------------- //
+/** Warm up state
+ *
+ *	@return		True if the warm up is running, false otherwise
+ */
+Boolean IsRunning() {
+	return G_IsRunning;
+}
+
+// ---------------------------------- //
+/** End of warm up requested
+ *
+ *	@return		True if the warm up must end
+ */
+Boolean EndRequested() {
+	return G_EndWarmUp;
+}
+
+// ---------------------------------- //
+/** Check if a change occured in the order
+ *
+ *	@return		True if the order has changed during the frame
+ */
+Boolean OrderHasChanged() {
+	return G_OrderChanged;
+}
+
+// ---------------------------------- //
+/** Check if a change occured in the ready state
+ *
+ *	@return		True if the ready state has changed during the frame
+ */
+Boolean ReadyHasChanged() {
+	return G_ReadyChanged;
+}
+
+
+// ---------------------------------- //
+/** Get the current order
+ *
+ * @return 		Return the current order
+ */
+Integer[Ident][Integer] GetOrder() {	
+	return G_Order;
+}
+
+// ---------------------------------- //
+/** Get a player in a designated slot
+ *
+ *	@param	_ClanNb		In which clan order to search
+ *	@param	_SlotNb		The wanted slot
+ *
+ *	@return		The player in the asked slot if found, Null otherwise
+ */
+CSmPlayer GetSlot(Integer _ClanNb, Integer _SlotNb) {
+	declare CSmPlayer Player;
+	if (!G_Order.existskey(_ClanNb)) return Player;
+	if (!G_Order[_ClanNb].exists(_SlotNb)) return Player;
+	if (!Players.existskey(G_Order[_ClanNb].keyof(_SlotNb))) return Player;
+	
+	return Players[G_Order[_ClanNb].keyof(_SlotNb)];
+}
+
+// ---------------------------------- //
+/** Get the first player in a clan order
+ *
+ *	@param	_ClanNb		In which clan order to search
+ *
+ *	@return		The first player found or null
+ */
+CSmPlayer GetNextPlayer(Integer _ClanNb) {
+	declare CSmPlayer Player;
+	
+	if (!G_Order.existskey(_ClanNb)) return Player;
+	declare ClanOrder = G_Order[_ClanNb].sort();
+	foreach (PlayerId => PlayerSlot in ClanOrder) {
+		if (Players.existskey(PlayerId)) return Players[PlayerId];
+	}
+	
+	return Player;
+}	
+
+// ---------------------------------- //
+/** Get the first player in the list and put it at the end after
+ *
+ *	@param	_ClanNb		The clan order to cycle
+ */
+Void CycleOrder(Integer _ClanNb) {
+	//log(Now^"> CycleOrder() > before - G_Order[_ClanNb]: "^G_Order[_ClanNb]);
+	if (!G_Order.existskey(_ClanNb)) return;
+	G_Order[_ClanNb] = G_Order[_ClanNb].sort();
+	
+	foreach (PlayerId => PlayerSlot in G_Order[_ClanNb]) {
+		if (!Players.existskey(PlayerId)) continue;
+		G_Order[_ClanNb][PlayerId] = PlayerSlot + G_RequiredPlayersNb;
+		break;
+	}
+	
+	declare TmpOrder = G_Order[_ClanNb].sort();
+	declare I = 1;
+	G_Order[_ClanNb].clear();
+	foreach (PlayerId => PlayerSlot in TmpOrder) {
+		G_Order[_ClanNb][PlayerId] = I;
+		
+		if (Players.existskey(PlayerId)) {
+			declare WU_CurrentSlot for Players[PlayerId] = -1;
+			WU_CurrentSlot = I;
+		}
+		
+		I += 1;
+	}
+	//log(Now^"> CycleOrder() > after - G_Order[_ClanNb]: "^G_Order[_ClanNb]);
+}
+
+// ---------------------------------- //
+/** Check if a player id is in the order array
+ *
+ *	@param	_PlayerId		The id of the player to check
+ *
+ *	@return		True if th eplayer is in the order, false otherwise
+ */
+Boolean IsInOrder(Ident _PlayerId) {
+	foreach (ClanNumber => ClanOrder in G_Order) {
+		if (ClanOrder.existskey(_PlayerId)) return True;
+	}
+	return False;
+}
+
+// ---------------------------------- //
+/** Check if a slot in the order is empty
+ *
+ *	@param	_Clan	The clan to check
+ *	@param	_Slot	The slot to check
+ *
+ *	@return		True if the slot is empty, false otherwise
+ */
+Boolean SlotIsEmpty(Integer _Clan, Integer _Slot) {
+	// If the slot doesn't exist, then it's considered empty
+	if (!G_Order[_Clan].exists(_Slot)) return True;
+	// If the player in the slot doesn't exist, then it' considered empty
+	else if (!Players.existskey(G_Order[_Clan].keyof(_Slot))) {
+		G_Order[_Clan].remove(_Slot);
+		return True;
+	}
+	// In the other case the slot is occupied
+	return False;
+}
+
+// ---------------------------------- //
+/** Withdraw a player from a slot
+ *
+ *	@param	_PlayerId	The id of the player to withdraw
+ *	@param	_Clan		The clan order to search
+ */
+Void LeaveSlot(Ident _PlayerId, Integer _Clan) {
+	declare CSmPlayer Player;
+	
+	if (Players.existskey(_PlayerId)) Player = Players[_PlayerId];
+	else if (Spectators.existskey(_PlayerId)) Player = Spectators[_PlayerId];
+	else return;
+	
+	declare WU_CurrentSlot for Player = -1;
+	declare WU_CurrentClan for Player = -1;
+	WU_CurrentSlot = -1;
+	WU_CurrentClan = -1;
+	
+	if (G_Order[_Clan].existskey(_PlayerId)) {
+		G_Order[_Clan].removekey(_PlayerId);
+	}
+	
+	//log(Now^"> LeaveSlot() > "^Player.Login^" leave slot");
+}
+
+// ---------------------------------- //
+/** Swamp slot between players
+ *
+ *	@param	_PlayerId		The id of the player who request the swap
+ *	@param	_OldClan		The current clan of the player
+ *	@param	_OldSlot		The current slot of the player
+ *	@param	_NewClan		The clan requested by the player
+ *	@param	_NewSlot		The slot requested by the player
+ *	@param	_Forced			Force the swap
+ */
+Void SwapSlot(Ident _PlayerId, Integer _OldClan, Integer _OldSlot, Integer _NewClan, Integer _NewSlot, Boolean _Forced) {
+	// If the slot is not valid return
+	if (_NewSlot <= 0 && _NewSlot > G_RequiredPlayersNb) return;
+	// If the new and old slot/clan are the same return
+	if (_NewSlot == _OldSlot && _NewClan == _OldClan) return;
+	// If the clan is not valid
+	if (UseClans && _NewClan != 1 && _NewClan != 2) return;
+	else if (!UseClans && _NewClan != 0) return;
+	
+	if (!Players.existskey(_PlayerId)) return;
+	declare Player <=> Players[_PlayerId];
+	
+	declare WU_CurrentSlot for Player = -1;
+	declare WU_CurrentClan for Player = -1;
+			
+	// If the requested slot is empty
+	if (SlotIsEmpty(_NewClan, _NewSlot)) {
+		// Leave the old slot if necessary
+		if (_OldSlot > 0) LeaveSlot(_PlayerId, _OldClan);
+		// Take the new slot
+		WU_CurrentSlot = _NewSlot;
+		WU_CurrentClan = _NewClan;
+		G_Order[_NewClan][_PlayerId] = _NewSlot;
+	}
+	// If the slot is already occupied
+	else {
+		declare OtherPlayer = Players[G_Order[_NewClan].keyof(_NewSlot)];
+		declare WU_CurrentSlot as WU_OtherCurrentSlot for OtherPlayer = -1;
+		declare WU_CurrentClan as WU_OtherCurrentClan for OtherPlayer = -1;
+		
+		// If the other player is ready, you can't take it's place
+		if (!_Forced && IsReady(OtherPlayer) && (WU_CurrentSlot < 0 || WU_CurrentClan < 0)) {
+			//log(Now^"> "^OtherPlayer.Login^" is ready, can't take its slot");
+		}
+		// Otherwise take its place
+		else {
+			WU_CurrentSlot = _NewSlot;
+			WU_CurrentClan = _NewClan;
+			WU_OtherCurrentSlot = _OldSlot;
+			WU_OtherCurrentClan = _OldClan;
+			
+			G_Order[_NewClan][_PlayerId] = _NewSlot;
+			G_Order[_NewClan].removekey(OtherPlayer.Id);
+			
+			if (_OldSlot > 0 && _OldSlot <= G_RequiredPlayersNb) {
+				if ((UseClans && (_NewClan == 1 || _NewClan == 2)) 
+					|| (!UseClans && _NewClan == 0)
+				) {
+					G_Order[_OldClan][OtherPlayer.Id] = _OldSlot;
+				}		
+			}
+		}
+	}
+	
+	//log(Now^"> SwapSlot() > G_Order: "^G_Order);
+}
+
+// ---------------------------------- //
+/// Overload of SwapSlot()
+Void SwapSlot(Ident _PlayerId, Integer _OldClan, Integer _OldSlot, Integer _NewClan, Integer _NewSlot) {
+	SwapSlot(_PlayerId, _OldClan, _OldSlot, _NewClan, _NewSlot, False);
+}
+
+// ---------------------------------- //
+/// Erase the current order
+Void ResetOrder() {
+	G_Order = [1 => Integer[Ident], 2 => Integer[Ident]];
+	
+	foreach (Player in AllPlayers) {
+		declare WU_CurrentSlot for Player = -1;
+		declare WU_CurrentClan for Player = -1;
+		WU_CurrentSlot = -1;
+		WU_CurrentClan = -1;
+	}
+	
+	//log(Now^"> ResetOrder() > G_Order: "^G_Order);
+}
+
+// ---------------------------------- //
+/// Restore the order based on the info saved in the players
+Void RestoreOrder() {
+	G_Order = [1 => Integer[Ident], 2 => Integer[Ident]];
+	
+	foreach (Spectator in Spectators) {
+		declare WU_CurrentSlot for Spectator = -1;
+		declare WU_CurrentClan for Spectator = -1;
+		WU_CurrentSlot = -1;
+		WU_CurrentClan = -1;
+	}
+	
+	foreach (Player in Players) {
+		declare WU_CurrentSlot for Player = -1;
+		declare WU_CurrentClan for Player = -1;
+		
+		//log(Now^"> RestoreOrder() > "^Player.Login^" - WU_CurrentSlot: "^WU_CurrentSlot);
+		if (WU_CurrentSlot <= 0 || WU_CurrentSlot > G_RequiredPlayersNb) continue;
+		
+		declare Clan = 0;
+		if (UseForcedClans) Clan = Player.CurrentClan;
+		else Clan = Player.RequestedClan;
+		
+		if (Clan != 1 && Clan != 2) continue;
+		
+		if (SlotIsEmpty(Clan, WU_CurrentSlot)) {			
+			WU_CurrentClan = Clan;
+			G_Order[Clan][Player.Id] = WU_CurrentSlot;
+			
+			//log(Now^"> RestoreOrder() > "^Player.Login^" - SlotIsEmpty");
+		} else {
+			LeaveSlot(Player.Id, Clan);
+		}
+	}
+	
+	//log(Now^"> RestoreOrder() > G_Order: "^G_Order);
+}
+
+/* ------------------------------------- */
+/** Fill the atk order for free mode
+ *	Replace missing players by players from waiting line
+ *
+ *	@return		True if G_Order has been updated, false otherwise
+ */
+Boolean FillOrder() {
+	declare Filled = False;
+	
+	UpdateWaitingList();
+	//log(Now^"> FillOrder() > G_WaitingList.count: "^G_WaitingList.count);
+	if (G_WaitingList.count <= 0) return Filled;
+	
+	if (UseClans) {
+		foreach (ClanNumber => ClanOrder in G_Order) {
+			// If the clan order is full, skip to the next
+			if (ClanOrder.count >= G_RequiredPlayersNb) continue;
+			
+			for (I, 1, G_RequiredPlayersNb) {
+				declare NewPlayerId = NullId;
+				
+				// If the slot is empty
+				if (!ClanOrder.exists(I)) {
+					G_WaitingList = G_WaitingList.sort();
+				
+					foreach (PlayerId => PlayerTime in G_WaitingList) {
+						if (!Players.existskey(PlayerId)) {
+							G_WaitingList.removekey(PlayerId);
+							continue;
+						}
+						declare Player <=> Players[PlayerId];
+						
+						declare Clan = 0;
+						if(UseForcedClans) Clan = Player.CurrentClan;
+						else Clan = Player.RequestedClan;
+						
+						if (Clan != ClanNumber) continue;
+						
+						NewPlayerId = PlayerId;
+						G_WaitingList.removekey(PlayerId);
+						break;
+					}
+				}
+				
+				if (NewPlayerId == NullId) continue;
+				declare Player <=> Players[NewPlayerId];
+				
+				declare WU_CurrentSlot for Player = -1;
+				declare WU_CurrentClan for Player = -1;
+				WU_CurrentSlot = I;
+				WU_CurrentClan = ClanNumber;
+				G_Order[ClanNumber][NewPlayerId] = I;
+				
+				Filled = True;
+				
+				//log(Now^"> FillOrder() > "^Player.Login^" added to the order array.");
+			}
+		}
+	}
+	
+	return Filled;
+}
+
+/* ------------------------------------- */
+/** Clean the AtkOrder list: remove missing players, etc.
+ *
+ *	@return		True if AtkOrder has been updated, false otherwise
+ */
+Boolean CleanOrder() {
+	declare Cleaned = False;
+	declare ToRemove = Integer[Integer];
+	
+	foreach (ClanNumber => ClanOrder in G_Order) {
+		foreach (PlayerId => PlayerSlot in ClanOrder) {
+			if (!Players.existskey(PlayerId)) {
+				ToRemove[ClanNumber] = PlayerSlot;
+				LeaveSlot(PlayerId, ClanNumber);
+				Cleaned = True;
+			} else {
+				declare Player <=> Players[PlayerId];
+				
+				declare Clan = 0;
+				if(UseForcedClans) Clan = Player.CurrentClan;
+				else Clan = Player.RequestedClan;
+				
+				declare WU_CurrentSlot for Player = -1;
+				declare WU_CurrentClan for Player = -1;
+				
+				if (WU_CurrentSlot == -1
+					|| WU_CurrentClan == -1
+					|| WU_CurrentClan != ClanNumber
+					|| Clan != ClanNumber
+					|| Player.CurrentClan != ClanNumber
+				) {
+					LeaveSlot(PlayerId, ClanNumber);
+					ToRemove[ClanNumber] = PlayerSlot;
+					Cleaned = True;
+					//log(Now^"> CleanOrder() > "^Player.Login);
+				}
+			}
+		}
+	}
+	
+	foreach (ClanNumber => PlayerSlot in ToRemove) {
+		if (G_Order[ClanNumber].exists(PlayerSlot)) {
+			declare Removed = G_Order[ClanNumber].remove(PlayerSlot);
+		}
+	}
+	
+	return Cleaned;
+}
+
+// ---------------------------------- //
+/**	Call before the warm up
+ *
+ *	@param	_Duration				Duration of the warm up countdown
+ *	@param	_UseTeamSelection		Show and use the team selection UI
+ *	@param	_UseOrder				Use the line up system
+ *	@param	_RequiredPlayersNb		The minimum number of players required in each team
+ */
+Void Before(Integer _Duration, Boolean _UseTeamSelection, Boolean _UseOrder, Integer _RequiredPlayersNb) {
+	G_Duration			= _Duration;
+	G_UseTeamSelection	= _UseTeamSelection;
+	G_UseOrder			= _UseOrder;
+	G_RequiredPlayersNb	= _RequiredPlayersNb;
+	G_IsRunning			= True;
+	G_EndWarmUp			= False;
+	G_CurrentBarrier	+= 1;
+	
+	if (G_RequiredPlayersNb > C_MaxSlots) G_RequiredPlayersNb = C_MaxSlots;
+	
+	if (UseClans) G_Order = [1 => Integer[Ident], 2 => Integer[Ident]];
+	else G_UseOrder = False;
+	
+	// Create the layers
+	declare WarmUpLayer = UIManager.UILayerCreate();
+	G_WarmUpLayerId = WarmUpLayer.Id;
+	WarmUpLayer.ManialinkPage = CreateLayerWarmUp();
+	if (G_UseOrder) {
+		declare OrderClan1Layer = UIManager.UILayerCreate();
+		declare OrderClan2Layer = UIManager.UILayerCreate();
+		G_OrderLayerId[1] = OrderClan1Layer.Id;
+		G_OrderLayerId[2] = OrderClan2Layer.Id;
+		OrderClan1Layer.ManialinkPage = CreateLayerOrder(1);
+		OrderClan2Layer.ManialinkPage = CreateLayerOrder(2);
+	}
+	
+	// Initialize UI
+	G_OldSequence = UIManager.UIAll.UISequence;
+	UIManager.UIAll.UISequence = CUIConfig::EUISequence::Playing;
+	foreach (Player in Players) {
+		declare WU_NewPlayer for Player = True;
+		WU_NewPlayer = True;
+	}
+	foreach (Spectator in Spectators) {
+		declare WU_NewPlayer for Spectator = True;
+		WU_NewPlayer = True;
+	}
+}
+
+// ---------------------------------- //
+/// Call during the warm up
+Void Loop() {
+	// Manage events
+	foreach (Event in PendingEvents) {
+		if (Event.Type == CSmModeEvent::EType::OnHit) {
+			if (Event.Shooter != Null && Event.Victim != Null && Event.Victim == Event.Shooter) {
+				Discard(Event);
+			} else if (Event.Victim != Null) {
+				Event.Victim.Armor = Event.Victim.ArmorMax;
+				Event.Damage = 100;
+				PassOn(Event);
+			} else {
+				PassOn(Event);
+			}
+		} else if (Event.Type == CSmModeEvent::EType::OnArmorEmpty) {
+			if (Event.Shooter != Null && Event.Victim != Null) {
+				Event.Victim.Armor = Event.Victim.ArmorMax;
+				Discard(Event);
+			} else {
+				PassOn(Event);
+			}
+		} else if (Event.Type == CSmModeEvent::EType::OnPlayerTouchesObject) {
+			Discard(Event);
+		} else {
+			PassOn(Event);
+		}
+	}
+	// Manage XmlRpc events
+	foreach(Event in XmlRpc.PendingEvents) {
+		if (Event.Type == CXmlRpcEvent::EType::Callback) {
+			if(Event.Param1 == "endWarmup") {
+				G_EndWarmUp = True;
+			} else if(Event.Param1 == "extendWarmup") {
+				if(EndTime == -1) 
+					EndTime = Now + G_Duration * 1000;
+				else
+					EndTime += G_Duration * 1000;
+			}
+		}
+	}
+	
+	// Attach the layers
+	if (G_UILastUpdate + C_UIUpdateInterval < Now) {
+		G_UILastUpdate = Now;
+		
+		foreach (Player in Players) {
+			declare WU_NewPlayer for Player = True;
+			declare WU_NewSpectator for Player = True;
+			declare WU_OldClan for Player = -1;
+			
+			if (!WU_NewSpectator) WU_NewSpectator = True;
+		
+			declare Clan = 0;
+			if (UseForcedClans) Clan = Player.CurrentClan;
+			else Clan = Player.RequestedClan;
+		
+			if (WU_NewPlayer || WU_OldClan != Clan) {
+				WU_NewPlayer = False;
+				WU_OldClan = Clan;
+				
+				declare UI <=> UIManager.GetUI(Player);
+				if (UI == Null) continue;
+				
+				
+				if (!UI.UILayers.existskey(G_WarmUpLayerId))
+					UI.UILayers.add(UIManager.UILayers[G_WarmUpLayerId]);
+				
+				if (G_UseOrder) {
+					if (Clan == 1) {
+						if (!UI.UILayers.existskey(G_OrderLayerId[1]))
+							UI.UILayers.add(UIManager.UILayers[G_OrderLayerId[1]]);
+						
+						UI.UILayers.removekey(G_OrderLayerId[2]);
+					} else if (Clan == 2) {
+						if (!UI.UILayers.existskey(G_OrderLayerId[2]))
+							UI.UILayers.add(UIManager.UILayers[G_OrderLayerId[2]]);
+						
+						UI.UILayers.removekey(G_OrderLayerId[1]);
+					}
+				}
+			 }
+		}
+		
+		foreach (Spectator in Spectators) {
+			declare WU_NewSpectator for Spectator = True;
+			declare WU_NewPlayer for Spectator = True;
+			
+			if (!WU_NewPlayer) WU_NewPlayer = True;
+			
+			if (WU_NewSpectator) {
+				WU_NewSpectator = False;
+				
+				declare UI <=> UIManager.GetUI(Spectator);
+				if (UI == Null) continue;
+				
+				UI.UILayers.removekey(G_WarmUpLayerId);
+				if (G_UseOrder) {
+					UI.UILayers.removekey(G_OrderLayerId[1]);
+					UI.UILayers.removekey(G_OrderLayerId[2]);
+				}
+			}
+		}
+	}
+	
+	// ---------------------------------- //
+	// Skip the rest if we don't use order
+	// ---------------------------------- //
+	if (!G_UseOrder) return;
+	
+	declare OrderUpdated = 0;
+	declare ReadyUpdated = 0;
+	G_OrderChanged = False;
+	G_ReadyChanged = False;
+	
+	// Clean up the order
+	if (CleanOrder()) OrderUpdated = -1;
+	
+	// Manage order
+	foreach (Player in Players) {
+		declare UI <=> UIManager.GetUI(Player);
+		if (UI == Null) continue;
+		
+		declare Clan = 0;
+		if (UseForcedClans) Clan = Player.CurrentClan;
+		else Clan = Player.RequestedClan;
+		
+		if (!G_Order.existskey(Clan)) continue;
+		
+		declare netread WUNetPlayer_RequestedSlot for UI = -1;
+		declare netread WUNetPlayer_UpdatedSlot for UI = 0;
+		declare WU_CurrentSlot for Player = -1;
+		declare WU_CurrentClan for Player = -1;
+		declare WU_LastUpdate for Player = 0;
+		
+		declare netread WUNet_ReadyToPlay for UI = False;
+		declare WU_ReadyToPlay for Player = False;
+		
+		if (WUNet_ReadyToPlay != WU_ReadyToPlay) {
+			WU_ReadyToPlay = WUNet_ReadyToPlay;
+			ReadyUpdated = Clan;
+		}
+		
+		// The player requested a new slot
+		if (WU_LastUpdate != WUNetPlayer_UpdatedSlot) {
+			WU_LastUpdate = WUNetPlayer_UpdatedSlot;
+			OrderUpdated = Clan;
+			
+			// The new slot is a valid slot and not the one already occupied by this player
+			if (
+				WUNetPlayer_RequestedSlot > 0 
+				&& WUNetPlayer_RequestedSlot <= G_RequiredPlayersNb 
+				&& (WU_CurrentSlot != WUNetPlayer_RequestedSlot || WU_CurrentClan != Clan)
+			) {
+				//log(Now^"> Loop() > "^Player.Login^" new slot requested: "^WUNetPlayer_RequestedSlot);
+				
+				SwapSlot(Player.Id, WU_CurrentClan, WU_CurrentSlot, Clan, WUNetPlayer_RequestedSlot);
+			}
+		}
+	}
+	
+	// Fill the empties slots in G_Order
+	if (FillOrder()) OrderUpdated = -1;
+	
+	// Update the order layers
+	if (OrderUpdated != 0) {
+		G_OrderChanged = True;
+		if (OrderUpdated != 1 || OrderUpdated != 2) OrderUpdated = -1;
+		
+		if (OrderUpdated == -1) {
+			UIManager.UILayers[G_OrderLayerId[1]].ManialinkPage = CreateLayerOrder(1);
+			UIManager.UILayers[G_OrderLayerId[2]].ManialinkPage = CreateLayerOrder(2);
+		} else {
+			UIManager.UILayers[G_OrderLayerId[OrderUpdated]].ManialinkPage = CreateLayerOrder(OrderUpdated);
+		}
+		
+		OrderUpdated = 0;
+	}
+	
+	if (ReadyUpdated != 0) {
+		G_ReadyChanged = True;
+		if (ReadyUpdated != 1 || ReadyUpdated != 2) ReadyUpdated = -1;
+		
+		if (ReadyUpdated == -1) {
+			UIManager.UILayers[G_OrderLayerId[1]].ManialinkPage = CreateLayerOrder(1);
+			UIManager.UILayers[G_OrderLayerId[2]].ManialinkPage = CreateLayerOrder(2);
+		} else {
+			UIManager.UILayers[G_OrderLayerId[ReadyUpdated]].ManialinkPage = CreateLayerOrder(ReadyUpdated);
+		}
+		
+		ReadyUpdated = 0;
+	}
+}
+
+// ---------------------------------- //
+/// Call after the warm up
+Void After() {
+	// Delete the layers
+	if (UIManager.UILayers.existskey(G_WarmUpLayerId)) {
+		UIManager.UIAll.UILayers.remove(UIManager.UILayers[G_WarmUpLayerId]);
+		UIManager.UILayerDestroy(UIManager.UILayers[G_WarmUpLayerId]);
+	}
+	
+	if (G_UseOrder) {
+		declare LayerClan1 = UIManager.UILayers.existskey(G_OrderLayerId[1]);
+		declare LayerClan2 = UIManager.UILayers.existskey(G_OrderLayerId[2]);
+		foreach (Player in Players) {
+			declare UI <=> UIManager.GetUI(Player);
+			if (UI == Null) continue;
+			
+			if (LayerClan1) UI.UILayers.remove(UIManager.UILayers[G_OrderLayerId[1]]);
+			if (LayerClan2) UI.UILayers.remove(UIManager.UILayers[G_OrderLayerId[2]]);
+		}
+		foreach (Spectator in Spectators) {
+			declare UI <=> UIManager.GetUI(Spectator);
+			if (UI == Null) continue;
+			
+			if (LayerClan1) UI.UILayers.remove(UIManager.UILayers[G_OrderLayerId[1]]);
+			if (LayerClan2) UI.UILayers.remove(UIManager.UILayers[G_OrderLayerId[2]]);
+		}
+		
+		if (LayerClan1) UIManager.UILayerDestroy(UIManager.UILayers[G_OrderLayerId[1]]);
+		if (LayerClan2) UIManager.UILayerDestroy(UIManager.UILayers[G_OrderLayerId[2]]);
+	}
+	
+	// Restore UI
+	UIManager.UIAll.UISequence = G_OldSequence;
+	
+	G_IsRunning = False;
+}

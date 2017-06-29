@@ -1,0 +1,1115 @@
+///////////////////////////////////////////////////
+// Achievements Lib
+///////////////////////////////////////////////////
+
+#Const Version 				"2012-08-29"
+#Const ScriptName			"Achievements.Script.txt"
+
+#Include "MathLib" as MathLib
+#Include "TextLib" as TextLib
+
+#Const C_ExistingTop 	[
+	"HitRocket",
+	"HitRail",
+	"HitNucleus",
+	"PrecisionRocket",
+	"PrecisionRail",
+	"PrecisionNucleus",
+	"LongestRail",
+	"LongestRocket",
+	"LongestAirShot",
+	"AirStrike",
+	"HitUntouched",
+	"ComboHit",
+	"LongestTime",
+	"LessHited",
+	"DistanceTravel",
+	"TimeNearEnnemies",
+	"AirTime",
+	"ArmorReload",
+	"HitAfterHited"
+]
+
+#Const 	C_LongRail_Level			[20.0, 40.0, 60.0, 80.0, 100.0]
+#Const 	C_LongTime_Level		 	[60, 90, 120, 150, 180, 240, 300]
+#Const 	C_HitUntouched_Level		[5, 8, 10, 12, 15]
+
+#Const  C_ComboHit_TimeInterval		2000
+
+declare Text[]				G_UseTop;
+declare Text[Text][Text]	G_Top5;
+declare Real[Text]			G_BestTop;
+declare Boolean[Text]		G_TopIsSorted;
+declare Boolean[Text]		G_TopIsCleaned;
+declare Text[Text][Text]	G_HoldTop;
+
+// Update Time
+declare Integer				G_LastLongTimeUpdate;
+declare Integer				G_LastNearEnnemiesUpdate;
+declare Integer				G_LastDistanceUpdate;
+declare Integer 			G_LastAirTimeUpdate;
+declare Integer 			G_LastShieldUpdate;
+
+// Global Vars for Layers
+declare Integer 			G_GetNextTopIndex;
+declare Integer 			G_OldNum;
+declare Integer 			G_IndexByTime;
+declare Text[] 				G_TopNonNull;
+
+/* ------------------------------------- */
+/** Return the version number of the script
+ *
+ *	@return		The version number of the script
+ */
+Text GetScriptVersion() {
+	return Version;
+}
+
+/* ------------------------------------- */
+/** Return the name of the script
+ *
+ *	@return		The name of the script
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+Text Get_Title(Text _Top) {
+   switch(_Top) {
+      case "ComboHit": return "Combo";
+      case "LongestRail": return "Longest Rail";
+      case "LongestTime": return "Survival Time";
+      case "HitUntouched": return "Hit Serie";
+      case "TimeNearEnnemies": return "Time Near Enemies";
+      case "HitAfterHited": return "Hit After Elimination";
+      case "LongestAirShot": return "AirShot distance";
+      case "HitRail": return "Top 5 Rail";
+      case "HitRocket": return "Top 5 Rocket";
+      case "HitNucleus": return "Top 5 Nucleus";
+      case "DistanceTravel": return "Distance Traveled";
+      case "AirTime": return "Air Time";
+      case "AirStrike": return "AirStrike";
+      case "PrecisionRail": return "Rail Precision";
+      case "ArmorReload": return "Armor Reloaded";
+      case "LessHited": return "Less Hit";
+      case "PrecisionRocket": return "Rocket Precision";
+      case "PrecisionNucleus": return "Nucleus Precision";
+      case "LongestRocket": return "Longest Rocket";
+      default : return "";      
+   }
+   return "";
+}
+
+Text Get_LoLTitle(Text _Top) {
+   switch(_Top) {
+   
+      case "HitRocket": return "Rocket master :"; 
+      case "HitRail": return "Laser master :";
+      case "HitNucleus": return "Nucleus master :";
+      
+      case "PrecisionRocket": return "The Rocket artist :";
+      case "PrecisionRail": return "The Laser artist :"; 
+      case "PrecisionNucleus": return "The Nucleus artist :";
+      
+      case "LongestRail": return "The sniper : ";
+      case "LongestRocket": return "The gunner :"; 
+      case "LongestAirShot": return "The anti-air :";
+      case "AirStrike": return "The bomber :"; 
+      
+      case "HitUntouched": return "The unstoppable :"; 
+      case "ComboHit": return "The threader :"; 
+      case "LongestTime": return "The survivor :"; 
+      case "LessHited": return "The untouchable :"; 
+      
+      case "DistanceTravel": return "The traveler :"; 
+      case "TimeNearEnnemies": return "The boxer :"; 
+   
+      case "AirTime": return "The aviator :";    
+      case "ArmorReload": return "The patient :"; 
+      case "HitAfterHited": return "The zombie :"; 
+   
+      default : return "";      
+   }
+   return "";
+}
+
+Text Get_TitleDescription(Text _Top) {
+   switch(_Top) {
+      case "ComboHit": return "Chain several hits quickly !";
+      case "LongestRail": return "Do the longest Laser hit !";
+      case "LongestTime": return "Survive as long as possible !";
+      case "HitUntouched": return "Chain several hits without being eliminated !";
+      case "TimeNearEnnemies": return "Spend a maximum of time near the enemies !";
+      case "HitAfterHited": return "Do the most hits after being eliminated !";
+      case "LongestAirShot": return "Do the longest Airshot !";
+      case "HitRail": return "Do a maximum of hit with the Laser !";
+      case "HitRocket": return "Do a maximum of hit with the Rocket !";
+      case "HitNucleus": return "Do a maximum of hit with the Nucleus !";
+      case "DistanceTravel": return "Travel the longest distance !";
+      case "AirTime": return "Spend the most time in the air !";
+      case "AirStrike": return "Do a maximum of hit while in the Air !";
+      case "PrecisionRail": return "Be the most accurate with the Laser !";
+      case "ArmorReload": return "Reload a maximum of armors !";
+      case "LessHited": return "Be the least hit !";
+      case "PrecisionRocket": return "Be the most accurate with the rocket !";
+      case "LongestRocket": return "Do the longest Rocket hit !";
+      case "PrecisionNucleus": return "Be the most accurate with the Nucleus !";
+      default : return "";      
+   }
+   return "";
+}
+
+Text Get_Score(Text _Score, Text _Top) {
+	switch(_Top) {
+		case "LongestRail": return _Score^"m";
+		case "DistanceTravel": return _Score^"m";
+		case "LongestRocket": return _Score^"m";
+		case "LongestAirShot": return _Score^"m";
+		case "PrecisionRail": return _Score^"%";
+		case "PrecisionRocket": return _Score^"%";
+		case "PrecisionNucleus": return _Score^"%";
+		case "LongestTime": return TextLib::TimeToText(TextLib::ToInteger(_Score));
+		case "TimeNearEnnemies": return TextLib::TimeToText(TextLib::ToInteger(_Score));
+		case "AirTime": return TextLib::TimeToText(TextLib::ToInteger(_Score));
+		default : return _Score;
+	}
+	return "";
+}
+
+Void Insert(Text _Top, Integer _LongTimeCumul, Text _PlayerName, Integer _Score) {
+	if(!G_Top5.existskey(_Top)) return;
+	G_Top5[_Top][TextLib::ToText(_LongTimeCumul)^_PlayerName] = TextLib::ToText(_Score);
+	G_TopIsSorted[_Top] = False;
+	G_TopIsCleaned[_Top] = False;
+}
+Void Insert(Text _Top, Integer _LongTimeCumul, Text _PlayerName, Real _Score) {
+	Insert(_Top, _LongTimeCumul, _PlayerName, MathLib::NearestInteger(_Score));
+}
+
+Void InitSettings(Text[] _UseTop) {
+	foreach(Top in _UseTop) {
+		if(C_ExistingTop.exists(Top) && !G_UseTop.exists(Top)) G_UseTop.add(Top);
+	}
+	foreach(Top in G_UseTop) {
+		G_Top5[Top] = ["" => "0"];
+		G_BestTop[Top] = 0.;
+		G_TopIsSorted[Top] = True;
+		G_TopIsCleaned[Top] = True;
+	}
+}
+
+Void SendNotice(CSmPlayer _Player, Text _Message, Boolean DisplayBigMessage) {
+	if(_Player == Null) {
+		UIManager.UIAll.SendNotice(
+			_Message, CUIConfig::ENoticeLevel::MatchInfo, 
+			Null, CUIConfig::EAvatarVariant::Default, 
+			CUIConfig::EUISound::Silence, 0);
+	} else {
+		declare UI <=> UIManager.GetUI(_Player);
+		if (UI != Null) {
+			if(!DisplayBigMessage) {
+				UI.SendNotice(
+					_Message, CUIConfig::ENoticeLevel::PlayerInfo, 
+					Null, CUIConfig::EAvatarVariant::Default, 
+					CUIConfig::EUISound::Silence, 0);
+			} else {
+				UI.SendNotice(
+					_Message, CUIConfig::ENoticeLevel::MatchInfo, 
+					Null, CUIConfig::EAvatarVariant::Default, 
+					CUIConfig::EUISound::Silence, 0);
+			}
+		}
+	}
+}
+
+Void SendNotice(CSmPlayer _Player, Text _Message) {
+	SendNotice(_Player, _Message, False);
+}
+
+Void PlaySound(CSmPlayer _Player, CUIConfig::EUISound _Sound, Integer _Variant) {
+	if(_Player == Null) {
+		UIManager.UIAll.SendNotice(
+			"", CUIConfig::ENoticeLevel::MatchInfo, 
+			Null, CUIConfig::EAvatarVariant::Default, 
+			_Sound, _Variant);
+	} else {
+		declare UI <=> UIManager.GetUI(_Player);
+		if (UI != Null) {
+			UI.SendNotice(
+				"", CUIConfig::ENoticeLevel::PlayerInfo, 
+				Null, CUIConfig::EAvatarVariant::Default, 
+				_Sound, _Variant);
+		}
+	}
+}
+
+Void ResetTop(Text _Top) {
+	if(_Top == "all") {
+		G_TopNonNull.clear();
+		foreach(Top => Id in G_Top5) {
+			G_Top5[Top].clear();
+		}	
+	}
+	else {
+		if(G_TopNonNull.exists(_Top)) G_TopNonNull.remove(_Top);
+		if(G_Top5.existskey(_Top)) G_Top5[_Top].clear();
+	}
+	foreach(Player in Players) {
+		if(G_UseTop.exists("HitRail") || G_UseTop.exists("HitRocket") || G_UseTop.exists("HitNucleus") 
+		&& (_Top == "all" || _Top =="HitRail" || _Top =="HitRocket" || _Top =="HitNucleus")) {
+			declare Integer[Integer] HitWeapon for Player;
+			declare Integer[Integer] HitWeapon_NextLevel for Player;
+			for(i, 1, 3) {
+				HitWeapon[i] = 0;
+				HitWeapon_NextLevel[i] = 0;
+			}
+		}
+		if(G_UseTop.exists("LongestTime") && (_Top == "all" || _Top =="LongestTime")) {
+			declare Integer TimeUnTouched for Player;
+			declare Integer LongTime_NextLevel for Player;
+			//declare Integer LongTimeCumul for Player;
+			declare Integer LastTouch for Player;
+
+			TimeUnTouched = -1;
+			LongTime_NextLevel = 0;
+			//LongTimeCumul = 100;
+			LastTouch = Now;
+			
+			G_BestTop["LongestTime"] = 0.;
+		}
+		if(G_UseTop.exists("ComboHit") && (_Top == "all" || _Top =="ComboHit")) {
+			declare Integer LastHit for Player;
+			declare Integer ComboHit_NextLevel for Player;
+			declare Integer CurrentCombo for Player;
+			declare Integer BestCombo for Player;
+
+			LastHit = Now;
+			ComboHit_NextLevel = 0;
+			CurrentCombo = 0;
+			BestCombo = 0;
+			
+			G_BestTop["ComboHit"] = 2.;
+		}
+		if(G_UseTop.exists("TimeNearEnnemies") && (_Top == "all" || _Top =="TimeNearEnnemies")) {
+			declare Integer TimeNearEnnemies for Player;
+			declare Integer NearEnnemies_NextLevel for Player;
+
+			TimeNearEnnemies = 0;
+			NearEnnemies_NextLevel = 0;
+			G_LastNearEnnemiesUpdate = Now;
+			
+			G_BestTop["TimeNearEnnemies"] = 0.;
+		}
+		if(G_UseTop.exists("HitUntouched") && (_Top == "all" || _Top =="HitUntouched")) {
+			declare Integer MaxHitUntouchedSerie for Player;
+			declare Integer HitUntouchedSerie for Player;
+			declare Integer HitUntouched_NextLevel for Player;
+
+			MaxHitUntouchedSerie = 0;
+			HitUntouchedSerie = 0;
+			HitUntouched_NextLevel = 0;
+			
+			G_BestTop["HitUntouched"] = 0.;
+		}
+		if(G_UseTop.exists("HitAfterHited") && (_Top == "all" || _Top =="HitAfterHited")) {
+			declare Integer HitAfterHited for Player;
+			declare Integer HitAfterHited_NextLevel for Player;
+
+			HitAfterHited = 0;
+			HitAfterHited_NextLevel = 0;
+			
+			G_BestTop["HitAfterHited"] = 0.;
+		}
+		if(G_UseTop.exists("LongestRail") && (_Top == "all" || _Top =="LongestRail")) {
+			declare Real LongestRailShoot for Player;
+			declare Integer LongRailShoot_NextLevel for Player;
+			LongestRailShoot = 0.0;
+			LongRailShoot_NextLevel = 0;
+			
+			G_BestTop["LongestRail"] = 0.;
+		}
+		if(G_UseTop.exists("LongestRocket") && (_Top == "all" || _Top =="LongestRocket")) {
+			declare Real LongestRocketShoot for Player;
+			//declare Integer LongestRocketCumul for Player;
+			declare Integer LongRocketShoot_NextLevel for Player;
+			LongestRocketShoot = 0.0;
+			//LongestRocketCumul = 100;
+			LongRocketShoot_NextLevel = 0;
+		}
+		if(G_UseTop.exists("LongestAirShot") && (_Top == "all" || _Top =="LongestAirShot")) {
+			declare Integer NbAirShot for Player;
+			declare Integer AirShot_NextLevel for Player;
+			declare Integer LatestTouchingGround for Player;
+			NbAirShot = 0;
+			AirShot_NextLevel = 0;
+			LatestTouchingGround = 0;
+			
+			G_BestTop["LongestAirShot"] = 0.;
+		}
+		if(G_UseTop.exists("DistanceTravel") && (_Top == "all" || _Top =="DistanceTravel")) {
+			declare Real DistanceTraveled for Player;
+			declare Integer Distance_NextLevel for Player;
+			DistanceTraveled = 0.0;
+			Distance_NextLevel = 0;
+			
+			G_BestTop["DistanceTravel"] = 0.;
+		}
+		if(G_UseTop.exists("AirTime") && (_Top == "all" || _Top =="AirTime")) {
+			declare Integer AirTime for Player;
+			declare Integer AirTime_NextLevel for Player;
+			AirTime = 0;
+			AirTime_NextLevel = 0;
+			
+			G_BestTop["AirTime"] = 0.;
+		}
+		if(G_UseTop.exists("AirStrike") && (_Top == "all" || _Top =="AirStrike")) {
+			declare Integer AirStrike for Player;
+			declare Integer AirStrike_NextLevel for Player;
+			declare Integer AirStrikeLastTouchingGround for Player;
+			AirStrike = 0;
+			AirStrike_NextLevel = 0;
+			AirStrikeLastTouchingGround = 0;
+			
+			G_BestTop["AirStrike"] = 0.;
+		}
+		if(G_UseTop.exists("PrecisionRail") && (_Top == "all" || _Top =="PrecisionRail")) {
+			declare Real PrecRail_NbHit for Player;
+			declare Real PrecRail_NbShoot for Player;
+			PrecRail_NbHit = 0.0;
+			PrecRail_NbShoot = 0.0;
+		}
+		if(G_UseTop.exists("PrecisionRocket") && (_Top == "all" || _Top =="PrecisionRocket")) {
+			declare Real PrecRocket_NbHit for Player;
+			declare Real PrecRocket_NbShoot for Player;
+			PrecRocket_NbHit = 0.0;
+			PrecRocket_NbShoot = 0.0;
+		}
+		if(G_UseTop.exists("PrecisionNucleus") && (_Top == "all" || _Top =="PrecisionNucleus")) {
+			declare Real PrecNucleus_NbHit for Player;
+			declare Real PrecNucleus_NbShoot for Player;
+			PrecNucleus_NbHit = 0.0;
+			PrecNucleus_NbShoot = 0.0;
+		}
+		
+		if(G_UseTop.exists("ArmorReload") && (_Top == "all" || _Top =="ArmorReload")) {
+			declare Integer OldArmor for Player;
+			declare Integer NbReloadArmor for Player;
+			OldArmor = 0;
+			NbReloadArmor = 0;
+		}
+		if(G_UseTop.exists("LessHited") && (_Top == "all" || _Top =="LessHited")) {
+			declare Integer LessHited for Player;
+			LessHited = 0;	
+			Insert("LessHited", 100, Player.Name, 0.);
+		}
+	}
+}
+
+Void OnLoop() {
+	if(G_UseTop.exists("LongestTime")) {
+		if(Now-G_LastLongTimeUpdate > 1000) {
+			foreach(Player in Players) {
+				if(Player.SpawnStatus != CSmPlayer::ESpawnStatus::Spawned) continue;
+				declare Integer TimeUnTouched for Player;
+				declare Integer LongTime_NextLevel for Player;
+				declare Integer LastTouch for Player = Now;
+				declare Integer LongTimeCumul for Player = 100;
+				
+				if(TimeUnTouched == -1) {
+					TimeUnTouched = 0;
+					LastTouch = Now;
+					LongTimeCumul += 1;
+				}
+				if(LongTimeCumul > 999) LongTimeCumul = 100;
+				TimeUnTouched = Now-LastTouch;
+				Insert("LongestTime", LongTimeCumul, Player.Name, TimeUnTouched);
+					
+				if(TimeUnTouched > G_BestTop["LongestTime"]) {
+					for(i, 0, C_LongTime_Level.count-1) {
+						if(TimeUnTouched/1000 >= C_LongTime_Level[i] && G_BestTop["LongestTime"]/1000 < C_LongTime_Level[i]) {
+							declare Text Time;
+							if(C_LongTime_Level[i] < 60) Time = TextLib::ToText(C_LongTime_Level[i])^"s";
+							else {
+								declare Seconde = TextLib::ToText(C_LongTime_Level[i]-60*(C_LongTime_Level[i]/60));
+								if(C_LongTime_Level[i]-60*(C_LongTime_Level[i]/60) == 0) Seconde = "";
+								Time = TextLib::ToText(C_LongTime_Level[i]/60)^"m"^Seconde;
+							}
+							SendNotice(Null, TextLib::Compose(_("$<%1$> hasn't been eliminated since $<%2$>"), Player.Name, Time));
+							PlaySound(Null, CUIConfig::EUISound::Custom1, i);
+							break;
+						}
+					}
+					G_BestTop["LongestTime"] = 1.*TimeUnTouched;
+				}
+			}
+			foreach(Spectator in Spectators) {
+				declare Integer TimeUnTouched for Spectator;
+				TimeUnTouched = -1;
+			}
+			G_LastLongTimeUpdate = Now;
+		}
+	}
+	if(G_UseTop.exists("TimeNearEnnemies")) {
+		if(Now - G_LastNearEnnemiesUpdate > 1000) {
+			declare Real MinimumDistance;
+			declare Ident PlayerIdMiniDist;
+			foreach(Player1 in Players) {
+				if(Player1.SpawnStatus != CSmPlayer::ESpawnStatus::Spawned) continue;
+				declare Real TotalDistance;
+				foreach(Player2 in Players) {
+					if(Player2.SpawnStatus != CSmPlayer::ESpawnStatus::Spawned) continue;
+					if(Player1.Id == Player2.Id || (Player1.CurrentClan == Player2.CurrentClan && Player1.CurrentClan != 0)) continue;
+					TotalDistance += MathLib::Distance(Player1.Position, Player2.Position);
+				}
+				if(TotalDistance < MinimumDistance || MinimumDistance == 0.0) {
+					MinimumDistance = TotalDistance;
+					PlayerIdMiniDist = Player1.Id;
+				}
+			}
+			if(PlayerIdMiniDist  != NullId) {
+				declare Player <=> Players[PlayerIdMiniDist];
+				declare Integer TimeNearEnnemies for Player;
+				declare Integer NearEnnemies_NextLevel for Player;
+				TimeNearEnnemies += Now - G_LastNearEnnemiesUpdate;
+				Insert("TimeNearEnnemies", 100, Player.Name, TimeNearEnnemies);
+				if(TimeNearEnnemies > G_BestTop["TimeNearEnnemies"]) {
+					G_BestTop["TimeNearEnnemies"] = 1.*TimeNearEnnemies;
+				}
+			}
+			G_LastNearEnnemiesUpdate = Now;
+		}
+	}
+	if(G_UseTop.exists("LongestAirShot")) {
+		foreach(Player in Players) {
+			declare Integer LatestTouchingGround for Player;
+			if(Player.IsTouchingGround)
+				LatestTouchingGround = Now;
+		}
+	}
+	if(G_UseTop.exists("DistanceTravel")) {
+		if(Now - G_LastDistanceUpdate > 1000) {
+			foreach(Player in Players) {
+				declare Vec3 OldPosition for Player = Player.Position;
+				if(Player.SpawnStatus != CSmPlayer::ESpawnStatus::Spawned) {
+					OldPosition = Player.Position;
+					continue;
+				}
+				declare Real DistanceTraveled for Player;
+				declare Integer Distance_NextLevel for Player;
+				
+				DistanceTraveled += MathLib::Distance(OldPosition, Player.Position);
+				if(DistanceTraveled == 0) continue;
+				Insert("DistanceTravel", 100, Player.Name, DistanceTraveled);
+				OldPosition = Player.Position;
+				if(DistanceTraveled > G_BestTop["DistanceTravel"]) {
+					G_BestTop["DistanceTravel"] = DistanceTraveled;
+				}
+			}
+			G_LastDistanceUpdate = Now;
+		}
+	}
+	if(G_UseTop.exists("AirTime")) {
+		if(Now - G_LastAirTimeUpdate > 500) {
+			foreach(Player in Players) {
+				if(Player.SpawnStatus != CSmPlayer::ESpawnStatus::Spawned || Player.IsTouchingGround) continue;
+	
+				declare Integer AirTime for Player;
+				declare Integer AirTime_NextLevel for Player;
+				
+				AirTime += Now - G_LastAirTimeUpdate;
+				Insert("AirTime", 100, Player.Name, AirTime);
+				if(AirTime > G_BestTop["AirTime"]) {
+					G_BestTop["AirTime"] = 1.*AirTime;
+				}
+			}
+			G_LastAirTimeUpdate = Now;
+		}
+	}
+	if(G_UseTop.exists("AirStrike")) {
+		foreach(Player in Players) {
+			declare Integer AirStrikeLastTouchingGround for Player;
+			if(Player.IsTouchingGround)
+				AirStrikeLastTouchingGround = Now;
+		}
+	}
+	if(G_UseTop.exists("ArmorReload")) {
+		foreach(Player in Players) {
+			declare Integer OldArmor for Player = Player.Armor;
+			declare Integer NbReloadArmor for Player;
+			if(Player.Armor == OldArmor+100 && Player.SpawnStatus == CSmPlayer::ESpawnStatus::Spawned) {
+				NbReloadArmor += 1;
+				Insert("ArmorReload", 100, Player.Name, NbReloadArmor);
+			}
+			OldArmor = Player.Armor;
+		}
+	}
+}	
+
+Void OnHit(CSmPlayer _Shooter, CSmPlayer _Victim, Integer _WeaponNum, Integer _Damage) {
+	if (_Shooter == Null || _Victim == Null || _Shooter == _Victim 
+	|| (UseClans && _Shooter.CurrentClan == _Victim.CurrentClan)) 
+		return;
+
+	if(G_UseTop.exists("HitRail") || G_UseTop.exists("HitRocket") || G_UseTop.exists("HitNucleus")) {
+		declare Integer[Integer] HitWeapon for _Shooter = [1=>0, 2=>0, 3=>0];
+		declare Integer[Integer] HitWeapon_NextLevel for _Shooter = [1=>0, 2=>0, 3=>0];
+		
+		if(HitWeapon.existskey(_WeaponNum)) HitWeapon[_WeaponNum] += 1;
+		else HitWeapon[_WeaponNum] = 1;
+		switch(_WeaponNum) {
+			case 1: Insert("HitRail", 100, _Shooter.Name, HitWeapon[1]); 
+			case 2: Insert("HitRocket", 100, _Shooter.Name, HitWeapon[2]);  
+			case 3: Insert("HitNucleus", 100, _Shooter.Name, HitWeapon[3]);
+		}
+	}
+	if(G_UseTop.exists("LongestRail")) {
+		if(_WeaponNum == 1) {
+			declare Real LongestRailShoot for _Shooter;
+			declare Integer LongRailShoot_NextLevel for _Shooter;
+			declare LongestRailCumul for _Shooter = 100;
+			
+			declare Distance = MathLib::Distance(_Shooter.Position, _Victim.Position);
+			Distance = MathLib::NearestInteger(Distance*10.0)/10.0;
+
+			Insert("LongestRail", LongestRailCumul, _Shooter.Name, Distance);
+			LongestRailCumul += 1;
+			if(LongestRailCumul > 999) LongestRailCumul = 100;
+			
+			if(Distance > LongestRailShoot) {
+				LongestRailShoot = Distance;
+				if(Distance > G_BestTop["LongestRail"]) {
+					for(i, 0, C_LongRail_Level.count-1) {
+						if((Distance >= C_LongRail_Level[i] && G_BestTop["LongestRail"] < C_LongRail_Level[i]) 
+						|| (G_BestTop["LongestRail"] > C_LongRail_Level[4])) {
+							SendNotice(Null, TextLib::Compose(_("$<%1$> did the longest Laser hit: $<%2$>m"), _Shooter.Name, TextLib::ToText(Distance)));
+							PlaySound(_Shooter, CUIConfig::EUISound::Custom1, i);
+							break;
+						}
+					}
+					G_BestTop["LongestRail"] = Distance;
+				}
+			}
+		}
+	}
+	if(G_UseTop.exists("LongestRocket")) {
+		if(_WeaponNum == 2) {
+			declare Real LongestRocketShoot for _Shooter;
+			declare Integer LongRocketShoot_NextLevel for _Shooter;
+			declare LongestRocketCumul for _Shooter = 100;
+			
+			declare Distance = MathLib::Distance(_Shooter.Position, _Victim.Position);
+			Distance = MathLib::NearestInteger(Distance*10.0)/10.0;
+			Insert("LongestRocket", LongestRocketCumul, _Shooter.Name, Distance);
+			LongestRocketCumul += 1;
+			if(LongestRocketCumul > 999) LongestRocketCumul = 100;
+			if(Distance > LongestRocketShoot) {
+				LongestRocketShoot = Distance;
+				SendNotice(_Shooter, TextLib::Compose(_("$<%1$> did the longest Rocket hit: $<%2$>m"), _Shooter.Name, TextLib::ToText(Distance)));
+			}
+		}
+	}
+	if(G_UseTop.exists("ComboHit")) {
+		declare Integer LastHit for _Shooter;
+		declare Integer ComboHit_NextLevel for _Shooter;
+		declare Integer CurrentCombo for _Shooter;
+		declare Integer BestCombo for _Shooter;
+		declare ComboHitCumul for _Shooter = 100;
+		
+		if(Now-LastHit < C_ComboHit_TimeInterval || CurrentCombo == 0) {
+			CurrentCombo += 1;
+			if(ComboHitCumul > 999) ComboHitCumul = 100;
+			if(CurrentCombo > 1) {
+				Insert("ComboHit", ComboHitCumul, _Shooter.Name, CurrentCombo);
+			}
+			if(CurrentCombo > G_BestTop["ComboHit"]) {
+				G_BestTop["ComboHit"] = 1.*CurrentCombo;
+				BestCombo = CurrentCombo;
+				SendNotice(Null, TextLib::Compose(_("$<%1$> did a combo of $<%2$>"), _Shooter.Name, TextLib::ToText(CurrentCombo)));
+				PlaySound(Null, CUIConfig::EUISound::Custom1, 1);
+			} else if (CurrentCombo > 2) {
+				if(CurrentCombo > BestCombo) {
+					BestCombo = CurrentCombo;
+				}
+				SendNotice(_Shooter, TextLib::Compose("Combo $<%2$>", _Shooter.Name, TextLib::ToText(CurrentCombo)), True);
+				PlaySound(Null, CUIConfig::EUISound::Custom1, 1);
+			}
+		} else {
+			CurrentCombo = 1;
+			ComboHitCumul += 1;
+		}
+		LastHit = Now;
+	}
+	if(G_UseTop.exists("HitUntouched")) {
+		declare Integer MaxHitUntouchedSerie for _Shooter;
+		declare Integer HitUntouchedSerie for _Shooter;
+		declare Integer HitUntouched_NextLevel for _Shooter;
+		declare Integer HitUntouchedCumul for _Shooter = 100;
+
+		HitUntouchedSerie += _Damage / 100;
+		if(HitUntouchedCumul > 999) HitUntouchedCumul = 100;
+		Insert("HitUntouched", HitUntouchedCumul, _Shooter.Name, HitUntouchedSerie);
+		if(HitUntouchedSerie > MaxHitUntouchedSerie) {
+			MaxHitUntouchedSerie = HitUntouchedSerie;
+			if(HitUntouchedSerie > G_BestTop["HitUntouched"]) {
+				G_BestTop["HitUntouched"] = 1.*HitUntouchedSerie;
+			}
+		}
+		if(HitUntouched_NextLevel < C_HitUntouched_Level.count-1 
+		&& HitUntouchedSerie >= C_HitUntouched_Level[HitUntouched_NextLevel]) {
+			HitUntouched_NextLevel += 1;
+			SendNotice(Null, TextLib::Compose("$<%1$> chained $<%2$> hits without being eliminated !", _Shooter.Name, TextLib::ToText(HitUntouchedSerie)));
+			PlaySound(_Shooter, CUIConfig::EUISound::Custom1, HitUntouched_NextLevel);
+		}
+	}
+	if(G_UseTop.exists("HitAfterHited")) {
+		if(_Shooter.SpawnStatus != CSmPlayer::ESpawnStatus::Spawned) {
+			declare Integer HitAfterHited for _Shooter;
+			declare Integer HitAfterHited_NextLevel for _Shooter;
+			HitAfterHited += 1;
+			Insert("HitAfterHited", 100, _Shooter.Name, HitAfterHited);
+			SendNotice(_Shooter, TextLib::Compose("Hit after elimination on $<%1$>", _Victim.Name));
+			if(HitAfterHited > G_BestTop["HitAfterHited"]) {
+				G_BestTop["HitAfterHited"] = 1.*HitAfterHited;
+			}
+		}
+	}
+	if(G_UseTop.exists("LongestAirShot")) {
+	
+		declare Integer LatestTouchingGround for _Victim;
+		declare Real LongestAirShot for _Shooter;
+		declare LongestAirShotCumul for _Shooter = 100;
+			
+		if(LatestTouchingGround != 0 && Now > LatestTouchingGround + 1500) {
+
+			
+			declare Distance = MathLib::Distance(_Shooter.Position, _Victim.Position);
+			Distance = MathLib::NearestInteger(Distance*10.0)/10.0;
+			Insert("LongestAirShot", LongestAirShotCumul, _Shooter.Name, Distance);
+			LongestAirShotCumul += 1;
+			if(LongestAirShotCumul > 999) LongestAirShotCumul = 100;
+			SendNotice(_Shooter, TextLib::Compose("AirShot from $<%1$>m", TextLib::ToText(Distance)),True);
+			if(Distance > LongestAirShot) {
+				LongestAirShot = Distance;
+			}
+			if(LongestAirShot > G_BestTop["LongestAirShot"]) {
+				G_BestTop["LongestAirShot"] = 1.*LongestAirShot;
+			}
+		}
+	}
+	if(G_UseTop.exists("AirStrike")) {
+		declare Integer AirStrikeLastTouchingGround for _Shooter;
+		declare Integer AirStrike for _Shooter;
+		declare Integer AirStrike_NextLevel for _Shooter;
+		
+		if(AirStrikeLastTouchingGround != 0 && Now > AirStrikeLastTouchingGround + 1000) {
+			AirStrike += 1;
+			Insert("AirStrike", 100, _Shooter.Name, AirStrike);
+			SendNotice(_Shooter, TextLib::Compose("AirStrike!", _Victim.Name), True);
+			if(AirStrike > G_BestTop["AirStrike"]) {
+				G_BestTop["AirStrike"] = 1.*AirStrike;
+			}
+		}
+	}
+	if(G_UseTop.exists("PrecisionRail")) {
+		if(_WeaponNum == 1) {
+			declare Real PrecRail_NbHit for _Shooter;
+			declare Real PrecRail_NbShoot for _Shooter;
+			PrecRail_NbHit += 1.0;
+			if(PrecRail_NbShoot == 0) PrecRail_NbShoot = 1.0;
+			if(PrecRail_NbShoot > 2)
+				Insert("PrecisionRail", 100, _Shooter.Name, 100*PrecRail_NbHit/PrecRail_NbShoot);
+		}
+	}
+	if(G_UseTop.exists("PrecisionRocket")) {
+		if(_WeaponNum == 2) {
+			declare Real PrecRocket_NbHit for _Shooter;
+			declare Real PrecRocket_NbShoot for _Shooter;
+			PrecRocket_NbHit += 1.0;
+			if(PrecRocket_NbShoot == 0) PrecRocket_NbShoot = 1.0;
+			if(PrecRocket_NbShoot > 2)
+				Insert("PrecisionRocket", 100, _Shooter.Name, 100*PrecRocket_NbHit/PrecRocket_NbShoot);
+		}
+	}
+	if(G_UseTop.exists("PrecisionNucleus")) {
+		if(_WeaponNum == 3) {
+			declare Real PrecNucleus_NbHit for _Shooter;
+			declare Real PrecNucleus_NbShoot for _Shooter;
+			PrecNucleus_NbHit += 1.0;
+			if(PrecNucleus_NbShoot == 0) PrecNucleus_NbShoot = 1.0;
+			if(PrecNucleus_NbShoot > 2)
+				Insert("PrecisionNucleus", 100, _Shooter.Name, 100*PrecNucleus_NbHit/PrecNucleus_NbShoot);
+		}
+	}
+	if(G_UseTop.exists("LessHited")) {
+		declare Integer LessHited for _Victim;
+		LessHited += 1;
+		Insert("LessHited", 100, _Victim.Name, LessHited);
+	}
+}
+
+Void OnShoot(CSmPlayer _Shooter, Integer _WeaponNum) {
+	if(G_UseTop.exists("PrecisionRail")) {
+		if(_WeaponNum == 1) {
+			declare Real PrecRail_NbHit for _Shooter;
+			declare Real PrecRail_NbShoot for _Shooter;
+			PrecRail_NbShoot += 1.0;
+			if(PrecRail_NbShoot > 2)
+				Insert("PrecisionRail", 100, _Shooter.Name, 100*PrecRail_NbHit/PrecRail_NbShoot);
+		}
+	}
+	if(G_UseTop.exists("PrecisionRocket")) {
+		if(_WeaponNum == 2) {
+			declare Real PrecRocket_NbHit for _Shooter;
+			declare Real PrecRocket_NbShoot for _Shooter;
+			PrecRocket_NbShoot += 1.0;
+			if(PrecRocket_NbShoot > 2)
+				Insert("PrecisionRocket", 100, _Shooter.Name, 100*PrecRocket_NbHit/PrecRocket_NbShoot);
+		}
+	}
+	if(G_UseTop.exists("PrecisionNucleus")) {
+		if(_WeaponNum == 2) {
+			declare Real PrecNucleus_NbHit for _Shooter;
+			declare Real PrecNucleus_NbShoot for _Shooter;
+			PrecNucleus_NbShoot += 1.0;
+			if(PrecNucleus_NbShoot > 2)
+				Insert("PrecisionNucleus", 100, _Shooter.Name, 100*PrecNucleus_NbHit/PrecNucleus_NbShoot);
+		}
+	}
+}
+
+Void OnArmorEmpty(CSmPlayer _Shooter, CSmPlayer _Victim) {
+	if (_Victim == Null) return;
+	
+	if(G_UseTop.exists("HitUntouched")) {
+		declare Integer HitUntouchedSerie for _Victim;
+		declare Integer HitUntouched_NextLevel for _Victim;
+		declare Integer HitUntouchedCumul for _Victim = 100;
+
+		HitUntouched_NextLevel = 0;
+		HitUntouchedCumul += 1;
+		HitUntouchedSerie = 0;
+	}
+	if(G_UseTop.exists("ComboHit")) {
+		declare Integer CurrentCombo for _Victim;
+		declare Integer ComboHitCumul for _Victim = 100;
+		
+		ComboHitCumul += 1;
+		CurrentCombo = 0;
+	}
+	if(G_UseTop.exists("LongestTime")) {
+		declare Integer LastTouch for _Victim;
+		LastTouch = Now;
+	}
+	if(G_UseTop.exists("LongestTime")) {
+		declare Integer LastTouch for _Victim;
+		declare LongTimeCumul for _Victim = 100;
+	
+		LongTimeCumul += 1;
+		LastTouch = Now;
+	}
+}
+
+Void OnPlayerRequestRespawn(CSmPlayer _Player) {
+	if (_Player == Null) return;
+	
+	if(G_UseTop.exists("HitUntouched")) {
+		declare Integer HitUntouchedSerie for _Player;
+		declare Integer HitUntouchedCumul for _Player = 100;
+			
+		HitUntouchedCumul += 1;
+		HitUntouchedSerie = 0;
+	}
+	if(G_UseTop.exists("ComboHit")) {
+		declare Integer CurrentCombo for _Player;
+		declare Integer ComboHitCumul for _Player = 100;
+		
+		ComboHitCumul += 1;
+		CurrentCombo = 0;
+	}
+	if(G_UseTop.exists("LongestTime")) {
+		declare Integer LastTouch for _Player;
+		declare LongTimeCumul for _Player = 100;
+	
+		LongTimeCumul += 1;
+		LastTouch = Now;
+	}
+}
+
+Void OnEvent(CSmModeEvent Event) {
+	if (Event.Type == CSmModeEvent::EType::OnArmorEmpty) {
+		OnArmorEmpty(Event.Shooter, Event.Victim);
+	} else if (Event.Type == CSmModeEvent::EType::OnHit) {
+		OnHit(Event.Shooter, Event.Victim, Event.WeaponNum, Event.Damage);
+	} else if (Event.Type == CSmModeEvent::EType::OnPlayerRequestRespawn) {				
+		OnPlayerRequestRespawn(Event.Player);
+	} else if (Event.Type == CSmModeEvent::EType::OnShoot) {				
+		OnShoot(Event.Shooter, Event.WeaponNum);
+	}
+}
+
+Void SortTop(Text _Top) {
+	if(!G_UseTop.exists(_Top) || G_TopIsSorted[_Top]) return;
+	
+	declare Real[Text] Top5Sort;
+	declare Text[Text] Top5;
+	
+	if(G_Top5.existskey(_Top)) Top5 = G_Top5[_Top];
+	
+	foreach(PlayerName => Score in Top5) {
+		if(_Top == "LessHited")	Top5Sort[PlayerName] = TextLib::ToReal(Score);
+		else Top5Sort[PlayerName] = -TextLib::ToReal(Score);
+	}
+
+	Top5Sort = Top5Sort.sort();
+	G_Top5[_Top].clear();
+	foreach(PlayerName => Score in Top5Sort) {
+		if(_Top == "LessHited")	G_Top5[_Top][PlayerName] = TextLib::ToText(MathLib::NearestInteger(Score));
+		else G_Top5[_Top][PlayerName] = TextLib::ToText(-MathLib::NearestInteger(Score));
+	}
+	G_TopIsSorted[_Top] = True;
+}
+
+Void CleanTop(Text _Top) {
+	if(!G_Top5.existskey(_Top) || G_TopIsCleaned[_Top] || G_Top5[_Top].count <= 5) return;
+	SortTop(_Top);
+	declare Text[] KeepBestScore;
+	declare i = 1;
+	foreach(PlayerName => Score in G_Top5[_Top]) {
+		declare Name = TextLib::SubString(PlayerName, 3, TextLib::Length(PlayerName)-3);
+		if(!KeepBestScore.exists(Name)) KeepBestScore.add(Name);
+		else if(i > 5) G_Top5[_Top].removekey(PlayerName);
+		i += 1;
+	}
+	G_TopIsCleaned[_Top] = True;
+}
+
+Text Layer(Integer _Position, Text Top) { // DEBUG
+	declare Text Frame;
+	declare Positions = [1=>"-100 43", 2=>"100 43", 3=>"-100 10", 4=>"100 10", 5=>"-100 -23", 
+						6=>"100 -23", 7=>"134 43", 8=>"-134 43", 9=>"134 10", 10=>"-134 10",
+						11=>"134 -23", 12=>"-134 -23", 13=>"-100 76", 14=>"100 76", 15=>"134 76",
+						16=>"-134 76", 17=>"66 77",18=>"-66 77"];
+	declare Text[Text] Top5;
+	declare Text Title = Get_Title(Top);
+	if(G_Top5.existskey(Top)) Top5 = G_Top5[Top]; else return "";
+	
+	SortTop(Top);
+    CleanTop(Top);
+
+	Frame ^= """<frame posn="{{{ Positions[_Position] }}} 2" id="{{{ Title }}}" >
+			<quad posn="0 -2 3" sizen="34 32" halign="center" style="Bgs1InRace" substyle="BgList" />
+			<label posn="0 -3 5" halign="center" text="{{{ Title }}}" sizen="32 0" />""";
+			
+	declare j = 1;
+		
+	foreach(PlayerName => Score in G_Top5[Top]) {
+		if(j > 5) break;
+		Frame ^= """<label posn="-16 {{{ -5*j-4 }}} 5" halign="left" text="{{{ j }}}." sizen="4 0" />
+				<label posn="-12 {{{ -5*j-4 }}} 5" halign="left" 
+					text="{{{ TextLib::MLEncode(TextLib::SubString(PlayerName, 3, TextLib::Length(PlayerName)-3)) }}}" sizen="20 0" />
+				<label posn="16 {{{ -5*j-4 }}} 5" halign="right" text="{{{ Get_Score(Score, Top) }}}" sizen="7 0" />""";
+		j += 1;
+	}
+	Frame ^= "</frame>";
+	return Frame;
+}
+
+Text UpdateLayer() { // DEBUG
+	declare i = 1;
+	declare Text Frame;
+	foreach(Top in C_ExistingTop) {
+		if(G_UseTop.exists(Top)) {
+			Frame ^= Layer(i, Top); 
+			i += 1;
+		}
+	}
+	return Frame;
+}
+
+Integer NbTop() {
+	return G_UseTop.count;
+}
+
+Text[Text] Get_PlayerByRank(Integer _Rank, Text _Top) {
+	declare PlayerTab = ["Name"=>"", "Score"=>""];
+	if(!G_UseTop.exists(_Top) || !G_Top5.existskey(_Top)) return PlayerTab;
+	SortTop(_Top);
+	declare i = 1;
+	if(G_Top5.count < _Rank) return PlayerTab;
+	foreach(PlayerName => Score in G_Top5[_Top]) {
+		if(i == _Rank) return ["Name"=>TextLib::SubString(PlayerName, 3, TextLib::Length(PlayerName)-3), "Score"=>Score];
+		else i += 1;
+	}
+	return PlayerTab;
+}
+
+Text[] Get_InfoByPlayer(Text _PlayerName, Text _Top) {
+	declare Info = ["-",_PlayerName,"-"];
+	if(!G_UseTop.exists(_Top) || !G_Top5.existskey(_Top)) return Info;
+	SortTop(_Top);
+	declare i = 1;
+	foreach(PlayerName => Score in G_Top5[_Top]) {
+		if(TextLib::SubString(PlayerName, 3, TextLib::Length(PlayerName)-3) == _PlayerName) 
+			return [TextLib::ToText(i), _PlayerName, Score];
+		else i += 1;
+	}
+	return Info;
+}
+
+Text Get_LayerPlayerInfo(Integer PosX, Integer PosY) {
+	declare Text Frame;
+	Frame ^= """
+		<frame posn="{{{ PosX }}} {{{ PosY }}}">
+		<quad posn="0 -2 2" sizen="34 6.6" halign="center" style="Bgs1InRace" substyle="BgWindow3" />
+		<label posn="-16 -3 5" halign="left" id="Rank" sizen="4 0" />
+		<label posn="-12 -3 5" halign="left" id="Name" sizen="20 0" />
+		<label posn="16 -3 5" halign="right" id="Score" sizen="7 0" />
+	</frame>
+<script><!--
+	main() {
+		declare Label_Rank <=> (Page.GetFirstChild("Rank") as CMlLabel);
+		declare Label_Name <=> (Page.GetFirstChild("Name") as CMlLabel);
+		declare Label_Score <=> (Page.GetFirstChild("Score") as CMlLabel);
+		
+		declare netread Net_Rank for UI = "";
+		declare netread Net_Score for UI = "";
+		declare LastUpdate = 0;
+		while(True) {
+			yield;
+			if (LastUpdate + 500 > Now) continue;
+			if(InputPlayer == Null) continue;
+			LastUpdate = Now;
+			
+			Label_Rank.SetText(Net_Rank);
+			Label_Name.SetText(InputPlayer.Name);
+			Label_Score.SetText(Net_Score);
+		}
+	}
+--></script>""";
+	return Frame;
+}
+
+Text Get_Layer(Text Top, Integer PosX, Integer PosY) {
+	declare Text Frame;
+	declare Text[Text] Top5;
+	declare Text Title = Get_Title(Top);
+	
+	if(G_Top5.existskey(Top)) Top5 = G_Top5[Top]; else return "";
+
+	SortTop(Top);
+    CleanTop(Top);
+
+	Frame ^= """<frame posn="{{{ PosX }}} {{{ PosY }}} 2" id="{{{ Title }}}" >
+			<quad posn="0 0 4" sizen="38 10" halign="center" style="Bgs1InRace" substyle="BgTitle2" />
+			<quad posn="0 -2 3" sizen="34 32" halign="center" style="Bgs1InRace" substyle="BgWindow3" />
+			<label posn="0 -3 5" halign="center" textprefix="$222" text="{{{ Title }}}" sizen="32 0" />""";
+			
+	declare j = 1;
+		
+	foreach(PlayerName => Score in G_Top5[Top]) {
+		if(j > 5) break;
+		Frame ^= """<label posn="-16 {{{ -5*j-4 }}} 5" halign="left" text="{{{ j }}}." sizen="4 0" />
+				<label posn="-12 {{{ -5*j-4 }}} 5" halign="left" 
+					text="{{{ TextLib::MLEncode(TextLib::SubString(PlayerName, 3, TextLib::Length(PlayerName)-3)) }}}" sizen="20 0" />
+				<label posn="16 {{{ -5*j-4 }}} 5" halign="right" text="{{{ Get_Score(Score, Top) }}}" sizen="7 0" />""";
+		j += 1;
+	}
+	Frame ^= "</frame>";
+
+	//Frame ^= Get_LayerPlayerInfo(PosX, PosY-32);
+
+	return Frame;
+}
+
+Text Get_AllTop1Layer(Integer PosX, Integer PosY) {
+	declare Text Frame;
+	foreach(Top in G_UseTop) {
+		if(G_Top5[Top].count > 0 && !G_TopNonNull.exists(Top)) {
+			G_TopNonNull.add(Top);
+		}
+	}
+	if(G_TopNonNull.count == 0) return "";
+	
+	Frame ^= """<frame posn="{{{ PosX }}} {{{ PosY }}} 2" >
+			<quad posn="-1 1 3" sizen="75 {{{ G_TopNonNull.count*5+1 }}}" halign="left" style="Bgs1InRace" substyle="BgList" />""";
+	declare j = 0;
+	foreach(TopName in C_ExistingTop) {
+		if(!G_UseTop.exists(TopName) || G_Top5[TopName].count == 0) continue;
+		SortTop(TopName);
+		declare InfoPlayer = Get_PlayerByRank(1, TopName);
+		declare Title = Get_LoLTitle(TopName);
+		Frame ^= """<label posn="0 {{{ -5*j }}} 5" sizen="38 0" halign="left" text="{{{ Title }}}" />
+					<label posn="40 {{{ -5*j }}} 5" sizen="32 0" halign="left" text="{{{ InfoPlayer["Name"] }}}" />""";
+					//<label posn="61 {{{ -5*j }}} 5" halign="left" text="{{{ Get_Score(InfoPlayer["Score"], TopName) }}}" sizen="20 0" />""";
+		j += 1;
+	}
+	Frame ^= "</frame>";
+	return Frame;
+}
+
+Void OnLoop(Text _Top) {
+	OnLoop();
+	foreach(Player in Players) {
+		declare UI <=> UIManager.GetUI(Player);
+		if (UI == Null) continue;
+		declare netwrite Net_Rank for UI = "";
+		declare netwrite Net_Score for UI = "";
+		declare Info = Get_InfoByPlayer(Player.Name, _Top);
+		Net_Rank = Info[0]^".";
+		Net_Score = Get_Score(Info[2], _Top);
+	}
+}
+
+Text Get_TopByTime(Integer TimeIntervall, Integer PosX, Integer PosY) {
+	foreach(Top in G_UseTop) {
+		if(G_Top5[Top].count > 0 && !G_TopNonNull.exists(Top)) {
+			G_TopNonNull.add(Top);
+		}
+	}
+	if(G_TopNonNull.count == 0) return "";
+	declare Integer Num = Now / TimeIntervall;
+	if(Num > G_OldNum) {
+		G_OldNum = Num ;
+		G_IndexByTime = G_OldNum % G_TopNonNull.count;
+		SortTop("HitUntouched");
+	}
+	declare i = 0;
+	foreach(Top in G_TopNonNull) {
+		if(i == G_IndexByTime) {
+			return Get_Layer(Top, PosX, PosY);
+		}
+		i += 1;
+	}
+	return "";
+}
+
+Text Get_NextTop(Integer PosX, Integer PosY) {
+	foreach(Top in G_UseTop) {
+		if(G_Top5[Top].count > 0 && !G_TopNonNull.exists(Top)) {
+			G_TopNonNull.add(Top);
+		}
+	}
+	G_GetNextTopIndex += 1;
+	if(G_TopNonNull.count == 0) return "";
+	declare Integer Num = G_GetNextTopIndex % G_TopNonNull.count;
+	foreach(Top in G_TopNonNull) {
+		if(Num == 0) {
+			//return Get_Layer(Top, PosX, PosY);
+		}
+		Num -= 1;
+	}
+	return "";
+}
+
+Void RememberTop(Text _Top) {
+	if(!G_UseTop.exists(_Top)) return;
+	G_HoldTop[_Top] = G_Top5[_Top];
+}
+
+Void MergeTop(Text _Top) {
+	if(!G_UseTop.exists(_Top) || !G_HoldTop.existskey(_Top)) return;
+	foreach(Player => Score in G_HoldTop[_Top]) {
+		G_Top5[_Top][Player] = Score;
+	}
+	G_HoldTop[_Top].clear();
+}

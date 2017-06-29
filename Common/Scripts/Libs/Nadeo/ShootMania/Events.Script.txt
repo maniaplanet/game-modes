@@ -1,0 +1,880 @@
+/**
+ *	Events library
+ */
+#Const	Version			"2017-04-10"
+#Const	ScriptName	"Libs/Nadeo/ShootMania/Events.Script.txt"
+
+// ---------------------------------- //
+// Libraries
+// ---------------------------------- //
+#Include "MathLib" as ML
+#Include "Libs/Nadeo/XmlRpc2.Script.txt" as XmlRpc
+#Include "Libs/Nadeo/ShootMania/Objects.Script.txt" as Objects
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+// Callbacks
+#Const C_Callback_Event_Default											"Shootmania.Event.Default"
+#Const C_Callback_Event_OnShoot											"Shootmania.Event.OnShoot"
+#Const C_Callback_Event_OnHit												"Shootmania.Event.OnHit"
+#Const C_Callback_Event_OnNearMiss										"Shootmania.Event.OnNearMiss"
+#Const C_Callback_Event_OnArmorEmpty									"Shootmania.Event.OnArmorEmpty"
+#Const C_Callback_Event_OnCapture										"Shootmania.Event.OnCapture"
+#Const C_Callback_Event_OnShotDeny										"Shootmania.Event.OnShotDeny"
+#Const C_Callback_Event_OnFallDamage									"Shootmania.Event.OnFallDamage"
+#Const C_Callback_Event_OnCommand										"Shootmania.Event.OnCommand"
+#Const C_Callback_Event_OnPlayerAdded								"Shootmania.Event.OnPlayerAdded"
+#Const C_Callback_Event_OnPlayerRemoved							"Shootmania.Event.OnPlayerRemoved"
+#Const C_Callback_Event_OnPlayerRequestRespawn				"Shootmania.Event.OnPlayerRequestRespawn"
+#Const C_Callback_Event_OnActionCustomEvent					"Shootmania.Event.OnActionCustomEvent"
+#Const C_Callback_Event_OnActionEvent								"Shootmania.Event.OnActionEvent"
+#Const C_Callback_Event_OnPlayerTouchesObject				"Shootmania.Event.OnPlayerTouchesObject"
+#Const C_Callback_Event_OnPlayerTriggersSector				"Shootmania.Event.OnPlayerTriggersSector"
+#Const C_Callback_Event_OnPlayerThrowsObject					"Shootmania.Event.OnPlayerThrowsObject"
+#Const C_Callback_Event_OnPlayerRequestActionChange	"Shootmania.Event.OnPlayerRequestActionChange"
+
+// ---------------------------------- //
+// Globales
+// ---------------------------------- //
+declare Ident[] G_PassedOnEvents; ///< Array of passed on events
+declare Ident[] G_DiscardedEvents; ///< Array of discarded events
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+// ---------------------------------- //
+// Private
+// ---------------------------------- //
+// ---------------------------------- //
+/** Get the login of a player if it exists
+ *	or an empty Text otherwise
+ *
+ *	@param	_Player										The player to check
+ *
+ *	@return														The player's login if it exists, an empty Text otherwise
+ */
+Text Private_GetLogin(CSmPlayer _Player) {
+	if (_Player == Null) return "";
+	return _Player.User.Login;
+}
+
+// ---------------------------------- //
+/** Get a player position in JSON format
+ *
+ *	@param	_Player										The player to check
+ *
+ *	@return														The player's position
+ */
+Text Private_GetPosition(CSmPlayer _Player) {
+	declare Vec3 Position;
+	if (_Player != Null) Position = _Player.Position;
+	return XmlRpc::JsonGetVec3(Position);
+}
+
+// ---------------------------------- //
+/** Get a landmark in JSON format
+ *
+ *	@param	_Landmark									The landmark to check
+ *
+ *	@return														The landmark JSON
+ */
+Text Private_GetLandmark(CSmMapLandmark _Landmark) {
+	if (_Landmark == Null) return "{}";
+	
+	return """{
+		"tag": {{{XmlRpc::JsonGetText(_Landmark.Tag)}}},
+		"order": {{{dump(_Landmark.Order)}}},
+		"id": {{{dump(_Landmark.Id^"")}}},
+		"position": {{{XmlRpc::JsonGetVec3(_Landmark.Position)}}}
+	}""";
+}
+
+// ---------------------------------- //
+/** Get the logins of the players that 
+ *	captured a landmark in JSON format
+ *
+ *	@param	_Landmark									The landmark to check
+ *
+ *	@return														The capturers JSON
+ */
+Text Private_GetLandmarkCapturers(CSmMapLandmark _Landmark) {
+	if (_Landmark == Null || _Landmark.Sector == Null) return "[]";
+	
+	declare Capturers = Text[];
+	foreach (PlayerId in _Landmark.Sector.PlayersIds) {
+		if (AllPlayers.existskey(PlayerId)) Capturers.add(AllPlayers[PlayerId].User.Login);
+	}
+	
+	return dump(Capturers);
+}
+
+// ---------------------------------- //
+/** Send events callbacks
+ *
+ *	@param	_Event										The event to send
+ */
+Void Private_XmlRpc_Event_Default(CSmModeEvent _Event) {
+	if (_Event == Null) return;
+	
+	declare JSON = """{
+	"time": {{{dump(Now)}}},
+	"type": "{{{dump(_Event.Type)}}}"
+}""";
+	XmlRpc::SendCallback(C_Callback_Event_Default, [JSON]);
+}
+Void Private_XmlRpc_Event_OnShoot(CSmModeEvent _Event) {
+	if (_Event == Null) return;
+	
+	declare JSON = """{
+	"time": {{{dump(Now)}}},
+	"shooter": {{{XmlRpc::JsonGetText(Private_GetLogin(_Event.Shooter))}}},
+	"weapon": {{{dump(_Event.WeaponNum)}}}
+}""";
+	XmlRpc::SendCallback(C_Callback_Event_OnShoot, [JSON]);
+}
+Void Private_XmlRpc_Event_OnHit(CSmModeEvent _Event) {
+	if (_Event == Null) return;
+	
+	declare Distance = 0.;
+	if (_Event.Shooter != Null && _Event.Victim != Null) {
+		Distance = ML::Distance(_Event.Shooter.Position, _Event.Victim.Position);
+	}
+	
+	declare JSON = """{
+	"time": {{{dump(Now)}}},
+	"shooter": {{{XmlRpc::JsonGetText(Private_GetLogin(_Event.Shooter))}}},
+	"victim": {{{XmlRpc::JsonGetText(Private_GetLogin(_Event.Victim))}}},
+	"weapon": {{{dump(_Event.WeaponNum)}}},
+	"damage": {{{dump(_Event.Damage)}}},
+	"points": {{{dump(_Event.ShooterPoints)}}},
+	"distance": {{{XmlRpc::JsonGetReal(Distance)}}},
+	"shooterposition": {{{Private_GetPosition(_Event.Shooter)}}},
+	"victimposition": {{{Private_GetPosition(_Event.Victim)}}}
+}""";
+	XmlRpc::SendCallback(C_Callback_Event_OnHit, [JSON]);
+}
+Void Private_XmlRpc_Event_OnNearMiss(CSmModeEvent _Event) {
+	if (_Event == Null) return;
+	
+	declare JSON = """{
+	"time": {{{dump(Now)}}},
+	"shooter": {{{XmlRpc::JsonGetText(Private_GetLogin(_Event.Shooter))}}},
+	"victim": {{{XmlRpc::JsonGetText(Private_GetLogin(_Event.Victim))}}},
+	"weapon": {{{dump(_Event.WeaponNum)}}},
+	"distance": {{{dump(XmlRpc::JsonGetReal(_Event.MissDist))}}},
+	"shooterposition": {{{Private_GetPosition(_Event.Shooter)}}},
+	"victimposition": {{{Private_GetPosition(_Event.Victim)}}}
+}""";
+	XmlRpc::SendCallback(C_Callback_Event_OnNearMiss, [JSON]);
+}
+Void Private_XmlRpc_Event_OnArmorEmpty(CSmModeEvent _Event) {
+	if (_Event == Null) return;
+	
+	declare Distance = 0.;
+	if (_Event.Shooter != Null && _Event.Victim != Null) {
+		Distance = ML::Distance(_Event.Shooter.Position, _Event.Victim.Position);
+	}
+	
+	declare JSON = """{
+	"time": {{{dump(Now)}}},
+	"shooter": {{{XmlRpc::JsonGetText(Private_GetLogin(_Event.Shooter))}}},
+	"victim": {{{XmlRpc::JsonGetText(Private_GetLogin(_Event.Victim))}}},
+	"weapon": {{{dump(_Event.WeaponNum)}}},
+	"distance": {{{XmlRpc::JsonGetReal(Distance)}}},
+	"shooterposition": {{{Private_GetPosition(_Event.Shooter)}}},
+	"victimposition": {{{Private_GetPosition(_Event.Victim)}}}
+}""";
+	XmlRpc::SendCallback(C_Callback_Event_OnArmorEmpty, [JSON]);
+}
+Void Private_XmlRpc_Event_OnCapture(CSmModeEvent _Event) {
+	if (_Event == Null) return;
+	
+	declare JSON = """{
+	"time": {{{dump(Now)}}},
+	"players": {{{Private_GetLandmarkCapturers(_Event.Landmark)}}},
+	"landmark": {{{Private_GetLandmark(_Event.Landmark)}}}
+}""";
+	XmlRpc::SendCallback(C_Callback_Event_OnCapture, [JSON]);
+}
+Void Private_XmlRpc_Event_OnShotDeny(CSmModeEvent _Event) {
+	if (_Event == Null) return;
+	
+	declare JSON = """{
+	"time": {{{dump(Now)}}},
+	"shooter": {{{XmlRpc::JsonGetText(Private_GetLogin(_Event.Shooter))}}},
+	"victim": {{{XmlRpc::JsonGetText(Private_GetLogin(_Event.Victim))}}},
+	"shooterweapon": {{{dump(_Event.ShooterWeaponNum)}}},
+	"victimweapon": {{{dump(_Event.VictimWeaponNum)}}}
+}""";
+	XmlRpc::SendCallback(C_Callback_Event_OnShotDeny, [JSON]);
+}
+Void Private_XmlRpc_Event_OnFallDamage(CSmModeEvent _Event) {
+	if (_Event == Null) return;
+	
+	declare JSON = """{
+	"time": {{{dump(Now)}}},
+	"victim": {{{XmlRpc::JsonGetText(Private_GetLogin(_Event.Player))}}}
+}""";
+	XmlRpc::SendCallback(C_Callback_Event_OnFallDamage, [JSON]);
+}
+Void Private_XmlRpc_Event_OnCommand(CSmModeEvent _Event) {
+	if (_Event == Null) return;
+	
+	declare JSON = """{
+	"time": {{{dump(Now)}}},
+	"name": {{{dump(_Event.CommandName)}}},
+	"value": {
+		"boolean": {{{XmlRpc::JsonGetBoolean(_Event.CommandValueBoolean)}}},
+		"integer": {{{dump(_Event.CommandValueInteger)}}},
+		"real": {{{XmlRpc::JsonGetReal(_Event.CommandValueReal)}}},
+		"text": {{{XmlRpc::JsonGetText(_Event.CommandValueText)}}}
+	}
+}""";
+	XmlRpc::SendCallback(C_Callback_Event_OnCommand, [JSON]);
+}
+Void Private_XmlRpc_Event_OnPlayerAdded(CSmModeEvent _Event) {
+	if (_Event == Null) return;
+	
+	declare Name = "";
+	declare Zone = "";
+	declare Language = "";
+	declare LadderRank = 0;
+	declare LadderPoints = 0.;
+	if (_Event.Player != Null && _Event.Player.User != Null) {
+		Name = _Event.Player.User.Name;
+		Zone = _Event.Player.User.ZonePath;
+		Language = _Event.Player.User.Language;
+		LadderRank = _Event.Player.User.LadderRank;
+		LadderPoints = _Event.Player.User.LadderPoints;
+	}
+	
+	declare Team = 0;
+	if (_Event.Player != Null && _Event.Player.Score != Null) {
+		Team = _Event.Player.Score.TeamNum - 1;
+	}
+	
+	declare JSON = """{
+	"time": {{{dump(Now)}}},
+	"login": {{{XmlRpc::JsonGetText(Private_GetLogin(_Event.Player))}}},
+	"name": {{{XmlRpc::JsonGetText(Name)}}},
+	"team": {{{dump(Team)}}},
+	"zone": {{{XmlRpc::JsonGetText(Zone)}}},
+	"language": {{{dump(Language)}}},
+	"ladderrank": {{{dump(LadderRank)}}},
+	"ladderpoints": {{{XmlRpc::JsonGetReal(LadderPoints)}}}
+}""";
+	XmlRpc::SendCallback(C_Callback_Event_OnPlayerAdded, [JSON]);
+}
+Void Private_XmlRpc_Event_OnPlayerRemoved(CSmModeEvent _Event) {
+	if (_Event == Null) return;
+	
+	declare JSON = """{
+	"time": {{{dump(Now)}}},
+	"login": {{{XmlRpc::JsonGetText(_Event.User.Login)}}}
+}""";
+	XmlRpc::SendCallback(C_Callback_Event_OnPlayerRemoved, [JSON]);
+}
+Void Private_XmlRpc_Event_OnPlayerRequestRespawn(CSmModeEvent _Event) {
+	if (_Event == Null) return;
+	
+	declare JSON = """{
+	"time": {{{dump(Now)}}},
+	"login": {{{XmlRpc::JsonGetText(Private_GetLogin(_Event.Player))}}}
+}""";
+	XmlRpc::SendCallback(C_Callback_Event_OnPlayerRequestRespawn, [JSON]);
+}
+Void Private_XmlRpc_Event_OnActionCustomEvent(CSmModeEvent _Event) {
+	if (_Event == Null) return;
+	
+	declare Param2 = "";
+	foreach (Param in _Event.Param2) {
+		if (Param2 == "") Param2 ^= "["^XmlRpc::JsonGetText(Param);
+		else Param2 ^= ", "^XmlRpc::JsonGetText(Param);
+	}
+	if (Param2 == "") Param2 = "[]";
+	else Param2 ^= "]";
+	
+	declare JSON = """{
+	"time": {{{dump(Now)}}},
+	"shooter": {{{XmlRpc::JsonGetText(Private_GetLogin(_Event.Shooter))}}},
+	"victim": {{{XmlRpc::JsonGetText(Private_GetLogin(_Event.Victim))}}},
+	"actionid": {{{XmlRpc::JsonGetText(_Event.ActionId)}}},
+	"param1": {{{XmlRpc::JsonGetText(_Event.Param1)}}},
+	"param2": {{{Param2}}}
+}""";
+	XmlRpc::SendCallback(C_Callback_Event_OnActionCustomEvent, [JSON]);
+}
+Void Private_XmlRpc_Event_OnActionEvent(CSmModeEvent _Event) {
+	if (_Event == Null) return;
+	
+	declare JSON = """{
+	"time": {{{dump(Now)}}},
+	"login": {{{XmlRpc::JsonGetText(Private_GetLogin(_Event.Player))}}},
+	"actioninput": "{{{dump(_Event.ActionInput)}}}"
+}""";
+	XmlRpc::SendCallback(C_Callback_Event_OnActionEvent, [JSON]);
+}
+Void Private_XmlRpc_Event_OnPlayerTouchesObject(CSmModeEvent _Event) {
+	if (_Event == Null) return;
+	
+	declare ModelId = NullId;
+	declare ItemName = "";
+	declare ObjectId = NullId;
+	if (_Event.Object != Null) {
+		ModelId = _Event.Object.ModelId;
+		ItemName = Objects::GetObjectName(_Event.Object);
+		ObjectId = _Event.Object.Id;
+	}
+	
+	declare JSON = """{
+	"time": {{{dump(Now)}}},
+	"login": {{{XmlRpc::JsonGetText(Private_GetLogin(_Event.Player))}}},
+	"objectid": "{{{dump(ObjectId)}}}",
+	"modelid": "{{{dump(ModelId)}}}",
+	"modelname": {{{XmlRpc::JsonGetText(ItemName)}}}
+}""";
+	XmlRpc::SendCallback(C_Callback_Event_OnPlayerTouchesObject, [JSON]);
+}
+Void Private_XmlRpc_Event_OnPlayerTriggersSector(CSmModeEvent _Event) {
+	if (_Event == Null) return;
+	
+	declare SectorId = NullId;
+	if (_Event.Sector != Null) {
+		SectorId = _Event.Sector.Id;
+	}
+	
+	declare JSON = """{
+	"time": {{{dump(Now)}}},
+	"login": {{{XmlRpc::JsonGetText(Private_GetLogin(_Event.Player))}}},
+	"sectorid": "{{{dump(SectorId)}}}"
+}""";
+	XmlRpc::SendCallback(C_Callback_Event_OnPlayerTriggersSector, [JSON]);
+}
+Void Private_XmlRpc_Event_OnPlayerThrowsObject(CSmModeEvent _Event) {
+	if (_Event == Null) return;
+	
+	declare ModelId = NullId;
+	declare ItemName = "";
+	declare ObjectId = NullId;
+	if (_Event.Object != Null) {
+		ModelId = _Event.Object.ModelId;
+		ItemName = Objects::GetObjectName(_Event.Object);
+		ObjectId = _Event.Object.Id;
+	}
+	
+	declare JSON = """{
+	"time": {{{dump(Now)}}},
+	"login": {{{XmlRpc::JsonGetText(Private_GetLogin(_Event.Player))}}},
+	"objectid": "{{{dump(ObjectId)}}}",
+	"modelid": "{{{dump(ModelId)}}}",
+	"modelname": {{{XmlRpc::JsonGetText(ItemName)}}}
+}""";
+	XmlRpc::SendCallback(C_Callback_Event_OnPlayerThrowsObject, [JSON]);
+}
+Void Private_XmlRpc_Event_OnPlayerRequestActionChange(CSmModeEvent _Event) {
+	if (_Event == Null) return;
+	
+	declare JSON = """{
+	"time": {{{dump(Now)}}},
+	"login": {{{XmlRpc::JsonGetText(Private_GetLogin(_Event.Player))}}},
+	"actionchange": {{{dump(_Event.ActionChange)}}}
+}""";
+	XmlRpc::SendCallback(C_Callback_Event_OnPlayerRequestActionChange, [JSON]);
+}
+
+// ---------------------------------- //
+/** Pass on an event
+ *
+ *	@param	_Event										The event to pass on
+ */
+Void Private_PassOn(CSmModeEvent _Event) {
+	This.PassOn(_Event);
+	
+	if (_Event != Null) {
+		declare Removed = G_DiscardedEvents.remove(_Event.Id);
+		if (!G_PassedOnEvents.exists(_Event.Id)) G_PassedOnEvents.add(_Event.Id);
+		
+		switch (_Event.Type) {
+			case CSmModeEvent::EType::OnShoot									: Private_XmlRpc_Event_OnShoot(_Event);
+			case CSmModeEvent::EType::OnHit										: Private_XmlRpc_Event_OnHit(_Event);
+			case CSmModeEvent::EType::OnNearMiss							: Private_XmlRpc_Event_OnNearMiss(_Event);
+			case CSmModeEvent::EType::OnArmorEmpty						: Private_XmlRpc_Event_OnArmorEmpty(_Event);
+			case CSmModeEvent::EType::OnCapture								: Private_XmlRpc_Event_OnCapture(_Event);
+			case CSmModeEvent::EType::OnShotDeny							: Private_XmlRpc_Event_OnShotDeny(_Event);
+			case CSmModeEvent::EType::OnFallDamage						: Private_XmlRpc_Event_OnFallDamage(_Event);
+			case CSmModeEvent::EType::OnCommand								: Private_XmlRpc_Event_OnCommand(_Event);
+			case CSmModeEvent::EType::OnPlayerAdded						: Private_XmlRpc_Event_OnPlayerAdded(_Event);
+			case CSmModeEvent::EType::OnPlayerRemoved					: Private_XmlRpc_Event_OnPlayerRemoved(_Event);
+			case CSmModeEvent::EType::OnPlayerRequestRespawn	: Private_XmlRpc_Event_OnPlayerRequestRespawn(_Event);
+			case CSmModeEvent::EType::OnActionCustomEvent			: Private_XmlRpc_Event_OnActionCustomEvent(_Event);
+			case CSmModeEvent::EType::OnActionEvent						: Private_XmlRpc_Event_OnActionEvent(_Event);
+			case CSmModeEvent::EType::OnPlayerTouchesObject		: Private_XmlRpc_Event_OnPlayerTouchesObject(_Event);
+			case CSmModeEvent::EType::OnPlayerTriggersSector	: Private_XmlRpc_Event_OnPlayerTriggersSector(_Event);
+			case CSmModeEvent::EType::OnPlayerThrowsObject		: Private_XmlRpc_Event_OnPlayerThrowsObject(_Event);
+			case CSmModeEvent::EType::OnPlayerRequestActionChange: Private_XmlRpc_Event_OnPlayerRequestActionChange(_Event);
+			default: Private_XmlRpc_Event_Default(_Event);
+		}
+	}
+}
+
+// ---------------------------------- //
+/** Discard an event
+ *
+ *	@param	_Event										The event to discard
+ */
+Void Private_Discard(CSmModeEvent _Event) {
+	This.Discard(_Event);
+	
+	if (_Event != Null) {
+		declare Removed = G_PassedOnEvents.remove(_Event.Id);
+		if (!G_DiscardedEvents.exists(_Event.Id)) G_DiscardedEvents.add(_Event.Id);
+	}
+}
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+// ---------------------------------- //
+/**	Return the version number of the script
+ *
+ *	@return														The version number of the script
+ */
+Text GetScriptVersion() {
+	return Version;
+}
+
+// ---------------------------------- //
+/**	Return the name of the script
+ *
+ *	@return														The name of the script
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+// ---------------------------------- //
+/** Pass on an event
+ *
+ *	@param	_Event										The event to pass on
+ */
+Void Valid(CSmModeEvent _Event) {
+	if (_Event == Null) return;
+	
+	Private_PassOn(_Event);
+}
+
+// ---------------------------------- //
+/** Discard an event
+ *
+ *	@param	_Event										The event to discard
+ */
+Void Invalid(CSmModeEvent _Event) {
+	if (_Event == Null) return;
+	
+	Private_Discard(_Event);
+}
+
+// ---------------------------------- //
+/** Check if the PassOn() function was
+ *	called on the given event
+ *
+ *	@param	_Event										The event to check
+ *
+ *	@return														True if the event was passed on,
+ *																		False otherwise
+ */
+Boolean Validated(CSmModeEvent _Event) {
+	if (_Event == Null) return False;
+	return G_PassedOnEvents.exists(_Event.Id);
+}
+
+// ---------------------------------- //
+/** Check if the Discard() function was
+ *	called on the given event
+ *
+ *	@param	_Event										The event to check
+ *
+ *	@return														True if the event was discarded,
+ *																		False otherwise
+ */
+Boolean Invalidated(CSmModeEvent _Event) {
+	if (_Event == Null) return False;
+	return G_DiscardedEvents.exists(_Event.Id);
+}
+
+// ---------------------------------- //
+/** Check if an event was processed
+ *
+ *	@param	_Event										The event to check
+ *
+ *	@return														True if the event was already processed, False otherwise
+ */
+Boolean Processed(CSmModeEvent _Event) {
+	if (_Event == Null) return False;
+	return G_PassedOnEvents.exists(_Event.Id) || G_DiscardedEvents.exists(_Event.Id);
+}
+
+// ---------------------------------- //
+/// Function to call at each yield
+Void Yield() {
+	G_PassedOnEvents.clear();
+	G_DiscardedEvents.clear();
+}
+
+// ---------------------------------- //
+/// Unload the library
+Void Unload() {
+	G_PassedOnEvents.clear();
+	G_DiscardedEvents.clear();
+	
+	// Unregister callbacks
+	XmlRpc::UnregisterCallback(C_Callback_Event_Default);
+	XmlRpc::UnregisterCallback(C_Callback_Event_OnShoot);
+	XmlRpc::UnregisterCallback(C_Callback_Event_OnHit);
+	XmlRpc::UnregisterCallback(C_Callback_Event_OnNearMiss);
+	XmlRpc::UnregisterCallback(C_Callback_Event_OnArmorEmpty);
+	XmlRpc::UnregisterCallback(C_Callback_Event_OnCapture);
+	XmlRpc::UnregisterCallback(C_Callback_Event_OnShotDeny);
+	XmlRpc::UnregisterCallback(C_Callback_Event_OnFallDamage);
+	XmlRpc::UnregisterCallback(C_Callback_Event_OnCommand);
+	XmlRpc::UnregisterCallback(C_Callback_Event_OnPlayerAdded);
+	XmlRpc::UnregisterCallback(C_Callback_Event_OnPlayerRemoved);
+	XmlRpc::UnregisterCallback(C_Callback_Event_OnPlayerRequestRespawn);
+	XmlRpc::UnregisterCallback(C_Callback_Event_OnActionCustomEvent);
+	XmlRpc::UnregisterCallback(C_Callback_Event_OnActionEvent);
+	XmlRpc::UnregisterCallback(C_Callback_Event_OnPlayerTouchesObject);
+	XmlRpc::UnregisterCallback(C_Callback_Event_OnPlayerTriggersSector);
+	XmlRpc::UnregisterCallback(C_Callback_Event_OnPlayerThrowsObject);
+	XmlRpc::UnregisterCallback(C_Callback_Event_OnPlayerRequestActionChange);
+}
+
+// ---------------------------------- //
+/// Load the library
+Void Load() {
+	Unload();
+	
+	// Register callbacks
+	XmlRpc::RegisterCallback(C_Callback_Event_Default, """
+* Name: {{{C_Callback_Event_Default}}}
+* Type: CallbackArray
+* Description: Callback sent when the event type is not yet supported by the XmlRpc library.
+* Data:
+	- Version >=2.0.0:
+	```
+	[
+		"{
+			"time": 123456, //< Server time when the event occured,
+			"type": "::EType::EventType" //< The type of event
+		}"
+	]
+	```
+	""");
+	XmlRpc::RegisterCallback(C_Callback_Event_OnShoot, """
+* Name: {{{C_Callback_Event_OnShoot}}}
+* Type: CallbackArray
+* Description: Callback sent when a player shoots.
+* Data:
+	- Version >=2.0.0:
+	```
+	[
+		"{
+			"time": 123456 //< Server time when the event occured,
+			"shooter": "ShooterLogin", //< Login of the player who shot
+			"weapon": 2 //< Id of the weapon [1-Laser, 2-Rocket, 3-Nucleus, 5-Arrow]
+		}"
+	]
+	```
+	""");
+	XmlRpc::RegisterCallback(C_Callback_Event_OnHit, """
+* Name: {{{C_Callback_Event_OnHit}}}
+* Type: CallbackArray
+* Description: Callback sent when a player is hit.
+* Data:
+	- Version >=2.0.0:
+	```
+	[
+		"{
+			"time": 123456 //< Server time when the event occured,
+			"shooter": "ShooterLogin", //< Login of the player who shot
+			"victim": "VictimLogin", //< Login of the player who got hit
+			"weapon": 2, //< Id of the weapon [1-Laser, 2-Rocket, 3-Nucleus, 5-Arrow]
+			"damage": 100, //< Amount of damaged done by the hit
+			"points": 2, //< Amount of points scored by the shooter
+			"distance": 45.578, //< Distance between the victim and the shooter at the time of the hit
+			"shooterposition": { "x": 19.3, "y": 9.3", "z": 59.9 }, //< Position of the shooter when his projectile hits the victim
+			"victimposition": { "x": 87.6, "y": 10.0, "z": 84.5 } //< Position of the victim when he's hit by the projectile
+		}"
+	]
+	```
+	""");
+	XmlRpc::RegisterCallback(C_Callback_Event_OnNearMiss, """
+* Name: {{{C_Callback_Event_OnNearMiss}}}
+* Type: CallbackArray
+* Description: Callback sent when a player dodges a projectile.
+* Data:
+	- Version >=2.0.0:
+	```
+	[
+		"{
+			"time": 123456 //< Server time when the event occured,
+			"shooter": "ShooterLogin", //< Login of the player who shot
+			"victim": "VictimLogin", //< Login of the player who dodged
+			"weapon": 1, //< Id of the weapon [1-Laser, 2-Rocket, 3-Nucleus, 5-Arrow]
+			"distance": 0.587, //< Distance of the near miss
+			"shooterposition": { "x": 19.3, "y": 9.3", "z": 59.9 }, //< Position of the shooter when his projectile misses the victim
+			"victimposition": { "x": 87.6, "y": 10.0, "z": 84.5 } //< Position of the victim when he dodged the projectile
+		}"
+	]
+	```
+	""");
+	XmlRpc::RegisterCallback(C_Callback_Event_OnArmorEmpty, """
+* Name: {{{C_Callback_Event_OnArmorEmpty}}}
+* Type: CallbackArray
+* Description: Callback sent when a player is eliminated.
+* Data:
+	- Version >=2.0.0:
+	```
+	[
+		"{
+			"time": 123456 //< Server time when the event occured,
+			"shooter": "ShooterLogin", //< Login of the player who eliminated the victim
+			"victim": "VictimLogin", //< Login of the player who got eliminated
+			"weapon": 2, //< Id of the weapon [1-Laser, 2-Rocket, 3-Nucleus, 5-Arrow]
+			"distance": 65.948, //< Distance between the victim and the shooter at the time of the elimination
+			"shooterposition": { "x": 19.3, "y": 9.3", "z": 59.9 }, //< Position of the shooter when the victim is eliminated
+			"victimposition": { "x": 87.6, "y": 10.0, "z": 84.5 } //< Position of the victim when he's eliminated
+		}"
+	]
+	```
+	""");
+	XmlRpc::RegisterCallback(C_Callback_Event_OnCapture, """
+* Name: {{{C_Callback_Event_OnCapture}}}
+* Type: CallbackArray
+* Description: Callback sent when a landmark is captured.
+* Data:
+	- Version >=2.0.0:
+	```
+	[
+		"{
+			"time": 123456 //< Server time when the event occured,
+			"players": ["Player1", "Player2", "Player3"], //< Logins of the players who were on the landmark when it was captured
+			"landmark": { //< Info about the captured landmark
+				"tag": "LandmarkTag",
+				"order": 5,
+				"id": "#3",
+				"position": { "x": 87.6, "y": 10.0, "z": 84.5 }
+			}
+		}"
+	]
+	```
+	""");
+	XmlRpc::RegisterCallback(C_Callback_Event_OnShotDeny, """
+* Name: {{{C_Callback_Event_OnShotDeny}}}
+* Type: CallbackArray
+* Description: Callback sent when a player denies a projectile.
+* Data:
+	- Version >=2.0.0:
+	```
+	[
+		"{
+			"time": 123456 //< Server time when the event occured,
+			"shooter": "ShooterLogin", //< Login of the player who denied the projectile
+			"victim": "VictimLogin", //< Login of the player who got denied
+			"shooterweapon": 1, //< Id of the weapon [1-Laser, 2-Rocket, 3-Nucleus, 5-Arrow]
+			"victimweapon": 2 //< Id of the weapon [1-Laser, 2-Rocket, 3-Nucleus, 5-Arrow]
+		}"
+	]
+	```
+	""");
+	XmlRpc::RegisterCallback(C_Callback_Event_OnFallDamage, """
+* Name: {{{C_Callback_Event_OnFallDamage}}}
+* Type: CallbackArray
+* Description: Callback sent when a player suffers fall damage.
+* Data:
+	- Version >=2.0.0:
+	```
+	[
+		"{
+			"time": 123456 //< Server time when the event occured,
+			"victim": "VictimLogin", //< Login of the player who fell
+		}"
+	]
+	```
+	""");
+	XmlRpc::RegisterCallback(C_Callback_Event_OnCommand, """
+* Name: {{{C_Callback_Event_OnCommand}}}
+* Type: CallbackArray
+* Description: Callback sent when a command is executed on the server.
+* Data:
+	- Version >=2.0.0:
+	```
+	[
+		"{
+			"time": 123456 //< Server time when the event occured,
+			"name": "CommandName", //< Name of the command
+			"value": { //< The value passed by the command
+				"boolean": true,
+				"integer": 123,
+				"real": 123.456,
+				"text": "an example value"
+			}
+		}"
+	]
+	```
+	""");
+	XmlRpc::RegisterCallback(C_Callback_Event_OnPlayerAdded, """
+* Name: {{{C_Callback_Event_OnPlayerAdded}}}
+* Type: CallbackArray
+* Description: Callback sent when a player joins the server.
+* Data:
+	- Version >=2.0.0:
+	```
+	[
+		"{
+			"time": 123456 //< Server time when the event occured,
+			"login": "PlayerLogin",
+			"name": "Name of the player",
+			"team": 0,
+			"zone": "World|Europe|France|Outre-mer|Reunion",
+			"language": "en",
+			"ladderrank": 123456,
+			"ladderpoints": 789.321
+		}"
+	]
+	```
+	""");
+	XmlRpc::RegisterCallback(C_Callback_Event_OnPlayerRemoved, """
+* Name: {{{C_Callback_Event_OnPlayerRemoved}}}
+* Type: CallbackArray
+* Description: Callback sent when a player leaves the server.
+* Data:
+	- Version >=2.0.0:
+	```
+	[
+		"{
+			"time": 123456 //< Server time when the event occured,
+			"login": "PlayerLogin"
+		}"
+	]
+	```
+	""");
+	XmlRpc::RegisterCallback(C_Callback_Event_OnPlayerRequestRespawn, """
+* Name: {{{C_Callback_Event_OnPlayerRequestRespawn}}}
+* Type: CallbackArray
+* Description: Callback sent when a player presses the respawn button.
+* Data:
+	- Version >=2.0.0:
+	```
+	[
+		"{
+			"time": 123456 //< Server time when the event occured,
+			"login": "PlayerLogin"
+		}"
+	]
+	```
+	""");
+	XmlRpc::RegisterCallback(C_Callback_Event_OnActionCustomEvent, """
+* Name: {{{C_Callback_Event_OnActionCustomEvent}}}
+* Type: CallbackArray
+* Description: Callback sent when an action triggers a custom event.
+* Data:
+	- Version >=2.0.0:
+	```
+	[
+		"{
+			"time": 123456 //< Server time when the event occured,
+			"shooter": "ShooterLogin", //< Login of the player who shot if any
+			"victim": "VictimLogin", //< Login of the player who got hit if any
+			"actionid": "NameOfTheAction", //< Id of the action that triggered the event
+			"param1": "SomeParam", //< First custom param of the event
+			"param2":["Some", "Other", "Params"] //< Second custom param of the event
+		}"
+	]
+	```
+	""");
+	XmlRpc::RegisterCallback(C_Callback_Event_OnActionEvent, """
+* Name: {{{C_Callback_Event_OnActionEvent}}}
+* Type: CallbackArray
+* Description: Callback sent when a player triggers an action.
+* Data:
+	- Version >=2.0.0:
+	```
+	[
+		"{
+			"time": 123456 //< Server time when the event occured,
+			"login": "PlayerLogin", //< Login of the player who triggered the action
+			"actioninput": "" //< The input pressed to trigger the action
+		}"
+	]
+	```
+	""");
+	XmlRpc::RegisterCallback(C_Callback_Event_OnPlayerTouchesObject, """
+* Name: {{{C_Callback_Event_OnPlayerTouchesObject}}}
+* Type: CallbackArray
+* Description: Callback sent when a player touches an object.
+* Data:
+	- Version >=2.0.0:
+	```
+	[
+		"{
+			"time": 123456 //< Server time when the event occured,
+			"login": "PlayerLogin", //< Login of the player who touched the object
+			"objectid": "#456", //< The id of the object
+			"modelid": "#123", //< The id of the object model
+			"modelname": "ObjectName" //< The name of the object model
+		}"
+	]
+	```
+	""");
+	XmlRpc::RegisterCallback(C_Callback_Event_OnPlayerTriggersSector, """
+* Name: {{{C_Callback_Event_OnPlayerTriggersSector}}}
+* Type: CallbackArray
+* Description: Callback sent when a player triggers a sector.
+* Data:
+	- Version >=2.0.0:
+	```
+	[
+		"{
+			"time": 123456 //< Server time when the event occured,
+			"login": "PlayerLogin", //< Login of the player who triggered the sector
+			"sectorid": "#123" //< Id of the triggered sector
+		}"
+	]
+	```
+	""");
+	XmlRpc::RegisterCallback(C_Callback_Event_OnPlayerThrowsObject, """
+* Name: {{{C_Callback_Event_OnPlayerThrowsObject}}}
+* Type: CallbackArray
+* Description: Callback sent when a player throws an object.
+* Data:
+	- Version >=2.0.0:
+	```
+	[
+		"{
+			"time": 123456 //< Server time when the event occured,
+			"login": "PlayerLogin", //< Login of the player who threw the object
+			"objectid": "#456", //< The id of the object
+			"modelid": "#123", //< The id of the object model
+			"modelname": "ObjectName" //< The name of the object model
+		}"
+	]
+	```
+	""");
+	XmlRpc::RegisterCallback(C_Callback_Event_OnPlayerRequestActionChange, """
+* Name: {{{C_Callback_Event_OnPlayerRequestActionChange}}}
+* Type: CallbackArray
+* Description: Callback sent when a player requests to use another action.
+* Data:
+	- Version >=2.0.0:
+	```
+	[
+		"{
+			"time": 123456 //< Server time when the event occured,
+			"login": "PlayerLogin", //< Login of the player who requested a new action
+			"actionchange": 1 //< Can be -1 (request previous action) or 1 (request next action)
+		}"
+	]
+	```
+	""");
+}

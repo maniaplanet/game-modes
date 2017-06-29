@@ -1,0 +1,962 @@
+/**
+ *	XmlRpc lib common
+ */
+#Const	Version		"2015-02-23"
+#Const	ScriptName	"XmlRpc.Script.txt"
+
+#Include "TextLib" as TL
+
+// ---------------------------------- //
+// Globales
+// ---------------------------------- //
+declare Boolean G_IsInPause;
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+// ---------------------------------- //
+/** Return the version number of the script
+ *
+ *	@return		The version number of the script
+ */
+Text GetScriptVersion() {
+	return Version;
+}
+
+// ---------------------------------- //
+/** Return the name of the script
+ *
+ *	@return		The name of the script
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+// ---------------------------------- //
+/// Enable the library
+Void Enable() {
+	declare Boolean LibXmlRpc_UseLibXmlRpc for This;
+	LibXmlRpc_UseLibXmlRpc = True;
+}
+
+// ---------------------------------- //
+/// Disable the library
+Void Disable() {
+	declare Boolean LibXmlRpc_UseLibXmlRpc for This;
+	LibXmlRpc_UseLibXmlRpc = False;
+}
+
+// ---------------------------------- //
+/** Check if the library is enabled
+ *
+ *	@return		True if the library is enabled, False otherwise
+ */
+Boolean IsEnabled() {
+	declare Boolean LibXmlRpc_UseLibXmlRpc for This;
+	return LibXmlRpc_UseLibXmlRpc;
+}
+
+// ---------------------------------- //
+/** Wrapper for the SendCallbackArray() method
+ *
+ *	@param	_Name		The name of the callback
+ *	@param	_Data		The data to send
+ */
+Void SendCallbackArray(Text _Name, Text[] _Data) {
+	XmlRpc.SendCallbackArray(_Name, _Data);
+}
+
+// ---------------------------------- //
+/** Wrapper for the SendCallback() method
+ *
+ *	@param	_Name		The name of the callback
+ *	@param	_Data		The data to send
+ */
+Void SendCallback(Text _Name, Text _Data) {
+	XmlRpc.SendCallback(_Name, _Data);
+}
+
+// ---------------------------------- //
+/** Register a new callback
+ *
+ *	@param	_Name		Name of the callback
+ *	@param	_Doc		Documentation about the callback
+ */
+Void RegisterCallback(Text _Name, Text _Doc) {
+	declare Text[Text] LibXmlRpc_CallbacksRegistered for This;
+	LibXmlRpc_CallbacksRegistered[_Name] = _Doc;
+}
+
+// ---------------------------------- //
+/** Unregister a callback
+ *
+ *	@param	_Name		Name of the callback to unregister
+ */
+Void UnregisterCallback(Text _Name) {
+	declare Text[Text] LibXmlRpc_CallbacksRegistered for This;
+	declare Removed = LibXmlRpc_CallbacksRegistered.removekey(_Name);
+}
+
+// ---------------------------------- //
+/** Check if a callback is blocked
+ *
+ *	@param	_Name		The name of the callback to check
+ *
+ *	@return				True if the callback is blocked, False otherwise
+ */
+Boolean CallbackIsBlocked(Text _Name) {
+	declare Text[] LibXmlRpc_CallbacksBlocked for This;
+	return LibXmlRpc_CallbacksBlocked.exists(_Name);
+}
+
+// ---------------------------------- //
+/** Check if a callback can be sent
+ *
+ *	@param	_Name		The name of the callback to check
+ *
+ *	@return				True if the callback can be sent, False otherwise
+ */
+Boolean CallbackIsAllowed(Text _Name) {
+	if (!IsEnabled()) return False;
+	if (CallbackIsBlocked(_Name)) return False;
+	
+	return True;
+}
+
+// ---------------------------------- //
+/** Get a list of all registered callbacks
+ *
+ *	@param	_SendCallback	Send a callback with the help
+ *
+ *	@return					The list of callbacks
+ */
+Text[] ListCallbacks(Boolean _SendCallback) {
+	declare Text[Text] LibXmlRpc_CallbacksRegistered for This;
+	declare Text[] CallbackList;
+	
+	foreach (CallbackName => CallbackDoc in LibXmlRpc_CallbacksRegistered) {
+		CallbackList.add(CallbackName);
+	}
+	
+	if (_SendCallback && CallbackIsAllowed("LibXmlRpc_Callbacks")) SendCallbackArray("LibXmlRpc_Callbacks", CallbackList);
+	
+	return CallbackList;
+}
+
+// ---------------------------------- //
+/** Get help about a callback
+ *
+ *	@param	_Name			Name of the callback to check
+ *	@param	_SendCallback	Send a callback with the help
+ *
+ *	@return					The help text of the callback
+ */
+Text CallbackHelp(Text _Name, Boolean _SendCallback) {
+	declare Text[Text] LibXmlRpc_CallbacksRegistered for This;
+	declare HelpText = "";
+	
+	if (LibXmlRpc_CallbacksRegistered.existskey(_Name)) {
+		HelpText = LibXmlRpc_CallbacksRegistered[_Name];
+	}
+	
+	if (_SendCallback && CallbackIsAllowed("LibXmlRpc_CallbackHelp")) SendCallbackArray("LibXmlRpc_CallbackHelp", [_Name, HelpText]);
+	
+	return HelpText;
+}
+
+// ---------------------------------- //
+/** Block a callback
+ *
+ *	@param	_Name		Name of the callback to block
+ */
+Void BlockCallback(Text _Name) {
+	declare Text[] LibXmlRpc_CallbacksBlocked for This;
+	if (LibXmlRpc_CallbacksBlocked.exists(_Name)) return;
+	
+	LibXmlRpc_CallbacksBlocked.add(_Name);
+}
+
+// ---------------------------------- //
+/// Block all callbacks
+Void BlockAllCallbacks() {
+	declare Text[Text] LibXmlRpc_CallbacksRegistered for This;
+	foreach (CallbackName => CallbackDoc in LibXmlRpc_CallbacksRegistered) {
+		BlockCallback(CallbackName);
+	}
+}
+
+// ---------------------------------- //
+/** Unblock a callback
+ *
+ *	@param	_Name		Name of the callback to unblock
+ */
+Void UnblockCallback(Text _Name) {
+	declare Text[] LibXmlRpc_CallbacksBlocked for This;
+	declare Removed = LibXmlRpc_CallbacksBlocked.remove(_Name);
+}
+
+// ---------------------------------- //
+/// Unblock all callbacks
+Void UnblockAllCallbacks() {
+	declare Text[] LibXmlRpc_CallbacksBlocked for This;
+	LibXmlRpc_CallbacksBlocked.clear();
+}
+
+// ---------------------------------- //
+/** Get the list of all blocked callbacks
+ *
+ *	@param	_SendCallback	Send a callback with the help
+ *
+ *	@return		An array with the name of the blocked callbacks
+ */ 
+Text[] GetBlockedCallbacks(Boolean _SendCallback) {
+	declare Text[] LibXmlRpc_CallbacksBlocked for This;
+	
+	if (_SendCallback && CallbackIsAllowed("LibXmlRpc_BlockedCallbacks")) SendCallbackArray("LibXmlRpc_BlockedCallbacks", LibXmlRpc_CallbacksBlocked);
+	
+	return LibXmlRpc_CallbacksBlocked;
+}
+
+// ---------------------------------- //
+/// Unload the library
+Void Unload() {
+	UnregisterCallback("LibXmlRpc_Callbacks");
+	UnregisterCallback("LibXmlRpc_CallbackHelp");
+	UnregisterCallback("LibXmlRpc_BlockedCallbacks");
+	UnregisterCallback("LibXmlRpc_LoadingMap");
+	UnregisterCallback("LibXmlRpc_UnloadingMap");
+	UnregisterCallback("LibXmlRpc_BeginServer");
+	UnregisterCallback("LibXmlRpc_BeginServerStop");
+	UnregisterCallback("LibXmlRpc_BeginMatch");
+	UnregisterCallback("LibXmlRpc_BeginMatchStop");
+	UnregisterCallback("LibXmlRpc_BeginMap");
+	UnregisterCallback("LibXmlRpc_BeginMapStop");
+	UnregisterCallback("LibXmlRpc_BeginSubmatch");
+	UnregisterCallback("LibXmlRpc_BeginSubmatchStop");
+	UnregisterCallback("LibXmlRpc_BeginRound");
+	UnregisterCallback("LibXmlRpc_BeginRoundStop");
+	UnregisterCallback("LibXmlRpc_BeginTurn");
+	UnregisterCallback("LibXmlRpc_BeginTurnStop");
+	UnregisterCallback("LibXmlRpc_BeginPlaying");
+	UnregisterCallback("LibXmlRpc_EndPlaying");
+	UnregisterCallback("LibXmlRpc_EndTurn");
+	UnregisterCallback("LibXmlRpc_EndTurnStop");
+	UnregisterCallback("LibXmlRpc_EndRound");
+	UnregisterCallback("LibXmlRpc_EndRoundStop");
+	UnregisterCallback("LibXmlRpc_EndSubmatch");
+	UnregisterCallback("LibXmlRpc_EndSubmatchStop");
+	UnregisterCallback("LibXmlRpc_EndMap");
+	UnregisterCallback("LibXmlRpc_EndMapStop");
+	UnregisterCallback("LibXmlRpc_EndMatch");
+	UnregisterCallback("LibXmlRpc_EndMatchStop");
+	UnregisterCallback("LibXmlRpc_EndServer");
+	UnregisterCallback("LibXmlRpc_EndServerStop");
+	UnregisterCallback("LibXmlRpc_BeginPodium");
+	UnregisterCallback("LibXmlRpc_EndPodium");
+	UnregisterCallback("LibXmlRpc_BeginWarmUp");
+	UnregisterCallback("LibXmlRpc_EndWarmUp");
+	UnregisterCallback("LibXmlRpc_Pause");
+	UnregisterCallback("LibXmlRpc_ScoresReady");
+	
+	declare Text[Text] LibXmlRpc_CallbacksRegistered for This;
+	LibXmlRpc_CallbacksRegistered.clear();
+	
+	G_IsInPause = False;
+	
+	/* Don't unblock callbacks at load, let the user do it himself if he needs it
+	declare Text[] LibXmlRpc_CallbacksBlocked for This;
+	LibXmlRpc_CallbacksBlocked.clear();
+	*/
+}
+
+// ---------------------------------- //
+/// Load the library
+Void Load() {
+	Unload();
+	
+RegisterCallback("LibXmlRpc_Callbacks", """
+* Data : An array with the name of all the available callbacks
+* Example : ["LibXmlRpc_EndWarmUp", "LibXmlRpc_EndMatch", ...]
+* Note : This callback is sent when the script receives the `LibXmlRpc_ListCallbacks` trigger.
+* Version : available since XmlRpc.Script.txt_v2014-10-14
+""");
+
+RegisterCallback("LibXmlRpc_CallbackHelp", """
+* Data : An array with name of the callback and its documentation 
+* Example : ["LibXmlRpc_EndWarmUp", "Documentation about LibXmlRpc_EndWarmUp"]
+* Note : This callback is sent when the script receives the `LibXmlRpc_GetCallbackHelp` trigger.
+* Version : available since XmlRpc.Script.txt_v2014-10-14
+""");
+
+RegisterCallback("LibXmlRpc_BlockedCallbacks", """
+* Data : An array with name of the blocked callbacks. 
+* Example : ["LibXmlRpc_EndWarmUp", "LibXmlRpc_OnShoot", "LibXmlRpc_BeginTurn"]
+* Note : This callback is sent when the script receives the `LibXmlRpc_ListBlockedCallbacks` trigger.
+* Version : available since XmlRpc.Script.txt_v2014-10-14
+""");
+
+RegisterCallback("LibXmlRpc_LoadingMap", """
+* Data : An array with the number of the map, its UID and if the map is new or restarted.
+* Example : ["1", "2icir0pvzfqwf4h9j3B5lkjYu4n", "False"]
+* Note : This callback is sent when the script start to load a map.
+* Version : UID and restart status are available since XmlRpc.Script.txt_v2015-02-19
+""");
+
+RegisterCallback("LibXmlRpc_UnloadingMap", """
+* Data : An array with the number of the map and its UID
+* Example : ["1", "2icir0pvzfqwf4h9j3B5lkjYu4n"]
+* Note : This callback is sent when the script start to unload a map
+""");
+
+RegisterCallback("LibXmlRpc_BeginServer", """
+* Data : Nothing
+* Example : []
+* Note : This callback is sent before the beginning of the script execution
+""");
+
+RegisterCallback("LibXmlRpc_BeginServerStop", """
+* Data : Nothing
+* Example : []
+* Note : This callback is sent after the beginning of the script execution
+""");
+
+RegisterCallback("LibXmlRpc_BeginMatch", """
+* Data : An array with the number of the match and a boolean indicating if the script was restarted or not.
+* Example : ["3", "False"]
+* Note : This callback is sent before the beginning of each match
+""");
+
+RegisterCallback("LibXmlRpc_BeginMatchStop", """
+* Data : An array with the number of the match and a boolean indicating if the script was restarted or not.
+* Example : ["3", "False"]
+* Note : This callback is sent after the beginning of each match
+""");
+
+RegisterCallback("LibXmlRpc_BeginMap", """
+* Data : An array with the number of the map, its UID and if the map is new or restarted.
+* Example : ["1", "2icir0pvzfqwf4h9j3B5lkjYu4n", "False"]
+* Note : This callback is sent before the beginning of each map
+""");
+
+RegisterCallback("LibXmlRpc_BeginMapStop", """
+* Data : An array with the number of the map, its UID and if the map is new or restarted.
+* Example : ["1", "2icir0pvzfqwf4h9j3B5lkjYu4n", "False"]
+* Note : This callback is sent after the beginning of each map
+""");
+
+RegisterCallback("LibXmlRpc_BeginSubmatch", """
+* Data : An array with the number of the submatch
+* Example : ["2"]
+* Note : This callback is sent before the beginning of each submatch if the mode uses submatches
+""");
+
+RegisterCallback("LibXmlRpc_BeginSubmatchStop", """
+* Data : An array with the number of the submatch
+* Example : ["2"]
+* Note : This callback is sent after the beginning of each submatch if the mode uses submatches
+""");
+
+RegisterCallback("LibXmlRpc_BeginRound", """
+* Data : An array with the number of the round
+* Example : ["4"]
+* Note : This callback is sent before the beginning of each round if the mode uses rounds
+""");
+
+RegisterCallback("LibXmlRpc_BeginRoundStop", """
+* Data : An array with the number of the round
+* Example : ["4"]
+* Note : This callback is sent after the beginning of each round if the mode uses rounds
+""");
+
+RegisterCallback("LibXmlRpc_BeginTurn", """
+* Data : An array with the number of the turn
+* Example : ["5"]
+* Note : This callback is sent before the beginning of each turn if the mode uses turns
+""");
+
+RegisterCallback("LibXmlRpc_BeginTurnStop", """
+* Data : An array with the number of the turn
+* Example : ["5"]
+* Note : This callback is sent after the beginning of each turn if the mode uses turns
+""");
+
+RegisterCallback("LibXmlRpc_BeginPlaying", """
+* Data : Nothing
+* Example : []
+* Note : This callback is sent at the beginning of the play loop
+""");
+
+RegisterCallback("LibXmlRpc_EndPlaying", """
+* Data : Nothing
+* Example : []
+* Note : This callback is sent at the end of the play loop
+""");
+
+RegisterCallback("LibXmlRpc_EndTurn", """
+* Data : An array with the number of the turn
+* Example : ["5"]
+* Note : This callback is sent before the end of each turn if the mode uses turns
+""");
+
+RegisterCallback("LibXmlRpc_EndTurnStop", """
+* Data : An array with the number of the turn
+* Example : ["5"]
+* Note : This callback is sent after the end of each turn if the mode uses turns
+""");
+
+RegisterCallback("LibXmlRpc_EndRound", """
+* Data : An array with the number of the round
+* Example : ["4"]
+* Note : This callback is sent before the end of each round if the mode uses rounds
+""");
+
+RegisterCallback("LibXmlRpc_EndRoundStop", """
+* Data : An array with the number of the round
+* Example : ["4"]
+* Note : This callback is sent after the end of each round if the mode uses rounds
+""");
+
+RegisterCallback("LibXmlRpc_EndSubmatch", """
+* Data : An array with the number of the submatch
+* Example : ["2"]
+* Note : This callback is sent before the end of each submatch if the mode uses submatches
+""");
+
+RegisterCallback("LibXmlRpc_EndSubmatchStop", """
+* Data : An array with the number of the submatch
+* Example : ["2"]
+* Note : This callback is sent after the end of each submatch if the mode uses submatches
+""");
+
+RegisterCallback("LibXmlRpc_EndMap", """
+* Data : An array with the number of the map and its UID
+* Example : ["1", "2icir0pvzfqwf4h9j3B5lkjYu4n"]
+* Note : This callback is sent before the end of each map
+""");
+
+RegisterCallback("LibXmlRpc_EndMapStop", """
+* Data : An array with the number of the map and its UID
+* Example : ["1", "2icir0pvzfqwf4h9j3B5lkjYu4n"]
+* Note : This callback is sent after the end of each map
+""");
+
+RegisterCallback("LibXmlRpc_EndMatch", """
+* Data : An array with the number of the match
+* Example : ["3"]
+* Note : This callback is sent before the end of each match
+""");
+
+RegisterCallback("LibXmlRpc_EndMatchStop", """
+* Data : An array with the number of the match
+* Example : ["3"]
+* Note : This callback is sent after the end of each match
+""");
+
+RegisterCallback("LibXmlRpc_EndServer", """
+* Data : Nothing
+* Example : []
+* Note : This callback is sent before the end of the script execution
+""");
+
+RegisterCallback("LibXmlRpc_EndServerStop", """
+* Data : Nothing
+* Example : []
+* Note : This callback is sent after the end of the script execution
+""");
+
+RegisterCallback("LibXmlRpc_BeginPodium", """
+* Data : Nothing
+* Example : []
+* Note : This callback is sent at the beginning of podium sequence
+""");
+
+RegisterCallback("LibXmlRpc_EndPodium", """
+* Data : Nothing
+* Example : []
+* Note : This callback is sent at the end of the podium sequence
+""");
+
+RegisterCallback("LibXmlRpc_BeginWarmUp", """
+* Data : Nothing
+* Example : []
+* Note : This callback is sent at the beginning of the warm up
+""");
+
+RegisterCallback("LibXmlRpc_EndWarmUp", """
+* Data : Nothing
+* Example : []
+* Note : This callback is sent at the end of the warm up
+""");
+
+RegisterCallback("LibXmlRpc_Pause", """
+* Data : An array with one value saying if the mode is in pause or not
+* Example : ["True"]
+* Note : This callback is sent after using the `LibXmlRpc_GetPause` method or when the pause status changes.
+* Version : available since Chase.Script.txt_v2015-02-23
+""");
+
+RegisterCallback("LibXmlRpc_ScoresReady", """
+* Data : Nothing
+* Example : []
+* Note : This callback is sent at the end of the gaming sequence, when the scores are accurate and ready to be used for statistical purpose for example.
+""");
+}
+
+// ---------------------------------- //
+/** Callback sent when starting to load the map
+ *	Data:
+ *	[Number of the map]
+ */
+Void LoadingMap(Integer _Number, Boolean _Restarted) {
+	if (!CallbackIsAllowed("LibXmlRpc_LoadingMap")) return;
+	
+	declare MapUID = "";
+	if (MapList.count > 0) {
+		declare MapIndex = NextMapIndex;
+		if (_Number == 1) MapIndex = NextMapIndex - 1;
+		if (MapIndex < 0) MapIndex = MapList.count - 1;
+		if (MapList.existskey(MapIndex)) MapUID = MapList[MapIndex].MapUid;
+	}
+	
+	declare Restarted = "False";
+	if (_Restarted) Restarted = "True";
+	SendCallbackArray("LibXmlRpc_LoadingMap", [TL::ToText(_Number), MapUID, Restarted]);
+}
+
+// ---------------------------------- //
+/** Callback sent when starting to unload the map
+ *	Data:
+ *	[Number of the map]
+ */
+Void UnloadingMap(Integer _Number) {
+	if (!CallbackIsAllowed("LibXmlRpc_UnloadingMap")) return;
+	
+	declare MapUID = "";
+	if (Map != Null && Map.MapInfo != Null) MapUID = Map.MapInfo.MapUid;
+	SendCallbackArray("LibXmlRpc_UnloadingMap", [TL::ToText(_Number), MapUID]);
+}
+
+// ---------------------------------- //
+/** Callback sent at the beginning of the server
+ *	Data:
+ *	[]
+ */
+Void BeginServer() {
+	if (!CallbackIsAllowed("LibXmlRpc_BeginServer")) return;
+	
+	SendCallbackArray("LibXmlRpc_BeginServer", Text[]);
+}
+
+// ---------------------------------- //
+/** Callback sent after the beginning of the server
+ *	Data:
+ *	[]
+ */
+Void BeginServerStop() {
+	if (!CallbackIsAllowed("LibXmlRpc_BeginServerStop")) return;
+	
+	SendCallbackArray("LibXmlRpc_BeginServerStop", Text[]);
+}
+
+// ---------------------------------- //
+/** Callback sent at the beginning of the match
+ *	Data:
+ *	[Number of the match, Map restarted]
+ */
+Void BeginMatch(Integer _Number, Boolean _Restarted) {
+	if (!CallbackIsAllowed("LibXmlRpc_BeginMatch")) return;
+	
+	declare Restarted = "False";
+	if (_Restarted) Restarted = "True";
+	SendCallbackArray("LibXmlRpc_BeginMatch", [TL::ToText(_Number), Restarted]);
+}
+
+// ---------------------------------- //
+/** Callback sent after the beginning of the match
+ *	Data:
+ *	[Number of the match, Map restarted]
+ */
+Void BeginMatchStop(Integer _Number, Boolean _Restarted) {
+	if (!CallbackIsAllowed("LibXmlRpc_BeginMatchStop")) return;
+	
+	declare Restarted = "False";
+	if (_Restarted) Restarted = "True";
+	SendCallbackArray("LibXmlRpc_BeginMatchStop", [TL::ToText(_Number), Restarted]);
+}
+
+// ---------------------------------- //
+/** Callback sent before the beginning of the map
+ *	Data:
+ *	[Number of the map, Map UID, Map restarted]
+ */
+Void BeginMap(Integer _Number, Boolean _Restarted) {
+	if (!CallbackIsAllowed("LibXmlRpc_BeginMap")) return;
+	
+	declare MapUID = "";
+	if (Map != Null && Map.MapInfo != Null) MapUID = Map.MapInfo.MapUid;
+	declare Restarted = "False";
+	if (_Restarted) Restarted = "True";
+	SendCallbackArray("LibXmlRpc_BeginMap", [TL::ToText(_Number), MapUID, Restarted]);
+}
+
+// ---------------------------------- //
+/** Callback sent after the beginning of the map
+ *	Data:
+ *	[Number of the map, Map UID, Map restarted]
+ */
+Void BeginMapStop(Integer _Number, Boolean _Restarted) {
+	if (!CallbackIsAllowed("LibXmlRpc_BeginMapStop")) return;
+	
+	declare MapUID = "";
+	if (Map != Null && Map.MapInfo != Null) MapUID = Map.MapInfo.MapUid;
+	declare Restarted = "False";
+	if (_Restarted) Restarted = "True";
+	SendCallbackArray("LibXmlRpc_BeginMapStop", [TL::ToText(_Number), MapUID, Restarted]);
+}
+
+// ---------------------------------- //
+/** Callback sent before the beginning of the submatch
+ *	Data:
+ *	[Number of the submatch]
+ */
+Void BeginSubmatch(Integer _Number) {
+	if (!CallbackIsAllowed("LibXmlRpc_BeginSubmatch")) return;
+	
+	SendCallbackArray("LibXmlRpc_BeginSubmatch", [TL::ToText(_Number)]);
+}
+
+// ---------------------------------- //
+/** Callback sent after the beginning of the submatch
+ *	Data:
+ *	[Number of the submatch]
+ */
+Void BeginSubmatchStop(Integer _Number) {
+	if (!CallbackIsAllowed("LibXmlRpc_BeginSubmatchStop")) return;
+	
+	SendCallbackArray("LibXmlRpc_BeginSubmatchStop", [TL::ToText(_Number)]);
+}
+
+// ---------------------------------- //
+/** Callback sent before the beginning of the round
+ *	Data:
+ *	[Number of the round]
+ */
+Void BeginRound(Integer _Number) {
+	if (!CallbackIsAllowed("LibXmlRpc_BeginRound")) return;
+	
+	SendCallbackArray("LibXmlRpc_BeginRound", [TL::ToText(_Number)]);
+}
+
+// ---------------------------------- //
+/** Callback sent after the beginning of the round
+ *	Data:
+ *	[Number of the round]
+ */
+Void BeginRoundStop(Integer _Number) {
+	if (!CallbackIsAllowed("LibXmlRpc_BeginRoundStop")) return;
+	
+	SendCallbackArray("LibXmlRpc_BeginRoundStop", [TL::ToText(_Number)]);
+}
+
+// ---------------------------------- //
+/** Callback sent before the beginning of the turn
+ *	Data:
+ *	[Number of the turn]
+ */
+Void BeginTurn(Integer _Number) {
+	if (!CallbackIsAllowed("LibXmlRpc_BeginTurn")) return;
+	
+	SendCallbackArray("LibXmlRpc_BeginTurn", [TL::ToText(_Number)]);
+}
+
+// ---------------------------------- //
+/** Callback sent after the beginning of the turn
+ *	Data:
+ *	[Number of the turn]
+ */
+Void BeginTurnStop(Integer _Number) {
+	if (!CallbackIsAllowed("LibXmlRpc_BeginTurnStop")) return;
+	
+	SendCallbackArray("LibXmlRpc_BeginTurnStop", [TL::ToText(_Number)]);
+}
+
+// ---------------------------------- //
+/** Callback sent at the beginning of the play loop
+ *	Data:
+ *	[]
+ */
+Void BeginPlaying() {
+	if (!CallbackIsAllowed("LibXmlRpc_BeginPlaying")) return;
+	
+	SendCallbackArray("LibXmlRpc_BeginPlaying", Text[]);
+}
+
+// ---------------------------------- //
+/** Callback sent at the end of the play loop
+ *	Data:
+ *	[]
+ */
+Void EndPlaying() {
+	if (!CallbackIsAllowed("LibXmlRpc_EndPlaying")) return;
+	
+	SendCallbackArray("LibXmlRpc_EndPlaying", Text[]);
+}
+
+// ---------------------------------- //
+/** Callback sent before the end of the turn
+ *	Data:
+ *	[Number of the turn]
+ */
+Void EndTurn(Integer _Number) {
+	if (!CallbackIsAllowed("LibXmlRpc_EndTurn")) return;
+	
+	SendCallbackArray("LibXmlRpc_EndTurn", [TL::ToText(_Number)]);
+}
+
+// ---------------------------------- //
+/** Callback sent after the end of the turn
+ *	Data:
+ *	[Number of the turn]
+ */
+Void EndTurnStop(Integer _Number) {
+	if (!CallbackIsAllowed("LibXmlRpc_EndTurnStop")) return;
+	
+	SendCallbackArray("LibXmlRpc_EndTurnStop", [TL::ToText(_Number)]);
+}
+
+// ---------------------------------- //
+/** Callback sent before the end of the round
+ *	Data:
+ *	[Number of the round]
+ */
+Void EndRound(Integer _Number) {
+	if (!CallbackIsAllowed("LibXmlRpc_EndRound")) return;
+	
+	SendCallbackArray("LibXmlRpc_EndRound", [TL::ToText(_Number)]);
+}
+
+// ---------------------------------- //
+/** Callback sent after the end of the round
+ *	Data:
+ *	[Number of the round]
+ */
+Void EndRoundStop(Integer _Number) {
+	if (!CallbackIsAllowed("LibXmlRpc_EndRoundStop")) return;
+	
+	SendCallbackArray("LibXmlRpc_EndRoundStop", [TL::ToText(_Number)]);
+}
+
+// ---------------------------------- //
+/** Callback sent before the end of the submatch
+ *	Data:
+ *	[Number of the submatch]
+ */
+Void EndSubmatch(Integer _Number) {
+	if (!CallbackIsAllowed("LibXmlRpc_EndSubmatch")) return;
+	
+	SendCallbackArray("LibXmlRpc_EndSubmatch", [TL::ToText(_Number)]);
+}
+
+// ---------------------------------- //
+/** Callback sent after the end of the submatch
+ *	Data:
+ *	[Number of the submatch]
+ */
+Void EndSubmatchStop(Integer _Number) {
+	if (!CallbackIsAllowed("LibXmlRpc_EndSubmatchStop")) return;
+	
+	SendCallbackArray("LibXmlRpc_EndSubmatchStop", [TL::ToText(_Number)]);
+}
+
+// ---------------------------------- //
+/** Callback sent before the end of the map
+ *	Data:
+ *	[Number of the map, Map UID]
+ */
+Void EndMap(Integer _Number) {
+	if (!CallbackIsAllowed("LibXmlRpc_EndMap")) return;
+	
+	declare MapUID = "";
+	if (Map != Null && Map.MapInfo != Null) MapUID = Map.MapInfo.MapUid;
+	SendCallbackArray("LibXmlRpc_EndMap", [TL::ToText(_Number), MapUID]);
+}
+
+// ---------------------------------- //
+/** Callback sent after the end of the map
+ *	Data:
+ *	[Number of the map, Map UID]
+ */
+Void EndMapStop(Integer _Number) {
+	if (!CallbackIsAllowed("LibXmlRpc_EndMapStop")) return;
+	
+	declare MapUID = "";
+	if (Map != Null && Map.MapInfo != Null) MapUID = Map.MapInfo.MapUid;
+	SendCallbackArray("LibXmlRpc_EndMapStop", [TL::ToText(_Number), MapUID]);
+}
+
+// ---------------------------------- //
+/** Callback sent before the end of the match
+ *	Data:
+ *	[Number of the match]
+ */
+Void EndMatch(Integer _Number) {
+	if (!CallbackIsAllowed("LibXmlRpc_EndMatch")) return;
+	
+	SendCallbackArray("LibXmlRpc_EndMatch", [TL::ToText(_Number)]);
+}
+
+// ---------------------------------- //
+/** Callback sent after the end of the match
+ *	Data:
+ *	[Number of the match]
+ */
+Void EndMatchStop(Integer _Number) {
+	if (!CallbackIsAllowed("LibXmlRpc_EndMatchStop")) return;
+	
+	SendCallbackArray("LibXmlRpc_EndMatchStop", [TL::ToText(_Number)]);
+}
+
+// ---------------------------------- //
+/** Callback sent before the end of the server
+ *	Data:
+ *	[]
+ */
+Void EndServer() {
+	if (!CallbackIsAllowed("LibXmlRpc_EndServer")) return;
+	
+	SendCallbackArray("LibXmlRpc_EndServer", Text[]);
+}
+
+// ---------------------------------- //
+/** Callback sent after the end of the server
+ *	Data:
+ *	[]
+ */
+Void EndServerStop() {
+	if (!CallbackIsAllowed("LibXmlRpc_EndServerStop")) return;
+	
+	SendCallbackArray("LibXmlRpc_EndServerStop", Text[]);
+}
+
+// ---------------------------------- //
+/// Callback sent at the beginning of the podium sequence
+Void BeginPodium() {
+	if (!CallbackIsAllowed("LibXmlRpc_BeginPodium")) return;
+	
+	SendCallbackArray("LibXmlRpc_BeginPodium", Text[]);
+}
+
+// ---------------------------------- //
+/// Callback sent at the end of the podium
+Void EndPodium() {
+	if (!CallbackIsAllowed("LibXmlRpc_EndPodium")) return;
+	
+	SendCallbackArray("LibXmlRpc_EndPodium", Text[]);
+}
+
+// ---------------------------------- //
+/// Callback sent at the beginning of the warmup
+Void BeginWarmUp() {
+	if (!CallbackIsAllowed("LibXmlRpc_BeginWarmUp")) return;
+	
+	SendCallbackArray("LibXmlRpc_BeginWarmUp", Text[]);
+}
+
+// ---------------------------------- //
+/// Callback sent at the end of the warmup
+Void EndWarmUp() {
+	if (!CallbackIsAllowed("LibXmlRpc_EndWarmUp")) return;
+	
+	SendCallbackArray("LibXmlRpc_EndWarmUp", Text[]);
+}
+
+// ---------------------------------- //
+/** Send the warm up status
+ *	Data:
+ *	[IsInPause]
+ */
+Void GetPause() {
+	if (!CallbackIsAllowed("LibXmlRpc_Pause")) return;
+	
+	declare IsInPause = "False";
+	if (G_IsInPause) IsInPause = "True";
+	SendCallbackArray("LibXmlRpc_Pause", [IsInPause]);
+}
+
+// ---------------------------------- //
+/** Set the pause status
+ *
+ *	@param	_IsInPause	True to set the mode in pause, False otherwise
+ */
+Void SetPause(Boolean _IsInPause) {
+	if (G_IsInPause == _IsInPause) return;
+	
+	G_IsInPause = _IsInPause;
+	GetPause();
+}
+// ---------------------------------- //
+/// Overload SetPause()
+Void SetPause(Text _IsInPause) {
+	if (_IsInPause == "False" || _IsInPause == "false" || _IsInPause == "") SetPause(False);
+	else SetPause(True);
+}
+
+// ---------------------------------- //
+/// Callback sent at the beginning of the pause
+Void BeginPause() {
+	SetPause(True);
+}
+
+// ---------------------------------- //
+/// Callback sent at the end of the pause
+Void EndPause() {
+	SetPause(False);
+}
+
+// ---------------------------------- //
+/** Check if a pause is requested
+ *
+ *	@return		True if a pause is requested, False otherwise
+ */
+Boolean PauseRequested() {
+	return G_IsInPause;
+}
+
+// ---------------------------------- //
+/// Callback sent when the scores are ready to be used
+Void ScoresReady() {
+	if (!CallbackIsAllowed("LibXmlRpc_ScoresReady")) return;
+	
+	SendCallbackArray("LibXmlRpc_ScoresReady", Text[]);
+}
+
+// ---------------------------------- //
+/// Wait for XmlRpc callbacks
+Void Loop() {
+	if (!IsEnabled()) return;
+	
+	foreach (Event in XmlRpc.PendingEvents) {
+		if (Event.Type == CXmlRpcEvent::EType::Callback) {
+			switch (Event.Param1) {
+				case "LibXmlRpc_ListCallbacks"		: {
+					declare Tmp = ListCallbacks(True);
+				}
+				case "LibXmlRpc_GetCallbackHelp"	: {
+					declare Tmp = CallbackHelp(Event.Param2, True);
+				}
+				case "LibXmlRpc_BlockCallback"		: BlockCallback(Event.Param2);
+				case "LibXmlRpc_BlockAllCallbacks"	: BlockAllCallbacks();
+				case "LibXmlRpc_UnblockCallback"	: UnblockCallback(Event.Param2);
+				case "LibXmlRpc_UnblockAllCallbacks": UnblockAllCallbacks();
+				case "LibXmlRpc_ListBlockedCallbacks": {
+					declare Tmp = GetBlockedCallbacks(True);
+				}
+				case "LibXmlRpc_SetPause"			: SetPause(Event.Param2);
+				case "LibXmlRpc_GetPause"			: GetPause();
+			}
+		}
+	}
+}

@@ -1,0 +1,1045 @@
+/**
+ *	UI Lib
+ *
+ *	Available modules:
+ *	- TimeGap -> display the time gap between the players
+ *	- SmallScoresTable -> display the player ranking at the end of the round
+ *	- Chrono -> display a chrono at the bottom of the screen
+ *	- CheckpointTime -> time displayed when crossing a checkpoint
+ *	- SpeedAndDistance -> display the car speed and distance travelled
+ *	- Countdown -> display the time remaining before the end of the map
+ *	- Laps -> display the number of laps to do and the number of laps done
+ *	- PrevBestTime -> display the previous time and the best time
+ *	- MapRanking -> display the player's ranking on the map
+ *	- CheckpointRanking -> display the player's ranking at the latest checkpoint
+ *	- MapInfo -> display informations about the map
+ *	- LiveInfo -> display informations about live events
+ */
+			
+#Const Version		"2017-05-31"
+#Const ScriptName	"UI.Script.txt"
+
+// ---------------------------------- //
+// Libraries
+// ---------------------------------- //
+#Include "TextLib" as TL
+#Include "Libs/Nadeo/XmlRpc2.Script.txt" as XmlRpc
+#Include "Libs/Nadeo/TrackMania/WarmUp3.Script.txt" as WarmUp
+#Include "ManiaApps/Nadeo/TrackMania/UI_Server.Script.txt" as UI_Server
+#Include "ManiaApps/Nadeo/TrackMania/UI_Common.Script.txt" as UI_Common
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_LibUI_TimeGapPos						<48., -52., 5.>
+#Const C_LibUI_SmallScoresTablePos		<-158.5, 40., 150.>
+#Const C_LibUI_ChronoPos							<0., -80., -5.>
+#Const C_LibUI_CheckpointTimePos			<0., 3., -10.>
+#Const C_LibUI_PrevBestTimePos				<157., -24., 	5.>
+#Const C_LibUI_SpeedAndDistancePos		<137., -69., 5.>
+#Const C_LibUI_CountdownPos					<153., -7., 5.>
+#Const C_LibUI_LapsPos								<140., 84., 5.>
+#Const C_LibUI_MapRankingPos					<150.5, -28., 5.>
+#Const C_LibUI_CheckpointRankingPos	<0., 84., 5.>
+#Const C_LibUI_MapInfoPos						<-160., 80., 150.>
+#Const C_LibUI_LiveInfoPos						<-159., 84., 5.>
+#Const C_LibUI_SpectatorInfoPos			<0., -68., 5.>
+// XmlRpc
+#Const C_Callback_Properties		"Trackmania.UI.Properties"
+#Const C_Method_GetProperties	"Trackmania.UI.GetProperties"
+#Const C_Method_SetProperties	"Trackmania.UI.SetProperties"
+/// Formats
+#Const C_Format_Xml	0
+#Const C_Format_Json	1
+
+// ---------------------------------- //
+// Globales
+// ---------------------------------- //
+declare Text[] G_LibUI_ModulesLoaded;
+declare Ident[Text] G_LibUI_LayersIds;
+declare Boolean[Text] G_LibUI_ModuleVisibility;
+declare Vec3[Text] G_LibUI_ModulePosition;
+declare Integer G_LibUI_PrevCutOffTimeLimit;
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+// ---------------------------------- //
+// Private
+// ---------------------------------- //
+// ---------------------------------- //
+/** Check if a module is loaded
+ *
+ *	@param	_ModuleId									The module to check
+ *
+ *	@return														True if the given module is loaded, False otherwise
+ */
+Boolean Private_ModuleIsLoaded(Text _ModuleId) {
+	return (G_LibUI_ModulesLoaded.exists(_ModuleId));
+}
+
+// ---------------------------------- //
+/** Convert a Boolean to a Text
+ *
+ *	@param	_Boolean									The Boolean to convert
+ *
+ *	@return														The Text
+ */
+Text Private_BooleanToText(Boolean _Boolean) {
+	if (_Boolean) return "true";
+	return "false";
+}
+
+// ---------------------------------- //
+/** Convert a Vec2 to a Text
+ *
+ *	@param	_Vec2											The Vec2 to convert
+ *
+ *	@return														The Text
+ */
+Text Private_Vec2ToText(Vec2 _Vec2) {
+	return _Vec2.X^" "^_Vec2.Y;
+}
+
+// ---------------------------------- //
+/** Convert a Vec3 to a Text
+ *
+ *	@param	_Vec3											The Vec3 to convert
+ *
+ *	@return														The Text
+ */
+Text Private_Vec3ToText(Vec3 _Vec3) {
+	return _Vec3.X^" "^_Vec3.Y^" "^_Vec3.Z;
+}
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+// ---------------------------------- //
+/** Return the version number of the script
+ *
+ *	@return														The version number of the script
+ */
+Text GetScriptVersion() {
+	return Version;
+}
+
+// ---------------------------------- //
+/** Return the name of the script
+ *
+ *	@return														The name of the script
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+// ---------------------------------- //
+/** Display a module
+ *
+ *	@param	_ModuleName								The name of the module to set
+ *	@param	_Display									Show or not the module
+ */
+Void SetModuleVisibility(Text _ModuleName, Boolean _Display) {
+	if (Private_ModuleIsLoaded(_ModuleName)) {
+		switch (_ModuleName) {
+			case UI_Common::C_Module_PrevBestTime			: UIManager.UIAll.OverlayHidePersonnalBestAndRank = True;
+			case UI_Common::C_Module_TimeGap						: UIManager.UIAll.OverlayHideCheckPointList = True;
+			case UI_Common::C_Module_SmallScoresTable	: UIManager.UIAll.OverlayHideRoundScores = True;
+			case UI_Common::C_Module_Chrono						: UIManager.UIAll.OverlayHideChrono = True;
+			case UI_Common::C_Module_CheckpointTime		: UIManager.UIAll.OverlayHideCheckPointTime = True;
+			case UI_Common::C_Module_SpeedAndDistance	: UIManager.UIAll.OverlayHideSpeedAndDist = True;
+			case UI_Common::C_Module_Countdown					: UIManager.UIAll.OverlayHideCountdown = True;
+			case UI_Common::C_Module_Laps							: UIManager.UIAll.OverlayHideMultilapInfos = True;
+			case UI_Common::C_Module_MapRanking				: UIManager.UIAll.OverlayHidePosition = True;
+			//case UI_Common::C_Module_CheckpointRanking: UIManager.UIAll.OverlayHideMultilapInfos = True;
+			case UI_Common::C_Module_MapInfo						: UIManager.UIAll.OverlayHideMapInfo = True;
+			//case UI_Common::C_Module_LiveInfo				:
+			case UI_Common::C_Module_SpectatorInfo			: UIManager.UIAll.OverlayHideSpectatorInfos = True;
+		}
+		UI_Server::UpdateSetting(_ModuleName^"_Display", TL::ToText(_Display));
+	} else {
+		switch (_ModuleName) {
+			case UI_Common::C_Module_PrevBestTime			: UIManager.UIAll.OverlayHidePersonnalBestAndRank = !_Display;
+			case UI_Common::C_Module_TimeGap						: UIManager.UIAll.OverlayHideCheckPointList = !_Display;
+			case UI_Common::C_Module_SmallScoresTable	: UIManager.UIAll.OverlayHideRoundScores = !_Display;
+			case UI_Common::C_Module_Chrono						: UIManager.UIAll.OverlayHideChrono = !_Display;
+			case UI_Common::C_Module_CheckpointTime		: UIManager.UIAll.OverlayHideCheckPointTime = !_Display;
+			case UI_Common::C_Module_SpeedAndDistance	: UIManager.UIAll.OverlayHideSpeedAndDist = !_Display;
+			case UI_Common::C_Module_Countdown					: UIManager.UIAll.OverlayHideCountdown = !_Display;
+			case UI_Common::C_Module_Laps							: UIManager.UIAll.OverlayHideMultilapInfos = !_Display;
+			case UI_Common::C_Module_MapRanking				: UIManager.UIAll.OverlayHidePosition = !_Display;
+			//case UI_Common::C_Module_CheckpointRanking: UIManager.UIAll.OverlayHideMultilapInfos = !_Display;
+			case UI_Common::C_Module_MapInfo						: UIManager.UIAll.OverlayHideMapInfo = !_Display;
+			//case UI_Common::C_Module_LiveInfo				: 
+			case UI_Common::C_Module_SpectatorInfo			: UIManager.UIAll.OverlayHideSpectatorInfos = !_Display;
+		}
+	}
+	G_LibUI_ModuleVisibility[_ModuleName] = _Display;
+}
+
+// ---------------------------------- //
+/** Get the visibility of a module
+ *
+ *	@param	_ModuleName								The name of the module to get
+ *
+ *	@return														True if the module is visible, False otherwise
+ */
+Boolean GetModuleVisibility(Text _ModuleName) {
+	if (Private_ModuleIsLoaded(_ModuleName) && G_LibUI_ModuleVisibility.existskey(_ModuleName)) {
+		return G_LibUI_ModuleVisibility[_ModuleName];
+	}
+	
+	switch (_ModuleName) {
+		case UI_Common::C_Module_PrevBestTime			: return !UIManager.UIAll.OverlayHidePersonnalBestAndRank;
+		case UI_Common::C_Module_TimeGap						: return !UIManager.UIAll.OverlayHideCheckPointList;
+		case UI_Common::C_Module_SmallScoresTable	: return !UIManager.UIAll.OverlayHideRoundScores;
+		case UI_Common::C_Module_Chrono						: return !UIManager.UIAll.OverlayHideChrono;
+		case UI_Common::C_Module_CheckpointTime		: return !UIManager.UIAll.OverlayHideCheckPointTime;
+		case UI_Common::C_Module_SpeedAndDistance	: return !UIManager.UIAll.OverlayHideSpeedAndDist;
+		case UI_Common::C_Module_Countdown					: return !UIManager.UIAll.OverlayHideCountdown;
+		case UI_Common::C_Module_Laps							: return !UIManager.UIAll.OverlayHideMultilapInfos;
+		case UI_Common::C_Module_MapRanking				: return !UIManager.UIAll.OverlayHidePosition;
+		//case UI_Common::C_Module_CheckpointRanking: return !UIManager.UIAll.OverlayHideMultilapInfos;
+		case UI_Common::C_Module_MapInfo						: return !UIManager.UIAll.OverlayHideMapInfo;
+		case UI_Common::C_Module_LiveInfo					: return False;
+		case UI_Common::C_Module_SpectatorInfo			: return !UIManager.UIAll.OverlayHideSpectatorInfos;
+	}
+	
+	return False;
+}
+
+// ---------------------------------- //
+/** Set the position of a module
+ *
+ *	@param	_ModuleName								The name of the module to set
+ *	@param	_Pos											The new position of the module
+ */
+Void SetModulePosition(Text _ModuleName, Vec3 _Pos) {
+	if (Private_ModuleIsLoaded(_ModuleName)) {
+		UI_Server::UpdateSetting(_ModuleName^"_Position", Private_Vec3ToText(_Pos));
+	}
+	G_LibUI_ModulePosition[_ModuleName] = _Pos;
+}
+
+// ---------------------------------- //
+/** Get the position of a module
+ *
+ *	@param	_ModuleName								The name of the module to get
+ *
+ *	@return														The position of the module
+ */
+Vec3 GetModulePosition(Text _ModuleName) {
+	if (Private_ModuleIsLoaded(_ModuleName) && G_LibUI_ModulePosition.existskey(_ModuleName)) {
+		return G_LibUI_ModulePosition[_ModuleName];
+	}
+	
+	switch (_ModuleName) {
+		case UI_Common::C_Module_PrevBestTime			: return C_LibUI_PrevBestTimePos;
+		case UI_Common::C_Module_TimeGap						: return C_LibUI_TimeGapPos;
+		case UI_Common::C_Module_SmallScoresTable	: return C_LibUI_SmallScoresTablePos;
+		case UI_Common::C_Module_Chrono						: return C_LibUI_ChronoPos;
+		case UI_Common::C_Module_CheckpointTime		: return C_LibUI_CheckpointTimePos;
+		case UI_Common::C_Module_SpeedAndDistance	: return C_LibUI_SpeedAndDistancePos;
+		case UI_Common::C_Module_Countdown					: return C_LibUI_CountdownPos;
+		case UI_Common::C_Module_Laps							: return C_LibUI_LapsPos;
+		case UI_Common::C_Module_MapRanking				: return C_LibUI_MapRankingPos;
+		case UI_Common::C_Module_CheckpointRanking	: return C_LibUI_CheckpointRankingPos;
+		case UI_Common::C_Module_MapInfo						: return C_LibUI_MapInfoPos;
+		case UI_Common::C_Module_LiveInfo					: return C_LibUI_LiveInfoPos;
+		case UI_Common::C_Module_SpectatorInfo			: return C_LibUI_SpectatorInfoPos;
+	}
+	
+	return <0., 0., 0.>;
+}
+
+// ---------------------------------- //
+/** Send a live event to a player
+ *
+ *	@param	_Player										The receiver of the live event
+ *	@param	_Message									The message
+ *	@param	_Image										The path to the image
+ */
+Void SendLiveEvent(CPlayer _Player, Text _Message, Text _Image) {
+	UI_Server::SendLiveEvent(_Player, _Message, _Image);
+}
+
+// ---------------------------------- //
+/** Show or hide the speed gauge around
+ *	the speedometer
+ *
+ *	@param	_Visible									True to show, False to hide
+ */
+Void DisplaySpeedGauge(Boolean _Visible) {
+	if (_Visible) {
+		UI_Server::UpdateSetting(UI_Common::C_Module_SpeedAndDistance^"_DisplaySpeedGauge", "True");
+	} else {
+		UI_Server::UpdateSetting(UI_Common::C_Module_SpeedAndDistance^"_DisplaySpeedGauge", "False");
+	}
+}
+
+// ---------------------------------- //
+/** Set the time gap mode for the TM time gap module
+ *
+ *	@param	_Mode											The mode to use between "BestRace" and "CurRace"
+ *																		- BestRace: compare the best time of the players
+ *																		- CurRace: compare the times of the current race of the players
+ */
+Void SetTimeGapMode(Text _Mode) {
+	if (_Mode != "BestRace" && _Mode != "CurRace") return;
+	UI_Server::UpdateSetting(UI_Common::C_Module_TimeGap^"_Mode", _Mode);
+}
+
+// ---------------------------------- //
+/** Enable or disable the team mode
+ *	for the TM time gap module
+ *
+ *	@param	_OnlyTeam									True to enable
+ *																		False to disable
+ */
+Void SetTimeGapOnlyTeam(Boolean _OnlyTeam) {
+	declare OnlyTeam = "0";
+	if (_OnlyTeam) OnlyTeam = "1";
+	UI_Server::UpdateSetting(UI_Common::C_Module_TimeGap^"_OnlyTeam", OnlyTeam);
+}
+
+// ---------------------------------- //
+/** Set the time gap mode for the TM time gap module
+ *
+ *	@param	_Mode											The mode to use between "BestRace" and "CurRace"
+ *																		- BestRace: compare the best time of the players
+ *																		- CurRace: compare the times of the current race of the players
+ */
+Void SetCheckpointTimeMode(Text _Mode) {
+	if (_Mode != "BestRace" && _Mode != "CurRace") return;
+	UI_Server::UpdateSetting(UI_Common::C_Module_CheckpointTime^"_Mode", _Mode);
+}
+
+// ---------------------------------- //
+/** Display the time diff in the checkpoint time module
+ *
+ *	@param	_Display									Show or not the time diff
+ */
+Void DisplayTimeDiff(Boolean _Display) {
+	UI_Server::UpdateSetting(UI_Common::C_Module_CheckpointTime^"_DisplayTimeDiff", TL::ToText(_Display));
+}
+
+// ---------------------------------- //
+/** Display the lap time diff in the checkpoint time module
+ *
+ *	@param	_Display									Show or not the time diff
+ */
+Void DisplayLapTimeDiff(Boolean _Display) {
+	UI_Server::UpdateSetting(UI_Common::C_Module_CheckpointTime^"_DisplayLapTimeDiff", TL::ToText(_Display));
+}
+
+// ---------------------------------- //
+/** Set if the mode has IndependantLaps or not
+ *
+ *	@param	_IndependantLaps					True if the mode has IndependantLaps, false otherwise
+ */
+Void SetIndependantLaps(Boolean _IndependantLaps) {
+	UI_Server::UpdateSetting("IndependantLaps", TL::ToText(_IndependantLaps));
+}
+
+// ---------------------------------- //
+/** Set the CutOffTimeLimit
+ *
+ *	@param	_CutOffTimeLimit					The new value of CutOffTimeLimit
+ */
+Void SetCutOffTimeLimit(Integer _CutOffTimeLimit) {
+	UI_Server::UpdateSetting(UI_Common::C_Module_Countdown^"_CutOffTimeLimit", TL::ToText(_CutOffTimeLimit));
+}
+
+// ---------------------------------- //
+/** Set the number of lines of the chat
+ *
+ *	@param	_LineCount								The number of lines of the chat
+ */
+Void SetChatLineCount(Integer _LineCount) {
+	if (_LineCount >= 0 && _LineCount <= 40) UIManager.UIAll.OverlayChatLineCount = _LineCount;
+	else if (_LineCount < 0) UIManager.UIAll.OverlayChatLineCount = 0;
+	else if (_LineCount > 40) UIManager.UIAll.OverlayChatLineCount = 40;
+}
+
+// ---------------------------------- //
+/** Get the number of lines of the chat
+ *
+ *	@return														The number of lines of the chat
+ */
+Integer GetChatLineCount() {
+	return UIManager.UIAll.OverlayChatLineCount;
+}
+
+// ---------------------------------- //
+/** Set the visibility of the UI overlays
+ *
+ *	@param	_Name											The name of the overlay
+ *	@param	_Visible									The visibility of the overlay
+ */
+Void Private_SetVisibility(Text _Name, Text _Visible) {
+	if (_Visible == "") return;
+	
+	declare Hide = False;
+	if (_Visible == "False" || _Visible == "false" || _Visible == "0") Hide = True;
+	
+	switch (_Name) {
+		case "map_info" 							: SetModuleVisibility(UI_Common::C_Module_MapInfo, !Hide);
+		case "live_info" 							: SetModuleVisibility(UI_Common::C_Module_LiveInfo, !Hide);
+		case "spectator_info" 				: SetModuleVisibility(UI_Common::C_Module_SpectatorInfo, !Hide);
+		case "opponents_info" 				: UIManager.UIAll.OverlayHideOpponentsInfo = Hide;
+		case "chat"										: UIManager.UIAll.OverlayHideChat = Hide;
+		case "countdown"							: SetModuleVisibility(UI_Common::C_Module_Countdown, !Hide);
+		case "go"											: UIManager.UIAll.OverlayHide321Go = Hide;
+		case "speed_and_distance"		: SetModuleVisibility(UI_Common::C_Module_SpeedAndDistance, !Hide);
+		case "position"								: SetModuleVisibility(UI_Common::C_Module_MapRanking, !Hide);
+		case "chat_avatar"						: UIManager.UIAll.OverlayChatHideAvatar = Hide;
+		case "checkpoint_list"				: SetModuleVisibility(UI_Common::C_Module_TimeGap, !Hide);
+		case "round_scores"					: SetModuleVisibility(UI_Common::C_Module_SmallScoresTable, !Hide);
+		case "chrono"									: SetModuleVisibility(UI_Common::C_Module_Chrono, !Hide);
+		case "checkpoint_time"				: SetModuleVisibility(UI_Common::C_Module_CheckpointTime, !Hide);
+		case "personal_best_and_rank": SetModuleVisibility(UI_Common::C_Module_PrevBestTime, !Hide);
+		case "warmup"									: WarmUp::SetUIVisibility(!Hide);
+		case "endmap_ladder_recap"		: UIManager.UIAll.OverlayHideEndMapLadderRecap = Hide;
+		case "multilap_info"					: SetModuleVisibility(UI_Common::C_Module_Laps, !Hide);
+		case "checkpoint_ranking"		: SetModuleVisibility(UI_Common::C_Module_CheckpointRanking, !Hide);
+		case "scorestable_alt"				: {
+			UIManager.UIAll.AltMenuNoDefaultScores = Hide;
+			UIManager.UIAll.AltMenuNoCustomScores = Hide;
+		}
+	}
+}
+
+// ---------------------------------- //
+/** Set the visibility of the UI overlays
+ *
+ *	@param	_Name											The name of the overlay
+ *	@param	_Position									The position of the overlay
+ */
+Void Private_SetPosition(Text _Name, Text _Position) {
+	if (_Position == "") return;
+	
+	declare Vec3 Position;
+	declare PositionSplit = TL::Split(" ", _Position);
+	if (PositionSplit.existskey(0)) Position.X = TL::ToReal(PositionSplit[0]);
+	if (PositionSplit.existskey(1)) Position.Y = TL::ToReal(PositionSplit[1]);
+	if (PositionSplit.existskey(2)) Position.Z = TL::ToReal(PositionSplit[2]);
+	
+	switch (_Name) {
+		case "checkpoint_list"				: SetModulePosition(UI_Common::C_Module_TimeGap, Position);
+		case "round_scores"					: SetModulePosition(UI_Common::C_Module_SmallScoresTable, Position);
+		case "chrono"									: SetModulePosition(UI_Common::C_Module_Chrono, Position);
+		case "personal_best_and_rank": SetModulePosition(UI_Common::C_Module_PrevBestTime, Position);
+		case "checkpoint_time"				: SetModulePosition(UI_Common::C_Module_CheckpointTime, Position);
+		case "speed_and_distance"		: SetModulePosition(UI_Common::C_Module_SpeedAndDistance, Position);
+		case "chat"										: UIManager.UIAll.OverlayChatOffset = <Position.X, Position.Y>;
+		case "countdown"							: SetModulePosition(UI_Common::C_Module_Countdown, Position);
+		case "warmup"									: WarmUp::SetUIPosition(Position);
+		case "multilap_info"					: SetModulePosition(UI_Common::C_Module_Laps, Position);
+		case "position"								: SetModulePosition(UI_Common::C_Module_MapRanking, Position);
+		case "checkpoint_ranking"		: SetModulePosition(UI_Common::C_Module_CheckpointRanking, Position);
+		case "map_info" 							: SetModulePosition(UI_Common::C_Module_MapInfo, Position);
+		case "live_info" 							: SetModulePosition(UI_Common::C_Module_LiveInfo, Position);
+		case "spectator_info" 				: SetModulePosition(UI_Common::C_Module_SpectatorInfo, Position);
+	}
+}
+
+// ---------------------------------- //
+/** Parse the properties xml
+ *
+ *	@param	_Xml											The xml to parse
+ */
+Void Private_SetProperties(Text _Xml) {
+	if (_Xml == "") return;
+	declare XmlDoc <=> Xml.Create(_Xml);
+	if (XmlDoc == Null) {
+		Xml.Destroy(XmlDoc);
+		return;
+	}
+	if (XmlDoc.Root.Name != "ui_properties") {
+		Xml.Destroy(XmlDoc);
+		return;
+	}
+	
+	foreach (Node in XmlDoc.Root.Children) {
+		Private_SetVisibility(Node.Name, Node.GetAttributeText("visible", ""));
+		Private_SetPosition(Node.Name, Node.GetAttributeText("pos", ""));
+		if (Node.Name == "chat") {
+			SetChatLineCount(Node.GetAttributeInteger("linecount", -1));
+			Private_SetPosition(Node.Name, Node.GetAttributeText("offset", ""));
+		}
+		if (Node.Name == "scorestable") {
+			Private_SetVisibility("scorestable_alt", Node.GetAttributeText("alt_visible", ""));
+		}
+	}
+	
+	Xml.Destroy(XmlDoc);
+	
+	declare LibUI_PropertiesBackUp for This = "";
+	LibUI_PropertiesBackUp = _Xml;
+}
+
+// ---------------------------------- //
+/** Get the current UI properties
+ *	in the specified format
+ *
+ *	@param	_Format										The format of the properties
+ *
+ *	@return		The UI properties
+ */
+Text Private_GetProperties(Integer _Format) {
+	if (_Format == C_Format_Json) {
+		return """{
+	"map_info": {
+		"visible": {{{XmlRpc::JsonGetBoolean(GetModuleVisibility(UI_Common::C_Module_MapInfo))}}},
+		"pos": {{{XmlRpc::JsonGetVec3(GetModulePosition(UI_Common::C_Module_MapInfo))}}}
+	},
+	"live_info": {
+		"visible": {{{XmlRpc::JsonGetBoolean(GetModuleVisibility(UI_Common::C_Module_LiveInfo))}}},
+		"pos": {{{XmlRpc::JsonGetVec3(GetModulePosition(UI_Common::C_Module_LiveInfo))}}}
+	},
+	"spectator_info": {
+		"visible": {{{XmlRpc::JsonGetBoolean(GetModuleVisibility(UI_Common::C_Module_SpectatorInfo))}}},
+		"pos": {{{XmlRpc::JsonGetVec3(GetModulePosition(UI_Common::C_Module_SpectatorInfo))}}}
+	},
+	"opponents_info": {
+		"visible": {{{XmlRpc::JsonGetBoolean(!UIManager.UIAll.OverlayHideOpponentsInfo)}}}
+	},
+	"chat": {
+		"visible": {{{XmlRpc::JsonGetBoolean(!UIManager.UIAll.OverlayHideChat)}}},
+		"offset": {{{XmlRpc::JsonGetVec2(UIManager.UIAll.OverlayChatOffset)}}},
+		"linecount": {{{XmlRpc::JsonGetInteger(GetChatLineCount())}}}
+	},
+	"checkpoint_list": {
+		"visible": {{{XmlRpc::JsonGetBoolean(GetModuleVisibility(UI_Common::C_Module_TimeGap))}}},
+		"pos": {{{XmlRpc::JsonGetVec3(GetModulePosition(UI_Common::C_Module_TimeGap))}}}
+	},
+	"round_scores": {
+		"visible": {{{XmlRpc::JsonGetBoolean(GetModuleVisibility(UI_Common::C_Module_SmallScoresTable))}}},
+		"pos": {{{XmlRpc::JsonGetVec3(GetModulePosition(UI_Common::C_Module_SmallScoresTable))}}}
+	},
+	"countdown": {
+		"visible": {{{XmlRpc::JsonGetBoolean(GetModuleVisibility(UI_Common::C_Module_Countdown))}}},
+		"pos": {{{XmlRpc::JsonGetVec3(GetModulePosition(UI_Common::C_Module_Countdown))}}}
+	},
+	"go": {
+		"visible": {{{XmlRpc::JsonGetBoolean(!UIManager.UIAll.OverlayHide321Go)}}}
+	},
+	"chrono": {
+		"visible": {{{XmlRpc::JsonGetBoolean(GetModuleVisibility(UI_Common::C_Module_Chrono))}}},
+		"pos": {{{XmlRpc::JsonGetVec3(GetModulePosition(UI_Common::C_Module_Chrono))}}}
+	},
+	"speed_and_distance": {
+		"visible": {{{XmlRpc::JsonGetBoolean(GetModuleVisibility(UI_Common::C_Module_SpeedAndDistance))}}},
+		"pos": {{{XmlRpc::JsonGetVec3(GetModulePosition(UI_Common::C_Module_SpeedAndDistance))}}}
+	},
+	"personal_best_and_rank": {
+		"visible": {{{XmlRpc::JsonGetBoolean(GetModuleVisibility(UI_Common::C_Module_PrevBestTime))}}},
+		"pos": {{{XmlRpc::JsonGetVec3(GetModulePosition(UI_Common::C_Module_PrevBestTime))}}}
+	},
+	"position": {
+		"visible": {{{XmlRpc::JsonGetBoolean(GetModuleVisibility(UI_Common::C_Module_MapRanking))}}},
+		"pos": {{{XmlRpc::JsonGetVec3(GetModulePosition(UI_Common::C_Module_MapRanking))}}}
+	},
+	"checkpoint_time": {
+		"visible": {{{XmlRpc::JsonGetBoolean(GetModuleVisibility(UI_Common::C_Module_CheckpointTime))}}},
+		"pos": {{{XmlRpc::JsonGetVec3(GetModulePosition(UI_Common::C_Module_CheckpointTime))}}}
+	},
+	"chat_avatar": {
+		"visible": {{{XmlRpc::JsonGetBoolean(!UIManager.UIAll.OverlayChatHideAvatar)}}}
+	},
+	"warmup": {
+		"visible": {{{XmlRpc::JsonGetBoolean(WarmUp::GetUIVisibility())}}},
+		"pos": {{{XmlRpc::JsonGetVec3(WarmUp::GetUIPosition())}}}
+	},
+	"endmap_ladder_recap": {
+		"visible": {{{XmlRpc::JsonGetBoolean(!UIManager.UIAll.OverlayHideEndMapLadderRecap)}}}
+	},
+	"multilap_info": {
+		"visible": {{{XmlRpc::JsonGetBoolean(GetModuleVisibility(UI_Common::C_Module_Laps))}}},
+		"pos": {{{XmlRpc::JsonGetVec3(GetModulePosition(UI_Common::C_Module_Laps))}}}
+	},
+	"checkpoint_ranking": {
+		"visible": {{{XmlRpc::JsonGetBoolean(GetModuleVisibility(UI_Common::C_Module_CheckpointRanking))}}},
+		"pos": {{{XmlRpc::JsonGetVec3(GetModulePosition(UI_Common::C_Module_CheckpointRanking))}}}
+	},
+	"scorestable": {
+		"alt_visible": {{{XmlRpc::JsonGetBoolean(!UIManager.UIAll.AltMenuNoDefaultScores)}}}
+	}
+}""";
+	}
+	
+	return """
+<ui_properties>
+	<map_info visible="{{{Private_BooleanToText(GetModuleVisibility(UI_Common::C_Module_MapInfo))}}}" pos="{{{Private_Vec3ToText(GetModulePosition(UI_Common::C_Module_MapInfo))}}}" />
+	<live_info visible="{{{Private_BooleanToText(GetModuleVisibility(UI_Common::C_Module_LiveInfo))}}}" pos="{{{Private_Vec3ToText(GetModulePosition(UI_Common::C_Module_LiveInfo))}}}" />
+	<spectator_info visible="{{{Private_BooleanToText(GetModuleVisibility(UI_Common::C_Module_SpectatorInfo))}}}" pos="{{{Private_Vec3ToText(GetModulePosition(UI_Common::C_Module_SpectatorInfo))}}}" />
+	<opponents_info visible="{{{Private_BooleanToText(!UIManager.UIAll.OverlayHideOpponentsInfo)}}}" />
+	<chat visible="{{{Private_BooleanToText(!UIManager.UIAll.OverlayHideChat)}}}" offset="{{{Private_Vec2ToText(UIManager.UIAll.OverlayChatOffset)}}}" linecount="{{{GetChatLineCount()}}}" />
+	<checkpoint_list visible="{{{Private_BooleanToText(GetModuleVisibility(UI_Common::C_Module_TimeGap))}}}" pos="{{{Private_Vec3ToText(GetModulePosition(UI_Common::C_Module_TimeGap))}}}" />
+	<round_scores visible="{{{Private_BooleanToText(GetModuleVisibility(UI_Common::C_Module_SmallScoresTable))}}}" pos="{{{Private_Vec3ToText(GetModulePosition(UI_Common::C_Module_SmallScoresTable))}}}" />
+	<countdown visible="{{{Private_BooleanToText(GetModuleVisibility(UI_Common::C_Module_Countdown))}}}" pos="{{{Private_Vec3ToText(GetModulePosition(UI_Common::C_Module_Countdown))}}}" />
+	<go visible="{{{Private_BooleanToText(!UIManager.UIAll.OverlayHide321Go)}}}" />
+	<chrono visible="{{{Private_BooleanToText(GetModuleVisibility(UI_Common::C_Module_Chrono))}}}" pos="{{{Private_Vec3ToText(GetModulePosition(UI_Common::C_Module_Chrono))}}}" />
+	<speed_and_distance visible="{{{Private_BooleanToText(GetModuleVisibility(UI_Common::C_Module_SpeedAndDistance))}}}" pos="{{{Private_Vec3ToText(GetModulePosition(UI_Common::C_Module_SpeedAndDistance))}}}" />
+	<personal_best_and_rank visible="{{{Private_BooleanToText(GetModuleVisibility(UI_Common::C_Module_PrevBestTime))}}}" pos="{{{Private_Vec3ToText(GetModulePosition(UI_Common::C_Module_PrevBestTime))}}}" />
+	<position visible="{{{Private_BooleanToText(GetModuleVisibility(UI_Common::C_Module_MapRanking))}}}" pos="{{{Private_Vec3ToText(GetModulePosition(UI_Common::C_Module_MapRanking))}}}" />
+	<checkpoint_time visible="{{{Private_BooleanToText(GetModuleVisibility(UI_Common::C_Module_CheckpointTime))}}}" pos="{{{Private_Vec3ToText(GetModulePosition(UI_Common::C_Module_CheckpointTime))}}}" />
+	<chat_avatar visible="{{{Private_BooleanToText(!UIManager.UIAll.OverlayChatHideAvatar)}}}" />
+	<warmup visible="{{{Private_BooleanToText(WarmUp::GetUIVisibility())}}}" pos="{{{Private_Vec3ToText(WarmUp::GetUIPosition())}}}" />
+	<endmap_ladder_recap visible="{{{Private_BooleanToText(!UIManager.UIAll.OverlayHideEndMapLadderRecap)}}}" />
+	<multilap_info visible="{{{Private_BooleanToText(GetModuleVisibility(UI_Common::C_Module_Laps))}}}" pos="{{{Private_Vec3ToText(GetModulePosition(UI_Common::C_Module_Laps))}}}" />
+	<checkpoint_ranking visible="{{{Private_BooleanToText(GetModuleVisibility(UI_Common::C_Module_CheckpointRanking))}}}" pos="{{{Private_Vec3ToText(GetModulePosition(UI_Common::C_Module_CheckpointRanking))}}}" />
+	<scorestable alt_visible="{{{Private_BooleanToText(!UIManager.UIAll.AltMenuNoDefaultScores)}}}" />
+</ui_properties>""";
+}
+
+// ---------------------------------- //
+/** Get the current properties xml
+ *
+ *	@return														The properties xml
+ */
+Text Private_GetProperties() {
+	return Private_GetProperties(C_Format_Xml);
+}
+
+// ---------------------------------- //
+/** Send ui properties
+ *
+ *	@param	_ResponseId								Id to insert in the response callback
+ */
+Void XmlRpc_SendUIProperties(Text _ResponseId) {
+	declare Json = """{
+	"responseid": {{{dump(_ResponseId)}}}
+}""";
+	declare PropsXml = Private_GetProperties(C_Format_Xml);
+	declare PropsJson = Private_GetProperties(C_Format_Json);
+
+	XmlRpc::SendCallback(C_Callback_Properties, [Json, PropsXml, PropsJson]);
+}
+
+// ---------------------------------- //
+/// Update UI library
+Void Yield() {
+	if (G_LibUI_PrevCutOffTimeLimit != CutOffTimeLimit) {
+		G_LibUI_PrevCutOffTimeLimit = CutOffTimeLimit;
+		SetCutOffTimeLimit(CutOffTimeLimit);
+	}
+	
+	foreach (Event in XmlRpc.PendingEvents) {
+		if (Event.Type == CXmlRpcEvent::EType::CallbackArray) {
+			switch (Event.ParamArray1) {
+				case C_Method_SetProperties: {
+					if (Event.ParamArray2.count > 0) {
+						Private_SetProperties(Event.ParamArray2[0]);
+					}
+				}
+				case C_Method_GetProperties: {
+					declare ResponseId = "";
+					if (Event.ParamArray2.existskey(0)) ResponseId = Event.ParamArray2[0];
+					XmlRpc_SendUIProperties(ResponseId);
+				}
+			}
+		}
+	}
+	
+	// Update live info module with default events
+	if (Private_ModuleIsLoaded(UI_Common::C_Module_LiveInfo)) {
+		foreach (Event in PendingEvents) {
+			if (Event.Type == CTmModeEvent::EType::OnPlayerAdded) {
+				if (Event.Player != Null && Event.Player.User != Null) {
+					//L16N [UI] Message displayed when a player joins the server
+					declare Message = TL::Compose(_("$<%1$> joined the game"), Event.Player.User.Name);
+					declare Image = """file://Avatars/{{{Event.Player.User.Login}}}/Default""";
+					foreach (Player in AllPlayers) {
+						SendLiveEvent(Player, Message, Image);
+					}
+				}
+			} else if (Event.Type == CTmModeEvent::EType::OnPlayerRemoved) {
+				if (Event.User != Null) {
+					//L16N [UI] Message displayed when a player leaves the server
+					declare Message = TL::Compose(_("$<%1$> left the game"), Event.User.Name);
+					declare Image = """file://Avatars/{{{Event.User.Login}}}/Default""";
+					foreach (Player in AllPlayers) {
+						SendLiveEvent(Player, Message, Image);
+					}
+				}
+			}
+		}
+	}
+}
+
+// ---------------------------------- //
+/** Load a module
+ *
+ *	@param	_ModuleId									The name of the module to load
+ */
+Void LoadModule(Text _ModuleId) {
+	if (Private_ModuleIsLoaded(_ModuleId)) return;
+	
+	G_LibUI_ModulesLoaded.add(_ModuleId);
+			
+	switch (_ModuleId) {
+		case UI_Common::C_Module_TimeGap: {
+			UI_Server::LoadModule(UI_Common::C_Module_TimeGap);
+			SetTimeGapMode("CurRace");
+			SetModuleVisibility(UI_Common::C_Module_TimeGap, True);
+			SetModulePosition(UI_Common::C_Module_TimeGap, C_LibUI_TimeGapPos);
+		}
+		case UI_Common::C_Module_SmallScoresTable: {
+			UI_Server::LoadModule(UI_Common::C_Module_SmallScoresTable);
+			SetModuleVisibility(UI_Common::C_Module_SmallScoresTable, True);
+			SetModulePosition(UI_Common::C_Module_SmallScoresTable, C_LibUI_SmallScoresTablePos);
+		}
+		case UI_Common::C_Module_Chrono: {
+			UI_Server::LoadModule(UI_Common::C_Module_Chrono);
+			SetModuleVisibility(UI_Common::C_Module_Chrono, True);
+			SetModulePosition(UI_Common::C_Module_Chrono, C_LibUI_ChronoPos);
+		}
+		case UI_Common::C_Module_CheckpointTime: {
+			UI_Server::LoadModule(UI_Common::C_Module_CheckpointTime);
+			SetCheckpointTimeMode("CurRace");
+			DisplayTimeDiff(True);
+			DisplayLapTimeDiff(True);
+			SetModuleVisibility(UI_Common::C_Module_CheckpointTime, True);
+			SetModulePosition(UI_Common::C_Module_CheckpointTime, C_LibUI_CheckpointTimePos);
+		}
+		case UI_Common::C_Module_PrevBestTime: {
+			UI_Server::LoadModule(UI_Common::C_Module_PrevBestTime);
+			SetModuleVisibility(UI_Common::C_Module_PrevBestTime, True);
+			SetModulePosition(UI_Common::C_Module_PrevBestTime, C_LibUI_PrevBestTimePos);
+		}
+		case UI_Common::C_Module_SpeedAndDistance: {
+			UI_Server::LoadModule(UI_Common::C_Module_SpeedAndDistance);
+			SetModuleVisibility(UI_Common::C_Module_SpeedAndDistance, True);
+			SetModulePosition(UI_Common::C_Module_SpeedAndDistance, C_LibUI_SpeedAndDistancePos);
+			DisplaySpeedGauge(False);
+		}
+		case UI_Common::C_Module_Countdown: {
+			UI_Server::LoadModule(UI_Common::C_Module_Countdown);
+			SetModuleVisibility(UI_Common::C_Module_Countdown, True);
+			SetModulePosition(UI_Common::C_Module_Countdown, C_LibUI_CountdownPos);
+		}
+		case UI_Common::C_Module_Laps: {
+			UI_Server::LoadModule(UI_Common::C_Module_Laps);
+			SetModuleVisibility(UI_Common::C_Module_Laps, True);
+			SetModulePosition(UI_Common::C_Module_Laps, C_LibUI_LapsPos);
+		}
+		case UI_Common::C_Module_MapRanking: {
+			UI_Server::LoadModule(UI_Common::C_Module_MapRanking);
+			SetModuleVisibility(UI_Common::C_Module_MapRanking, True);
+			SetModulePosition(UI_Common::C_Module_MapRanking, C_LibUI_MapRankingPos);
+		}
+		case UI_Common::C_Module_CheckpointRanking: {
+			UI_Server::LoadModule(UI_Common::C_Module_CheckpointRanking);
+			SetModuleVisibility(UI_Common::C_Module_CheckpointRanking, True);
+			SetModulePosition(UI_Common::C_Module_CheckpointRanking, C_LibUI_CheckpointRankingPos);
+		}
+		case UI_Common::C_Module_MapInfo: {
+			UI_Server::LoadModule(UI_Common::C_Module_MapInfo);
+			SetModuleVisibility(UI_Common::C_Module_MapInfo, True);
+			SetModulePosition(UI_Common::C_Module_MapInfo, C_LibUI_MapInfoPos);
+		}
+		case UI_Common::C_Module_LiveInfo: {
+			UI_Server::LoadModule(UI_Common::C_Module_LiveInfo);
+			SetModuleVisibility(UI_Common::C_Module_LiveInfo, True);
+			SetModulePosition(UI_Common::C_Module_LiveInfo, C_LibUI_LiveInfoPos);
+		}
+		case UI_Common::C_Module_SpectatorInfo: {
+			UI_Server::LoadModule(UI_Common::C_Module_SpectatorInfo);
+			SetModuleVisibility(UI_Common::C_Module_SpectatorInfo, True);
+			SetModulePosition(UI_Common::C_Module_SpectatorInfo, C_LibUI_SpectatorInfoPos);
+		}
+	}
+	
+	// Try to load the latest properties
+	declare LibUI_PropertiesBackUp for This = "";
+	Private_SetProperties(LibUI_PropertiesBackUp);
+}
+
+// ---------------------------------- //
+/** Load several modules
+ *
+ *	@param	_ModulesIds								A list of modules to load with the library
+ */
+Void LoadModules(Text[] _ModulesIds) {
+	foreach (ModuleId in _ModulesIds) {
+		LoadModule(ModuleId);
+	}
+}
+
+// ---------------------------------- //
+/** Unload a module
+ *
+ *	@param	_ModuleId									The name of the module to unload
+ */
+Void UnloadModule(Text _ModuleId) {
+	declare Removed = G_LibUI_ModulesLoaded.remove(_ModuleId);
+	
+	if (Removed) {
+		// Remove module layer
+		UI_Server::UnloadModule(_ModuleId);
+		SetModuleVisibility(_ModuleId, True);
+	}
+}
+
+// ---------------------------------- //
+/// Unload the library
+Void Unload() {
+	foreach (ModuleId in UI_Common::C_Modules) {
+		UnloadModule(ModuleId);		
+	}
+	
+	G_LibUI_ModulesLoaded.clear();
+	G_LibUI_LayersIds.clear();
+	G_LibUI_ModuleVisibility.clear();
+	G_LibUI_ModulePosition.clear();
+	G_LibUI_PrevCutOffTimeLimit = -1;
+	
+	XmlRpc::UnregisterCallback(C_Callback_Properties);
+	XmlRpc::UnregisterMethod(C_Method_SetProperties);
+	XmlRpc::UnregisterMethod(C_Method_GetProperties);
+	
+	UI_Server::Unload();
+}
+
+// ---------------------------------- //
+/// Load the library
+Void Load() {
+	Unload();
+	
+	UI_Server::Load();
+	
+	// Try to load the latest properties
+	declare LibUI_PropertiesBackUp for This = "";
+	Private_SetProperties(LibUI_PropertiesBackUp);
+	
+	// Register callbacks
+	XmlRpc::RegisterCallback(C_Callback_Properties, """
+* Name: {{{C_Callback_Properties}}}
+* Type: CallbackArray
+* Description: Information about the default UI components of Maniaplanet (map info, chat, ladder recap, ...).
+* Data:
+	- Version >=2.0.0: 
+	```
+	[
+		"{
+			"responseid": "xyz", //< Facultative id passed by a script event
+		}",
+		"
+		<ui_properties>
+			<!-- The map name and author displayed in the top right of the screen when viewing the scores table -->
+			<map_info visible="true" pos="-160. 80. 150." />
+			<!-- Information about live envent displayed in the top right of the screen -->
+			<live_info visible="true" pos="-159. 84. 5." />
+			<!-- Information about the spectated player displayed in the bottom of the screen -->
+			<spectator_info visible="true" pos="0. -68. 5." />
+			<!-- Only visible in solo modes, it hides the medal/ghost selection UI -->
+			<opponents_info visible="true" />
+			<!--
+				The server chat displayed on the bottom right of the screen
+				The offset values range from 0. to -3.2 for x and from 0. to 1.8 for y
+				The linecount property must be between 0 and 40
+			-->
+			<chat visible="true" offset="0. 0." linecount="7" />
+			<!-- Time of the players at the current checkpoint displayed at the bottom of the screen -->
+			<checkpoint_list visible="true" pos="48. -52. 5." />
+			<!-- Small scores table displayed at the end of race of the round based modes (Rounds, Cup, ...) on the right of the screen -->
+			<round_scores visible="true" pos="-158.5 40. 150." />
+			<!-- Race time left displayed at the bottom right of the screen -->
+			<countdown visible="true" pos="153. -7. 5." />
+			<!-- 3, 2, 1, Go! message displayed on the middle of the screen when spawning -->
+			<go visible="true" />
+			<!-- Current race chrono displayed at the bottom center of the screen -->
+			<chrono visible="true" pos="0. -80. -5." />
+			<!-- Speed and distance raced displayed in the bottom right of the screen -->
+			<speed_and_distance visible="true" pos="137. -69. 5." />
+			<!-- Previous and best times displayed at the bottom right of the screen -->
+			<personal_best_and_rank visible="true" pos="157. -24. 5." />
+			<!-- Current position in the map ranking displayed at the bottom right of the screen -->
+			<position visible="true" pos="150.5 -28. 5." />
+			<!-- Checkpoint time information displayed in the middle of the screen when crossing a checkpoint -->
+			<checkpoint_time visible="true" pos="0. 3. -10." />
+			<!-- The avatar of the last player speaking in the chat displayed above the chat -->
+			<chat_avatar visible="true" />
+			<!-- Warm-up progression displayed on the right of the screen during warm-up -->
+			<warmup visible="true" pos="153. 13. 0." />
+			<!-- Ladder progression box displayed on the top of the screen at the end of the map -->
+			<endmap_ladder_recap visible="true" />
+			<!-- Laps count displayed on the right of the screen on multilaps map -->
+			<multilap_info visible="true" pos="140. 84. 5." />
+			<!-- Player's ranking at the latest checkpoint -->
+			<checkpoint_ranking visible="false" pos="0. 84. 5." />
+			<!-- Scores table displayed in the middle of the screen -->
+			<scorestable alt_visible="true" />
+		</ui_properties>
+		",
+		"{
+			"map_info": { //< The map name and author displayed in the top right of the screen when viewing the scores table
+				"visible": true,
+				"pos": { "x": -160.0, "y": 80.0, "z": 150.0 }
+			},
+			"live_info": { //< Information about live envent displayed in the top right of the screen
+				"visible": true,
+				"pos": { "x": -159.0, "y": 84.0, "z": 5.0 }
+			},
+			"spectator_info": { //< Information about the spectated player displayed in the bottom of the screen
+				"visible": true,
+				"pos": { "x": 0.0, "y": -68.0, "z": 5.0 }
+			},
+			"opponents_info": { //< Only visible in solo modes, it hides the medal/ghost selection UI
+				"visible": true
+			},
+			"chat": { //< The server chat displayed on the bottom right of the screen
+				"visible": true,
+				"offset": { "x": 0.0, "y": 0.0 }, //< The offset values range from 0. to -3.2 for x and from 0. to 1.8 for y
+				"linecount": 7 //< The linecount property must be between 0 and 40
+			},
+			"checkpoint_list": { //< Time of the players at the current checkpoint displayed at the bottom of the screen
+				"visible": true,
+				"pos": { "x": 48.0, "y": -52.0, "z": 5.0 }
+			},
+			"round_scores": { //< Small scores table displayed at the end of race of the round based modes (Rounds, Cup, ...) on the right of the screen
+				"visible": true,
+				"pos": { "x": -158.5, "y": 40.0, "z": 150.0 }
+			},
+			"countdown": { //< Race time left displayed at the bottom right of the screen
+				"visible": true,
+				"pos": { "x": 153.0, "y": -7.0, "z": 5.0 }
+			},
+			"go": { //< 3, 2, 1, Go! message displayed on the middle of the screen when spawning
+				"visible": true
+			},
+			"chrono": { //< Current race chrono displayed at the bottom center of the screen
+				"visible": true,
+				"pos": { "x": 0.0, "y": -80.0, "z": -5.0 }
+			},
+			"speed_and_distance": { //< Speed and distance raced displayed in the bottom right of the screen
+				"visible": true,
+				"pos": { "x": 137.0, "y": -69.0, "z": 5.0 }
+			},
+			"personal_best_and_rank": { //< Previous and best times displayed at the bottom right of the screen
+				"visible": true,
+				"pos": { "x": 157.0, "y": -24.0, "z": 5.0 }
+			},
+			"position": { //< Current position in the map ranking displayed at the bottom right of the screen
+				"visible": true,
+				"pos": { "x": 150.5, "y": -28.0, "z": 5.0 }
+			},
+			"checkpoint_time": { //< Checkpoint time information displayed in the middle of the screen when crossing a checkpoint
+				"visible": true,
+				"pos": { "x": 0.0, "y": 3.0, "z": -10.0 }
+			},
+			"chat_avatar": { //< The avatar of the last player speaking in the chat displayed above the chat
+				"visible": true
+			},
+			"warmup": { //< Warm-up progression displayed on the right of the screen during warm-up
+				"visible": true,
+				"pos": { "x": 153.0, "y": 13.0, "z": 0.0 }
+			},
+			"endmap_ladder_recap": { //< Ladder progression box displayed on the top of the screen at the end of the map
+				"visible": true
+			},
+			"multilap_info": { //< Laps count displayed on the right of the screen on multilaps map
+				"visible": true,
+				"pos": { "x": 140.0, "y": 84.0, "z": 5.0 }
+			},
+			"checkpoint_ranking": { //< Player's ranking at the latest checkpoint
+				"visible": true,
+				"pos": { "x": 0.0, "y": 84.0, "z": 5.0 }
+			},
+			"scorestable": { //< Scores table displayed in the middle of the screen
+				"alt_visible": true
+			}
+		}"
+	]
+	```
+	""");
+	
+	// Register methods
+	XmlRpc::RegisterMethod(C_Method_GetProperties, """
+* Name: {{{C_Method_GetProperties}}}
+* Type: TriggerModeScriptEventArray
+* Description: Request the current ui properties. This method will trigger the "{{{C_Callback_Properties}}}" callback.
+* Data:
+	- Version >=2.0.0:
+	```
+	[
+		"responseid" //< Facultative id that will be passed to the "{{{C_Callback_Properties}}}" callback.
+	]
+	```
+	""");
+	XmlRpc::RegisterMethod(C_Method_SetProperties, """
+* Name: {{{C_Method_SetProperties}}}
+* Type: TriggerModeScriptEventArray
+* Description: Update the ui properties.
+* Data:
+	- Version >=2.0.0:
+	```
+	[
+		"
+		<!--
+		  Each node is optional and can be omitted.
+		  If it's the case then the previous value will be kept.
+		-->
+		<ui_properties>
+			<!-- The map name and author displayed in the top right of the screen when viewing the scores table -->
+			<map_info visible="true" pos="-160. 80. 150." />
+			<!-- Information about live envent displayed in the top right of the screen -->
+			<live_info visible="true" pos="-159. 84. 5." />
+			<!-- Information about the spectated player displayed in the bottom of the screen -->
+			<spectator_info visible="true" pos="0. -68. 5." />
+			<!-- Only visible in solo modes, it hides the medal/ghost selection UI -->
+			<opponents_info visible="true" />
+			<!--
+				The server chat displayed on the bottom right of the screen
+				The offset values range from 0. to -3.2 for x and from 0. to 1.8 for y
+				The linecount property must be between 0 and 40
+			-->
+			<chat visible="true" offset="0. 0." linecount="7" />
+			<!-- Time of the players at the current checkpoint displayed at the bottom of the screen -->
+			<checkpoint_list visible="true" pos="48. -52. 5." />
+			<!-- Small scores table displayed at the end of race of the round based modes (Rounds, Cup, ...) on the right of the screen -->
+			<round_scores visible="true" pos="-158.5 40. 150." />
+			<!-- Race time left displayed at the bottom right of the screen -->
+			<countdown visible="true" pos="153. -7. 5." />
+			<!-- 3, 2, 1, Go! message displayed on the middle of the screen when spawning -->
+			<go visible="true" />
+			<!-- Current race chrono displayed at the bottom center of the screen -->
+			<chrono visible="true" pos="0. -80. -5." />
+			<!-- Speed and distance raced displayed in the bottom right of the screen -->
+			<speed_and_distance visible="true" pos="137. -69. 5." />
+			<!-- Previous and best times displayed at the bottom right of the screen -->
+			<personal_best_and_rank visible="true" pos="157. -24. 5." />
+			<!-- Current position in the map ranking displayed at the bottom right of the screen -->
+			<position visible="true" pos="150.5 -28. 5." />
+			<!-- Checkpoint time information displayed in the middle of the screen when crossing a checkpoint -->
+			<checkpoint_time visible="true" pos="0. 3. -10." />
+			<!-- The avatar of the last player speaking in the chat displayed above the chat -->
+			<chat_avatar visible="true" />
+			<!-- Warm-up progression displayed on the right of the screen during warm-up -->
+			<warmup visible="true" pos="153. 13. 0." />
+			<!-- Ladder progression box displayed on the top of the screen at the end of the map -->
+			<endmap_ladder_recap visible="true" />
+			<!-- Laps count displayed on the right of the screen on multilaps map -->
+			<multilap_info visible="true" pos="140. 84. 5." />
+			<!-- Player's ranking at the latest checkpoint -->
+			<checkpoint_ranking visible="false" pos="0. 84. 5." />
+			<!-- Scores table displayed in the middle of the screen -->
+			<scorestable alt_visible="true" />
+		</ui_properties>
+		"
+	]
+	```
+	""");
+}
+
+// ---------------------------------- //
+/** (Overload) Load the library with some modules
+ *
+ *	@param	_AutoLoadModules					A list of modules to load with the library
+ */
+Void Load(Text[] _AutoLoadModules) {
+	Load();
+	
+	LoadModules(_AutoLoadModules);
+}

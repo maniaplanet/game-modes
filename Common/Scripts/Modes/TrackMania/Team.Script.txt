@@ -1,0 +1,503 @@
+/**
+ *	Team mode
+ */
+#Extends "Modes/TrackMania/Base/RoundsBase2.Script.txt"
+
+#Const CompatibleMapTypes	"Race"
+#Const Version							"2017-06-14"
+#Const ScriptName						"Modes/TrackMania/Team/Team.Script.txt"
+
+// ---------------------------------- //
+// Libraries
+// ---------------------------------- //
+#Include "TextLib" as TL
+#Include "Libs/Nadeo/Semver.Script.txt" as Semver
+
+// ---------------------------------- //
+// Settings
+// ---------------------------------- //
+#Setting S_PointsLimit 				5
+#Setting S_MaxPointsPerRound		6	as _("Max points :")	///< The maxium number of points attirbuted to the first player to cross the finish line
+#Setting S_PointsGap						1	as _("Points gap :")	///< The number of points lead a team must have to win the map
+#Setting S_WarmUpNb						0	as _("Number of warm up :")
+#Setting S_WarmUpDuration			0	as _("Duration of one warm up :")
+// Matchmaking
+#Setting S_NbPlayersPerTeamMax	3	as "<hidden>" //_("Maximum number of players per team in matchmaking")
+#Setting S_NbPlayersPerTeamMin	3	as "<hidden>" //_("Minimum number of players per team in matchmaking")
+
+#Setting S_ScriptEnvironment "production"/*/"development"*/
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_BlueBotsNb 0
+#Const C_RedBotsNb 0
+#Const C_HudModulePath "Nadeo/TrackMania/Team/Hud.Module.Gbx" ///< Path to the hud module
+#Const C_ManiaAppUrl "file://Media/ManiaApps/Nadeo/TrackMania/Team/Team.Script.txt"
+
+#Const Description 	_("""$fffIn $f00Team$fff mode, you have to choose a team : $f00Red$fff or $55fBlue$fff.
+(you can select a team in the in-game menu, 
+accessible via the 'Escape' key)
+
+The team mode mode consists of $f00a series of races$fff.
+The goal for your team is to win a maximum number of $f00points$fff.
+
+When you finish a race with a good $f00position$fff, you give $f00points$fff to your team.
+The $f00winning team$fff is the first team whose total reaches the $f00point limit$fff (5 for example).""")
+
+// ---------------------------------- //
+// Extends
+// ---------------------------------- //
+***MM_SetupMatchmaking***
+***
+MM_SetFormat([S_NbPlayersPerTeamMax, S_NbPlayersPerTeamMax]);
+if (S_NbPlayersPerTeamMax > S_NbPlayersPerTeamMin) {
+	MM_SetProgressiveFormats([1, 1], S_NbPlayersPerTeamMin, S_NbPlayersPerTeamMax-1);
+}
+***
+
+***Lobby_MatchRulesManialink***
+***
+ManialinkRules = """<label posn="-62.5 25" sizen="125 50" autonewline="1" maxline="10" textemboss="1" textsize="2" text="{{{Description}}}" />""";
+***
+
+***Match_LogVersion***
+***
+MB_LogVersion(ScriptName, Version);
+***
+
+***Match_Settings***
+***
+MB_Settings_UseDefaultHud = False;
+***
+
+***Match_Rules***
+***
+ModeInfo::SetName("Team");
+ModeInfo::SetType(ModeInfo::C_Type_Teams);
+ModeInfo::SetRules(Description);
+ModeInfo::SetStatusMessage("");
+***
+
+***Match_LoadHud***
+***
+ClientManiaAppUrl = C_ManiaAppUrl;
+Hud_Load(C_HudModulePath);
+MB_SortScores(CTmMode::ETmScoreSortOrder::BestRace_Time);
+***
+
+***Match_StartServer***
+***
+// ---------------------------------- //
+// Initialize mode
+UseClans = True;
+UI::UnloadModule("MapRanking");
+UIManager.UIAll.OverlayHidePosition = True;
+WarmUp::SetAvailability(True);
+ChannelProgression::Enable(S_IsChannelServer);
+***
+
+***Match_InitMap***
+***
+// ---------------------------------- //
+// Set scores table for race
+if (Hud != Null && Hud.ScoresTable != Null) {
+	Hud.ScoresTable.ResetCustomColumns();
+	Hud.ScoresTable.SetColumnVisibility(CModulePlaygroundScoresTable::EColumnType::TMBestTime, False);
+	Hud.ScoresTable.SetColumnVisibility(CModulePlaygroundScoresTable::EColumnType::TMPrevTime, True);
+	Hud.ScoresTable.SetColumnVisibility(CModulePlaygroundScoresTable::EColumnType::TMPrevRaceDeltaPoints, True);
+}
+***
+
+***Match_StartMap***
+***
+// ---------------------------------- //
+// Initialize map
+Users_SetNbFakeUsers(C_BlueBotsNb, C_RedBotsNb);
+
+if (MM_IsMatchServer()) {
+	MM_SetScores([Scores::GetClanMapPoints(1), Scores::GetClanMapPoints(2)]);
+} else {
+	declare WarmUpDuration = S_WarmUpDuration * 1000;
+	MB_WarmUp(S_WarmUpNb, WarmUpDuration);
+}
+
+SetFooterText();
+
+foreach (Score in Scores) {
+	declare Team_RoundsPerformance for Score = Real[];
+	Team_RoundsPerformance = Real[];
+}
+
+// ---------------------------------- //
+// Matchmaking : allow substitutes
+if (MM_IsMatchServer()) MM_AllowSubstitutes(True);
+***
+
+***Match_StartRound***
+***
+if (Hud != Null && Hud.ScoresTable != Null) {
+	Hud.ScoresTable.ResetCustomColumns();
+}
+CutOffTimeLimit = -1;
+***
+
+***Match_PlayLoop***
+***
+// ---------------------------------- //
+// Manage events
+foreach (Event in PendingEvents) {
+	Events::Valid(Event);
+	
+	// ---------------------------------- //
+	// Waypoint
+	if (Event.Type == CTmModeEvent::EType::WayPoint) {
+		if (Event.IsEndRace) {
+			declare Better = Scores::SetPlayerBestRaceIfBetter(Event.Player.Score, Event.Player.CurRace, CTmResult::ETmRaceResultCriteria::Time);
+			Scores::SetPlayerPrevRace(Event.Player.Score, Event.Player.CurRace);
+			ComputeLatestRaceScores();
+			MB_SortScores(CTmMode::ETmScoreSortOrder::PrevRace_Time);
+			TM::EndRace(Event.Player);
+			
+			// ---------------------------------- //
+			// Start the countdown if it's the first player to finish
+			if (CutOffTimeLimit <= 0) {
+				CutOffTimeLimit = GetFinishTimeout();
+			}
+		}
+		if (Event.IsEndLap) {
+			declare Better = Scores::SetPlayerBestLapIfBetter(Event.Player.Score, Event.Player.CurLap, CTmResult::ETmRaceResultCriteria::Time);
+		}
+	}
+	// ---------------------------------- //
+	// GiveUp
+	else if (Event.Type == CTmModeEvent::EType::GiveUp) {
+		TM::WaitRace(Event.Player);
+	}
+}
+***
+
+***Match_EndRound***
+***
+TM::WaitRaceAll();
+CutOffTimeLimit = -1;
+
+if (Semver::Compare(XmlRpc::GetApiVersion(), ">=", "2.2.0")) {
+	Scores::XmlRpc_SendScores(Scores::C_Section_PreEndRound, "");
+}
+
+if (ForceEndRound) {
+	ForcedEndRoundSequence();
+} else {
+	// ---------------------------------- //
+	// Compute round performance
+	declare ReferenceTime = Map.MapInfo.TMObjective_AuthorTime;
+	declare BestRaceTime = ReferenceTime;
+	foreach (Score in Scores) {
+		declare RaceTime = Scores::GetPlayerPrevRaceTime(Score);
+		if (RaceTime > 0 && RaceTime < BestRaceTime) {
+			BestRaceTime = RaceTime;
+		}
+	}
+	if (BestRaceTime > 0 && BestRaceTime < ReferenceTime) ReferenceTime = BestRaceTime;
+		
+	foreach (Score in Scores) {
+		declare RoundPerformance = 0.;
+		declare PrevRaceTime = Scores::GetPlayerPrevRaceTime(Score);
+		
+		if (
+			PrevRaceTime > 0 &&
+			ReferenceTime > 0 &&
+			PrevRaceTime <= Map.MapInfo.TMObjective_BronzeTime &&
+			ReferenceTime <= Map.MapInfo.TMObjective_BronzeTime
+		) {
+			declare A = (Map.MapInfo.TMObjective_BronzeTime - PrevRaceTime) * 1.;
+			declare B = Map.MapInfo.TMObjective_BronzeTime - ReferenceTime;
+			RoundPerformance = ((A / B) * 0.9) + 0.1;
+		}
+		
+		declare Team_RoundsPerformance for Score = Real[];
+		Team_RoundsPerformance.add(RoundPerformance);
+		
+		Log::Log("""[Team] RoundPerformance > {{{Score.User.Login}}} > | PrevRaceTime : {{{PrevRaceTime}}} | BronzeTime : {{{Map.MapInfo.TMObjective_BronzeTime}}} | AuthorTime : {{{Map.MapInfo.TMObjective_AuthorTime}}} | BestRaceTime : {{{BestRaceTime}}} | ReferenceTime : {{{ReferenceTime}}} | RoundPerformance: {{{RoundPerformance}}}""");
+	}
+	// ---------------------------------- //
+	// Get the last round points
+	ComputeLatestRaceScores();
+	MB_SortScores(CTmMode::ETmScoreSortOrder::PrevRace_Time);
+	UIManager.UIAll.ScoreTableVisibility = CUIConfig::EVisibility::ForcedVisible;
+	UIManager.UIAll.UISequence = CUIConfig::EUISequence::EndRound;
+	MB_Sleep(3000);
+	// ---------------------------------- //
+	// Add them to the total scores
+	ComputeScores();
+	MB_SortScores(CTmMode::ETmScoreSortOrder::PrevRace_Time);
+	MB_Sleep(3000);
+	UIManager.UIAll.ScoreTableVisibility = CUIConfig::EVisibility::Normal;
+	UIManager.UIAll.UISequence = CUIConfig::EUISequence::Playing;
+	
+	SetFooterText();
+	if (MapIsOver()) {
+		MB_StopMap();
+		MB_StopMatch();
+	}
+}
+
+// ---------------------------------- //
+// Set matchmaking scores
+if (MM_IsMatchServer()) {
+	MM_SetScores([Scores::GetClanMapPoints(1), Scores::GetClanMapPoints(2)]);
+}
+***
+
+***Match_EndMap***
+***
+// ---------------------------------- //
+// Ranking
+declare WinningTeam = -1;
+if (Scores::GetClanMapPoints(1) > Scores::GetClanMapPoints(2)) {
+	WinningTeam = 1;
+} else if (Scores::GetClanMapPoints(2) > Scores::GetClanMapPoints(1)) {
+	WinningTeam = 2;
+}
+Scores::SetClanWinner(WinningTeam);
+
+declare MasterLogin = "";
+declare MasterPoints = 0;
+foreach (Score in Scores) {
+	if (Scores::GetPlayerMapPoints(Score) > MasterPoints) {
+		MasterLogin = Score.User.Login;
+		MasterPoints = Scores::GetPlayerMapPoints(Score);
+	}
+}
+MM_SetMasterLogin(MasterLogin);
+
+// ---------------------------------- //
+// Set scores table for podium
+if (Hud != Null && Hud.ScoresTable != Null) {
+	Hud.ScoresTable.SetColumnVisibility(CModulePlaygroundScoresTable::EColumnType::TMBestTime, True);
+	Hud.ScoresTable.SetColumnVisibility(CModulePlaygroundScoresTable::EColumnType::TMPrevTime, False);
+	Hud.ScoresTable.SetColumnVisibility(CModulePlaygroundScoresTable::EColumnType::TMPrevRaceDeltaPoints, False);
+}
+SetFooterText();
+MB_SortScores(CTmMode::ETmScoreSortOrder::BestRace_Time);
+Scores::SetDefaultLadderSort(Scores::C_Sort_BestRaceTime);
+***
+
+***Match_BeforeCloseLadder***
+***
+if (ChannelProgression::IsEnabled()) {
+	declare RoundsCount = MB_GetRoundCount();
+	foreach (Score in Scores) {
+		declare Team_RoundsPerformance for Score = Real[];
+		declare RoundsPerformance = 0.;
+		if (RoundsCount != 0) {
+			foreach (RoundPerformance in Team_RoundsPerformance) {
+				RoundsPerformance += RoundPerformance;
+			}
+			RoundsPerformance /= RoundsCount;
+		}
+		
+		Log::Log("""[Team] RoundsPerformance > {{{Score.User.Login}}} > Team_RoundsPerformance : {{{Team_RoundsPerformance}}} | RoundsCount : {{{RoundsCount}}} | RoundsPerformance: {{{RoundsPerformance}}}""");
+		
+		ChannelProgression::SetPlayerPerformance(Score, RoundsPerformance);
+	}
+}
+***
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+// ---------------------------------- //
+/** Get the time left to the players to finish the round after the first player
+ *
+ *	@return 		The time left in ms
+ */
+Integer GetFinishTimeout() {
+	declare FinishTimeout = 0;
+	
+	if (S_FinishTimeout >= 0) {
+		FinishTimeout = S_FinishTimeout * 1000;
+	} else {
+		FinishTimeout = 5000;
+		if (Map.TMObjective_IsLapRace && NbLaps > 0 && Map.TMObjective_NbLaps > 0) {
+			FinishTimeout += ((Map.TMObjective_AuthorTime / Map.TMObjective_NbLaps) * NbLaps) / 6;
+		} else {
+			FinishTimeout += Map.TMObjective_AuthorTime / 6;
+		}
+	}
+	
+	return Now + FinishTimeout;
+}
+
+// ---------------------------------- //
+/// Update the text in the scores table footer
+Void SetFooterText() {
+	if (S_PointsGap > 1) {
+		if (Hud != Null && Hud.ScoresTable != Null) {
+			Hud.ScoresTable.SetFooterText(TL::Compose("%1 "^S_PointsLimit^"  |  %2 "^S_PointsGap, _("Points limit : "), _("Points gap :")));
+		}
+	} else {
+		if (Hud != Null && Hud.ScoresTable != Null) {
+			Hud.ScoresTable.SetFooterText(TL::Compose("%1 "^S_PointsLimit, _("Points limit : ")));
+		}
+	}
+}
+
+// ---------------------------------- //
+/** Announce the round winner in the chat
+ *
+ *	@param	_TeamNum	The number of the team who won the round
+ */
+Void AnnounceWinner(Integer _TeamNum) {
+	if (!Teams.existskey(_TeamNum)) {
+		UIManager.UIAll.SendChat(_("This round is a draw."));
+	} else {
+		UIManager.UIAll.SendChat(TL::Compose(_("$<%1$> wins the round!"), Teams[_TeamNum].ColorizedName));
+	}
+}
+
+// ---------------------------------- //
+/// Compute the latest race scores
+Void ComputeLatestRaceScores() {
+	if (Scores.count <= 0) return;
+	MB_SortScores(CTmMode::ETmScoreSortOrder::PrevRace_Time);
+	
+	// Each player finishing the race scores (MaxPoints - (Rank - 1))
+	if (S_UseAlternateRules) {
+		foreach (Player in AllPlayers) {
+			if (Player.Score == Null) continue;
+			declare IsSpectator for Player.Score = False;
+			IsSpectator = Player.RequestsSpectate;
+		}
+		declare Points = Scores.count;
+		foreach (Score in Scores) {
+			declare IsSpectator for Score = False;
+			if (IsSpectator && Scores::GetPlayerPrevRaceTime(Score) <= 0) {
+				Points -= 1;
+			}
+		}
+		if (Points > S_MaxPointsPerRound) Points = S_MaxPointsPerRound;
+		
+		declare TeamsScores = [0, 0];
+		declare WinningTeam = -1;
+		foreach (Score in Scores) {
+			if (Score.TeamNum != 1 && Score.TeamNum != 2) continue;
+			
+			if (Scores::GetPlayerPrevRaceTime(Score) > 0) {
+				TeamsScores[Score.TeamNum - 1] += Points;
+				Scores::SetPlayerRoundPoints(Score, Points);
+				if (Points > 0) Points -= 1;
+			} else {
+				Scores::SetPlayerRoundPoints(Score, 0);
+			}
+		}
+		
+		if (TeamsScores[0] != TeamsScores[1]) {
+			if (TeamsScores[0] > TeamsScores[1]) {
+				WinningTeam = 0;
+			} else {
+				WinningTeam = 1;
+			}
+		}
+		
+		foreach (TeamIndex => Team in Teams) {
+			declare PrevRaceDeltaPoints for Team = 0;
+			if (TeamIndex == WinningTeam) {
+				PrevRaceDeltaPoints = 1;
+			} else {
+				PrevRaceDeltaPoints = 0;
+			}
+		}
+	} 
+	// Give one points to all the players of a team from first place to the first player of the opposing team
+	// eg: R, R, B, R, B, B -> 1, 1, 0, 0, 0, 0 -> 2 points for Red
+	else {
+		declare WinningTeam = -1;
+		declare Points = 0;
+		declare AheadOfOpponents = True;
+		
+		foreach (Score in Scores) {
+			if (Score.TeamNum != 1 && Score.TeamNum != 2) continue;
+			if (Scores::GetPlayerPrevRaceTime(Score) <= 0) break;
+			if (WinningTeam == -1) WinningTeam = Score.TeamNum - 1;
+			
+			if (Score.TeamNum - 1 == WinningTeam) {
+				if (AheadOfOpponents) {
+					Points += 1;
+					Scores::SetPlayerRoundPoints(Score, 1);
+				}
+			} else {
+				AheadOfOpponents = False;
+			}
+		}
+		
+		if (Points > S_MaxPointsPerRound) Points = S_MaxPointsPerRound;
+		
+		foreach (TeamIndex => Team in Teams) {
+			declare PrevRaceDeltaPoints for Team = 0;
+			if (TeamIndex == WinningTeam) {
+				PrevRaceDeltaPoints = Points;
+			} else {
+				PrevRaceDeltaPoints = 0;
+			}
+		}
+	}
+}
+
+// ---------------------------------- //
+/// Compute the map scores
+Void ComputeScores() {
+	declare PrevRaceDeltaPoints as ScoreTeam0 for Teams[0] = 0;
+	declare PrevRaceDeltaPoints as ScoreTeam1 for Teams[1] = 0;
+	
+	declare WinningTeam = -1;
+	if (ScoreTeam0 > 0 && ScoreTeam0 > ScoreTeam1) {
+		WinningTeam = 0;
+	} else if (ScoreTeam1 > 0 && ScoreTeam1 > ScoreTeam0) {
+		WinningTeam = 1;
+	}
+	
+	AnnounceWinner(WinningTeam);
+	
+	foreach (TeamIndex => Team in Teams) {
+		declare PrevRaceDeltaPoints for Team = 0;
+		Scores::AddClanMapPoints(TeamIndex + 1, PrevRaceDeltaPoints);
+		Scores::AddClanMatchPoints(TeamIndex + 1, PrevRaceDeltaPoints);
+	}
+	
+	foreach (Player in AllPlayers) {
+		if (Player.Score == Null) continue;
+		declare IsSpectator for Player.Score = False;
+		IsSpectator = Player.RequestsSpectate;
+	}
+	foreach (Score in Scores) {
+		Scores::AddPlayerMapPoints(Score, Scores::GetPlayerRoundPoints(Score));
+		Scores::AddPlayerMatchPoints(Score, Scores::GetPlayerRoundPoints(Score));
+		Scores::SetPlayerRoundPoints(Score, 0);
+		declare IsSpectator for Score = False;
+		if (IsSpectator) {
+			Score.LadderClan = -1;
+		} else {
+			Score.LadderClan = Score.TeamNum;
+		}
+	}
+}
+
+// ---------------------------------- //
+/** Check if we should go to the next map
+ *
+ *	@return		True if it is the case, false otherwise
+ */
+Boolean MapIsOver() {
+	declare PointsGap = S_PointsGap;
+	if (PointsGap < 0) PointsGap = 0;
+	
+	if (Scores::GetClanMapPoints(1) >= S_PointsLimit && Scores::GetClanMapPoints(1) - Scores::GetClanMapPoints(2) >= PointsGap) {
+		return True;
+	} else if (Scores::GetClanMapPoints(2) >= S_PointsLimit && Scores::GetClanMapPoints(2) - Scores::GetClanMapPoints(1) >= PointsGap) {
+		return True;
+	}
+	
+	return False;
+}

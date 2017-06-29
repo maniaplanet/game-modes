@@ -1,0 +1,451 @@
+#Const	Version				"2016-04-14"
+#Const	ScriptName			"KingOfTheLobby.Script.txt"
+#Const	C_NbBots			0
+
+#Const C_DisplayRulesReminder	True
+
+#Include "MathLib" as MathLib
+#Include "TextLib" as TextLib
+#Include "Libs/Nadeo/Mode.Script.txt" as Mode
+#Include "Libs/Nadeo/Layers.Script.txt" as Layers
+#Include "Libs/Nadeo/Message.Script.txt" as Message
+#Include "Libs/Nadeo/ShootMania/SM.Script.txt" as SM
+#Include "Libs/Nadeo/ShootMania/SpawnScreen.Script.txt" as SpawnScreen
+#Include "Libs/Nadeo/ShootMania/ScoresTable.Script.txt" as ScoresTable
+
+declare Ident	G_LibKOL_WinnerId;
+declare Integer G_LibKOL_BestComboTime;
+
+declare Integer G_LibKOL_RoundDuration;
+
+/* ------------------------------------- */
+/** Return the version number of the script
+ *
+ *	@return		The version number of the script
+ */
+Text GetScriptVersion() {
+	return Version;
+}
+
+/* ------------------------------------- */
+/** Return the name of the script
+ *
+ *	@return		The name of the script
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+Void ResetPlayer(CSmPlayer _Player) {
+	if(_Player.Score == Null) return;
+	
+	declare Integer ComboMax for _Player.Score = 0;
+	declare Integer CurrentArmor for _Player.Score = 0;
+	
+	ComboMax 		= 0;
+	CurrentArmor 	= 0;
+	_Player.Score.RoundPoints = 0;
+}
+
+// Spawn the players
+Void SpawnPlayers() {
+	// Spawn players
+	foreach (Player in Players) {
+		if (Player.SpawnStatus == CSmPlayer::ESpawnStatus::NotSpawned) {
+			declare UI <=> UIManager.GetUI(Player);
+			if(UI != Null) {
+				declare netread Boolean Net_RulesReminder_StopIntro for UI;
+				if(! Net_RulesReminder_StopIntro) continue;
+			}
+		
+			if(Player.Score != Null) {
+				if(Player.Score.Points == 0) {
+					// new map or fresh player
+					ResetPlayer(Player);
+				} else {
+					declare Integer ComboMax for Player.Score = 0;
+					declare Integer CurrentArmor for Player.Score = 0;
+					
+					// restore round points with current combo max (or 0 is none)
+					Player.Score.RoundPoints = ComboMax;
+					if (ComboMax > Player.Score.Points) {
+						Player.Score.Points = ComboMax;
+					}
+				}
+			}
+			
+			declare Boolean LibKOL_Spawned for Player;
+			SM::SpawnPlayer(Player, 0, BlockSpawns[MathLib::Rand(0, BlockSpawns.count - 1)], Now);
+			LibKOL_Spawned = True;
+			declare LayerScores = ScoresTable::GetLayerScoresTable();
+			if(UI != Null && !UI.UILayers.exists(LayerScores)) {
+				UI.UILayers.add(LayerScores);
+			}
+			
+			
+			if(Player.Score != Null) {
+				declare Integer CurrentArmor for Player.Score = 0;
+				if(CurrentArmor > 0) {
+					// restore armor
+					Player.Armor = CurrentArmor;
+				}
+				
+				CurrentArmor = Player.Armor;
+				
+				ScoresTable::SetFooterScore(Player, " ");
+			}
+		}
+	}
+}
+
+Void SavePlayersArmor() {
+	foreach(Player in Players) {
+		if((Player.Score != Null) && (Player.SpawnStatus == CSmPlayer::ESpawnStatus::Spawned)) {
+			declare Integer CurrentArmor for Player.Score;
+			if(Player.Armor != CurrentArmor) {
+				CurrentArmor = Player.Armor;
+			}
+		}
+	}
+}
+
+Void ShowScore(CSmPlayer _Player) {
+	if ((_Player == Null) || (_Player.Score == Null)) return;
+
+	declare Integer ComboMax for _Player.Score;
+	declare Text Message;	
+	Message = TextLib::Compose( _("New Combo Max: %1!"), TextLib::ToText(ComboMax) );
+	
+	Message::SendBigMessage(
+		_Player,
+		Message,
+		3000,
+		0
+	);
+}
+
+Void ShowAllNewBestScore(CSmPlayer _BestPlayer, Integer _BestCombo) {
+	if(_BestCombo < 4 || _BestPlayer == Null) return;
+	
+	declare Text PlayerName = _BestPlayer.Name;
+	declare Integer ComboMax for _BestPlayer.Score;
+	declare TheMessage = TextLib::Compose( _("$<%1$> is the King: %2 Hits!"),PlayerName, TextLib::ToText(ComboMax));
+	
+	Message::SendBigMessage(
+		TheMessage,
+		3000,
+		0
+	);
+}
+
+
+Void NotifyHit(CSmPlayer _Shooter) 
+{
+	if ((_Shooter == Null) || (_Shooter.Score == Null)) return;
+	declare Integer ComboMax for _Shooter.Score;
+	ComboMax += 1;
+	
+	_Shooter.Score.RoundPoints = ComboMax;
+	if (ComboMax > _Shooter.Score.Points) {
+		_Shooter.Score.Points = ComboMax;
+		if(ComboMax > G_LibKOL_BestComboTime) {
+			G_LibKOL_BestComboTime = ComboMax;
+			ShowAllNewBestScore(_Shooter, ComboMax);
+		} else {
+			ShowScore(_Shooter);
+		}
+	}
+}
+
+Void RemoveScoresLayerIfNotSpawned() {
+	foreach(Spectator in Spectators) {
+		declare Boolean LibKOL_Spawned for Spectator;
+		if(LibKOL_Spawned) {
+			LibKOL_Spawned = False;
+			declare LayerScores = ScoresTable::GetLayerScoresTable();
+			declare UI <=> UIManager.GetUI(Spectator);
+			if(UI != Null && UI.UILayers.exists(LayerScores)) {
+				declare Removed = UI.UILayers.remove(LayerScores);
+			}
+		}
+	}
+}
+
+Void LoopIntroEnds() {
+	foreach(Player in Players) {
+		declare UI <=> UIManager.GetUI(Player);
+		if(UI != Null) {
+			declare netread Boolean Net_RulesReminder_StopIntro for UI;
+			if(Net_RulesReminder_StopIntro) UI.UISequence = CUIConfig::EUISequence::Playing;
+		}
+	}
+}
+
+Boolean PlayLoop() 
+{
+	Message::Loop();
+	
+	// Check armors
+	// We have to do it in the play loop in case of armor regen
+	// done before events to handle Respawn requests
+	SavePlayersArmor();
+	
+	foreach (Event in PendingEvents) 
+	{
+		if (Event.Type == CSmModeEvent::EType::OnHit) {
+			if(Event.Shooter != Event.Victim) {
+				NotifyHit(Event.Shooter);
+				PassOn(Event);
+			} else {
+				Discard(Event);
+			}
+		}
+		else if (Event.Type == CSmModeEvent::EType::OnArmorEmpty) {
+			if (Event.Victim != Null) {
+				ResetPlayer(Event.Victim);
+			}
+			PassOn(Event);
+		} else if (Event.Type == CSmModeEvent::EType::OnPlayerRequestRespawn) {
+			if(Event.Player != Null) {
+				ResetPlayer(Event.Player);
+			}
+			PassOn(Event);
+		}
+		else {
+			PassOn(Event);
+		}
+	}
+	
+	// end map conditions
+	if ((G_LibKOL_RoundDuration > 0) && (Now > (StartTime + (G_LibKOL_RoundDuration * 1000)))) {
+		return False;
+	}
+	
+	LoopIntroEnds();
+	RemoveScoresLayerIfNotSpawned();	
+	SpawnPlayers();
+	return True;
+}
+
+Void LoadScoresTable() {
+	declare Text BgImage = "file://Media/Manialinks/ShootMania/Common/topsBg.dds";
+	ScoresTable::Load();
+	ScoresTable::SetTableFormat(2, 6);
+	ScoresTable::SetColumnsWidth(2.,	1.5, 1.5, 20., 1.5, 1.5, 0., 0., 0., 8., 8.);
+	ScoresTable::SetTableBackgroundImage(BgImage, <0.05, 56.>, <207., 178.>);
+	ScoresTable::SetColumnsName("", "", "", _("Current Combo"), _("Best Combo"));
+	ScoresTable::Build();
+	declare Removed = UIManager.UIAll.UILayers.remove(ScoresTable::GetLayerScoresTable());
+}
+
+Void StartMap() {
+	Message::CleanBigMessages();
+	
+	/* -------------------------------------- */
+	// Create the rules
+	declare ModeName = _("Lobby");
+	declare ModeRules = TextLib::Compose("%1\n\n%2\n%3", _("You will soon be redirected to a match server."), _("While waiting, you can play 'King Of The Lobby'."), _("In this mode, perform as much hits as possible without being eliminated."));
+	
+	/*
+	\nWhile waiting, you can play 'King Of The Lobby'.\nIn this mode, perform as much hits as possible before being eliminated.");
+	
+	"""
+	Free for all. 
+	Perform as much hits as possible without beeing eliminated.
+	""";
+	*/
+	
+	SpawnScreen::CreateRules(ModeName, ModeRules, False);
+	SpawnScreen::AttachRules();
+	
+	//Users_SetNbFakeUsers(C_NbBots, 0);
+	//UIManager.UIAll.UISequence = CUIConfig::EUISequence::Playing;
+	UIManager.UIAll.UISequence = CUIConfig::EUISequence::UIInteraction;
+	
+	ClearScores();
+	foreach (Score in Scores) {
+		Score.Points = 0;
+		Score.RoundPoints = 0;
+	}
+	
+	// Scores Tables
+	LoadScoresTable();
+	
+	
+	StartTime = Now;
+	if (G_LibKOL_RoundDuration > 0) {
+		EndTime = StartTime + (G_LibKOL_RoundDuration * 1000);
+	} else {
+		EndTime = -1;
+	}
+}
+
+
+
+Void EndMap()
+{
+	SpawnScreen::DestroyRules();
+	Message::CleanAllMessages();
+	
+	if (G_LibKOL_WinnerId != NullId) {
+		UIManager.UIAll.BigMessage = TextLib::Compose(_("$<%1$> is King of the Lobby!"), Players[G_LibKOL_WinnerId].Name);
+	} else {
+		UIManager.UIAll.BigMessage = _("|Match|Draw");
+	}
+	
+	sleep(2000);
+	UIManager.UIAll.UISequence = CUIConfig::EUISequence::EndRound;
+	sleep(5000);
+	UIManager.UIAll.BigMessage = "";
+}
+
+Void CreateRulesReminderLayer() {
+	if(! C_DisplayRulesReminder) return;
+
+	declare Text ImgBaseDir			= "file://Media/Manialinks/Shootmania/Common/";
+	declare Text WelcomeBgImage		= ImgBaseDir^"WelcomeBg.dds";
+
+	declare Text TitleText 			= _("Waiting for your match to start");
+	declare Text ModeName	 		= _("Lobby");
+	declare Text RulesReminder = TextLib::Compose("%1\n%2\n%3", _("You will soon be redirected to a match server."), _("While waiting, you can play 'King Of The Lobby'."), _("In this mode, perform as much hits as possible without being eliminated."));
+	
+	declare Text DoNotShowAgain		= _("Do Not Show Again");
+	declare Text Close				= _("Close");
+	
+	declare Integer WindowWidth		= 192;
+	declare Integer WindowHeight	= 30;
+	declare Real 	WindowX			= 0.;
+	declare Real 	WindowY			= 22.;	
+	
+	declare Text MLText = """
+	<script><!--
+		main() 
+		{
+			// for the "do not show again" feature
+			declare persistent Boolean NadeoKoL_PersistentShowRulesReminder for This = True;
+			declare netwrite Boolean Net_RulesReminder_StopIntro for UI;
+						
+			if(! NadeoKoL_PersistentShowRulesReminder) {
+				Net_RulesReminder_StopIntro = True;
+				return;
+			}
+			
+			Net_RulesReminder_StopIntro = False;
+			
+			while(InputPlayer == Null) yield;
+			
+			if ((InputPlayer.SpawnStatus == CSmPlayer::ESpawnStatus::Spawned) ||
+				(InputPlayer.SpawnStatus == CSmPlayer::ESpawnStatus::Spawning))
+			{
+				return;
+			}
+	
+			declare Button_DoNotShowAgain <=> (Page.GetFirstChild("Button_DoNotShowAgain") as CMlLabel);
+			declare Button_Close <=> (Page.GetFirstChild("Button_Close") as CMlLabel);
+			declare RulesReminderMainFrame <=> (Page.GetFirstChild("RulesReminderMainFrame") as CMlFrame);
+	
+			while(True) {
+				yield;
+				
+				if(IsSpectatorMode) {
+					RulesReminderMainFrame.Hide();
+					continue;
+				} else {
+					RulesReminderMainFrame.Show();
+				}
+	
+				foreach(Event in PendingEvents) {
+					switch(Event.Type){
+						case CMlEvent::Type::MouseClick: {
+							if(Event.ControlId == "Button_DoNotShowAgain") {
+								NadeoKoL_PersistentShowRulesReminder = False;
+								RulesReminderMainFrame.Hide();
+								Net_RulesReminder_StopIntro = True;
+								return; 
+							}
+							if(Event.ControlId == "Button_Close") {
+								RulesReminderMainFrame.Hide();
+								Net_RulesReminder_StopIntro = True;
+								return; 
+							}
+						}
+					}
+				}
+			}
+		}
+	--></script>
+	<frame id="RulesReminderMainFrame" posn="{{{WindowX}}} {{{WindowY}}} 0" hidden="true" >
+		<format  textemboss="1" />
+		<quad  posn="0 -2" 	halign="center"	valign="center" sizen="210 51" image="{{{WelcomeBgImage}}}" />
+		<label posn="0 {{{(WindowHeight/2)-3}}}" 	halign="center" valign="center" text="{{{TitleText}}}"  textsize="5" />
+		<label posn="{{{-(WindowWidth/2)+2}}} {{{(WindowHeight/2)-12}}}" 	halign="left" valign="center" text="{{{RulesReminder}}}" textsize="2"/>
+			<label posn="{{{(WindowWidth/2)-2}}} {{{-(WindowHeight/2)+2}}}" 	halign="right" valign="center" text="{{{DoNotShowAgain}}}" style="CardButtonSmall" ScriptEvents="true" id="Button_DoNotShowAgain" />
+			<label posn="{{{(WindowWidth/2)-42}}} {{{-(WindowHeight/2)+2}}}" 	halign="right" valign="center" text="{{{Close}}}" style="CardButtonSmall" ScriptEvents="true" id="Button_Close" />
+		<!-- <label halign="center" 	valign="bottom"	posn="0 {{{-(WindowHeight/2)-2}}}"  text="{{{
+				_("Press $<$o$f00F1$> to close this window.")}}}" textsize="2"/>-->
+	</frame>
+	""";
+	
+	declare Ident RulesReminderLayerId	= Layers::Create("RulesReminder", MLText);
+	declare Boolean Attached			= Layers::Attach("RulesReminder", NullId);
+}
+
+Void StartLobbyMode(Integer _RoundDuration, Boolean _UseAllies) 
+{
+	G_LibKOL_RoundDuration = _RoundDuration;
+	
+	UseAllies = _UseAllies;
+
+	// save former variables
+	declare FormerUseClans = UseClans;
+	declare FormerAlliesLabelsVisibility = UIManager.UIAll.AlliesLabelsVisibility;
+	declare FormerOpposingTeamLabelsVisibility = UIManager.UIAll.OpposingTeamLabelsVisibility;
+
+	UseClans = False;
+	UIManager.UIAll.AlliesLabelsVisibility = CUIConfig::ELabelsVisibility::WhenVisible;
+	UIManager.UIAll.OpposingTeamLabelsVisibility = CUIConfig::ELabelsVisibility::WhenVisible;
+	UIManager.UIAll.OverlayHideCountdown = True;
+	UIManager.UIAll.AltMenuNoCustomScores = True;
+	
+	UIManager.UIAll.ScoreTableVisibility = CUIConfig::EVisibility::Normal;
+	
+	CreateRulesReminderLayer();
+	
+	while(True) {
+		MatchEndRequested = False;
+		Mode::LoadMap();
+		StartMap();
+		declare Boolean DoLoop = True;
+		while(DoLoop && !MatchEndRequested) {
+			DoLoop = PlayLoop();
+			yield;
+		}
+		EndMap();
+		Mode::UnloadMap();
+		
+		// reset best scores
+		G_LibKOL_WinnerId = NullId;
+		G_LibKOL_BestComboTime = 0;
+	}
+	
+	UseAllies = False;
+	
+	// restore former variables
+	UseClans = FormerUseClans;
+	UIManager.UIAll.AlliesLabelsVisibility = FormerAlliesLabelsVisibility;
+	UIManager.UIAll.OpposingTeamLabelsVisibility = FormerOpposingTeamLabelsVisibility;
+	UIManager.UIAll.OverlayHideCountdown = False;
+}
+
+Void StartLobbyMode() {
+	StartLobbyMode(-1, False);
+}
+
+/**
+ * Deprecated : param _NbHitsToCombo not used
+ */
+Void StartLobbyMode(Integer _NbHitsToCombo, Integer _RoundDuration, Boolean _UseAllies) {
+	StartLobbyMode(_RoundDuration, _UseAllies);
+}
+
+

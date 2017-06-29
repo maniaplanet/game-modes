@@ -1,0 +1,327 @@
+/** 
+ *	DEPRECATED - Use the new Layers2 library instead
+ *
+ *	UI Layers library
+ */
+
+#Const Version		"2012-08-26"
+#Const ScriptName	"Layers.Script.txt"
+
+/* ------------------------------------- */
+// Globales
+/* ------------------------------------- */
+declare Ident[Text]			G_LibLayer_Layers;		///< Stock the registred layers ["LayerName" => #LayerId]
+
+/* ------------------------------------- */
+// Functions
+/* ------------------------------------- */
+
+/* ------------------------------------- */
+/** Return the version number of the script
+ *
+ *	@return		The version number of the script
+ */
+Text GetScriptVersion() {
+	return Version;
+}
+
+/* ------------------------------------- */
+/** Return the name of the script
+ *
+ *	@return		The name of the script
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+/* ------------------------------------- */
+/** Check if a layer really exists
+ *
+ *	@param _LayerName	The name of the layer to check
+ *
+ *	@return		True if the layer exists, false otherwise
+ */
+Boolean Exists(Text _LayerName) {
+	if (!G_LibLayer_Layers.existskey(_LayerName)) return False;
+	if (!UIManager.UILayers.existskey(G_LibLayer_Layers[_LayerName])) return False;
+	
+	return True;
+}
+
+/* ------------------------------------- */
+/** Create a new layer
+ *
+ *	@param	_LayerName	The name of the layer to create
+ *
+ *	@return		The id of the created layer, NullId if it failed
+ */
+Ident Create(Text _LayerName) {
+	if (Exists(_LayerName)) return NullId;
+	
+	declare NewLayer <=> UIManager.UILayerCreate();
+	G_LibLayer_Layers[_LayerName] = NewLayer.Id;
+	return NewLayer.Id;
+}
+
+/* ------------------------------------- */
+/** Create a new layer
+ *
+ *	@param	_LayerName		The name of the layer to create
+ *	@param	_LayerManialink	The content of the layer's manialink
+ *
+ *	@return		The id of the created layer, NullId if it failed
+ */
+Ident Create(Text _LayerName, Text _LayerManialink) {
+	declare LayerId = Create(_LayerName);
+	if (LayerId != NullId) {
+		UIManager.UILayers[LayerId].ManialinkPage = _LayerManialink;
+	}
+	
+	return LayerId;
+}
+
+/* ------------------------------------- */
+/** Destroy a layer
+ *
+ *	@param	_LayerName	The name of the layer to destroy
+ *
+ *	@return		True if the layer was destroyed, false otherwise
+ */
+Boolean Destroy(Text _LayerName) {
+	if (!Exists(_LayerName)) return False;
+	
+	UIManager.UILayerDestroy(UIManager.UILayers[G_LibLayer_Layers[_LayerName]]);
+	declare Removed = G_LibLayer_Layers.removekey(_LayerName);
+	return True;
+}
+
+/* ------------------------------------- */
+/** Attach a layer to one player or to all players
+ *
+ *	@param _LayerName	The name of the layer to attach
+ *	@param _PlayerId	The id of the player to attach the layer with, if NullId then attach to all players
+ *
+ *	@return		True if the player and layer were successfully attached, false otherwise
+ */
+Boolean Attach(Text _LayerName, Ident _PlayerId) {
+	if (!Exists(_LayerName)) return False;
+	
+	if (_PlayerId != NullId) {
+		declare CPlayer Player;
+		if (Players.existskey(_PlayerId)) {
+			Player <=> Players[_PlayerId];
+		} else if (Spectators.existskey(_PlayerId)) {
+			Player <=> Spectators[_PlayerId]; 
+		} else {
+			return False;
+		}
+		declare UI <=> UIManager.GetUI(Player);
+		if (UI == Null) return False;
+		
+		declare Layer = UIManager.UILayers[G_LibLayer_Layers[_LayerName]];
+		if (!UI.UILayers.exists(Layer)) UI.UILayers.add(Layer);
+	} else {
+		declare Layer = UIManager.UILayers[G_LibLayer_Layers[_LayerName]];
+		if (!UIManager.UIAll.UILayers.exists(Layer)) UIManager.UIAll.UILayers.add(Layer);
+	}
+	
+	return True;
+}
+
+/* ------------------------------------- */
+/** Detach a layer from one player or from all players
+ *
+ *	@param _LayerName	The name of the layer to detach
+ *	@param _PlayerId	The id of the player to detach the layer from, if NullId then detach from all players
+ *
+ *	@return		True if the player and layer were successfully detached, false otherwise
+ */
+Boolean Detach(Text _LayerName, Ident _PlayerId) {
+	if (!Exists(_LayerName)) return False;
+	
+	if (_PlayerId != NullId) {
+		declare CPlayer Player;
+		if (Players.existskey(_PlayerId)) {
+			Player <=> Players[_PlayerId];
+		} else if (Spectators.existskey(_PlayerId)) {
+			Player <=> Spectators[_PlayerId]; 
+		} else {
+			return False;
+		}
+		declare UI <=> UIManager.GetUI(Player);
+		if (UI == Null) return False;
+		
+		return UI.UILayers.remove(UIManager.UILayers[G_LibLayer_Layers[_LayerName]]);
+	} else {
+		return UIManager.UIAll.UILayers.remove(UIManager.UILayers[G_LibLayer_Layers[_LayerName]]);
+	}
+	
+	return False;
+}
+
+/* ------------------------------------- */
+/** Detach all the layers from a player or the global UI
+ *
+ *	@param _PlayerId	The id of the player to detach the layers from, if NullId then detach from all players
+ *
+ * @return		True if the layers have been detached, false otherwise
+ */
+Boolean DetachAll(Ident _PlayerId) {
+	if (_PlayerId != NullId) {
+		declare CPlayer Player;
+		if (Players.existskey(_PlayerId)) {
+			Player <=> Players[_PlayerId];
+		} else if (Spectators.existskey(_PlayerId)) {
+			Player <=> Spectators[_PlayerId]; 
+		} else {
+			return False;
+		}
+		declare UI <=> UIManager.GetUI(Player);
+		if (UI == Null) return False;
+		
+		UI.UILayers.clear();
+		return True;
+	} else {
+		UIManager.UIAll.UILayers.clear();
+		return True;
+	}
+	return False;
+}
+
+/* ------------------------------------- */
+/** Update a player layer based on its name
+ *
+ *	@param	_LayerName		The name of the layer to update
+ *	@param	_LayerManialink	The new manialink to use
+ *
+ *	@return		True if the layer has been updated, false otherwise
+ */
+Boolean Update(Text _LayerName, Text _LayerManialink) {
+	if (!Exists(_LayerName)) return False;
+	
+	UIManager.UILayers[G_LibLayer_Layers[_LayerName]].ManialinkPage = _LayerManialink;
+	return True;
+}
+
+/* ------------------------------------- */
+/** Set the type of a layer
+ *
+ *	@param	_LayerName		The name of the layer
+ *	@param	_LayerType		The type of layer to set
+ */
+Void SetType(Text _LayerName, CUILayer::EUILayerType _LayerType) {
+	if (!Exists(_LayerName)) return;
+	
+	UIManager.UILayers[G_LibLayer_Layers[_LayerName]].Type = _LayerType;
+}
+
+/* ------------------------------------- */
+/** Check if the player is missing a layer
+ *	
+ *	@param _LayerName	The layer to check
+ *	@param _PlayerId	The player to check
+ *
+ *	@return		True if the player doesn't have the layer, false otherwise
+ */
+Boolean IsMissing(Text _LayerName, Ident _PlayerId) {
+	declare CPlayer Player;
+	if (Players.existskey(_PlayerId)) {
+		Player <=> Players[_PlayerId];
+	} else if (Spectators.existskey(_PlayerId)) {
+		Player <=> Spectators[_PlayerId]; 
+	} else {
+		return False;
+	}
+	declare UI <=> UIManager.GetUI(Player);
+	if (UI == Null) return False;
+	
+	if (!Exists(_LayerName)) return False;
+	if (!UI.UILayers.existskey(G_LibLayer_Layers[_LayerName])) return True;
+	
+	return False;
+}
+
+/* ------------------------------------- */
+/** Check if the player is missing a layer in a list
+ *	
+ *	@param _LayersName	The layers to check
+ *	@param _PlayerId	The player to check
+ *
+ *	@return		An array containing the names of the missing layers (if any)
+ */
+Text[] IsMissing(Text[] _LayersName, Ident _PlayerId) {
+	declare MissingLayers = Text[];
+	
+	declare CPlayer Player;
+	if (Players.existskey(_PlayerId)) {
+		Player <=> Players[_PlayerId];
+	} else if (Spectators.existskey(_PlayerId)) {
+		Player <=> Spectators[_PlayerId]; 
+	} else {
+		return MissingLayers;
+	}
+	declare UI <=> UIManager.GetUI(Player);
+	if (UI == Null) return MissingLayers;
+	
+	foreach (LayerName in _LayersName) {
+		if (!Exists(LayerName)) continue;
+		if (!UI.UILayers.existskey(G_LibLayer_Layers[LayerName])) MissingLayers.add(LayerName);
+	}
+	
+	return MissingLayers;
+}
+
+/* ------------------------------------- */
+/** Get the layer object from his name
+ *
+ *	@param	_LayerName		The name of the layer to get
+ *
+ *	@return		The layer if its found, null otherwise
+ */
+CUILayer GetFromName(Text _LayerName) {
+	if (!Exists(_LayerName)) return Null;
+	
+	return UIManager.UILayers[G_LibLayer_Layers[_LayerName]];
+}
+
+/* ------------------------------------- */
+/** Get the layer object from its id
+ *
+ *	@param	_LayerId		The id of the layer to get
+ *
+ *	@return		The layer if its found, null otherwise
+ */
+CUILayer GetFromId(Ident _LayerId) {
+	if (!UIManager.UILayers.existskey(_LayerId)) return Null;
+	
+	return UIManager.UILayers[_LayerId];
+}
+
+/* ------------------------------------- */
+/** Layers garbage collector
+ *	Destroys layers that are not used in any UI.UILayers array
+ */
+Void Clean() {
+	declare Used = Ident[];
+	declare Unused = Ident[];
+	
+	foreach (UI in UIManager.UI) {
+		foreach (Layer in UI.UILayers) {
+			Used.add(Layer.Id);
+		}
+	}
+	foreach (Layer in UIManager.UIAll.UILayers) {
+		Used.add(Layer.Id);
+	}
+	
+	foreach (Layer in UIManager.UILayers) {
+		if (!Used.exists(Layer.Id)) {
+			Unused.add(Layer.Id);
+		}
+	}
+	
+	foreach (LayerId in Unused) {
+		if (G_LibLayer_Layers.exists(LayerId)) { declare Removed = G_LibLayer_Layers.remove(LayerId); }
+		if (UIManager.UILayers.existskey(LayerId)) UIManager.UILayerDestroy(UIManager.UILayers[LayerId]);
+	}
+}

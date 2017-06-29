@@ -1,0 +1,348 @@
+/**
+ * Realm map type
+ *
+ *	1 SpawnStart #1
+ *	1 SpawnStart #2
+ *	5 Spawn/Pole couples numbered from #1 to #5
+ */
+
+#RequireContext CSmMapType
+#Const Version			"2013-11-07"
+#Const MapTypeVersion	1
+#Const ScriptName	"RealmArena.Script.txt"
+
+#Include "TextLib" as TL
+#Include "Libs/Nadeo/Anchor.Script.txt" as Anchor
+#Include "Libs/Nadeo/MapType.Script.txt" as MapType
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_MaxPoles 5
+#Const C_Rules _("- You must place 1 SpawnStart #1 for team 1.\n- You must place 1 SpawnStart #2 for team 2.\n- You must place 5 Spawn/Pole couples numbered from #1 to #5.\n")
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+// ---------------------------------- //
+// Initialize the anchors
+Void InitAnchors() {
+	foreach (Anchor in AnchorData) {
+		if (Anchor.DefaultTag == "Spawn") {
+			if (Anchor.Tag != "Spawn" && Anchor.Tag != "SpawnStart") {
+				Anchor.Tag = "SpawnStart";
+				Anchor.Order = 1;
+			} else if (Anchor.Tag == "Spawn") {
+				if (Anchor.Order <= 0 || Anchor.Order > C_MaxPoles) Anchor.Order = 1;
+			} else if (Anchor.Tag == "SpawnStart") {
+				if (Anchor.Order != 1 && Anchor.Order != 2) Anchor.Order = 1;
+			}
+		} else if (Anchor.DefaultTag == "Goal") {
+			Anchor.Tag = "Pole";
+			if (Anchor.Order <= 0 || Anchor.Order > C_MaxPoles) Anchor.Order = 1;
+		} else if (Anchor.DefaultTag == "Checkpoint") {
+			Anchor.Tag = "Pole";
+			if (Anchor.Order <= 0 || Anchor.Order > C_MaxPoles) Anchor.Order = 1;
+		} else {
+			Anchor.Tag = Anchor.DefaultTag;
+			Anchor.Order = Anchor.DefaultOrder;
+		}
+	}
+}
+
+// ---------------------------------- //
+// Check if the map is valid
+Void UpdateValidability() {
+	InitAnchors();
+	Anchor::UpdateAnchorCounts();
+	for (I, 1, 5) {
+		if (!Anchor::HasExactlyOneAnchor("Pole", I, TL::Compose(_("You must place 1 Pole #%1"), TL::ToText(I)))) return;
+		if (!Anchor::HasExactlyOneAnchor("Spawn", I, TL::Compose(_("You must place 1 Spawn #%1"), TL::ToText(I)))) return;
+	}
+	if (!Anchor::HasExactlyOneAnchor("SpawnStart", 1, _("You must place 1 SpawnStart #1"))) return;
+	if (!Anchor::HasExactlyOneAnchor("SpawnStart", 2, _("You must place 1 SpawnStart #2"))) return;
+	
+	ValidationStatus = CMapType::ValidationStatus::Validated;
+}
+
+// ---------------------------------- //
+// Return the manialink for spawn edition
+Text EditSpawnManialink() {
+	
+	declare MLText = """
+<frame posn="120 55">
+	<quad posn="0 0 2" sizen="74 15" halign="center" valign="bottom" style="Bgs1InRace" substyle="BgTitle3_5"/>
+	<label posn="0 5 3" halign="center" valign="bottom" style="TextTitle3" textprefix="$fff" text="{{{_("Edit Spawn")}}}" />
+	<quad posn="0 0 -1" sizen="70 48" halign="center" style="Bgs1" substyle="BgWindow2"/>
+	<frame posn="0 -4">
+		<label id="SpawnStart1" posn="0 0" halign="center" style="TextButtonMedium" ScriptEvents="true"/>
+		<label id="SpawnStart2" posn="0 -5" halign="center" style="TextButtonMedium" ScriptEvents="true"/>
+		<label id="Spawn1" posn="0 -10" halign="center" style="TextButtonMedium" ScriptEvents="true"/>
+		<label id="Spawn2" posn="0 -15" halign="center" style="TextButtonMedium" ScriptEvents="true"/>
+		<label id="Spawn3" posn="0 -20" halign="center" style="TextButtonMedium" ScriptEvents="true"/>
+		<label id="Spawn4" posn="0 -25" halign="center" style="TextButtonMedium" ScriptEvents="true"/>
+		<label id="Spawn5" posn="0 -30" halign="center" style="TextButtonMedium" ScriptEvents="true"/>
+	</frame>
+	<label id="Cancel" text="{{{_("Cancel")}}}" posn="0 -39" halign="center" style="CardButtonSmall" ScriptEvents="true"/>
+</frame>
+<frame posn="120 -8">
+	<quad posn="0 0 2" sizen="74 15" halign="center" valign="bottom" style="Bgs1InRace" substyle="BgTitle3_5"/>
+	<label posn="0 5 3" halign="center" valign="bottom" style="TextTitle3" textprefix="$fff" text="{{{_("Rules")}}}" />
+	<quad posn="0 0 -1" sizen="70 35" halign="center" style="Bgs1" substyle="BgWindow2"/>
+	<frame posn="-30 -4">
+		<label posn="0 0" sizen="60 5" autonewline="1" style="TextCardSmallScores2" textcolor="fff" text="{{{C_Rules}}}" />
+	</frame>
+</frame>
+<script><!--
+	declare CMlLabel[] Buttons;
+	
+	Void UpdateButtons() {
+		declare Text	AnchorTag	for Page;
+		declare Integer	AnchorOrder	for Page;
+		
+		foreach (Button in Buttons) {
+			declare Name for Button = "";
+			if(AnchorTag^AnchorOrder == Button.ControlId)
+				Button.SetText("$090"^Name);
+			else 
+				Button.SetText("$fff"^Name);
+		}
+	}
+	
+	main() {
+		Buttons = [
+			(Page.GetFirstChild("SpawnStart1")	as CMlLabel), 
+			(Page.GetFirstChild("SpawnStart2")	as CMlLabel),
+			(Page.GetFirstChild("Spawn1")		as CMlLabel),
+			(Page.GetFirstChild("Spawn2")		as CMlLabel),
+			(Page.GetFirstChild("Spawn3")		as CMlLabel),
+			(Page.GetFirstChild("Spawn4")		as CMlLabel),
+			(Page.GetFirstChild("Spawn5")		as CMlLabel)
+		];
+		foreach (Button in Buttons) {
+			declare Name for Button = "";
+			switch(Button.ControlId) {
+				case "SpawnStart1"	: Name = "SpawnStart #1";
+				case "SpawnStart2"	: Name = "SpawnStart #2";
+				case "Spawn1"		: Name = "Spawn #1";
+				case "Spawn2"		: Name = "Spawn #2";
+				case "Spawn3"		: Name = "Spawn #3";
+				case "Spawn4"		: Name = "Spawn #4";
+				case "Spawn5"		: Name = "Spawn #5";
+			}
+		}
+		
+		declare Text	AnchorTag	for Page;
+		declare Integer	AnchorOrder	for Page;
+		declare Boolean	Finish		for Page;
+		Finish = False;
+		
+		UpdateButtons();
+		
+		while (!Finish) {
+			yield;
+			
+			foreach (Event in PendingEvents) {
+				switch(Event.Type){
+					case CMlEvent::Type::MouseClick : {
+						if (Event.ControlId != "Cancel") {
+							switch(Event.ControlId) {
+								case "SpawnStart1"	: { AnchorTag = "SpawnStart"; AnchorOrder = 1; }
+								case "SpawnStart2"	: { AnchorTag = "SpawnStart"; AnchorOrder = 2; }
+								case "Spawn1"		: { AnchorTag = "Spawn"; AnchorOrder = 1; }
+								case "Spawn2"		: { AnchorTag = "Spawn"; AnchorOrder = 2; }
+								case "Spawn3"		: { AnchorTag = "Spawn"; AnchorOrder = 3; }
+								case "Spawn4"		: { AnchorTag = "Spawn"; AnchorOrder = 4; }
+								case "Spawn5"		: { AnchorTag = "Spawn"; AnchorOrder = 5; }
+							}
+						}
+						Finish = True;
+					}
+				}
+			}
+		}
+	}
+--></script>
+""";
+  
+	return MLText;
+}
+
+// ---------------------------------- //
+// Return the manialink for pole edition
+Text EditPoleManialink() {
+	
+	declare MLText = """
+<frame posn="120 45">
+	<quad posn="0 0 2" sizen="74 15" halign="center" valign="bottom" style="Bgs1InRace" substyle="BgTitle3_5"/>
+	<label posn="0 5 3" halign="center" valign="bottom" style="TextTitle3" textprefix="$fff" text="{{{_("Edit Pole")}}}" />
+	<quad posn="0 0 -1" sizen="70 38" halign="center" style="Bgs1" substyle="BgWindow2"/>
+	<frame posn="0 -4">
+		<label id="Pole1" posn="0 0" halign="center" style="TextButtonMedium" ScriptEvents="true"/>
+		<label id="Pole2" posn="0 -5" halign="center" style="TextButtonMedium" ScriptEvents="true"/>
+		<label id="Pole3" posn="0 -10" halign="center" style="TextButtonMedium" ScriptEvents="true"/>
+		<label id="Pole4" posn="0 -15" halign="center" style="TextButtonMedium" ScriptEvents="true"/>
+		<label id="Pole5" posn="0 -20" halign="center" style="TextButtonMedium" ScriptEvents="true"/>
+	</frame>
+	<label id="Cancel" text="{{{_("Cancel")}}}" posn="0 -29" halign="center" style="CardButtonSmall" ScriptEvents="true"/>
+</frame>
+<frame posn="120 -8">
+	<quad posn="0 0 2" sizen="74 15" halign="center" valign="bottom" style="Bgs1InRace" substyle="BgTitle3_5"/>
+	<label posn="0 5 3" halign="center" valign="bottom" style="TextTitle3" textprefix="$fff" text="{{{_("Rules")}}}" />
+	<quad posn="0 0 -1" sizen="70 35" halign="center" style="Bgs1" substyle="BgWindow2"/>
+	<frame posn="-30 -4">
+		<label posn="0 0" sizen="60 5" autonewline="1" style="TextCardSmallScores2" textcolor="fff" text="{{{C_Rules}}}" />
+	</frame>
+</frame>
+<script><!--
+	declare CMlLabel[] Buttons;
+	
+	Void UpdateButtons() {
+		declare Text	AnchorTag	for Page;
+		declare Integer	AnchorOrder	for Page;
+		
+		foreach (Button in Buttons) {
+			declare Name for Button = "";
+			if(AnchorTag^AnchorOrder == Button.ControlId)
+				Button.SetText("$090"^Name);
+			else 
+				Button.SetText("$fff"^Name);
+		}
+	}
+	
+	main() {
+		Buttons = [
+			(Page.GetFirstChild("Pole1")		as CMlLabel),
+			(Page.GetFirstChild("Pole2")		as CMlLabel),
+			(Page.GetFirstChild("Pole3")		as CMlLabel),
+			(Page.GetFirstChild("Pole4")		as CMlLabel),
+			(Page.GetFirstChild("Pole5")		as CMlLabel)
+		];
+		foreach (Button in Buttons) {
+			declare Name for Button = "";
+			switch(Button.ControlId) {
+				case "Pole1"		: Name = "Pole #1";
+				case "Pole2"		: Name = "Pole #2";
+				case "Pole3"		: Name = "Pole #3";
+				case "Pole4"		: Name = "Pole #4";
+				case "Pole5"		: Name = "Pole #5";
+			}
+		}
+		
+		declare Text	AnchorTag	for Page;
+		declare Integer	AnchorOrder	for Page;
+		declare Boolean	Finish		for Page;
+		Finish = False;
+		
+		UpdateButtons();
+		
+		while (!Finish) {
+			yield;
+			
+			foreach (Event in PendingEvents) {
+				switch(Event.Type){
+					case CMlEvent::Type::MouseClick : {
+						if (Event.ControlId != "Cancel") {
+							switch(Event.ControlId) {
+								case "Pole1"		: { AnchorTag = "Pole"; AnchorOrder = 1; }
+								case "Pole2"		: { AnchorTag = "Pole"; AnchorOrder = 2; }
+								case "Pole3"		: { AnchorTag = "Pole"; AnchorOrder = 3; }
+								case "Pole4"		: { AnchorTag = "Pole"; AnchorOrder = 4; }
+								case "Pole5"		: { AnchorTag = "Pole"; AnchorOrder = 5; }
+							}
+						}
+						Finish = True;
+					}
+				}
+			}
+		}
+	}
+--></script>
+""";
+  
+	return MLText;
+}
+
+// ---------------------------------- //
+// Manialink for non editable anchor
+Text NoEditManialink() {
+	return """
+<frame posn="120 35">
+	<quad posn="0 0 -1" sizen="70 15" halign="center" style="Bgs1" substyle="BgWindow2"/>
+	<quad posn="0 0 2" sizen="74 15" halign="center" valign="bottom" style="Bgs1InRace" substyle="BgTitle3_5"/>
+	<label posn="0 5.5 3" scale="0.9" halign="center" valign="bottom" style="TextTitle3" textprefix="$fff" text="{{{_("This anchor is not editable")}}}" />
+	<label text="OK" posn="0 -3.5 3" halign="center" style="CardButtonMedium" ScriptEvents="true"/>
+    </frame>
+<frame posn="120 5">
+	<quad posn="0 0 2" sizen="74 15" halign="center" valign="bottom" style="Bgs1InRace" substyle="BgTitle3_5"/>
+	<label posn="0 5 3" halign="center" valign="bottom" style="TextTitle3" textprefix="$fff" text="{{{_("Rules")}}}" />
+	<quad posn="0 0 -1" sizen="70 40" halign="center" style="Bgs1" substyle="BgWindow2"/>
+	<frame posn="-30 -4">
+		<label posn="0 0" sizen="60 5" autonewline="1" style="TextCardSmallScores2" textcolor="fff" text="{{{C_Rules}}}" />
+	</frame>
+</frame>
+<script><!--
+	main() {
+		declare Boolean Finish for Page;
+		Finish = False;	
+		while(!Finish) {
+			yield;
+			
+			foreach(Event in PendingEvents) {
+				switch(Event.Type){
+					case CMlEvent::Type::MouseClick : {
+						Finish = True;
+					}	
+				}
+			}
+		}
+	}
+--></script>
+""";
+}
+
+// ---------------------------------- //
+// Show the anchor edition manialink
+Void EditAnchorData(Ident _EditedAnchorDataId) {	
+	declare Text	AnchorTag	for ManialinkPage;
+	declare Integer	AnchorOrder	for ManialinkPage;
+	declare Boolean	Finish		for ManialinkPage;
+	
+	declare DefaultTag = AnchorData[_EditedAnchorDataId].DefaultTag;
+	if (DefaultTag == "Spawn") ManialinkText = EditSpawnManialink();
+	else if (DefaultTag == "Goal" || DefaultTag == "Checkpoint") ManialinkText = EditPoleManialink();
+	else ManialinkText = NoEditManialink();
+	
+	AnchorTag = AnchorData[_EditedAnchorDataId].Tag;
+	AnchorOrder = AnchorData[_EditedAnchorDataId].Order;
+	Finish = False;
+	while (!Finish) {
+		yield;
+	}
+	AnchorData[_EditedAnchorDataId].Tag = AnchorTag;
+	AnchorData[_EditedAnchorDataId].Order = AnchorOrder;
+	
+	UpdateValidability();
+}
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+main() {
+	MapType::SetVersion(MapTypeVersion);
+	
+	InitAnchors();
+	UpdateValidability();
+	CustomEditAnchorData = True;
+	while (True) {
+		yield;
+		ManialinkText = "";
+		foreach (Event in PendingEvents) {
+			if (Event.Type == CPluginEvent::Type::MapModified) {
+				UpdateValidability();
+			} else if (Event.Type == CPluginEvent::Type::EditAnchor) {
+				EditAnchorData(Event.EditedAnchorDataId);
+			}
+		}
+	}
+}

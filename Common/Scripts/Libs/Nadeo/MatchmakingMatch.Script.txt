@@ -1,0 +1,1662 @@
+/** 
+ *	Matchmaking match library
+ */
+
+#Const Version		"2017-05-12"
+#Const ScriptName	"Libs/Nadeo/MatchmakingMatch.Script.txt"
+
+#Include "TextLib" as TL
+#Include "MathLib" as ML
+#Include "Libs/Nadeo/Message.Script.txt" as Message
+#Include "Libs/Nadeo/Manialink.Script.txt" as Manialink
+#Include "Libs/Nadeo/MatchmakingCommon.Script.txt" as MMCommon
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+// Match status
+#Const C_MatchStatus_Waiting	0	///< Waiting for a match to start
+#Const C_MatchStatus_Starting	1	///< Match starting
+#Const C_MatchStatus_Playing	2	///< Match running
+#Const C_MatchStatus_Substitute	3	///< Waiting for a substitute
+#Const C_MatchStatus_Ending		4	///< Match ending
+// Player status
+#Const C_PlayerStatus_Waiting	0	///< Player waiting approval
+#Const C_PlayerStatus_Valid		1	///< Player approved
+#Const C_PlayerStatus_Invalid	2	///< Player rejected
+// Missing players info
+#Const C_MissingInfo_Clan	0	///< Clan of the missing player
+#Const C_MissingInfo_Kicked	1	///< Kick status of the missing player
+#Const C_MissingInfo_Since	2	///< Time when the player gone missing
+// Player info
+#Const C_PlayerInfo_Clan	0	///< Clan of the player
+#Const C_PlayerInfo_Slot	1	///< Slot of the player
+// Sequences duration
+#Const C_DelayBeforeTransfert	10000	///< Maximum delay before sending back the player to the lobby at the end of the match
+#Const C_EndingDuration			15000	///< Maximum duration of the match ending
+#Const C_RematchVoteDuration	10000	///< Vote duration for the rematch
+#Const C_PreparationDuration	20000	///< Maximum duration of the match preparation once there's at least one player
+// Misc
+#Const C_MissingPlayerGracePeriod	90000	///< Time before searching a substitute for a missing player
+#Const C_PingInterval				60000	///< Time interval between each ping
+#Const C_RequestRandomDeviation		500		///< Random time margin applied to the live request of the match and lobby server
+#Const C_EmptyTimeBeforeRestart		300000	///< Time before restarting a match on an empty server
+#Const C_PlayersNumberCheckInterval	60000	///< Time interval between each players number check
+#Const C_TransfertSafeTime			15000	///< Minimum time after a transfert before a player can be listed as ready
+#Const C_HttpHeaders "Content-Type: application/json\nAccept: application/xml" ///< Common http headers
+
+// ---------------------------------- //
+// Globales
+// ---------------------------------- //
+declare Text					G_LibMMMatch_MatchId;				///< Id of the match
+declare Integer					G_LibMMMatch_MatchStatus;			///< Current match status
+declare Integer[Integer][Text]	G_LibMMMatch_MissingPlayers;		///< List of missing players login, if they were kicked or not and their clan
+declare Text[]					G_LibMMMatch_KickedPlayers;			///< List of kicked players
+declare Integer[]				G_LibMMMatch_Scores;				///< Scores of the current match
+declare Integer					G_LibMMMatch_NextPing;				///< Time of the next ping to the API
+declare Integer					G_LibMMMatch_EmptySince;			///< Time since when the server is empty
+declare Integer					G_LibMMMatch_NextPlayersNumberCheck;///< Time of the next players number check
+declare Boolean 				G_LibMMMatch_AllowSubstitutes;		///< Allow the matchmaking to search substitutes to missing players
+declare Integer[Text] 			G_LibMMMatch_GhostPlayers;			///< Logins and clans list of the ghost players
+declare Integer					G_LibMMMatch_GhostPlayersIndex;		///< Next index to use when creating a chost players
+declare Boolean					G_LibMMMatch_NewMissingPlayer;		///< True if there's some new missing players not already sent to the API
+declare Integer[][Text] 		G_LibMMMatch_Players;				///< Logins, clans and order of the allowed players in the match
+declare Text					G_LibMMMatch_LobbyLogin;			///< Login of the lobby server where to send back the players
+declare Integer[Text] 			G_LibMMMatch_Clans;					///< Clans assigned to the players by the matchmaking
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+// ---------------------------------- //
+// Private
+// ---------------------------------- //
+// ---------------------------------- //
+/** Custom log function
+ *
+ *	@param	_Message	The message to log
+ */
+Void Private_Log(Text _Message) {
+	log(Now^"> "^_Message);
+}
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+// ---------------------------------- //
+/** Return the version number of the script
+ *
+ *	@return					The version number of the script
+ */
+Text GetScriptVersion() {
+	return Version;
+}
+
+// ---------------------------------- //
+/** Return the name of the script
+ *
+ *	@return					The name of the script
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+// ---------------------------------- //
+/// Unload the library
+Void Unload() {
+	G_LibMMMatch_MatchId = "";
+	G_LibMMMatch_MatchStatus = C_MatchStatus_Waiting;
+	G_LibMMMatch_MissingPlayers.clear();
+	G_LibMMMatch_KickedPlayers.clear();
+	G_LibMMMatch_Scores.clear();
+	G_LibMMMatch_NextPing = -1;
+	G_LibMMMatch_EmptySince = -1;
+	G_LibMMMatch_NextPlayersNumberCheck = -1;
+	G_LibMMMatch_AllowSubstitutes = True;
+	G_LibMMMatch_GhostPlayers.clear();
+	G_LibMMMatch_GhostPlayersIndex = 0;
+	G_LibMMMatch_NewMissingPlayer = False;
+}
+
+// ---------------------------------- //
+/// Load the library
+Void Load() {
+	Unload();
+}
+
+// ---------------------------------- //
+/** Set the match Id
+ *
+ *	@param	_MatchId		The new match id
+ */
+Void SetMatchId(Text _MatchId) {
+	G_LibMMMatch_MatchId = _MatchId;
+}
+
+// ---------------------------------- //
+/** Get the match id
+ *
+ *	@return					The match id
+ */
+Text GetMatchId() {
+	return G_LibMMMatch_MatchId;
+}
+
+// ---------------------------------- //
+/** Get the match id converted into an integer
+ *
+ *	@return					The converted match id, if the id was empty, then return -1
+ */
+Integer GetMatchIdInteger() {
+	declare MatchId = -1;
+	if (G_LibMMMatch_MatchId != "") MatchId = TL::ToInteger(G_LibMMMatch_MatchId);
+	return MatchId;
+}
+
+// ---------------------------------- //
+/** Set the lobby login
+ *
+ *	@param	_LobbyLogin		The login of the lobby
+ */
+Void SetLobbyLogin(Text _LobbyLogin) {
+	G_LibMMMatch_LobbyLogin = _LobbyLogin;
+}
+
+// ---------------------------------- //
+/** Get the lobby login
+ *
+ *	@return					The login of the lobby
+ */
+Text GetLobbyLogin() {
+	return G_LibMMMatch_LobbyLogin;
+}
+
+// ---------------------------------- //
+/// Get the match status constants
+Integer MatchStatus_Waiting() { return C_MatchStatus_Waiting; }
+Integer MatchStatus_Starting() { return C_MatchStatus_Starting; }
+Integer MatchStatus_Playing() { return C_MatchStatus_Playing; }
+Integer MatchStatus_Substitute() { return C_MatchStatus_Substitute; }
+Integer MatchStatus_Ending() { return C_MatchStatus_Ending; }
+
+// ---------------------------------- //
+/** Get the match status
+ *
+ *	@return					The match status
+ */
+Integer GetMatchStatus() {
+	return G_LibMMMatch_MatchStatus;
+}
+
+// ---------------------------------- //
+/// Get the missing info constants
+Integer MissingInfo_Clan() { return C_MissingInfo_Clan; }
+Integer MissingInfo_Kicked() { return C_MissingInfo_Kicked; }
+Integer MissingInfo_Since() { return C_MissingInfo_Since; }
+
+// ---------------------------------- //
+/** Add a missing player to the list
+ *
+ *	@param	_Player			The player's login to add to the list
+ *	@param	_Clan			The clan of the player
+ *	@param	_Kicked			If the player was kicked or not
+ */
+Void AddMissingPlayer(Text _Login, Integer _Clan, Boolean _Kicked) {
+	declare Kicked = 0;
+	if (_Kicked) Kicked = 1;
+	G_LibMMMatch_MissingPlayers[_Login] = [C_MissingInfo_Clan => _Clan, C_MissingInfo_Kicked => Kicked, C_MissingInfo_Since => Now];
+}
+
+// ---------------------------------- //
+/** Remove a missing player from the list
+ *
+ *	@param	_Login			The player's login to remove from the list
+ */
+Void RemoveMissingPlayer(Text _Login) {
+	declare Removed = G_LibMMMatch_MissingPlayers.removekey(_Login);
+}
+
+// ---------------------------------- //
+/// Clear the missing players list
+Void ClearMissingPlayers() {
+	G_LibMMMatch_MissingPlayers.clear();
+}
+
+// ---------------------------------- //
+/** Get the list of missing players
+ *
+ *	@return					A list of missing players with info about them
+ */
+Integer[Integer][Text] GetMissingPlayers() {
+	return G_LibMMMatch_MissingPlayers;
+}
+
+// ---------------------------------- //
+/** Check if a login is in the list of missing players
+ *
+ *	@param	_Login			The login to check
+ *
+ *	@return					True if the login is in the list, False otherwise
+ */
+Boolean IsInMissingPlayers(Text _Login) {
+	return G_LibMMMatch_MissingPlayers.existskey(_Login);
+}
+
+// ---------------------------------- //
+/** Add a kicked player to the list
+ *
+ *	@param	_Login			The player's login to add to the list
+ */
+Void AddKickedPlayer(Text _Login) {
+	if (G_LibMMMatch_KickedPlayers.exists(_Login)) return;
+	G_LibMMMatch_KickedPlayers.add(_Login);
+}
+
+// ---------------------------------- //
+/** Remove a kicked player from the list
+ *
+ *	@param	_Login			The player's login to remove from the list
+ */
+Void RemoveKickedPlayer(Text _Login) {
+	declare Removed = G_LibMMMatch_KickedPlayers.remove(_Login);
+}
+
+// ---------------------------------- //
+/// Clear the kicked players list
+Void ClearKickedPlayers() {
+	G_LibMMMatch_KickedPlayers.clear();
+}
+
+// ---------------------------------- //
+/** Get the list of kicked players
+ *
+ *	@return					A list of kicked players
+ */
+Text[] GetKickedPlayers() {
+	return G_LibMMMatch_KickedPlayers;
+}
+
+// ---------------------------------- //
+/** Check if a login is in the list of kicked players
+ *
+ *	@param	_Login			The login to check
+ *
+ *	@return					True if the login is in the list, False otherwise
+ */
+Boolean IsInKickedPlayers(Text _Login) {
+	return G_LibMMMatch_KickedPlayers.exists(_Login);
+}
+
+// ---------------------------------- //
+/** Set the clans scores
+ *
+ *	@param	_Scores			The new scores
+ */
+Void SetScores(Integer[] _Scores) {
+	G_LibMMMatch_Scores = _Scores;
+}
+
+// ---------------------------------- //
+/** Get the clans scores
+ *
+ *	@return					An array containing the scores of the clas
+ */
+Integer[] GetScores() {
+	return G_LibMMMatch_Scores;
+}
+
+// ---------------------------------- //
+/// Clear the clans scores
+Void ResetScores() {
+	G_LibMMMatch_Scores.clear();
+}
+
+// ---------------------------------- //
+/// Send the server status to the API
+Void PostMatchStatus() {
+	if (Http.SlotsAvailable > 0) {
+		declare MissingPlayers = "";
+		declare MatchMissingPlayers = GetMissingPlayers();
+		if ((GetMatchStatus() == C_MatchStatus_Substitute || GetMatchStatus() == C_MatchStatus_Playing) && MatchMissingPlayers.count > 0) {
+			foreach (Login => MissingInfo in MatchMissingPlayers) {
+				// Skip players that are missing since less than 90 seconds
+				if (MissingInfo[C_MissingInfo_Since] + C_MissingPlayerGracePeriod > Now) continue;
+				
+				if (MissingPlayers != "") MissingPlayers ^= ",";
+				
+				declare PlayerKicked = "false";
+				if (MissingInfo[C_MissingInfo_Kicked] != 0) PlayerKicked = "true";
+				
+				declare Clan = MissingInfo[C_MissingInfo_Clan];
+				declare CurrentMatchFormat = MMCommon::GetCurrentMatchFormat();
+				if (CurrentMatchFormat.count > 1) Clan -= 1;
+				
+				MissingPlayers ^= """
+{
+	"login":"{{{TL::MLEncode(Login)}}}",
+	"kicked": {{{PlayerKicked}}},
+	"clan": {{{Clan}}}
+}""";
+			}
+		}
+		
+		declare MatchScoresText = "";
+		declare MatchScores = GetScores();
+		foreach (MatchScore in MatchScores) {
+			if (MatchScoresText != "") MatchScoresText ^= ",";
+			MatchScoresText ^= MatchScore;
+		}
+		declare PostData = """
+{
+	"serverlogin": "{{{TL::MLEncode(ServerLogin)}}}",
+	"status": {{{GetMatchStatus()}}},
+	"matchid": {{{GetMatchIdInteger()}}},
+	"scores": [{{{MatchScoresText}}}],
+	"missingplayers": [{{{MissingPlayers}}}]
+}""";
+		declare Request <=> Http.CreatePost(MMCommon::GetApiUrl("/match-server/live"), PostData, C_HttpHeaders);
+		if (Request != Null) {
+			MMCommon::AddPendingRequest(Request.Id, MMCommon::RequestType_PostStatus());
+		}
+		
+		if (MMCommon::GetLogDisplay("APIDebug")) Private_Log("[API] Request: POST /match-server/live\n<!--\n"^PostData^"\n-->");
+	}
+}
+
+// ---------------------------------- //
+/// Reset the empty server countdown
+Void ResetEmptyServerCountdown() {
+	G_LibMMMatch_EmptySince = -1;
+}
+
+// ---------------------------------- //
+/** Check the number of players on the match server
+ *	If there's not any players left on the server, restart the matchmaking
+ *
+ *	@return				True if the matchmaking should be restarted
+ */
+Boolean MM_CheckPlayersNumbers() {
+	declare Restart = False;
+	
+	if (Now >= G_LibMMMatch_NextPlayersNumberCheck) {
+		G_LibMMMatch_NextPlayersNumberCheck = Now + C_PlayersNumberCheckInterval;
+		
+		if (GetMatchStatus() == C_MatchStatus_Playing || GetMatchStatus() == C_MatchStatus_Substitute) {
+			declare NeedRestart = (UseClans && (ClansNbPlayers[1] <= 0 || ClansNbPlayers[2] <= 0)) || (Players.count <= 1);
+			
+			if (G_LibMMMatch_EmptySince <= 0 && NeedRestart) {
+				G_LibMMMatch_EmptySince = Now;
+			} else if (G_LibMMMatch_EmptySince > 0 && !NeedRestart) {
+				G_LibMMMatch_EmptySince = -1;
+			} else if (G_LibMMMatch_EmptySince > 0 && Now >= G_LibMMMatch_EmptySince + C_EmptyTimeBeforeRestart) {
+				Restart = True;
+				if (MMCommon::GetLogDisplay("MiscDebug")) {
+					Private_Log("[SERVER] Server doesn't have enough players since "^(Now - G_LibMMMatch_EmptySince)^"ms. Restart matchmaking.");
+					Private_Log("[SERVER] Restart reasons > NeedRestart : "^NeedRestart^" | RestartClans : "^(UseClans && (ClansNbPlayers[1] <= 0 || ClansNbPlayers[2] <= 0))^" | UseClans : "^UseClans^" | Cla1 : "^ClansNbPlayers[1]^" | Clan2 : "^ClansNbPlayers[2]^" | Players.count : "^Players.count);
+				}
+			}
+		}
+	}
+	
+	return Restart;
+}
+
+// ---------------------------------- //
+/** Ping the API
+ *
+ *	@param	_Forced		Skip the time interval and force the ping
+ */
+Void Ping(Boolean _Forced) {
+	if (Now >= G_LibMMMatch_NextPing || _Forced) {
+		G_LibMMMatch_NextPing = Now + C_PingInterval + ML::Rand(-C_RequestRandomDeviation, C_RequestRandomDeviation);
+		PostMatchStatus();
+	}
+}
+
+// ---------------------------------- //
+/** Set the match status
+ *
+ *	@param	_MatchStatus	The new match status
+ */
+Void SetMatchStatus(Integer _MatchStatus) {
+	G_LibMMMatch_MatchStatus = _MatchStatus;
+	Ping(True);
+}
+
+// ---------------------------------- //
+/// Send the get match request to the API
+Void GetMatch() {
+	if (!MMCommon::IsInPendingRequests(MMCommon::RequestType_GetMatches())) {
+		declare Request <=> Http.CreateGet(MMCommon::GetApiUrl("/match-server/match?serverlogin="^ServerLogin), False, C_HttpHeaders);
+		if (Request != Null) {
+			MMCommon::AddPendingRequest(Request.Id, MMCommon::RequestType_GetMatches());
+		}
+		
+		if (MMCommon::GetLogDisplay("APIDebug")) Private_Log("[API] Request: Get /match-server/match?serverlogin="^ServerLogin);
+	}
+}
+
+// ---------------------------------- //
+/** Check if the substitutes are allowed
+ *
+ *	@return					True if they are allowed, False otherwise
+ */
+Boolean GetAllowSubstitutes() {
+	return G_LibMMMatch_AllowSubstitutes;
+}
+
+// ---------------------------------- //
+/** Allow or not the mode to request substitutes
+ *
+ *	@param	_AllowSubstitute	True to allow substitutes
+ */
+Void SetAllowSubstitutes(Boolean _AllowSubstitutes) {
+	if (G_LibMMMatch_AllowSubstitutes == _AllowSubstitutes) return;
+	
+	G_LibMMMatch_AllowSubstitutes = _AllowSubstitutes;
+	
+	if (GetMatchStatus() == C_MatchStatus_Substitute) {
+		SetMatchStatus(C_MatchStatus_Playing);
+	}
+}
+
+// ---------------------------------- //
+/** Force allow or not the mode to request substitutes
+ *
+ *	@param	_AllowSubstitute	True to allow substitutes
+ */
+Void ForceAllowSubstitutes(Boolean _AllowSubstitute) {
+	G_LibMMMatch_AllowSubstitutes = _AllowSubstitute;
+}
+
+// ---------------------------------- //
+/**	Create a ghost player
+ *
+ *	@param	_Clan				The clan of the ghost player
+ *
+ *	@return						The login of the ghost playter created
+ */
+Text AddGhostPlayer(Integer _Clan) {
+	declare GhostName = "*player"^G_LibMMMatch_GhostPlayersIndex^"*";
+	G_LibMMMatch_GhostPlayers[GhostName] = _Clan;
+	G_LibMMMatch_GhostPlayersIndex += 1;
+	return GhostName;
+}
+
+// ---------------------------------- //
+/** Remove a ghost player
+ *
+ *	@param	_Login				The loin of the ghos tplayer to remove
+ */
+Void RemoveGhostPlayer(Text _Login) {
+	declare Removed = G_LibMMMatch_GhostPlayers.removekey(_Login);
+}
+
+// ---------------------------------- //
+/// Clear the ghost players list
+Void ClearGhostPlayers() {
+	G_LibMMMatch_GhostPlayers.clear();
+	G_LibMMMatch_GhostPlayersIndex = 0;
+}
+
+// ---------------------------------- //
+/** Get the ghost players list
+ *
+ *	@return						The ghost players list
+ */
+Integer[Text] GetGhostPlayers() {
+	return G_LibMMMatch_GhostPlayers;
+}
+
+// ---------------------------------- //
+/** Add a player to the match players
+ *
+ *	@param	_Login				The login of the player to add
+ *	@param	_Clan				The clan of the player
+ *	@param	_Order				The order of the player
+ */
+Void AddMatchPlayer(Text _Login, Integer _Clan, Integer _Order) {
+	G_LibMMMatch_Players[_Login] = [_Clan, _Order];
+}
+
+// ---------------------------------- //
+/** Remove a player from the match players
+ *
+ *	@param	_Login				The login of the player to remove
+ */
+Void RemoveMatchPlayer(Text _Login) {
+	declare Removed = G_LibMMMatch_Players.removekey(_Login);
+}
+
+// ---------------------------------- //
+/** Check if a players is in the match players
+ *
+ *	@param	_Login				The login to check
+ *
+ *	@return						True if the player is in the match players list, False otherwise
+ */
+Boolean IsInMatchPlayers(Text _Login) {
+	return G_LibMMMatch_Players.existskey(_Login);
+}
+
+// ---------------------------------- //
+/** Set the players of the match
+ *
+ *	@param	_MatchPlayers		The players of the match with some info about them
+ */
+Void SetMatchPlayers(Integer[][Text] _MatchPlayers) {
+	G_LibMMMatch_Players = _MatchPlayers;
+}
+
+// ---------------------------------- //
+/** Get the players of the match and info about them (clans and order)
+ *
+ *	@return						The plâyers of the match and their info
+ */
+Integer[][Text] GetMatchPlayers() {
+	return G_LibMMMatch_Players;
+}
+
+// ---------------------------------- //
+/// Clear the players of the match
+Void ClearMatchPlayers() {
+	G_LibMMMatch_Players.clear();
+}
+
+// ---------------------------------- //
+/** Get the clan selected by the matchmaking for the player
+ *	If the server is not in matchmaking mode, return the default requested clan
+ *
+ *	@param	_Player		The player to check
+ *
+ *	@return		The matchmaking clan of the player
+ */
+Integer GetMatchPlayerClan(CPlayer _Player) {
+	if (_Player == Null) return 0;
+	
+	if (MMCommon::IsMatchServer()) {
+		if (IsInMatchPlayers(_Player.User.Login)) {
+			declare MatchPlayers = GetMatchPlayers();
+			return MatchPlayers[_Player.User.Login][C_PlayerInfo_Clan];
+		}
+	}
+	
+	return _Player.RequestedClan;
+}
+
+// ---------------------------------- //
+/** Get the slot selected by the matchmaking for the player
+ *
+ *	@param	_Player		The player to check
+ *
+ *	@return		The matchmaking slot of the player if found, -1 otherwise
+ */
+Integer GetMatchPlayerSlot(CPlayer _Player) {
+	if (_Player == Null) return -1;
+	
+	if (MMCommon::IsMatchServer()) {
+		if (IsInMatchPlayers(_Player.User.Login)) {
+			declare MatchPlayers = GetMatchPlayers();
+			return MatchPlayers[_Player.User.Login][C_PlayerInfo_Slot];
+		}
+	}
+	
+	return -1;
+}
+
+// ---------------------------------- //
+/** Add the clan of a player
+ *
+ *	@param	_Login				The login of the player
+ *	@param	_Clan				The clan of the player
+ */
+Void AddPlayerClan(Text _Login, Integer _Clan) {
+	G_LibMMMatch_Clans[_Login] = _Clan;
+}
+
+// ---------------------------------- //
+/** Remove the clan of a player
+ *
+ *	@param	_Login				The login of the player to remove
+ */
+Void RemovePlayerClan(Text _Login) {
+	declare Removed = G_LibMMMatch_Clans.removekey(_Login);
+}
+
+// ---------------------------------- //
+/** Get the clan selected by the matchmaking for a login
+ *
+ *	@param	_Login				The login to check
+ *
+ *	@return						The matchmaking clan of the login
+ */
+Integer GetPlayerClan(Text _Login) {
+	if (MMCommon::IsMatchServer()) {
+		if (G_LibMMMatch_Clans.existskey(_Login)) {
+			return G_LibMMMatch_Clans[_Login];
+		}
+	}
+	
+	return -1;
+}
+
+// ---------------------------------- //
+/**	Get the clans of the players
+ *
+ *	@return						The clans of the players
+ */
+Integer[Text] GetPlayersClans() {
+	return G_LibMMMatch_Clans;
+}
+
+// ---------------------------------- //
+/// Clear the clans of the players
+Void ClearPlayersClans() {
+	G_LibMMMatch_Clans.clear();
+}
+
+// ---------------------------------- //
+/** Inform if there's a new missing player
+ *
+ *	@param	_NewMissingPlayer	True if there's a new missing player
+ */
+Void SetNewMissingPlayer(Boolean _NewMissingPlayer) {
+	G_LibMMMatch_NewMissingPlayer = _NewMissingPlayer;
+}
+
+// ---------------------------------- //
+/** Check if there's new missing players
+ *
+ *	@return						True if there is new missing player, False otherwise
+ */
+Boolean GetNewMissingPlayer() {
+	return G_LibMMMatch_NewMissingPlayer;
+}
+
+// ---------------------------------- //
+/// Get the player status constants
+Integer PlayerStatus_Waiting() { return C_PlayerStatus_Waiting; }
+Integer PlayerStatus_Valid() { return C_PlayerStatus_Valid; }
+Integer PlayerStatus_Invalid() { return C_PlayerStatus_Invalid; }
+
+// ---------------------------------- //
+/** Check if a player is allowed to play by the matchmaking
+ *
+ *	@param	_Player		The player to check
+ *
+ *	@return			True if the player is allowed to play, false otherwise
+ */
+Boolean PlayerIsValid(CPlayer _Player) {
+	if (_Player == Null) return False;
+	
+	declare Matchmaking_PlayerStatus for _Player = C_PlayerStatus_Waiting;
+	return (Matchmaking_PlayerStatus == C_PlayerStatus_Valid);
+}
+
+// ---------------------------------- //
+/// Manage players authorization
+Void ManagePlayers() {
+	declare PresentPlayers = Real[Text];
+	declare ToTransfert = CPlayer[];
+	
+	foreach (Player in AllPlayers) {
+		declare Matchmaking_PlayerStatus for Player = C_PlayerStatus_Waiting;
+		
+		// Change the status of the player
+		if (Matchmaking_PlayerStatus == C_PlayerStatus_Waiting) {
+			GetMatch();
+			SetPlayerClan(Player, 0);
+		}
+		
+		// Kick the invalid players
+		if (Matchmaking_PlayerStatus == C_PlayerStatus_Invalid) {
+			if (!Player.User.IsFakeUser) {
+				ToTransfert.add(Player);
+			}
+			
+			declare UI <=> UIManager.GetUI(Player);
+			if (UI != Null && !UI.ForceSpectator) {
+				UI.ForceSpectator = True;
+			}
+			Users_RequestSwitchToSpectator(Player.User);
+		} 
+		// Remove valid players from the missing list
+		else if (Matchmaking_PlayerStatus == C_PlayerStatus_Valid) {
+			if (IsInMissingPlayers(Player.User.Login)) {
+				RemoveMissingPlayer(Player.User.Login);
+				G_LibMMMatch_NewMissingPlayer = True;
+			}
+		}
+		
+		// Count players in each clan
+		if (G_LibMMMatch_Players.existskey(Player.User.Login)) {
+			PresentPlayers[Player.User.Login] = Player.User.LadderPoints;
+		}
+	}
+	
+	// Transfert invalid players to the lobby, if they stay there, kick them
+	foreach (Player in ToTransfert) {
+		declare LibMMMatch_CanBeKicked for Player = -1;
+		if (LibMMMatch_CanBeKicked <= 0) {
+			LibMMMatch_CanBeKicked = Now + C_TransfertSafeTime;
+			MMCommon::SendToServer(Player, GetLobbyLogin());
+			if (MMCommon::GetLogDisplay("MiscDebug")) Private_Log("[SERVER] Invalid player : "^Player.User.Login^" > Transfert to the lobby : "^GetLobbyLogin());
+	
+		} else if (Now >= LibMMMatch_CanBeKicked) {
+			declare Kicked = ServerAdmin.KickUser(Player.User, _("This matchmaking server is hosting a match. You can't join at the moment."));
+			if (MMCommon::GetLogDisplay("MiscDebug")) Private_Log("[SERVER] Invalid player : "^Player.User.Login^" > Kicked.");
+		}
+	}
+	
+	// Search missing players only if substitutes are allowed
+	//if (G_MMMatch_AllowSubstitutes) {
+		foreach (Login => PlayerInfo in G_LibMMMatch_Players) {
+			// Missing
+			if (!PresentPlayers.existskey(Login)) {
+				// New
+				if (!IsInMissingPlayers(Login)) {
+					// Kicked from match?
+					declare Kicked = False;
+					if (IsInKickedPlayers(Login)) {
+						RemoveKickedPlayer(Login);
+						Kicked = True;
+					}
+					declare PlayerClan = PlayerInfo[C_PlayerInfo_Clan];
+					AddMissingPlayer(Login, PlayerClan, Kicked);
+					G_LibMMMatch_NewMissingPlayer = True;
+				}
+			}
+		}
+	//}
+	
+	declare MissingPlayersCount = 0;
+	declare MissingPlayers = GetMissingPlayers();
+	foreach (Login => MissingInfo in MissingPlayers) {
+		if (MissingInfo[C_MissingInfo_Since] + C_MissingPlayerGracePeriod <= Now) MissingPlayersCount += 1;
+	}
+	
+	// Change match status
+	declare ApiInformed = False;
+	if (MissingPlayersCount <= 0 && GetMatchStatus() == C_MatchStatus_Substitute) {
+		SetMatchStatus(C_MatchStatus_Playing);
+		ApiInformed = True;
+	} else if (MissingPlayersCount > 0 && GetMatchStatus() == C_MatchStatus_Playing && GetAllowSubstitutes()) {
+		SetMatchStatus(C_MatchStatus_Substitute);
+		ApiInformed = True;
+	}
+	
+	// Inform the API of the missing players
+	if (G_LibMMMatch_NewMissingPlayer && (GetMatchStatus() == C_MatchStatus_Playing || GetMatchStatus() == C_MatchStatus_Substitute)) {
+		if (!ApiInformed) Ping(True);
+		G_LibMMMatch_NewMissingPlayer = False;
+	}
+}
+
+// ---------------------------------- //
+/** Parse the match request response and
+ *	setup a match when necessary
+ *
+ *	@param	_MatchXml	Xml containing the match settings
+ */
+Void SetupMatch(Text _MatchXml) {
+	if (MMCommon::GetLogDisplay("APIDebug")) Private_Log("[API] Response: GET /match-server/match?serverlogin="^ServerLogin^"\n<!--\n"^_MatchXml^"\n-->");
+	if (_MatchXml != "") {
+		declare XmlDoc <=> Xml.Create(_MatchXml);
+		if (XmlDoc != Null && XmlDoc.Root != Null) {
+			declare NodeMatch <=> XmlDoc.Root.GetFirstChild("match");
+			
+			if (NodeMatch != Null) {
+				declare NodeServer <=> NodeMatch.GetFirstChild("server");
+				declare NodeFormat <=> NodeMatch.GetFirstChild("format");
+				declare NodePlayers <=> NodeMatch.GetFirstChild("players");
+				declare MatchId = "";
+				declare MatchPlayers = Integer[][Text];
+				declare MatchLobbyLogin = "";
+				
+				// Setup the maximum number of ghost players we might need
+				declare GhostPlayersCount = Integer[Integer];
+				if (MMCommon::IsProgressiveMatchmaking()) {
+					declare MatchFormat = MMCommon::GetMatchFormat();
+					foreach (Key => PlayersNb in MatchFormat) {
+						declare Clan = Key;
+						if (MatchFormat.count > 1) Clan += 1;
+						GhostPlayersCount[Clan] = PlayersNb;
+					}
+				}
+				
+				MatchId = NodeMatch.GetAttributeText("id", "");
+				
+				if (NodeServer != Null) {
+					MatchLobbyLogin = NodeServer.GetAttributeText("lobby", "");
+				}
+				
+				if (NodeFormat != Null) {
+					declare Format = Integer[];
+					foreach (NodeClan in NodeFormat.Children) {
+						declare PlayersNb = NodeClan.GetAttributeInteger("number", -1);
+						if (PlayersNb > 0) Format.add(PlayersNb);
+					}
+					MMCommon::SetCurrentMatchFormat(Format);
+				}
+				
+				if (NodePlayers != Null) {
+					foreach (NodePlayer in NodePlayers.Children) {
+						declare Login = NodePlayer.GetAttributeText("login", "");
+						declare Clan = NodePlayer.GetAttributeInteger("clan", -1);
+						declare Order = NodePlayer.GetAttributeInteger("order", -1);
+						declare Replaced = NodePlayer.GetAttributeBoolean("replaced", False);
+						
+						declare CurrentMatchFormat = MMCommon::GetCurrentMatchFormat();
+						if (CurrentMatchFormat.count > 1) Clan += 1;
+						if (Login != "" && Clan >= 0) AddPlayerClan(Login, Clan);
+						
+						if (Replaced) {
+							RemoveMissingPlayer(Login);
+							RemoveGhostPlayer(Login);
+						} else {
+							if (Login != "" && Clan >= 0) {
+								MatchPlayers[Login] = [Clan, Order];
+								if (MMCommon::IsProgressiveMatchmaking() && GhostPlayersCount.existskey(Clan)) {
+									GhostPlayersCount[Clan] -= 1;
+								}
+							}
+						}
+					}
+				}
+				
+				// Match is valid, start preparation
+				if (MatchId != "" && MatchPlayers.count > 0 && MatchLobbyLogin != "") {
+					SetMatchId(MatchId);
+					SetMatchPlayers(MatchPlayers);
+					SetLobbyLogin(MatchLobbyLogin);
+					SetMatchStatus(C_MatchStatus_Starting);
+				}
+				
+				// Complete the match with ghost players if necessary
+				if (MMCommon::IsProgressiveMatchmaking()) {
+					foreach (Clan => PlayersNb in GhostPlayersCount) {
+						for (I, 1, PlayersNb) {
+							declare GhostLogin = AddGhostPlayer(Clan);
+							AddMatchPlayer(GhostLogin, Clan, -1);
+							AddPlayerClan(GhostLogin, Clan);
+						}
+					}
+				}
+			}
+		}
+		Xml.Destroy(XmlDoc);
+	}
+	
+	// Kick all players from the server if there's no match starting
+	if (GetMatchStatus() != C_MatchStatus_Starting) {
+		foreach (Player in AllPlayers) {
+			declare Matchmaking_PlayerStatus for Player = C_PlayerStatus_Waiting;
+			Matchmaking_PlayerStatus = C_PlayerStatus_Invalid;
+		}
+	}
+	// Validate players if the match is starting
+	else {
+		foreach (Player in AllPlayers) {
+			declare Matchmaking_PlayerStatus for Player = C_PlayerStatus_Waiting;
+			if (IsInMatchPlayers(Player.User.Login)) {
+				Matchmaking_PlayerStatus = C_PlayerStatus_Valid;
+			} else {
+				Matchmaking_PlayerStatus = C_PlayerStatus_Invalid;
+			}
+		}
+	}
+}
+
+// ---------------------------------- //
+/** Parse the match request response and
+ *	setup the substitutes if necessary
+ *
+ *	@param	_MatchXml	Xml containing the match settings
+ */
+Void SetupSubstitute(Text _MatchXml) {
+	if (MMCommon::GetLogDisplay("APIDebug")) Private_Log("[API] Response: GET /match-server/match?serverlogin="^ServerLogin^"\n<!--\n"^_MatchXml^"\n-->");
+	if (_MatchXml != "") {
+		declare XmlDoc <=> Xml.Create(_MatchXml);
+		if (XmlDoc != Null && XmlDoc.Root != Null) {
+			declare NodeMatch <=> XmlDoc.Root.GetFirstChild("match");
+			
+			if (NodeMatch != Null) {
+				declare NodePlayers <=> NodeMatch.GetFirstChild("players");
+				declare MatchId = "";
+				declare MatchPlayers = Integer[][Text];
+				
+				MatchId = NodeMatch.GetAttributeText("id", "");
+				
+				if (MatchId == GetMatchId()) {
+					if (NodePlayers != Null) {
+						foreach (NodePlayer in NodePlayers.Children) {
+							declare Login = NodePlayer.GetAttributeText("login", "");
+							declare Clan = NodePlayer.GetAttributeInteger("clan", -1);
+							declare Order = NodePlayer.GetAttributeInteger("order", -1);
+							declare Replaced = NodePlayer.GetAttributeBoolean("replaced", False);
+							
+							declare CurrentMatchFormat = MMCommon::GetCurrentMatchFormat();
+							if (CurrentMatchFormat.count > 1) Clan += 1;
+							if (Login != "" && Clan >= 0) AddPlayerClan(Login, Clan);
+						
+							if (Replaced) {
+								RemoveMissingPlayer(Login);
+								RemoveGhostPlayer(Login);
+							} else {
+								if (Login != "" && Clan >= 0) {
+									MatchPlayers[Login] = [Clan, Order];
+								}
+							}
+						}
+					}
+					
+					SetMatchPlayers(MatchPlayers);
+					
+					if (MMCommon::IsProgressiveMatchmaking()) {
+						declare GhostPlayers = GetGhostPlayers();
+						foreach (GhostLogin => GhostClan in GhostPlayers) {
+							AddMatchPlayer(GhostLogin, GhostClan, -1);
+							AddPlayerClan(GhostLogin, GhostClan);
+						}
+					}
+				}
+			}
+		}
+		Xml.Destroy(XmlDoc);
+	}
+	
+	// Set invalid players
+	foreach (Player in AllPlayers) {
+		declare Matchmaking_PlayerStatus for Player = C_PlayerStatus_Waiting;
+		if (IsInMatchPlayers(Player.User.Login)) {
+			Matchmaking_PlayerStatus = C_PlayerStatus_Valid;
+		} else {
+			Matchmaking_PlayerStatus = C_PlayerStatus_Invalid;
+		}
+	}
+}
+
+// ---------------------------------- //
+/** Send the result to the API
+ *
+ *	@param	_Master		The master of the match
+ */
+Void MatchEnd(Text _MasterLogin) {
+	SetMatchStatus(C_MatchStatus_Ending);
+	
+	if (Http.SlotsAvailable > 0) {
+		declare MatchScoresText = "";
+		declare MatchScores = GetScores();
+		foreach (MatchScore in MatchScores) {
+			if (MatchScoresText != "") MatchScoresText ^= ",";
+			MatchScoresText ^= MatchScore;
+		}
+		declare PostData = """
+{
+	"matchid": {{{GetMatchIdInteger()}}},
+	"master": "{{{TL::MLEncode(_MasterLogin)}}}",
+	"scores": [{{{MatchScoresText}}}]
+}""";
+		declare Request <=> Http.CreatePost(MMCommon::GetApiUrl("/match-server/result"), PostData, C_HttpHeaders);
+		if (Request != Null) {
+			MMCommon::AddPendingRequest(Request.Id, MMCommon::RequestType_PostResults());
+		}
+		
+		if (MMCommon::GetLogDisplay("APIDebug")) Private_Log("[API] Request: POST /match-server/result\n<!--\n"^PostData^"\n-->");
+	}
+}
+
+// ---------------------------------- //
+/// Wait for a new match
+Void MM_MatchWait() {
+	ClearMatchPlayers();
+	ClearPlayersClans();
+	SetMatchId("");
+	SetLobbyLogin("");
+	ClearMissingPlayers();
+	ClearKickedPlayers();
+	ClearGhostPlayers();
+	SetNewMissingPlayer(False);
+	ResetEmptyServerCountdown();
+	ResetScores();
+	
+	foreach (Player in AllPlayers) {
+		declare Matchmaking_PlayerStatus for Player = C_PlayerStatus_Waiting;
+		Matchmaking_PlayerStatus = C_PlayerStatus_Waiting;
+	}
+	
+	SetMatchStatus(C_MatchStatus_Waiting);
+}
+
+// ---------------------------------- //
+/** Check if we can start a match
+ *
+ *	@return					True if we can start a match, False otherwise
+ */
+Boolean CanStartMatch() {
+	return (GetMatchStatus() != C_MatchStatus_Waiting || ServerShutdownRequested || MatchEndRequested);
+}
+
+// ---------------------------------- //
+/** Begin the wait players sequence
+ *
+ *	@param	_StartTime		Start time of the sequence
+ *	@param	_MaxDuration	Maximum duration of the sequence
+ *
+ *	@return					The end time of the sequence
+ */
+Void WaitPlayers_Begin(Integer _StartTime, Integer _MaxDuration) {
+	declare Integer MMMatch_WaitPlayers_StartTime for This;
+	declare Integer MMMatch_WaitPlayers_MaxDuration for This;
+	declare Integer MMMatch_WaitPlayers_EndTime for This;
+	declare Integer MMMatch_WaitPlayers_ReqPlayersNb for This;
+	declare Boolean MMMatch_WaitPlayers_IsRunning for This;
+	MMMatch_WaitPlayers_StartTime = _StartTime;
+	MMMatch_WaitPlayers_MaxDuration = _MaxDuration;
+	MMMatch_WaitPlayers_EndTime = -1;
+	MMMatch_WaitPlayers_ReqPlayersNb = 0;
+	MMMatch_WaitPlayers_IsRunning = True;
+	
+	declare CurrentMatchFormat = MMCommon::GetCurrentMatchFormat();
+	foreach (PlayersNb in CurrentMatchFormat) MMMatch_WaitPlayers_ReqPlayersNb += PlayersNb;
+	
+	declare netwrite Integer Net_MM_ReadyPlayersNb for Teams[0];
+	declare netwrite Integer Net_MM_ReadyPlayersMax for Teams[0];
+	Net_MM_ReadyPlayersNb = 0;
+	Net_MM_ReadyPlayersMax = MMMatch_WaitPlayers_ReqPlayersNb;
+	
+	UIManager.UIAll.UISequence = CUIConfig::EUISequence::RollingBackgroundIntro;
+}
+
+// ---------------------------------- //
+/** Check if the wait players sequence must continue
+ *
+ *	@return					True if sequence must continue, False otherwise
+ */
+Boolean WaitPlayers_IsRunning() {
+	declare Boolean MMMatch_WaitPlayers_IsRunning for This;
+	return (MMMatch_WaitPlayers_IsRunning && !ServerShutdownRequested && !MatchEndRequested);
+}
+
+// ---------------------------------- //
+/// Update the wait players sequence
+Integer WaitPlayers_Loop() {
+	declare ReadyPlayersNb = 0;
+	foreach (Player in AllPlayers) {
+		declare Matchmaking_PlayerStatus for Player = C_PlayerStatus_Waiting;
+		if (Matchmaking_PlayerStatus == C_PlayerStatus_Valid) {
+			ReadyPlayersNb += 1;
+		}
+	}
+	
+	declare netwrite Integer Net_MM_ReadyPlayersNb for Teams[0];
+	if (Net_MM_ReadyPlayersNb != ReadyPlayersNb) Net_MM_ReadyPlayersNb = ReadyPlayersNb;
+	
+	declare Integer MMMatch_WaitPlayers_EndTime for This;
+	declare Integer MMMatch_WaitPlayers_ReqPlayersNb for This;
+	if ((MMMatch_WaitPlayers_EndTime >= 0 && Now >= MMMatch_WaitPlayers_EndTime) || ReadyPlayersNb >= MMMatch_WaitPlayers_ReqPlayersNb) {
+		declare Boolean MMMatch_WaitPlayers_IsRunning for This;
+		MMMatch_WaitPlayers_IsRunning = False;
+	}
+	
+	declare Integer MMMatch_WaitPlayers_StartTime for This;
+	declare Integer MMMatch_WaitPlayers_MaxDuration for This;
+	if (MMMatch_WaitPlayers_EndTime < 0 && ReadyPlayersNb > 0) {
+		MMMatch_WaitPlayers_EndTime = MMMatch_WaitPlayers_StartTime + MMMatch_WaitPlayers_MaxDuration;
+		return MMMatch_WaitPlayers_EndTime;
+	}
+	
+	return -1;
+}
+
+// ---------------------------------- //
+/// End the wait players sequence
+Void WaitPlayers_End() {
+	
+}
+
+// ---------------------------------- //
+/** Begin the prepare match sequence
+ *
+ *	@param	_StartTime		Start time of the sequence
+ *	@param	_WaitingTime	Waiting time duration
+ *
+ *	@return					The end time of the sequence
+ */
+Integer PrepareMatch_Begin(Integer _StartTime, Integer _WaitingTime) {
+	declare WaitingTime = _WaitingTime * 1000;
+	if (WaitingTime <= 0) WaitingTime = C_PreparationDuration;
+	
+	declare Integer MMMatch_PrepareMatch_EndTime for This;
+	declare Integer MMMatch_PrepareMatch_ReqPlayersNb for This;
+	MMMatch_PrepareMatch_EndTime = _StartTime + WaitingTime;
+	MMMatch_PrepareMatch_ReqPlayersNb = 0;
+	
+	declare CurrentMatchFormat = MMCommon::GetCurrentMatchFormat();
+	foreach (PlayersNb in CurrentMatchFormat) MMMatch_PrepareMatch_ReqPlayersNb += PlayersNb;
+	
+	declare netwrite Integer Net_MM_ReadyPlayersNb for Teams[0];
+	declare netwrite Integer Net_MM_ReadyPlayersMax for Teams[0];
+	Net_MM_ReadyPlayersNb = 0;
+	Net_MM_ReadyPlayersMax = MMMatch_PrepareMatch_ReqPlayersNb;
+	
+	declare netwrite Integer Net_MM_ReadyPlayersSynchroServer for Teams[0] = 10;
+	Net_MM_ReadyPlayersSynchroServer += 1;
+	if (Net_MM_ReadyPlayersSynchroServer > 10000) Net_MM_ReadyPlayersSynchroServer = 10;
+	
+	UIManager.UIAll.UISequence = CUIConfig::EUISequence::RollingBackgroundIntro;
+	
+	return MMMatch_PrepareMatch_EndTime;
+}
+
+// ---------------------------------- //
+/** Check if the prepare match sequence must continue
+ *
+ *	@return					True if sequence must continue, False otherwise
+ */
+Boolean PrepareMatch_IsRunning() {
+	return (GetMatchStatus() == C_MatchStatus_Starting && !ServerShutdownRequested && !MatchEndRequested);
+}
+
+// ---------------------------------- //
+/// Update the prepare match sequence
+Void PrepareMatch_Loop() {
+	declare ReadyPlayersNb = 0;
+	foreach (Player in Players) {
+		declare Matchmaking_PlayerStatus for Player = C_PlayerStatus_Waiting;
+		if (Matchmaking_PlayerStatus == C_PlayerStatus_Valid) {
+			declare Connected = False;
+			if (Player.User.IsFakeUser) {
+				Connected = True;
+			} else {
+				declare UI <=> UIManager.GetUI(Player);
+				if (UI != Null) {
+					if (Player.User.IsFakeUser) {
+						Connected = True;
+					} else {
+						declare netread Integer Net_MM_ReadyPlayersSynchroClient for UI;
+						declare netwrite Integer Net_MM_ReadyPlayersSynchroServer for Teams[0];
+						if (Net_MM_ReadyPlayersSynchroClient == Net_MM_ReadyPlayersSynchroServer) {
+							declare netread Boolean Net_MM_ReadyPlayersConnected for UI;
+							Connected = Net_MM_ReadyPlayersConnected;
+						}
+					}
+				} else {
+					Connected = True;
+				}
+			}
+			
+			if (Connected) ReadyPlayersNb += 1;
+		}
+	}
+	
+	declare netwrite Integer Net_MM_ReadyPlayersNb for Teams[0];
+	if (Net_MM_ReadyPlayersNb != ReadyPlayersNb) Net_MM_ReadyPlayersNb = ReadyPlayersNb;
+	
+	declare Integer MMMatch_PrepareMatch_EndTime for This;
+	declare Integer MMMatch_PrepareMatch_ReqPlayersNb for This;
+	if (Now >= MMMatch_PrepareMatch_EndTime || ReadyPlayersNb >= MMMatch_PrepareMatch_ReqPlayersNb) {
+		SetMatchStatus(C_MatchStatus_Playing);
+	}
+}
+
+// ---------------------------------- //
+/// End the prepare match sequence
+Void PrepareMatch_End() {
+	MMCommon::SetCurrentMatchFormat(MMCommon::GetMatchFormat());
+}
+
+// ---------------------------------- //
+/** Begin the vote for rematch sequence
+ *
+ *	@param	_RematchRatio	The minimum ratio of positive vote for a rematch
+ *
+ *	@return					The end time of the sequence
+ */
+Void VoteForRematch_Begin(Real _RematchRatio) {
+	declare netwrite Net_MM_RematchVote_SynchroServer for Teams[0] = 10;
+	Net_MM_RematchVote_SynchroServer += 1;
+	
+	declare Boolean MMMatch_VoteForRematch_StopVote for This;
+	declare Boolean MMMatch_VoteForRematch_Result for This;
+	declare Boolean[Ident] MMMatch_VoteForRematch_PlayersVotes for This;
+	declare Real MMMatch_VoteForRematch_RematchRatio for This;
+	MMMatch_VoteForRematch_StopVote = False;
+	MMMatch_VoteForRematch_Result = False;
+	MMMatch_VoteForRematch_PlayersVotes.clear();
+	MMMatch_VoteForRematch_RematchRatio = _RematchRatio;
+	
+	foreach (Player in AllPlayers) {
+		declare MM_RematchVoted for Player = False;
+		
+		if (Player.User.IsFakeUser) MM_RematchVoted = True;
+		else MM_RematchVoted = False;
+	}
+	
+	declare Integer MMMatch_VoteForRematch_VoteEndTime for This;
+	MMMatch_VoteForRematch_VoteEndTime = Now + C_RematchVoteDuration;
+	declare netwrite Net_MM_RematchVote_EndTime for Teams[0] = 0;
+	Net_MM_RematchVote_EndTime = MMMatch_VoteForRematch_VoteEndTime;
+}
+
+// ---------------------------------- //
+/** Check if the vote for rematch sequence must continue
+ *
+ *	@return					True if the sequence must continue, False otherwise
+ */
+Boolean VoteForRematch_IsRunning() {
+	declare Boolean MMMatch_VoteForRematch_StopVote for This;
+	declare Integer MMMatch_VoteForRematch_VoteEndTime for This;
+	return (!MMMatch_VoteForRematch_StopVote && Now < MMMatch_VoteForRematch_VoteEndTime);
+}
+
+// ---------------------------------- //
+/** Update the vote for rematch sequence
+ *
+ *	@return					The new voting logins
+ */
+Text VoteForRematch_Loop() {
+	declare Boolean[Ident] MMMatch_VoteForRematch_PlayersVotes for This;
+	declare Boolean MMMatch_VoteForRematch_StopVote for This;
+	MMMatch_VoteForRematch_StopVote = True;
+	
+	declare NewVotes = "";
+	
+	foreach (Player in Players) {
+		declare UI <=> UIManager.GetUI(Player);
+		if (UI == Null) continue;
+		
+		declare MM_RematchVoted for Player = False;
+		declare netread Integer Net_MM_RematchVote_Update for UI;
+		declare MM_PrevVoteUpdate for Player = -1;
+		if (MM_PrevVoteUpdate != Net_MM_RematchVote_Update) {
+			MM_PrevVoteUpdate = Net_MM_RematchVote_Update;
+			
+			declare netread Integer Net_MM_RematchVote_SynchroClient for UI;
+			declare netwrite Net_MM_RematchVote_SynchroServer for Teams[0] = 10;
+			if (Net_MM_RematchVote_SynchroClient == Net_MM_RematchVote_SynchroServer) {
+				declare netread Boolean Net_MM_RematchVote_Value for UI;
+				MMMatch_VoteForRematch_PlayersVotes[Player.User.Id] = Net_MM_RematchVote_Value;
+				MM_RematchVoted = True;
+				declare Integer MMMatch_VoteForRematch_VoteEndTime for This;
+				Message::SendBigMessage(Player, _("Waiting for other players."), MMMatch_VoteForRematch_VoteEndTime - Now, 1);
+				
+				// @Tmp -> <playerlist /> doesn't work in Trackmania for now
+				if (This is CSmMode) {
+					declare Logins = [True => "*", False => "*"];
+					foreach (UserId => Vote in MMMatch_VoteForRematch_PlayersVotes) {
+						if (!Users.existskey(UserId)) continue;
+						declare User <=> Users[UserId];
+						if (Logins[Vote] != "") Logins[Vote] ^= ",";
+						Logins[Vote] ^= User.Login;
+					}
+					
+					NewVotes = """<frame posn="0 6 10"><playerlist posn="-37 0" scale="0.8" halign="center" substyle="Medium" logins="{{{Logins[True]}}}" lines="50" columns="1" /><playerlist posn="37.5 0" scale="0.8" halign="center" substyle="Medium" logins="{{{Logins[False]}}}" lines="50" columns="1" /></frame>""";
+				}
+			}
+		}
+		
+		if (!MM_RematchVoted) MMMatch_VoteForRematch_StopVote = False;
+	}
+	
+	// Check vote ratio
+	declare VoteYes = 0;
+	declare VoteNo = Players.count;
+	foreach (UserId => Vote in MMMatch_VoteForRematch_PlayersVotes) {
+		if (Vote) {
+			VoteYes += 1;
+			VoteNo -= 1;
+		}
+	}
+	declare VoteRatio = 0.;
+	if (MMMatch_VoteForRematch_PlayersVotes.count > 0 && Players.count > 0) VoteRatio = (VoteYes*1.) / (Players.count*1.);
+	
+	declare Real MMMatch_VoteForRematch_RematchRatio for This;
+	declare Boolean MMMatch_VoteForRematch_Result for This;
+	if (VoteRatio >= MMMatch_VoteForRematch_RematchRatio) {
+		MMMatch_VoteForRematch_Result = True;
+		MMMatch_VoteForRematch_StopVote = True;
+	}
+	
+	return NewVotes;
+}
+
+// ---------------------------------- //
+/** End the vote for rematch sequence
+ *
+ *	@return					The result of the vote, True for a rematch, False otherwise
+ */
+Boolean VoteForRematch_End() {
+	Message::CleanAllMessages();
+	
+	declare Boolean MMMatch_VoteForRematch_Result for This;
+	if (MMMatch_VoteForRematch_Result) {
+		Message::SendStatusMessage(_("Enough players agreed to play a rematch."), 3000, 2);
+		Message::SendBigMessage(_("We are starting a new match."), 3000, 2);
+	} else {
+		Message::SendStatusMessage(_("Not enough players agreed to play a rematch."), 3000, 2);
+		Message::SendBigMessage(_("We are sending you back to the lobby."), 3000, 2);
+	}
+	
+	return MMMatch_VoteForRematch_Result;
+}
+
+// ---------------------------------- //
+/** Begin the match to lobby sequence
+ *
+ *	@param	_StartTime		Start time of the sequence
+ *
+ *	@return					The end time of the sequence
+ */
+Integer MatchToLobby_Begin(Integer _StartTime) {
+	UIManager.UIAll.SendChat(TL::Compose("%1 %2", MMCommon::GetMessagePrefix(), _("Match over. You will be transferred back.")));
+	if (MMCommon::GetLogDisplay("MiscDebug")) Private_Log("[SERVER] Waiting API to receive status 4");
+	
+	declare Integer MMMatch_MatchToLobby_EndTime for This;
+	declare Boolean MMMatch_MatchToLobby_APIReceived for This;
+	declare Boolean MMMatch_MatchToLobby_Transfered for This;
+	declare Integer MMMatch_MatchToLobby_TransfertTime for This;
+	MMMatch_MatchToLobby_EndTime = _StartTime + C_EndingDuration;
+	MMMatch_MatchToLobby_APIReceived = False;
+	MMMatch_MatchToLobby_Transfered = False;
+	MMMatch_MatchToLobby_TransfertTime = Now + C_DelayBeforeTransfert;
+	
+	return MMMatch_MatchToLobby_EndTime;
+}
+
+// ---------------------------------- //
+/** Check if the match to lobby sequence must continue
+ *
+ *	@return					True if sequence must continue, False otherwise
+ */
+Boolean MatchToLobby_IsRunning() {
+	declare Integer MMMatch_MatchToLobby_EndTime for This;
+	return (MMMatch_MatchToLobby_EndTime > Now);
+}
+
+// ---------------------------------- //
+/// Update the match to lobby sequence
+Void MatchToLobby_Loop() {
+	declare Integer MMMatch_MatchToLobby_EndTime for This;
+	declare Boolean MMMatch_MatchToLobby_APIReceived for This;
+	declare Boolean MMMatch_MatchToLobby_Transfered for This;
+	declare Integer MMMatch_MatchToLobby_TransfertTime for This;
+	
+	if (!MMMatch_MatchToLobby_APIReceived && !MMMatch_MatchToLobby_Transfered && !MMCommon::IsInPendingRequests(MMCommon::RequestType_PostStatus())) {
+		MMMatch_MatchToLobby_TransfertTime = Now + 250;
+		MMMatch_MatchToLobby_APIReceived = True;
+		if (MMCommon::GetLogDisplay("MiscDebug")) Private_Log("[SERVER] API received status 4, send back players to lobby");
+	}
+	
+	if (!MMMatch_MatchToLobby_Transfered && Now >= MMMatch_MatchToLobby_TransfertTime) {
+		foreach (Player in AllPlayers) {
+			declare Matchmaking_PlayerStatus for Player = C_PlayerStatus_Waiting;
+			if (Matchmaking_PlayerStatus == C_PlayerStatus_Valid) {
+				if (
+					MMCommon::IsChannelServer() &&
+					MMCommon::GetChannelTransferUrl() != ""
+				) {
+					// If we are on a channel server and the channel already set a new server url where the players will be transfered, just let them be.
+					if (MMCommon::GetLogDisplay("MiscDebug")) Private_Log("[SERVER] Match end, send "^Player.User.Login^" to the next server. The channel decided to send the players to: "^MMCommon::GetChannelTransferUrl()^".");
+				} else {
+					declare LobbyLogin = GetLobbyLogin();
+					if (MMCommon::GetLogDisplay("MiscDebug")) Private_Log("[SERVER] Match end, send "^Player.User.Login^" back to the lobby. The matchmaking api decided to send the players to: "^LobbyLogin);
+					MMCommon::SendToServer(Player, LobbyLogin);
+				}
+			}
+		}
+		MMMatch_MatchToLobby_Transfered = True;
+		if (MMCommon::GetLogDisplay("MiscDebug")) Private_Log("[SERVER] Players transferred to the next server.");
+	}
+}
+
+// ---------------------------------- //
+/// End the match to lobby sequence
+Void MatchToLobby_End() {
+	// Kick all remaining players
+	if (
+		MMCommon::IsChannelServer() &&
+		MMCommon::GetChannelTransferUrl() != ""
+	) {
+		if (MMCommon::GetLogDisplay("MiscDebug")) Private_Log("[SERVER] This is a channel server. Do not kick the players");
+	} else {
+		foreach (User in Users) {
+			declare Kicked = ServerAdmin.KickUser(User, _("Match over. You should have been transferred back to the lobby."));
+			if (MMCommon::GetLogDisplay("MiscDebug")) Private_Log("[SERVER] Match over but "^User.Login^" was not transferred. Kick him : "^Kicked);
+		}
+	}
+	
+	SetLobbyLogin("");
+}
+
+// ---------------------------------- //
+/** Create the starting match manialink
+ *
+ *	@return					The manialink
+ */
+Text GetMLStartingMatch() {
+	declare ReqPlayersNb = 0;
+	declare MatchFormat = MMCommon::GetMatchFormat();
+	foreach (PlayersNb in MatchFormat) ReqPlayersNb += PlayersNb;
+	
+	declare ImgPlayer = "file://Media/Manialinks/Shootmania/Common/DefendersLeft.dds";
+	declare ImgSize = 8.;
+	declare XMargin = 1.;
+	
+	declare PlayersList = "";
+	for(I, 0, ReqPlayersNb-1) {
+		declare PosX = (-I*(ImgSize + XMargin)) - (ImgSize/2.);
+		declare PosY = -ImgSize/2.;
+		
+		PlayersList ^= """<quad posn="{{{PosX}}} {{{PosY}}}" sizen="{{{ImgSize}}} {{{ImgSize}}}" halign="center" valign="center" image="{{{ImgPlayer}}}" colorize="777" scale="0.5" class="Quad_Player" id="{{{I}}}" />""";
+	}
+	
+	return """
+<manialink version="1" name="ModeMatchmaking:StartingMatch">
+<frame posn="155 -79" id="Frame_Waiting">
+	<label halign="right" valign="bottom" textsize="3" textemboss="1" id="Label_Waiting" />
+	<frame>
+		{{{PlayersList}}}
+	</frame>
+</frame>
+<frame posn="155 -86" hidden="1" id="Frame_Ready">
+	<label halign="right" valign="bottom" textsize="3" textemboss="1" text="{{{_("The match will begin shortly ...")}}}" />
+</frame>
+<script><!--
+#Include "TextLib" as TL
+
+main() {
+	declare Label_Waiting	<=> (Page.GetFirstChild("Label_Waiting")	as CMlLabel);
+	declare Frame_Waiting	<=> (Page.GetFirstChild("Frame_Waiting")	as CMlFrame);
+	declare Frame_Ready		<=> (Page.GetFirstChild("Frame_Ready")		as CMlFrame);
+	
+	declare CMlQuad[Integer] Quads_Player;
+	Page.GetClassChildren("Quad_Player", Frame_Waiting, True);
+	foreach (Control in Page.GetClassChildren_Result) {
+		declare Key = TL::ToInteger(Control.ControlId);
+		Quads_Player[Key] = (Control as CMlQuad);
+	}
+	
+	Label_Waiting.SetText(_("Waiting for players"));
+	
+	declare netread Integer Net_MM_ReadyPlayersNb for Teams[0];
+	declare netread Integer Net_MM_ReadyPlayersMax for Teams[0];
+	declare PrevReadyPlayersNb = -1;
+	declare PrevReadyPlayersMax = -1;
+	
+	declare netwrite Integer Net_MM_ReadyPlayersSynchroClient for UI;
+	declare netread Integer Net_MM_ReadyPlayersSynchroServer for Teams[0];
+	declare netwrite Boolean Net_MM_ReadyPlayersConnected for UI;
+	Net_MM_ReadyPlayersConnected = False;
+	
+	while (True) {
+		yield;
+		if (InputPlayer == Null || !PageIsVisible) continue;
+		
+		if (!Net_MM_ReadyPlayersConnected) Net_MM_ReadyPlayersConnected = True;
+		if (Net_MM_ReadyPlayersSynchroClient != Net_MM_ReadyPlayersSynchroServer) Net_MM_ReadyPlayersSynchroClient = Net_MM_ReadyPlayersSynchroServer;
+		
+		if (PrevReadyPlayersMax != Net_MM_ReadyPlayersMax) {
+			PrevReadyPlayersMax = Net_MM_ReadyPlayersMax;
+			
+			foreach (Key => Quad_Player in Quads_Player) {
+				if (Key <= Net_MM_ReadyPlayersMax - 1) {
+					Quad_Player.Visible = True;
+				} else {
+					Quad_Player.Visible = False;
+				}
+			}
+		}
+		
+		if (PrevReadyPlayersNb != Net_MM_ReadyPlayersNb) {
+			PrevReadyPlayersNb = Net_MM_ReadyPlayersNb;
+			
+			foreach (Key => Quad_Player in Quads_Player) {
+				if (Key <= Net_MM_ReadyPlayersNb - 1) {
+					Quad_Player.Colorize = <1., 1., 1.>;
+					Quad_Player.RelativeScale = 1.;
+				} else {
+					Quad_Player.Colorize = <0.5, 0.5, 0.5>;
+					Quad_Player.RelativeScale = 0.5;
+				}
+			}
+			
+			if (Net_MM_ReadyPlayersNb >= Net_MM_ReadyPlayersMax) {
+				PlayUiSound(::EUISound::Custom4, 1, 0.75);
+			} else {
+				PlayUiSound(::EUISound::Custom4, 0, 0.75);
+			}
+		}
+		
+		if (!Frame_Waiting.Visible && Net_MM_ReadyPlayersNb < Net_MM_ReadyPlayersMax) {
+			Frame_Waiting.Show();
+			Frame_Ready.Hide();
+		} else if (!Frame_Ready.Visible && Net_MM_ReadyPlayersNb >= Net_MM_ReadyPlayersMax) {
+			Frame_Waiting.Hide();
+			Frame_Ready.Show();
+		}
+	}
+}
+--></script>
+</manialink>""";
+}
+
+// ---------------------------------- //
+/** Anim the rematch vote manialink
+ *
+ *	@param	_AnimId			The name of the animation to play
+ */
+Void AnimRematchVote(Text _AnimId) {
+	declare netwrite Integer Net_MM_RematchVote_AnimUpdate for Teams[0];
+	declare netwrite Text Net_MM_RematchVote_Anim for Teams[0];
+	Net_MM_RematchVote_Anim = _AnimId;
+	Net_MM_RematchVote_AnimUpdate = Now;
+}
+
+// ---------------------------------- //
+/** Create the rematch vote manialink
+ *
+ *	@return					The manialink
+ */
+Text GetMLRematchVote() {
+	declare SizeX = 130.;
+	declare SizeY = SizeX * 0.3;
+	
+	declare Background = "file://Media/Manialinks/Common/Lobbies/header.png";
+	declare ButtonNoOn = "file://Media/Manialinks/Common/Lobbies/small-button-RED-ON.dds";
+	declare ButtonNoOff = "file://Media/Manialinks/Common/Lobbies/small-button-RED.dds";
+	declare ButtonYesOn = "file://Media/Manialinks/Common/Lobbies/ready-button-GREEN-ON.dds";
+	declare ButtonYesOff = "file://Media/Manialinks/Common/Lobbies/ready-button-GREEN.dds";
+	
+	return """
+<manialink version="1" name="ModeMatchmaking:RematchVote">
+<frame posn="0 140 10" id="Frame_Global" hidden="1">
+	<quad posn="0 0 -1" sizen="{{{SizeX}}} {{{SizeY}}}" halign="center" image="{{{Background}}}" />
+	<label posn="0 -7" sizen="{{{SizeX-7}}} {{{SizeY}}}" halign="center" style="TextRaceMessage" textsize="4" text="{{{_("Do you want to play a rematch?")}}}" />
+	<label posn="0 -21" sizen="20 4" halign="center" style="TextRaceChrono" textsize="6" opacity="0.75" id="Label_RemainingTime" />
+	<label posn="-43 -21" sizen="30 4" halign="center" style="TextButtonBig" textsize="5" opacity="0.75" text="{{{_("Yes")}}}" scriptevents="1" id="Button_Yes" />
+	<label posn="43 -21" sizen="30 4" halign="center" style="TextButtonBig" textsize="5" opacity="0.75" text="{{{_("No")}}}" scriptevents="1" id="Button_No"/>
+</frame>
+<script><!--
+#Include "TextLib" as TL
+#Include "MathLib" as ML
+
+{{{Manialink::Animations(["EaseOutExp"])}}}
+
+Void SendVote(Boolean _Value) {
+	declare netread Integer Net_MM_RematchVote_SynchroServer for Teams[0];
+	declare netwrite Integer Net_MM_RematchVote_SynchroClient for UI;
+	declare netwrite Integer Net_MM_RematchVote_Update for UI;
+	declare netwrite Boolean Net_MM_RematchVote_Value for UI;
+	
+	Net_MM_RematchVote_SynchroClient = Net_MM_RematchVote_SynchroServer;
+	Net_MM_RematchVote_Value = _Value;
+	Net_MM_RematchVote_Update = Now;
+	
+	declare Button_Yes <=> (Page.GetFirstChild("Button_Yes") as CMlLabel);
+	declare Button_No <=> (Page.GetFirstChild("Button_No") as CMlLabel);
+	if (_Value) {
+		Button_Yes.Scale = 1.1;
+		Button_Yes.TextColor = <0.1, 0.9, 0.1>;
+		Button_No.Scale = 1.;
+		Button_No.TextColor = <1., 1., 1.>;
+	} else {
+		Button_No.Scale = 1.1;
+		Button_No.TextColor = <0.9, 0.1, 0.1>;
+		Button_Yes.Scale = 1.;
+		Button_Yes.TextColor = <1., 1., 1.>;
+	}
+}
+
+Void PlayAnim(Text _AnimId) {
+	if (_AnimId == "SlideIn") {
+		LibManialink_Anim({{{Manialink::Inject("""<frame posn="0 40" id="Frame_Global" />""")}}}, 250, "EaseOutExp");
+	} else if(_AnimId == "SlideOut") {
+		LibManialink_Anim({{{Manialink::Inject("""<frame posn="0 140" id="Frame_Global" />""")}}}, 250, "EaseOutExp");
+	}
+}
+
+main() {
+	declare Frame_Global		<=> (Page.GetFirstChild("Frame_Global") as CMlFrame);
+	declare Label_RemainingTime	<=> (Page.GetFirstChild("Label_RemainingTime") as CMlLabel);
+	
+	declare netread Integer Net_MM_RematchVote_EndTime for Teams[0];
+	declare netread Integer Net_MM_RematchVote_AnimUpdate for Teams[0];
+	declare netread Text Net_MM_RematchVote_Anim for Teams[0];
+	
+	declare PrevAnimUpdate = -1;
+	
+	while (InputPlayer == Null) yield;
+	Frame_Global.Visible = True;
+	
+	while (True) {
+		yield;
+		if (!PageIsVisible || InputPlayer == Null) continue;
+		
+		LibManialink_AnimLoop();
+		
+		if (PrevAnimUpdate != Net_MM_RematchVote_AnimUpdate) {
+			PrevAnimUpdate = Net_MM_RematchVote_AnimUpdate;
+			PlayAnim(Net_MM_RematchVote_Anim);
+		}
+		
+		if (Net_MM_RematchVote_EndTime >= GameTime) {
+			Label_RemainingTime.Value = TL::TimeToText(Net_MM_RematchVote_EndTime - GameTime);
+		} else {
+			Label_RemainingTime.Value = TL::TimeToText(0);
+		}
+		
+		foreach (Event in PendingEvents) {
+			if (Event.Type == CMlEvent::Type::MouseClick) {
+				if (Event.ControlId == "Button_Yes") {
+					SendVote(True);
+				} else if (Event.ControlId == "Button_No") {
+					SendVote(False);
+				}
+			}
+		}
+	}
+}
+--></script>
+</manialink>
+""";
+}

@@ -1,0 +1,234 @@
+/**
+ *	UI Lib
+ */
+#Const	Version		"2015-04-15"
+#Const	ScriptName	"UI.Script.txt"
+
+#Include "TextLib" as TL
+#Include "Libs/Nadeo/ShootMania/XmlRpc.Script.txt" as XmlRpc
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_LibST_RequestTimeout 5000
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+// ---------------------------------- //
+// Private
+// ---------------------------------- //
+// ---------------------------------- //
+/** Convert a Boolean to a Text
+ *
+ *	@param	_Boolean	The Boolean to convert
+ *
+ *	@return				The Text
+ */
+Text Private_BooleanToText(Boolean _Boolean) {
+	if (_Boolean) return "true";
+	return "false";
+}
+
+// ---------------------------------- //
+/** Convert a Vec2 to a Text
+ *
+ *	@param	_Vec2		The Vec2 to convert
+ *
+ *	@return				The Text
+ */
+Text Private_Vec2ToText(Vec2 _Vec2) {
+	return _Vec2.X^" "^_Vec2.Y;
+}
+
+// ---------------------------------- //
+/** Convert a Vec3 to a Text
+ *
+ *	@param	_Vec3		The Vec3 to convert
+ *
+ *	@return				The Text
+ */
+Text Private_Vec3ToText(Vec3 _Vec3) {
+	return _Vec3.X^" "^_Vec3.Y^" "^_Vec3.Z;
+}
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+// ---------------------------------- //
+/** Return the version number of the script
+ *
+ *	@return		The version number of the script
+ */
+Text GetScriptVersion() {
+	return Version;
+}
+
+// ---------------------------------- //
+/** Return the name of the script
+ *
+ *	@return		The name of the script
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+// ---------------------------------- //
+/** Set the number of lines of the chat
+ *
+ *	@param	_LineCount		The number of lines of the chat
+ */
+Void SetChatLineCount(Integer _LineCount) {
+	if (_LineCount >= 0 && _LineCount <= 40) UIManager.UIAll.OverlayChatLineCount = _LineCount;
+	else if (_LineCount < 0) UIManager.UIAll.OverlayChatLineCount = 0;
+	else if (_LineCount > 40) UIManager.UIAll.OverlayChatLineCount = 40;
+}
+
+// ---------------------------------- //
+/** Get the number of lines of the chat
+ *
+ *	@return			The number of lines of the chat
+ */
+Integer GetChatLineCount() {
+	return UIManager.UIAll.OverlayChatLineCount;
+}
+
+// ---------------------------------- //
+/** Set the visibility of the UI overlays
+ *
+ *	@param	_Name			The name of the overlay
+ *	@param	_Visible		The visibility of the overlay
+ */
+Void Private_SetVisibility(Text _Name, Text _Visible) {
+	if (_Visible == "") return;
+	
+	declare Hide = False;
+	if (_Visible == "False" || _Visible == "false" || _Visible == "0") Hide = True;
+	
+	switch (_Name) {
+		case "notices"				: UIManager.UIAll.OverlayHideNotices = Hide;
+		case "map_info" 			: UIManager.UIAll.OverlayHideMapInfo = Hide;
+		case "chat"					: UIManager.UIAll.OverlayHideChat = Hide;
+		case "countdown"			: UIManager.UIAll.OverlayHideCountdown = Hide;
+		case "crosshair"			: UIManager.UIAll.OverlayHideCrosshair = Hide;
+		case "gauges"				: UIManager.UIAll.OverlayHideGauges = Hide;
+		case "consumables"			: UIManager.UIAll.OverlayHideConsumables = Hide;
+		case "go"					: UIManager.UIAll.OverlayHide321Go = Hide;
+		case "chat_avatar"			: UIManager.UIAll.OverlayChatHideAvatar = Hide;
+		case "endmap_ladder_recap"	: UIManager.UIAll.OverlayHideEndMapLadderRecap = Hide;
+	}
+}
+
+// ---------------------------------- //
+/** Set the visibility of the UI overlays
+ *
+ *	@param	_Name			The name of the overlay
+ *	@param	_Position		The position of the overlay
+ */
+Void Private_SetPosition(Text _Name, Text _Position) {
+	if (_Position == "") return;
+	
+	declare Vec3 Position;
+	declare PositionSplit = TL::Split(" ", _Position);
+	if (PositionSplit.existskey(0)) Position.X = TL::ToReal(PositionSplit[0]);
+	if (PositionSplit.existskey(1)) Position.Y = TL::ToReal(PositionSplit[1]);
+	if (PositionSplit.existskey(2)) Position.Z = TL::ToReal(PositionSplit[2]);
+	
+	switch (_Name) {
+		case "chat"			: UIManager.UIAll.OverlayChatOffset = <Position.X, Position.Y>;
+		case "countdown"	: UIManager.UIAll.CountdownCoord = <Position.X, Position.Y>;
+	}
+}
+
+// ---------------------------------- //
+/** Parse the properties xml
+ *
+ *	@param	_Xml	The xml to parse
+ */
+Void Private_SetProperties(Text _Xml) {
+	if (_Xml == "") return;
+	declare XmlDoc <=> Xml.Create(_Xml);
+	if (XmlDoc == Null) {
+		Xml.Destroy(XmlDoc);
+		return;
+	}
+	if (XmlDoc.Root.Name != "ui_properties") {
+		Xml.Destroy(XmlDoc);
+		return;
+	}
+	
+	foreach (Node in XmlDoc.Root.Children) {
+		Private_SetVisibility(Node.Name, Node.GetAttributeText("visible", ""));
+		Private_SetPosition(Node.Name, Node.GetAttributeText("pos", ""));
+		if (Node.Name == "chat") {
+			SetChatLineCount(Node.GetAttributeInteger("linecount", -1));
+			Private_SetPosition(Node.Name, Node.GetAttributeText("offset", ""));
+		}
+	}
+	
+	Xml.Destroy(XmlDoc);
+	
+	declare LibUI_PropertiesBackUp for This = "";
+	LibUI_PropertiesBackUp = _Xml;
+}
+
+// ---------------------------------- //
+/** Get the current properties xml
+ *
+ *	@return		The properties xml
+ */
+Text Private_GetProperties() {
+	return """
+<ui_properties>
+	<notices visible="{{{Private_BooleanToText(!UIManager.UIAll.OverlayHideNotices)}}}" />
+	<map_info visible="{{{Private_BooleanToText(!UIManager.UIAll.OverlayHideMapInfo)}}}" />
+	<chat visible="{{{Private_BooleanToText(!UIManager.UIAll.OverlayHideChat)}}}" offset="{{{Private_Vec2ToText(UIManager.UIAll.OverlayChatOffset)}}}" linecount="{{{GetChatLineCount()}}}" />
+	<countdown visible="{{{Private_BooleanToText(!UIManager.UIAll.OverlayHideCountdown)}}}" pos="{{{Private_Vec2ToText(UIManager.UIAll.CountdownCoord)}}}" />
+	<crosshair visible="{{{Private_BooleanToText(!UIManager.UIAll.OverlayHideCrosshair)}}}" />
+	<gauges visible="{{{Private_BooleanToText(!UIManager.UIAll.OverlayHideGauges)}}}" />
+	<consumables visible="{{{Private_BooleanToText(!UIManager.UIAll.OverlayHideConsumables)}}}" />
+	<go visible="{{{Private_BooleanToText(!UIManager.UIAll.OverlayHide321Go)}}}" />
+	<chat_avatar visible="{{{Private_BooleanToText(!UIManager.UIAll.OverlayChatHideAvatar)}}}" />
+	<endmap_ladder_recap visible="{{{Private_BooleanToText(!UIManager.UIAll.OverlayHideEndMapLadderRecap)}}}" />
+</ui_properties>""";
+}
+
+// ---------------------------------- //
+/// Manage XmlRpc callbacks
+Void XmlRpcLoop() {
+	foreach (Event in XmlRpc.PendingEvents) {
+		if (Event.Type == CXmlRpcEvent::EType::Callback) {
+			switch (Event.Param1) {
+				case "UI_SetProperties": {
+					Private_SetProperties(Event.Param2);
+				}
+				case "UI_GetProperties": {
+					if (XmlRpc::CallbackIsAllowed("UI_Properties")) XmlRpc::SendCallbackArray("UI_Properties", [Private_GetProperties()]);
+				}
+			}
+		}
+	}
+}
+
+// ---------------------------------- //
+/// Unload the library
+Void Unload() {
+	XmlRpc::UnregisterCallback("UI_Properties");
+}
+
+// ---------------------------------- //
+/// Load the library
+Void Load() {
+	Unload();
+	
+XmlRpc::RegisterCallback("UI_Properties", """
+* Data : An xml string with the Trackmania ui properties. Check the GitHub documentation for more information.
+* Example : ["<ui_properties></ui_properties>"]
+* Note : This callback is sent when the script receives the `UI_GetProperties` trigger.
+* Version : available since UI.Script.txt_v2014-09-16
+""");
+
+	// Try to load the latest properties
+	declare LibUI_PropertiesBackUp for This = "";
+	Private_SetProperties(LibUI_PropertiesBackUp);
+}

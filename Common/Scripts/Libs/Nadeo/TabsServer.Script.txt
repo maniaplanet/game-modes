@@ -1,0 +1,393 @@
+#Const Version		"2013-12-02"
+#Const ScriptName	"TabsServer.Script.txt"
+
+#Const C_BgColor 	 		"0007" // "3329"
+#Const C_BgUnselectColor	"000b"
+#Const C_BorderColor "0000" // "999f"
+#Include "Libs/Nadeo/TabsClient.Script.txt" as TabsClient // Include for edition
+
+#Const C_ScoresTableTabName "ScoresTab" //< "Magic" tab name that cause the scores table module to be displayed, otherwise it is hidden
+
+//declare Boolean G_DefaultAltMenuActive;
+
+/* ------------------------------------- */
+/** Return the version number of the script
+ *
+ *	@return		The version number of the script
+ */
+Text GetScriptVersion() {
+	return Version;
+}
+
+/* ------------------------------------- */
+/** Return the name of the script
+ *
+ *	@return		The name of the script
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+// private
+// return the ID of a quad representing the tab [TabKey] for layer [TabLayerId]
+Text GetQuadID(Ident TabLayerId, Text TabKey)
+{
+	return "TabQuad"^TabLayerId^"_"^TabKey;
+}
+
+/**
+ * Create a layer with one button foreach couple TabKey => TabImage.
+ * @param TabsImages defines the tab keys and the image associated to each tab.
+ * @return a new layer containing tabs, or Null if the creation failed.
+ *
+ * TODO : more parameters (size, position, horizontal/vertical)
+ */
+CUILayer CreateTabPaneLayer(Text[Text] TabsImages, Integer TabFramePosnX, Integer TabFramePosnY, Boolean HorizontalLayout)
+{
+	if(TabsImages.count <= 0) {
+		log("Error : Tab pane built with no pane inside.");
+		//assert(False);
+		return Null;
+	}
+	
+	declare CUILayer TabPaneLayer <=> UIManager.UILayerCreate();
+	declare TabLayerId = TabPaneLayer.Id;
+	
+	// Get the first tab to initialize the layer
+	declare Text FirstTabKey;
+	foreach(Key => Image in TabsImages) {
+		FirstTabKey = Key;
+		break;
+	}
+	
+	// The ManiaLink associated to the tabs
+	declare MLText = """
+		<manialink version="1" name="Lib_TabsServer:Tabs">
+		<script><!--
+		
+		main()
+		{
+			declare Text _TabsLib_CurrentTab for UI;
+			_TabsLib_CurrentTab = "{{{FirstTabKey}}}";
+			declare netread Boolean _TabsLib_UsesTabs for UI;
+			// _TabsLib_UsesTabs = True;
+
+			declare netread Text _TabsLib_ForcedTab for UI;
+			declare 		Text CurrentForcedTab   = "";
+			
+			declare netread Text _TabsLib_Blinker for UI;
+			declare netread Text _TabsLib_BlinkTab for UI;
+			declare netread Boolean _TabsLib_DoBlink for UI;
+			declare 		Boolean CurrentDoBlink = False;
+			declare netread Boolean _AltMenuActive for UI;
+			
+			declare Boolean _TabsLib_AltLayerIsVisible for UI;
+			declare PrevAltLayerIsVisible = !_TabsLib_AltLayerIsVisible;
+			declare PrevSelectedTab = "";
+			
+			
+			declare CMlQuad PreviousSelectingQuad	<=>(Page.GetFirstChild("{{{GetQuadID(TabLayerId, FirstTabKey)^"_bgUnselect"}}}") as CMlQuad);
+			declare CMlQuad PreviousClickedQuad		<=>(Page.GetFirstChild("{{{GetQuadID(TabLayerId, FirstTabKey)}}}") as CMlQuad);
+			declare CMlFrame MainTabsFrame			<=>(Page.GetFirstChild("MainTabsFrame") as CMlFrame);
+			
+			PreviousSelectingQuad.Hide();
+			PreviousClickedQuad.Scale = 1.;
+			
+			while (True)
+			{
+				yield;
+				if (! PageIsVisible) continue;
+				
+				if(_AltMenuActive) {
+					MainTabsFrame.Show();
+				} else {
+					MainTabsFrame.Hide();
+				}
+				
+				if (PrevAltLayerIsVisible != _TabsLib_AltLayerIsVisible || PrevSelectedTab != _TabsLib_CurrentTab) {
+					PrevAltLayerIsVisible = _TabsLib_AltLayerIsVisible;
+					PrevSelectedTab = _TabsLib_CurrentTab;
+					
+					if (ClientUI != Null) {
+						if (_TabsLib_AltLayerIsVisible && _TabsLib_CurrentTab == "{{{C_ScoresTableTabName}}}") {
+							ClientUI.AltMenuNoCustomScores = False;
+						} else {
+							ClientUI.AltMenuNoCustomScores = True;
+						}
+					}
+				}
+				
+				declare Text ClickedId = "";
+				if(CurrentDoBlink != _TabsLib_DoBlink) 
+				{
+					CurrentDoBlink  = _TabsLib_DoBlink;
+					declare Text _TabsLib_CurrentTab for UI;
+					if (_TabsLib_BlinkTab != _TabsLib_CurrentTab) {
+						declare Blinker <=> (Page.GetFirstChild(_TabsLib_Blinker^"_Blink") as CMlQuad);
+						if (Blinker!=Null) Blinker.Show();
+					}
+				}
+
+				// emulate clic on a given tab
+				if(CurrentForcedTab != _TabsLib_ForcedTab) {
+					CurrentForcedTab = _TabsLib_ForcedTab;
+					ClickedId = CurrentForcedTab;
+				}
+				else {
+					foreach(Event in PendingEvents) {
+						if (Event.Type == CMlEvent::Type::MouseClick) {
+							declare Id = Event.ControlId;
+							switch(Id) {
+								""";
+								
+							foreach( Key => Image in TabsImages)
+							{
+								declare QuadId = GetQuadID(TabLayerId, Key);
+								MLText = MLText^"""case "{{{QuadId}}}":  
+								{
+									ClickedId = Id;
+									// log("clicked: "^ClickedId);
+									break;
+								}
+								""";
+							}
+						MLText = MLText^"""
+							}
+						}
+					}
+				}
+				
+				if(ClickedId != "") 
+				{
+					switch(ClickedId) {""";
+							
+						foreach( Key => Image in TabsImages)
+						{
+							declare QuadId = GetQuadID(TabLayerId, Key);
+							//log(Key^" : Index="^Index^", QuadId="^QuadId);
+							MLText = MLText^"""case "{{{QuadId}}}":  
+							{
+								if(_TabsLib_CurrentTab != "{{{Key}}}") {
+									_TabsLib_CurrentTab = "{{{Key}}}";
+									declare BgUnselect <=> (Page.GetFirstChild("{{{QuadId^"_bgUnselect"}}}") as CMlQuad);
+									
+									PreviousSelectingQuad.Show();
+									BgUnselect.Hide();
+									PreviousSelectingQuad = BgUnselect;
+									
+									declare Blinker <=> (Page.GetFirstChild("{{{QuadId^"_Blink"}}}") as CMlQuad);
+									if (Blinker!=Null) Blinker.Hide();
+									
+									declare ClickedQuad <=> (Page.GetFirstChild("{{{QuadId}}}") as CMlQuad);
+									ClickedQuad.Scale = 1.;
+									PreviousClickedQuad.Scale = .8;
+									PreviousClickedQuad = ClickedQuad;
+								}
+							}
+							""";
+						}
+						
+						MLText = MLText^"""
+					}
+				}
+			} // end while
+		}
+		
+		--></script>
+		<frame posn="{{{TabFramePosnX}}} {{{TabFramePosnY}}}" id="MainTabsFrame" >
+		""";
+		declare Integer XOffset 	= -155;
+		declare Integer YOffset 	= 30;
+		declare Integer IconSize 	= 15;
+		declare Integer QuadY 		= -43;
+		declare Integer QuadXPos 	= XOffset + (YOffset-IconSize);
+		declare Real BlinkerMargin 	= 1.5;
+		declare Text BorderColor	= C_BorderColor;
+		declare Real BorderSize		= 0.5;
+		
+		
+		foreach( Key => TabImage in TabsImages)
+		{
+			declare QuadId = GetQuadID(TabLayerId, Key);			
+			//log(Key^" : Index="^Index^", QuadY="^QuadY^", QuadId="^QuadId);
+			MLText = MLText^"""
+				<quad id="{{{QuadId}}}" halign="center" valign="center" posn="{{{QuadXPos + (IconSize/2.)}}} {{{-QuadY - (IconSize/2.)}}} 1" scale="0.8" sizen="{{{IconSize}}} {{{IconSize}}}" """;
+			
+			declare SubstyleIcon = TabImage;
+			if (SubstyleIcon == "") {
+				SubstyleIcon = "ChallengeAuthor";
+			}
+			MLText = MLText^""" style="Icons128x128_1" substyle="{{{SubstyleIcon}}}" """;
+			MLText = MLText^"""ScriptEvents="true"/>""";
+			
+			MLText = MLText^"""
+				<quad id="{{{QuadId^"_Blink"}}}" posn="{{{QuadXPos-BlinkerMargin}}} {{{-QuadY+BlinkerMargin}}} 0"  sizen="{{{IconSize+(2*BlinkerMargin)}}} {{{IconSize+(2*BlinkerMargin)}}}" style="Icons128x128_Blink" substyle="{{{SubstyleIcon}}}"  hidden="true" />""";
+			
+			MLText = MLText^"""
+				<quad id="{{{QuadId}}}_bg" posn="{{{QuadXPos}}} {{{-QuadY}}} -2"  sizen="{{{IconSize}}} {{{IconSize}}}" bgcolor="{{{C_BgColor}}}" />""";
+			MLText = MLText^"""
+				<quad id="{{{QuadId}}}_bgUnselect" posn="{{{QuadXPos}}} {{{-QuadY}}} -2"  sizen="{{{IconSize}}} {{{IconSize}}}" bgcolor="{{{C_BgUnselectColor}}}" />""";
+			
+			if(HorizontalLayout) {
+				QuadXPos = QuadXPos + IconSize;
+			}
+			else {
+				QuadY = QuadY + IconSize;
+			}
+			
+		}
+		
+		MLText = MLText^"""
+		</frame>
+		</manialink>
+	""";
+	
+	TabPaneLayer.ManialinkPage = MLText;
+	return TabPaneLayer;
+}
+
+CUILayer CreateTabPaneLayer(Text[Text] TabsImages)
+{
+	return CreateTabPaneLayer(TabsImages, 0, 0, False);
+}
+
+Void ForceTab(CUIConfig UI, Ident TabLayerId, Text TabId) {
+	declare netwrite Text _TabsLib_ForcedTab for UI;
+	_TabsLib_ForcedTab = GetQuadID(TabLayerId, TabId);
+}
+
+/**
+ * The tab will blink iff the player is looking at another tab.
+ * Blink will stop when the player clics on the tab.
+ */
+Void HighLightTab(CUIConfig UI, Ident TabLayerId, Text TabId) {
+	declare netwrite Text _TabsLib_Blinker for UI;
+	declare netwrite Text _TabsLib_BlinkTab for UI;
+	declare netwrite Boolean _TabsLib_DoBlink for UI;
+	
+	_TabsLib_Blinker = GetQuadID(TabLayerId, TabId);
+	_TabsLib_BlinkTab = TabId;
+	_TabsLib_DoBlink = !_TabsLib_DoBlink;
+}
+
+Void AlwaysShowScore(CUIConfig UI, Boolean ShowScores){
+	declare netwrite Boolean _TabsLib_AlwaysShowScores for UI;
+	_TabsLib_AlwaysShowScores = ShowScores;
+}
+
+
+Void UseTabs(CUIConfig UI, Text SpecificScoresTab) {
+	declare netwrite Boolean 	_TabsLib_AlwaysShowScores 	for UI;
+	declare netwrite Text 		_TabsLib_ScoresTableTab 	for UI;
+	declare netwrite Boolean 	_TabsLib_UseTabs 			for UI;
+	declare netwrite Boolean 	_AltMenuActive				for UI = True; // for xmlRpc requests
+	
+	_TabsLib_UseTabs 			= True;
+	_TabsLib_AlwaysShowScores 	= (SpecificScoresTab == "");
+	_TabsLib_ScoresTableTab 	= SpecificScoresTab;
+	//_AltMenuActive				= G_DefaultAltMenuActive;
+}
+Void UseTabs(CUIConfig UI) {
+	UseTabs(UI, "");
+}
+
+CPlayer FindPlayer(Text _Login) {
+	foreach (Player in AllPlayers) {
+		if (Player.User.Login == _Login) return Player;
+	}
+	return Null;
+}
+
+Void SetDefaultAltMenuActive(Boolean _Active, Text _Login) {
+	//G_DefaultAltMenuActive = _Active;
+	
+	// sets this modification to all players.
+	/*foreach(Player in AllPlayers) {
+		declare UI <=> UIManager.GetUI(Player);
+		if (UI == Null) continue;
+		
+		declare netwrite Boolean _AltMenuActive for UI = True;
+		_AltMenuActive = _Active;
+	}*/
+	declare Player <=> FindPlayer(_Login);
+	if (Player == Null) return;
+	
+	declare UI <=> UIManager.GetUI(Player);
+	if (UI == Null) return;
+	
+	declare netwrite Boolean _AltMenuActive for UI = True;
+	_AltMenuActive = _Active;
+}
+
+/**
+ * Handle XmlRpc events.
+ */
+Void XmlRpcLoop() {
+	foreach (Event in XmlRpc.PendingEvents) {
+		if (Event.Type == CXmlRpcEvent::EType::Callback) {
+			switch (Event.Param1) {
+				case "LibXmlRpc_DisableAltMenu": SetDefaultAltMenuActive(False, Event.Param2);
+				case "LibXmlRpc_EnableAltMenu": SetDefaultAltMenuActive(True, Event.Param2);
+			}
+		}
+	}
+}
+
+/**
+ * Called once for all.
+ */
+Void Load() {
+	//G_DefaultAltMenuActive = True;
+	
+	// Scores layer detection
+	declare Text EmptyLayerMLPage = """
+		<manialink version="1" name="Lib_TabsServer:LayerScoresTable">
+		<script><!--
+			main(){
+				declare Boolean _TabsLib_ScoresLayerIsVisible for UI;
+				declare Boolean _TabsLib_AltLayerIsVisible for UI;
+				
+				while(True) {
+					yield;
+					_TabsLib_ScoresLayerIsVisible = (!_TabsLib_AltLayerIsVisible) && PageIsVisible;
+					//if(_TabsLib_ScoresLayerIsVisible) log("SCORES");
+				}
+			}
+		--></script>
+		</manialink>
+	""";
+	
+	declare CUILayer EmptyLayerScores <=> UIManager.UILayerCreate();
+	EmptyLayerScores.ManialinkPage = EmptyLayerMLPage;
+	EmptyLayerScores.Type = CUILayer::EUILayerType::ScoresTable;
+	UIManager.UIAll.UILayers.add(EmptyLayerScores);
+	
+	// Alt layer detection
+	declare Text EmptyLayerAltMLPage = """
+		<manialink version="1" name="Lib_TabsServer:LayerAltMenu">
+		<script><!--
+			main(){
+				declare Boolean _TabsLib_AltLayerIsVisible for UI;
+				declare netread Boolean _AltMenuActive for UI;
+				
+				while(True) {
+					yield;
+					_TabsLib_AltLayerIsVisible = _AltMenuActive && PageIsVisible;
+					//if(_TabsLib_AltLayerIsVisible) log("ALT");
+				}
+			}
+		--></script>
+		</manialink>
+	""";
+	
+	declare CUILayer EmptyLayerAlt <=> UIManager.UILayerCreate();
+	EmptyLayerAlt.ManialinkPage = EmptyLayerAltMLPage;
+	EmptyLayerAlt.Type = CUILayer::EUILayerType::AltMenu;
+	UIManager.UIAll.UILayers.add(EmptyLayerAlt);
+}
+
+// ---------------------------------- //
+// Unload the lib
+Void Unload() {
+	
+}

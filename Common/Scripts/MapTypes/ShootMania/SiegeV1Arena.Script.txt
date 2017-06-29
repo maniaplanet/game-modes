@@ -1,0 +1,416 @@
+/**
+ *	MapType for Siege
+ *
+ * Maps with 1 attack spawn, 1-9 defense spawns and 1-9 goals
+ */
+
+#RequireContext CSmMapType
+#Const Version			"2013-11-08"
+#Const MapTypeVersion	2
+#Const ScriptName		"SiegeArena.Script.txt"
+
+#Include "TextLib" as TL
+#Include "Libs/Nadeo/Anchor.Script.txt" as Anchor
+#Include "Libs/Nadeo/MapType.Script.txt" as MapType
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_MaxGoals 9
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+// ---------------------------------- //
+// Normalize the anchors
+Void NormalizeAnchors() {
+	Anchor::Count();
+	
+	declare Ident SiegeArena_AnchorId for ManialinkPage;
+	
+	foreach (Anchor in AnchorData) {
+		if (Anchor.DefaultTag == "Spawn") {
+			if (Anchor.Tag != "SpawnAttack" && Anchor.Tag != "SpawnDefense") {
+				Anchor::Count();
+				if (Anchor::GetCount("SpawnAttack") > 0) Anchor.Tag = "SpawnDefense";
+				else Anchor.Tag = "SpawnAttack";
+			}
+			
+			if (Anchor.Tag == "SpawnAttack" && Anchor.Order != 0) {
+				Anchor.Order = 0;
+			}
+			
+			if (Anchor.Tag == "SpawnDefense") {
+				if (Anchor.Order < 1 || Anchor.Order > C_MaxGoals) {
+					Anchor::Count();
+					Anchor.Order = 1;
+					for (I, 1, C_MaxGoals) {
+						if (Anchor::GetCount("SpawnDefense", I) <= 0) {
+							Anchor.Order = I;
+							break;
+						}
+					}
+				}
+			}
+		} else if (Anchor.DefaultTag == "Goal" || Anchor.DefaultTag == "Gate") {
+			Anchor.Tag = Anchor.DefaultTag;
+			if (Anchor.Order < 1 || Anchor.Order > C_MaxGoals) {
+				Anchor::Count();
+				Anchor.Order = 1;
+				for (I, 1, C_MaxGoals) {
+					if (Anchor::GetCount(Anchor.Tag, I) <= 0) {
+						Anchor.Order = I;
+						break;
+					}
+				}
+			}
+		} else {
+			Anchor.Tag = Anchor.DefaultTag;
+			Anchor.Order = Anchor.DefaultOrder;
+		}
+		
+		if (Anchor.Id == SiegeArena_AnchorId) {
+			declare Text SiegeArena_AnchorTag for ManialinkPage;
+			declare Integer SiegeArena_AnchorOrder for ManialinkPage;
+			SiegeArena_AnchorTag = Anchor.Tag;
+			SiegeArena_AnchorOrder = Anchor.Order;
+		}
+	}
+}
+
+// ---------------------------------- //
+// Check if the map is valid
+Void UpdateValidability() {
+	Anchor::Count();
+	
+	declare GoalCount = Anchor::GetCount("Goal");
+	declare SpawnDefenseCount = Anchor::GetCount("SpawnDefense");
+	
+	// Maximum C_MaxGoals goals on a map
+	if (GoalCount > C_MaxGoals) {
+		ValidationStatus = CMapType::ValidationStatus::NotValidable;
+		ValidabilityRequirementsMessage = TL::Compose(_("There's too many Goal on the map. \nCurrently %1 Goals on a maximum of %2."), TL::ToText(GoalCount), TL::ToText(C_MaxGoals));
+		return;
+	}
+	
+	// Same number of SpawnDefense and Goal
+	if (SpawnDefenseCount != GoalCount) {
+		ValidationStatus = CMapType::ValidationStatus::NotValidable;
+		ValidabilityRequirementsMessage = TL::Compose(_("You must place as many SpawnDefense as Goal. \nCurrently %1 SpawnDefense for %2 Goal."), TL::ToText(SpawnDefenseCount), TL::ToText(GoalCount));
+		return;
+	}
+	
+	// Only one SpawnAttack
+	if (!Anchor::HasExactlyOneAnchor("SpawnAttack", 0, _("You must place one SpawnAttack."))) return;
+	
+	// Only one SpawnDefense with the same number
+	for (I, 1, SpawnDefenseCount) {
+		if (!Anchor::HasExactlyOneAnchor("SpawnDefense", I, TL::Compose(_("You must place one SpawnDefense %1."), TL::ToText(I)))) return;
+	}
+	
+	// Only one Goal with the same number
+	for (I, 1, GoalCount) {
+		if (!Anchor::HasExactlyOneAnchor("Goal", I, TL::Compose(_("You must place one Goal %1."), TL::ToText(I)))) return;
+	}
+	
+	// But at least one SpawnDefense and one Goal
+	if (SpawnDefenseCount < 1 || GoalCount < 1) {
+		ValidationStatus = CMapType::ValidationStatus::NotValidable;
+		ValidabilityRequirementsMessage = _("You must place at least one SpawnDefense and one Goal.");
+		return;
+	}
+	
+	ValidationStatus = CMapType::ValidationStatus::Validated;	
+}
+
+// ---------------------------------- //
+// Return the manialink for anchor edition
+Text EditAnchorManialink() {
+	return """
+<frame>
+	<frame posn="120 35" hidden="1" id="Frame_AnchorEdition">
+		<quad posn="0 0 2" sizen="74 15" halign="center" valign="bottom" style="Bgs1InRace" substyle="BgTitle3_5"/>
+		<label posn="0 5 3" halign="center" valign="bottom" style="TextTitle3" textprefix="$fff" text="{{{_("Edit Anchor")}}}" />
+		<quad posn="0 0 -1" sizen="70 28" halign="center" style="Bgs1" substyle="BgWindow2"/>
+		<frame posn="0 -6 1">
+			<frame>
+				<label posn="0 0" sizen="40 6" halign="center" valign="center2" textcolor="fff" textemboss="1" hidden="1" id="Label_AnchorTag" />
+				<label posn="0 -8" sizen="40 5" halign="center" valign="center2" textcolor="fff" textemboss="1" hidden="1" id="Label_AnchorOrder" />
+			</frame>
+			<frame>
+				<frame id="Frame_ListAnchorTag">
+					<quad posn="-20 0 1" sizen="6 6" halign="right" valign="center" style="Icons64x64_1" substyle="ManiaLinkPrev" scriptevents="1" id="Button_AnchorTagPrev" />
+					<label posn="0 0" sizen="40 6" halign="center" valign="center2" focusareacolor1="2224" focusareacolor2="0005" scriptevents="1" id="List_AnchorTag" />
+					<quad posn="20 0 1" sizen="6 6" valign="center" style="Icons64x64_1" substyle="ManiaLinkNext" scriptevents="1" id="Button_AnchorTagNext" />
+				</frame>
+				<frame posn="0 -8" id="Frame_ListAnchorOrder">
+					<quad posn="-20 0 1" sizen="6 6" halign="right" valign="center" style="Icons64x64_1" substyle="ManiaLinkPrev" scriptevents="1" id="Button_AnchorOrderPrev" />
+					<label posn="0 0" sizen="40 5" halign="center" valign="center2" focusareacolor1="2224" focusareacolor2="0005" scriptevents="1" id="List_AnchorOrder" />
+					<quad posn="20 0 1" sizen="6 6" valign="center" style="Icons64x64_1" substyle="ManiaLinkNext" scriptevents="1" id="Button_AnchorOrderNext" />
+				</frame>
+			</frame>
+		</frame>
+		<frame posn="0 -19 1">
+			<label posn="0 0" halign="center" style="CardButtonSmallL" text="{{{_("Close")}}}" scriptevents="1" id="Button_Close" />
+		</frame>
+	</frame>
+	<frame posn="120 25" hidden="1" id="Frame_NoAnchorEdition">
+		<quad posn="0 0 2" sizen="74 15" halign="center" valign="bottom" style="Bgs1InRace" substyle="BgTitle3_5"/>
+		<label posn="0 5 3" halign="center" valign="bottom" style="TextTitle3" textprefix="$fff" text="{{{_("Edit Anchor")}}}" />
+		<quad posn="0 0 -1" sizen="70 18" halign="center" style="Bgs1" substyle="BgWindow2"/>
+		<frame posn="0 -5 1">
+			<label posn="0 0" sizen="40 6" halign="center" valign="center2" textcolor="fff" style="TextCardSmallScores2" text="{{{_("This anchor is not editable")}}}" />
+		</frame>
+		<frame posn="0 -9 1">
+			<label posn="0 0" halign="center" style="CardButtonSmallL" text="{{{_("Close")}}}" scriptevents="1" id="Button_Close" />
+		</frame>
+
+	</frame>
+	<frame posn="120 -8" hidden="1" id="Frame_Rules">
+		<quad posn="0 0 2" sizen="74 15" halign="center" valign="bottom" style="Bgs1InRace" substyle="BgTitle3_5"/>
+		<label posn="0 5 3" halign="center" valign="bottom" style="TextTitle3" textprefix="$fff" text="{{{_("Rules")}}}" />
+		<quad posn="0 0 -1" sizen="70 35" halign="center" style="Bgs1" substyle="BgWindow2"/>
+		<frame posn="-30 -3">
+			<label posn="0 0" sizen="60 5" textcolor="fff" style="TextCardSmallScores2" text="{{{_("Only 1 SpawnAttack.")}}}" />
+			<label posn="0 -5" sizen="60 5" textcolor="fff" style="TextCardSmallScores2" text="{{{_("Goal and SpawnDefense work in pairs.")}}}" />
+			<label posn="0 -10" sizen="60 5" textcolor="fff" style="TextCardSmallScores2" text="{{{_("Maximum 9 Goal and SpawnDefense.")}}}" />
+			<label posn="0 -15" sizen="60 5" textcolor="fff" style="TextCardSmallScores2" text="{{{_("Minimum 1 Goal and SpawnDefense.")}}}" />
+			<label posn="0 -20" sizen="60 5" textcolor="fff" style="TextCardSmallScores2" text="{{{_("Each Goal can optionally be associated with one or several Gates.")}}}" autonewline="1" />
+		</frame>
+	</frame>
+</frame>
+<script><!--
+#Include "TextLib" as TL
+
+Void SetAnchorOrder(Integer _Order) {
+	declare List_AnchorOrder <=> (Page.GetFirstChild("List_AnchorOrder") as CMlLabel);
+	declare Label_AnchorOrder <=> (Page.GetFirstChild("Label_AnchorOrder") as CMlLabel);
+	declare Integer SiegeArena_AnchorOrder for Page;
+	
+	List_AnchorOrder.Value = TL::ToText(_Order);
+	Label_AnchorOrder.Value = TL::ToText(_Order);
+	SiegeArena_AnchorOrder = _Order;
+}
+
+Void SetAnchorTag(Text _Tag) {
+	declare List_AnchorTag <=> (Page.GetFirstChild("List_AnchorTag") as CMlLabel);
+	declare Label_AnchorTag <=> (Page.GetFirstChild("Label_AnchorTag") as CMlLabel);
+	declare Text SiegeArena_AnchorTag for Page;
+	
+	List_AnchorTag.Value = _Tag;
+	Label_AnchorTag.Value = _Tag;
+	SiegeArena_AnchorTag = _Tag;
+}
+
+main() {
+	declare Frame_AnchorEdition		<=> (Page.GetFirstChild("Frame_AnchorEdition")	as CMlFrame);
+	declare Frame_NoAnchorEdition	<=> (Page.GetFirstChild("Frame_NoAnchorEdition")as CMlFrame);
+	declare Frame_Rules				<=> (Page.GetFirstChild("Frame_Rules")			as CMlFrame);
+	declare Label_AnchorTag			<=> (Page.GetFirstChild("Label_AnchorTag")		as CMlLabel);
+	declare Label_AnchorOrder		<=> (Page.GetFirstChild("Label_AnchorOrder")	as CMlLabel);
+	declare Frame_ListAnchorTag		<=> (Page.GetFirstChild("Frame_ListAnchorTag")	as CMlLabel);
+	declare Frame_ListAnchorOrder	<=> (Page.GetFirstChild("Frame_ListAnchorOrder")as CMlLabel);
+	declare List_AnchorTag			<=> (Page.GetFirstChild("List_AnchorTag")		as CMlLabel);
+	declare List_AnchorOrder		<=> (Page.GetFirstChild("List_AnchorOrder")		as CMlLabel);
+	
+	declare Boolean	SiegeArena_RulesShow			for Page;
+	declare Boolean	SiegeArena_NoAnchorEditionShow	for Page;
+	declare Boolean	SiegeArena_AnchorEditionShow	for Page;
+	declare Ident	SiegeArena_AnchorId				for Page;
+	declare Text	SiegeArena_AnchorTag			for Page;
+	declare Integer	SiegeArena_AnchorOrder			for Page;
+	
+	declare Boolean PrevRulesShow = False;
+	declare Boolean PrevAnchorEditionShow = False;
+	declare Boolean PrevNoAnchorEditionShow = False;
+	declare Ident PrevAnchorId = NullId;
+	declare Text PrevAnchorTag = "";
+	declare Integer PrevAnchorOrder = 0;
+	
+	declare AnchorTag = "";
+	declare AnchorOrder = 0;
+	
+	while (True) {
+		yield;
+		
+		if (PrevAnchorEditionShow != SiegeArena_AnchorEditionShow || PrevNoAnchorEditionShow != SiegeArena_NoAnchorEditionShow) {
+			PrevAnchorEditionShow = SiegeArena_AnchorEditionShow;
+			PrevNoAnchorEditionShow = SiegeArena_NoAnchorEditionShow;
+			
+			if (!Frame_AnchorEdition.Visible && SiegeArena_AnchorEditionShow) Frame_AnchorEdition.Visible = True;
+			else if (Frame_AnchorEdition.Visible && !SiegeArena_AnchorEditionShow) Frame_AnchorEdition.Visible = False;
+			if (!Frame_NoAnchorEdition.Visible && SiegeArena_NoAnchorEditionShow) Frame_NoAnchorEdition.Visible = True;
+			else if (Frame_NoAnchorEdition.Visible && !SiegeArena_NoAnchorEditionShow) Frame_NoAnchorEdition.Visible = False;
+		}
+		
+		if (PrevRulesShow != SiegeArena_RulesShow) {
+			PrevRulesShow = SiegeArena_RulesShow;
+			
+			if (!Frame_Rules.Visible && SiegeArena_RulesShow) Frame_Rules.Visible = True;
+			else if (Frame_Rules.Visible && !SiegeArena_RulesShow) Frame_Rules.Visible = False;
+		}
+		
+		if (PrevAnchorId != SiegeArena_AnchorId || PrevAnchorTag != SiegeArena_AnchorTag || PrevAnchorOrder != SiegeArena_AnchorOrder) {
+			PrevAnchorId = SiegeArena_AnchorId;
+			PrevAnchorTag = SiegeArena_AnchorTag;
+			PrevAnchorOrder = SiegeArena_AnchorOrder;
+			
+			List_AnchorTag.Value = SiegeArena_AnchorTag;
+			List_AnchorOrder.Value = TL::ToText(SiegeArena_AnchorOrder);
+			Label_AnchorTag.Value = SiegeArena_AnchorTag;
+			Label_AnchorOrder.Value = TL::ToText(SiegeArena_AnchorOrder);
+			
+			AnchorTag = SiegeArena_AnchorTag;
+			AnchorOrder = SiegeArena_AnchorOrder;
+			
+			if (AnchorTag == "SpawnDefense" || AnchorTag == "SpawnAttack") {
+				if (Label_AnchorTag.Visible) Label_AnchorTag.Visible = False;
+				if (!Frame_ListAnchorTag.Visible) Frame_ListAnchorTag.Visible = True;
+				
+				if (AnchorTag == "SpawnAttack") {
+					if (Frame_ListAnchorOrder.Visible) Frame_ListAnchorOrder.Visible = False;
+					if (!Label_AnchorOrder.Visible) Label_AnchorOrder.Visible = True;
+				} else {
+					if (Label_AnchorOrder.Visible) Label_AnchorOrder.Visible = False;
+					if (!Frame_ListAnchorOrder.Visible) Frame_ListAnchorOrder.Visible = True;
+				}
+				
+			} else {
+				if (Frame_ListAnchorTag.Visible) Frame_ListAnchorTag.Visible = False;
+				if (!Label_AnchorTag.Visible) Label_AnchorTag.Visible = True;
+				if (Label_AnchorOrder.Visible) Label_AnchorOrder.Visible = False;
+				if (!Frame_ListAnchorOrder.Visible) Frame_ListAnchorOrder.Visible = True;
+			}
+		}
+		
+		foreach (Event in PendingEvents) {
+			if (Event.Type == CMlEvent::Type::MouseClick) {
+				// Close anchor edit
+				if (Event.ControlId == "Button_Close") {
+					SiegeArena_AnchorEditionShow = False;
+					SiegeArena_NoAnchorEditionShow = False;
+					if (Frame_AnchorEdition.Visible) Frame_AnchorEdition.Visible = False;
+					if (Frame_NoAnchorEdition.Visible) Frame_NoAnchorEdition.Visible = False;
+				}
+				// Edit anchor tag
+				else if (Event.ControlId == "List_AnchorTag" || Event.ControlId == "Button_AnchorTagNext" || Event.ControlId == "Button_AnchorTagPrev") {
+					if (AnchorTag == "SpawnDefense") {
+						AnchorTag = "SpawnAttack";
+						AnchorOrder = 0;
+						SetAnchorOrder(AnchorOrder);
+					} else if (AnchorTag == "SpawnAttack") {
+						AnchorTag = "SpawnDefense";
+					}
+					SetAnchorTag(AnchorTag);
+				}
+				// Edit anchor order
+				else if (Event.ControlId == "List_AnchorOrder" || Event.ControlId == "Button_AnchorOrderNext") {
+					AnchorOrder += 1;
+					if (AnchorOrder > {{{C_MaxGoals}}}) AnchorOrder = 1;
+					SetAnchorOrder(AnchorOrder);
+				} else if (Event.ControlId == "Button_AnchorOrderPrev") {
+					AnchorOrder -= 1;
+					if (AnchorOrder < 1) AnchorOrder = {{{C_MaxGoals}}};
+					SetAnchorOrder(AnchorOrder);
+				}
+			}
+		}
+	}
+}
+--></script>""";
+}
+
+// ---------------------------------- //
+// Show the anchor edition manialink
+Void EditAnchorData(Ident _EditedAnchorDataId) {	
+	if (AnchorData.existskey(_EditedAnchorDataId)) {
+		declare Anchor <=> AnchorData[_EditedAnchorDataId];
+		
+		declare Boolean SiegeArena_AnchorEditionShow for ManialinkPage;
+		declare Ident SiegeArena_AnchorId for ManialinkPage;
+		declare Text SiegeArena_AnchorTag for ManialinkPage;
+		declare Integer SiegeArena_AnchorOrder for ManialinkPage;
+		declare Boolean SiegeArena_NoAnchorEditionShow for ManialinkPage;
+		
+		if (Anchor.DefaultTag == "Spawn" || Anchor.DefaultTag == "Gate" || Anchor.DefaultTag == "Goal") {
+			SiegeArena_AnchorTag = Anchor.Tag;
+			SiegeArena_AnchorOrder = Anchor.Order;
+			SiegeArena_AnchorId = _EditedAnchorDataId;
+			SiegeArena_AnchorEditionShow = True;
+			SiegeArena_NoAnchorEditionShow = False;
+		} else {
+			SiegeArena_NoAnchorEditionShow = True;
+			SiegeArena_AnchorEditionShow = False;
+		}
+	}
+}
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+main() {	
+	MapType::SetVersion(MapTypeVersion);
+	CustomEditAnchorData = True;
+	NormalizeAnchors();
+	
+	ManialinkText = EditAnchorManialink();
+	declare Boolean SiegeArena_RulesShow for ManialinkPage;
+	declare Boolean SiegeArena_AnchorEditionShow for ManialinkPage;
+	declare Ident SiegeArena_AnchorId for ManialinkPage;
+	declare Text SiegeArena_AnchorTag for ManialinkPage;
+	declare Integer SiegeArena_AnchorOrder for ManialinkPage;
+	declare Boolean SiegeArena_NoAnchorEditionShow for ManialinkPage;
+	SiegeArena_RulesShow = False;
+	SiegeArena_AnchorEditionShow = False;
+	SiegeArena_AnchorId = NullId;
+	SiegeArena_AnchorTag = "";
+	SiegeArena_AnchorOrder = 0;
+	SiegeArena_NoAnchorEditionShow = False;
+	
+	declare PrevAnchorTag = "";
+	declare PrevAnchorOrder = 0;
+	declare PrevPlaceMode = CEditorPlugin::PlaceMode::Unknown;
+	
+	UpdateValidability();
+	
+	while (True) {	
+		yield;
+		
+		// Update block property
+		if (PrevAnchorTag != SiegeArena_AnchorTag || PrevAnchorOrder != SiegeArena_AnchorOrder) {
+			PrevAnchorTag = SiegeArena_AnchorTag;
+			PrevAnchorOrder = SiegeArena_AnchorOrder;
+			
+			if (AnchorData.existskey(SiegeArena_AnchorId)) {
+				declare Anchor <=> AnchorData[SiegeArena_AnchorId];
+				Anchor.Order = SiegeArena_AnchorOrder;
+				Anchor.Tag = SiegeArena_AnchorTag;
+			}
+			
+			NormalizeAnchors();
+			UpdateValidability();
+		}
+		
+		// Display the rules when entering block property edition
+		if (PrevPlaceMode != PlaceMode) {
+			PrevPlaceMode = PlaceMode;
+			
+			if (PlaceMode == CEditorPlugin::PlaceMode::BlockProperty) {
+				SiegeArena_RulesShow = True;
+			} else {
+				SiegeArena_RulesShow = False;
+				SiegeArena_AnchorEditionShow = False;
+				SiegeArena_NoAnchorEditionShow = False;
+			}
+		}
+		
+		foreach(Event in PendingEvents) {
+			if (Event.Type == CPluginEvent::Type::MapModified) {
+				NormalizeAnchors();
+				UpdateValidability();
+			} else if (Event.Type == CPluginEvent::Type::EditAnchor) {
+				EditAnchorData(Event.EditedAnchorDataId);
+			}
+		}		
+	}	
+}

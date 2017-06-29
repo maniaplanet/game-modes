@@ -1,0 +1,225 @@
+/**
+ *	Objects library
+ */
+#Const	Version			"2017-06-02"
+#Const	ScriptName	"Libs/Nadeo/ShootMania/Objects.Script.txt"
+
+// ---------------------------------- //
+// Libraries
+// ---------------------------------- //
+#Include "Libs/Nadeo/Log.Script.txt" as Log
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_DefaultRespawnTime 3000
+
+// ---------------------------------- //
+// Globales
+// ---------------------------------- //
+declare Text[] G_AllowedItemNames;
+declare CSmObject[] G_AnchorsObjects;
+declare Integer G_RespawnTime;
+declare Boolean G_AutoPickUp;
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+// ---------------------------------- //
+/**	Return the version number of the script
+ *
+ *	@return														The version number of the script
+ */
+Text GetScriptVersion() {
+	return Version;
+}
+
+// ---------------------------------- //
+/**	Return the name of the script
+ *
+ *	@return														The name of the script
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+// ---------------------------------- //
+/** Set the name of an object
+ *
+ *	@param	_Object										The object to name
+ *	@param	_Name											The name of the object
+ */
+Void SetObjectName(CSmObject _Object, Text _Name) {
+	if (_Object == Null) return;
+	declare LibObjects_Private_Name for _Object = "";
+	LibObjects_Private_Name = _Name;
+}
+
+// ---------------------------------- //
+/** Get the name of an object
+ *
+ *	@param	_Object										The object to check
+ *
+ *	@return														The namer of the object
+ */
+Text GetObjectName(CSmObject _Object) {
+	if (_Object == Null) return "";
+	declare LibObjects_Private_Name for _Object = "";
+	return LibObjects_Private_Name;
+}
+
+// ---------------------------------- //
+/** Set a list of objects allowed
+ *	to be spawned on the anchors
+ *	/!\ Call this function before
+ *	map load or it will be ignored /!\
+ */
+Void SetAllowedObjects(Text[] _ItemNames) {
+	G_AllowedItemNames = _ItemNames;
+}
+
+// ---------------------------------- //
+/// Destroy all existing anchor object
+Void DestroyAnchorsObjects() {
+	foreach (Object in G_AnchorsObjects) {
+		ObjectDestroy(Object);
+	}
+	G_AnchorsObjects.clear();
+}
+
+// ---------------------------------- //
+/// Create all objects associated to an anchor
+Void CreateAnchorsObjects() {
+	DestroyAnchorsObjects();
+	
+	foreach (MapLandmark in MapLandmarks_ObjectAnchor) {
+		if (G_AllowedItemNames.count > 0 && !G_AllowedItemNames.exists(MapLandmark.ObjectAnchor.ItemName) || (MapLandmark.ObjectAnchor.ItemModelId == NullId && MapLandmark.ObjectAnchor.ItemName == "")) continue;
+		
+		declare Object <=> ObjectCreate(MapLandmark.ObjectAnchor.ItemModelId);
+		if (Object != Null) {
+			G_AnchorsObjects.add(Object);
+			declare CSmMapObjectAnchor LibObjects_Private_Anchor for Object;
+			LibObjects_Private_Anchor <=> MapLandmark.ObjectAnchor;
+			SetObjectName(Object, MapLandmark.ObjectAnchor.ItemName);
+		}
+	}
+}
+
+// ---------------------------------- //
+/// Spawn all objects on their anchors
+Void SpawnAnchorsObjects() {
+	foreach (Object in G_AnchorsObjects) {
+		declare CSmMapObjectAnchor LibObjects_Private_Anchor for Object;
+		if (LibObjects_Private_Anchor != Null) {
+			Object.SetAnchor(LibObjects_Private_Anchor);
+		}
+		declare Integer LibObjects_Private_RespawnTime for Object;
+		LibObjects_Private_RespawnTime = -1;
+	}
+}
+
+// ---------------------------------- //
+/// Unspawn all objects from their anchors
+Void UnspawnAnchorsObjects() {
+	foreach (Object in G_AnchorsObjects) {
+		Object.SetUnspawned();
+	}
+}
+
+// ---------------------------------- //
+/** Get the anchor used by the library
+ *	to spawn the object
+ *
+ *	@param	_Object										The object to check
+ *
+ *	@return														The anchor if found,
+ *																		Null otherwise
+ */
+CSmMapObjectAnchor GetSpawnAnchor(CSmObject _Object) {
+	if (_Object == Null) return Null;
+	declare CSmMapObjectAnchor LibObjects_Private_Anchor for _Object;
+	return LibObjects_Private_Anchor;
+}
+
+// ---------------------------------- //
+/** Update the respawn time of object
+ *	automatically spawned on anchors
+ *
+ *	@param	_Time											The new respawn time
+ */
+Void SetAnchorsObjectsRespawnTime(Integer _Time) {
+	G_RespawnTime = _Time;
+}
+
+// ---------------------------------- //
+/** Enable of disable the auto pick up
+ *	of object spawned on anchors by the
+ *	library
+ *
+ *	@param	_AutoPickUp								True to enable
+ *																		False to disable
+ */
+Void SetAutoPickUp(Boolean _AutoPickUp) {
+	G_AutoPickUp = _AutoPickUp;
+	Log::Log("""[Objects] Set auto pick up : {{{G_AutoPickUp}}}""");
+}
+
+// ---------------------------------- //
+/** Pick up an object and mark it for
+ *	respawn if necessary
+ *
+ *	@param	_Object										The object to pick up
+ */
+Void PickUp(CSmObject _Object) {
+	if (_Object == Null) return;
+	
+	_Object.SetUnspawned();
+	if (G_AnchorsObjects.exists(_Object)) {
+		declare LibObjects_Private_RespawnTime for _Object = -1;
+		LibObjects_Private_RespawnTime = Now + G_RespawnTime;
+	}
+}
+
+// ---------------------------------- //
+/// Update the library
+Void Yield() {
+	// Pick up objects
+	if (G_AutoPickUp) {
+		foreach (Event in PendingEvents) {
+			if (Event.Type == CSmModeEvent::EType::OnPlayerTouchesObject && G_AnchorsObjects.exists(Event.Object)) {
+				Event.Object.SetUnspawned();
+				declare LibObjects_Private_RespawnTime for Event.Object = -1;
+				LibObjects_Private_RespawnTime = Now + G_RespawnTime;
+			}
+		}
+	}
+	// Respawn objects
+	foreach (Object in G_AnchorsObjects) {
+		declare LibObjects_Private_RespawnTime for Object = -1;
+		if (LibObjects_Private_RespawnTime >= 0 && LibObjects_Private_RespawnTime <= Now) {
+			declare CSmMapObjectAnchor LibObjects_Private_Anchor for Object;
+			if (LibObjects_Private_Anchor != Null) {
+				Object.SetAnchor(LibObjects_Private_Anchor);
+			}
+			LibObjects_Private_RespawnTime = -1;
+		}
+	}
+}
+
+// ---------------------------------- //
+/// Unload the library
+Void Unload() {
+	DestroyAnchorsObjects();
+	G_AllowedItemNames.clear();
+	G_RespawnTime = C_DefaultRespawnTime;
+	G_AutoPickUp = False;
+}
+
+// ---------------------------------- //
+/// Load the library
+Void Load() {
+	Unload();
+}

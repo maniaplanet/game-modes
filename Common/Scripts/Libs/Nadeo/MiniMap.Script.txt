@@ -1,0 +1,1074 @@
+/**
+ * Map library
+ */
+#Const Version				"2013-08-20"
+#Const ScriptName			"Map.Script.txt"
+#Const C_PointsImage 		"file://Media/Manialinks/Common/SmallDisc.dds"
+#Const C_ImgBaseDir			"file://Media/Manialinks/Shootmania/Common/"
+#Const C_MapTimeTick		80
+#Const C_SizePointDefault	1.5
+#Const C_MiniMapContour		"file://Media/Manialinks/Common/Minimap/MinimapOverlay.dds"
+#Const C_RadarContour		"file://Media/Manialinks/Common/Minimap/RadarOverlay.dds"
+#Const C_MiniMapBG			""
+#Const C_RadarBG			"file://Media/Manialinks/Common/Minimap/RadarBG.dds"
+
+#Const C_QuadMapSize		50
+#Const C_NbQuadDynamic		64
+#Const C_LayerPosition		<128., -60.>
+#Const C_RadarRadius		1.
+
+
+#Include "MathLib" 			as MathLib
+#Include "TextLib" 			as TextLib
+
+declare Real				G_MapSize;
+declare Boolean				G_IsRadar;
+declare Integer				G_QuadMapSize;
+declare Integer				G_NbQuadDynamic;
+declare Vec2				G_LayerPosition;
+declare Real				G_RadarRadius;
+declare Integer[Text]		G_PrevClickUpdate;
+declare Vec3[CPlayer]		G_LastClickPosition;
+declare Text[CPlayer]		G_LastClickPointId;
+declare Text				G_MiniMapBG;
+declare Text				G_MiniMapContour;
+declare Text				G_RadarContour;
+declare Text				G_RadarBG;
+declare Integer				G_MapTimeTick;
+
+
+/**
+ * Return the version number of the script
+ *	@return		The version number of the script
+ */
+Text GetScriptVersion() {
+	return Version;
+}
+
+
+/**
+ * Return the name of the script
+ *	@return		The name of the script
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+
+/**
+ * Unload the library
+ */
+Void Unload() {
+	declare netwrite Integer 	Net_UpdateDynamicPointPosition 	for Teams[0];
+	declare netwrite Integer 	Net_UpdatePointArray		 	for Teams[0];
+	declare netwrite Vec3[Text] Net_DynamicPointPosition 		for Teams[0];
+	declare netwrite Text[Text] Net_DynamicPointImage 			for Teams[0];
+	declare netwrite Vec3[Text] Net_DynamicPointColor 			for Teams[0];
+	declare netwrite Vec3[Text] Net_DynamicPointModulateColor 	for Teams[0];
+	declare netwrite Real[Text]	Net_DynamicPointSize 			for Teams[0];
+	
+	Net_DynamicPointPosition.clear();
+	Net_DynamicPointImage.clear();
+	Net_DynamicPointColor.clear();
+	Net_DynamicPointModulateColor.clear();
+	Net_DynamicPointSize.clear();
+	Net_UpdateDynamicPointPosition = Now;
+	Net_UpdatePointArray = Now;
+	
+	
+}
+
+
+/**
+ * Initialize the default value to build the Map
+ */
+Void Load(Real _MapSize)
+{
+	Unload();
+	
+	G_MapSize = _MapSize;
+	
+	
+	G_QuadMapSize		= C_QuadMapSize;
+	G_NbQuadDynamic		= C_NbQuadDynamic;
+	G_LayerPosition		= C_LayerPosition;
+	G_RadarRadius		= C_RadarRadius;
+	G_MiniMapContour	= C_MiniMapContour;
+	G_RadarContour		= C_RadarContour;
+	G_MiniMapBG			= C_MiniMapBG;
+	G_RadarBG			= C_RadarBG;
+	G_MapTimeTick		= C_MapTimeTick;
+}
+
+
+/**
+ * Initialize the Player
+ */
+Void Init(CPlayer _Player)
+{
+	declare UI <=> UIManager.GetUI(_Player);
+	if(UI == Null) return;
+	
+	declare netwrite Vec3[Text]    	Net_DynamicPointPosition			for Teams[0];
+	declare netwrite Boolean[Text] 	Net_DynamicPointHighlighted			for UI;
+	declare netwrite Integer[Text] 	Net_DynamicPointHighlightedTime		for UI;
+	declare netwrite Boolean[Text] 	Net_LibMM_DynamicPointVisibility	for UI;
+	declare netwrite Boolean[Text] 	Net_DynamicPointBlockVisible 		for UI;
+	declare netwrite Text[Text]	   	Net_DynamicPointImageforPlayer		for UI;
+	declare netwrite Integer	   	Net_ClicUpdate 				 		for UI;
+	declare netwrite Vec3		   	Net_ClicPosition 					for UI;
+	declare netwrite Text		   	Net_ClicPointId 					for UI;
+	declare netwrite Boolean 	   	Net_HideMiniMap 					for UI;
+	
+	Net_DynamicPointHighlighted.clear();
+	Net_DynamicPointHighlightedTime.clear();
+	Net_DynamicPointBlockVisible.clear();
+	Net_DynamicPointImageforPlayer.clear();
+	Net_ClicUpdate 	  	= Now;
+	Net_ClicPosition  	= <0.,0.,0.>;
+	Net_ClicPointId   	= "";
+	Net_HideMiniMap 	= False;
+}
+
+/**
+ * Load the library
+ * @param _BlockSize (meters) size of one side of the map (maps are squares)
+ */
+Void Load(Integer _BlockSize) {
+	Load(MathLib::ToReal(Map.Size.X * _BlockSize));
+}
+
+/**
+ * Load the library with the good BlockSize for ShootMania
+ */
+Void LoadSMMap() {
+	Load(8);
+}
+
+/**
+ * Add a point on the MiniMap for all player
+ * 
+ * @param _PointId 		The ID of the point
+ * @param _Position 	The position in the 3d view
+ */
+Void AddPoint(Text _PointId, Vec3 _Position) {
+	
+	declare netwrite Integer 	Net_UpdateDynamicPointPosition 	for Teams[0];
+	declare netwrite Integer 	Net_UpdatePointArray		 	for Teams[0];
+	declare netwrite Vec3[Text] Net_DynamicPointPosition 		for Teams[0];
+
+	Net_UpdateDynamicPointPosition = Now;
+	Net_UpdatePointArray = Now;
+	Net_DynamicPointPosition[_PointId] = _Position;
+}
+
+Void AddPoint(Text _PointId) {
+	AddPoint(_PointId, <0., 0., 0.>);
+}
+
+/**
+ * Set Point Visibility for one player
+ *
+ * @param _Show		If True, the point will be visible
+ */
+Void SetPointVisibility(CPlayer _Player, Text _PointId, Boolean _Show) {
+	
+	declare UI <=> UIManager.GetUI(_Player);
+	if(UI != Null)
+	{
+		declare netwrite Boolean[Text] 	Net_LibMM_DynamicPointVisibility	for UI;
+		declare netwrite Integer 		Net_UpdateDynamicPointParam			for UI;
+		Net_LibMM_DynamicPointVisibility[_PointId] = _Show;
+		Net_UpdateDynamicPointParam = Now;
+	}
+}
+
+/**
+ * Remove a point for all players
+ *
+ */
+Void RemovePoint(Text _PointId) {
+	
+	declare netwrite Integer 	Net_UpdatePointArray		for Teams[0];
+	declare netwrite Vec3[Text] Net_DynamicPointPosition 	for Teams[0];
+	Net_UpdatePointArray = Now;	
+	Net_DynamicPointPosition.removekey(_PointId);
+}
+
+/**
+ * Change the default image of the point for all players
+ * note: Can be overdrive by the function SetPointImageForPlayer()
+ */
+Void SetPointImage(Text _PointId, Text _ImageURL) {
+
+	declare netwrite Text[Text] Net_DynamicPointImage	for Teams[0];
+	declare netwrite Integer 	Net_UpdateParamforAll	for Teams[0];
+	Net_DynamicPointImage[_PointId] = _ImageURL;
+	Net_UpdateParamforAll = Now;
+}
+
+/**
+ * Change the image of the point for one player 
+ * note:	Overdrive the default image 
+ * 			To reset the default image send "" in _ImageURL
+ */
+Void SetPointImageForPlayer(CPlayer _Player, Text _PointId, Text _ImageURL) {
+
+	declare UI <=> UIManager.GetUI(_Player);
+	if(UI != Null) 
+	{
+		declare netwrite Text[Text] Net_DynamicPointImageforPlayer	for UI;
+		declare netwrite Integer 	Net_UpdateDynamicPointParam		for UI;
+		
+		if(_ImageURL == "")
+		{	
+			if(Net_DynamicPointImageforPlayer.existskey(_PointId)) Net_DynamicPointImageforPlayer.remove(_PointId);
+		}
+		else
+		{
+			Net_DynamicPointImageforPlayer[_PointId] = _ImageURL;
+		}
+		Net_UpdateDynamicPointParam = Now;
+	}
+}
+
+
+/**
+ * Change the Color of the point for all players
+ * 
+ */
+Void SetPointColor(Text _PointId, Vec3 _Color) {
+	
+	declare netwrite Vec3[Text]	Net_DynamicPointColor	for Teams[0];
+	declare netwrite Integer	Net_UpdateParamforAll	for Teams[0];
+	Net_DynamicPointColor[_PointId] = _Color;
+	Net_UpdateParamforAll = Now;
+}
+
+/**
+ * Change the Color of the point for all players
+ * 
+ */
+Void SetPointModulateColor(Text _PointId, Vec3 _Color) {
+	
+	declare netwrite Vec3[Text] Net_DynamicPointModulateColor 	for Teams[0];
+	declare netwrite Integer 	Net_UpdateParamforAll 			for Teams[0];
+	Net_DynamicPointModulateColor[_PointId] = _Color;
+	Net_UpdateParamforAll = Now;
+}
+
+/**
+ * Change the Size of the point for all players
+ * 
+ */
+Void SetPointSize(Text _PointId, Real _Size) {
+
+	declare netwrite Real[Text] Net_DynamicPointSize	for Teams[0];
+	declare netwrite Integer 	Net_UpdateParamforAll	for Teams[0];
+	Net_DynamicPointSize[_PointId] 	= _Size;
+	Net_UpdateParamforAll = Now;
+}
+
+/**
+ * Change the Position of the point for all players
+ * 
+ */
+Void SetPointPosition(Text _PointId, Vec3 _Position) {
+
+	declare netwrite Integer 	Net_UpdateDynamicPointPosition 	for Teams[0];
+	declare netwrite Vec3[Text] Net_DynamicPointPosition 		for Teams[0];
+	Net_DynamicPointPosition[_PointId] = _Position;
+	Net_UpdateDynamicPointPosition = Now;
+}
+
+/**
+ * Change the Size of the point for all players
+ * 
+ * @ param _IsHighlighted Set on/off the HighLight
+ * @ param _Timer (ms) How long the point is going to flash
+ */
+Void SetPointHighlight(CPlayer _Player, Text _PointId, Boolean _IsHighlighted, Integer _Timer) {
+
+	declare UI <=> UIManager.GetUI(_Player);
+	if(UI != Null) 
+	{
+		declare netwrite Integer 		Net_UpdateDynamicPointParam 	for UI;
+		declare netwrite Boolean[Text] 	Net_DynamicPointHighlighted 	for UI;
+		declare netwrite Integer[Text] 	Net_DynamicPointHighlightedTime for UI;
+		Net_DynamicPointHighlighted[_PointId] = _IsHighlighted;
+		Net_DynamicPointHighlightedTime[_PointId] = Now + _Timer;
+		Net_UpdateDynamicPointParam = Now;
+	}
+}
+
+Void SetPointHighlight(CPlayer _Player, Text _PointId, Boolean _IsHighlighted) {
+	SetPointHighlight(_Player, _PointId, _IsHighlighted, 5000);
+}
+
+/**
+ * Block the visibility of the point for one player 
+ * note:	If _IsBlockVisible is True the point will never be hide 
+ */
+Void SetPointBlockVisible(CPlayer _Player, Text _PointId, Boolean _IsBlockVisible) {
+
+	declare UI <=> UIManager.GetUI(_Player);
+	if(UI != Null) 
+	{
+		declare netwrite Integer 		Net_UpdateDynamicPointParam		for UI;
+		declare netwrite Boolean[Text] 	Net_DynamicPointBlockVisible	for UI;
+		Net_DynamicPointBlockVisible[_PointId] = _IsBlockVisible;
+		Net_UpdateDynamicPointParam = Now;
+	}
+}
+
+/**
+ * Hide the Selected point after the time(ms) set
+ * 
+ */
+Void SetPointTimerHide(CPlayer _Player, Text _PointId, Integer _Timer) {
+
+	declare UI <=> UIManager.GetUI(_Player);
+	if(UI != Null) 
+	{
+		declare netwrite Integer[Text] Net_PointTimerHide for UI;
+		Net_PointTimerHide[_PointId] = Now + _Timer;
+		//Net_PointTimerHide = Net_PointTimerHide.sort();
+	}
+}
+
+Void SetPointTimerHide(CPlayer _Player, Text _PointId) {
+	SetPointTimerHide(_Player, _PointId, 5000);
+}
+
+Void SetMapVisibility(CPlayer _Player,  Boolean _Show) {
+
+	declare UI <=> UIManager.GetUI(_Player);
+	if(UI != Null) 
+	{
+		declare netwrite Integer Net_UpdateDynamicPointParam 	for UI;
+		declare netwrite Boolean Net_HideMiniMap 				for UI;
+		Net_HideMiniMap = !_Show;
+		Net_UpdateDynamicPointParam = Now;
+	}
+}
+
+
+/**
+ * Set the Size of the MiniMap or the Radar
+ */
+Void SetMiniMapSize(Integer _QuadMapSize){
+	G_QuadMapSize = _QuadMapSize;
+}
+
+
+/**
+ * Set the Number max of Dynamic Quad in the Layer	
+ */
+Void SetNbQuadDynamic(Integer _NbQuadDynamic){
+	G_NbQuadDynamic = _NbQuadDynamic;
+}
+
+
+/**
+ * Set the Position of the Layer
+ *	@param	_LayerPosition			
+ */
+Void SetLayerPosition(Vec2 _LayerPosition){
+	G_LayerPosition = _LayerPosition;
+}
+
+
+/**
+ * Set the Background of the MiniMap (Top picture of the Map)		
+ */
+Void SetMiniMapBG(Text _MiniMapBG){
+	G_MiniMapBG = _MiniMapBG;
+}
+
+Void SetMiniMapContour(Text _MiniMapContour){
+	G_MiniMapContour = _MiniMapContour;
+}
+
+Void SetRadarContour(Text _RadarContour){
+	G_RadarContour = _RadarContour;
+}
+
+Void SetRadarBG(Text _RadarBG){
+	G_RadarBG = _RadarBG;
+}
+
+/**
+ * SetMapTimeTick
+ *	@param _MapTimeTick (ms) The time before the map refresh	
+ */
+Void SetMapTimeTick(Integer _MapTimeTick){
+	G_MapTimeTick = _MapTimeTick;
+}
+
+
+/**
+ * Set the Zoom of the Radar
+ * note :	The higher you set the RadarRadius value, the higher the zoom range will be
+ * @param	_RadarRadius	When the RadarRadius is equal to 1. the radius of the Radar is the radius of the Map		
+ */
+Void SetRadarRadius(Real _RadarRadius){
+	declare Real Zoom = 1.;
+	if(_RadarRadius <= 0.02) Zoom = 1./0.02;
+	else if(_RadarRadius >= 3) Zoom = 1./3.;
+	else Zoom = 1./ _RadarRadius;
+	G_RadarRadius = Zoom;
+}
+
+/**
+ * Call this method each "yield" to handle Click Events on the MiniMap
+ */
+Void Loop() {
+	
+	G_LastClickPosition.clear();
+	G_LastClickPointId.clear();
+	foreach(Player in Players)
+	{
+		declare UI <=> UIManager.GetUI(Player);
+		if(UI != Null) 
+		{
+			declare netread Integer Net_ClicUpdate 	 	for UI;
+			declare netread Vec3	Net_ClicPosition 	for UI;
+			declare netread Text	Net_ClicPointId		for UI;
+			if(!G_PrevClickUpdate.existskey(Player.Login)) G_PrevClickUpdate[Player.Login] = 1;
+			
+			if(G_PrevClickUpdate[Player.Login] != Net_ClicUpdate)
+			{
+				G_PrevClickUpdate[Player.Login] = Net_ClicUpdate;
+				if(Net_ClicPointId != "")
+				{
+					G_LastClickPointId[Player] = Net_ClicPointId;
+				}
+				else
+				{
+					G_LastClickPosition[Player] = Net_ClicPosition;
+				}
+			}
+			
+			declare netwrite Integer[Text] Net_PointTimerHide for UI;
+			foreach(PointId => TimeToHide in Net_PointTimerHide)
+			{
+				if(TimeToHide < Now)
+				{
+					Net_PointTimerHide.remove(TimeToHide);
+					SetPointVisibility(Player, PointId, False);
+				}
+			}
+		}
+	}
+}
+
+Vec3[CPlayer] GetClicPos() {
+	return G_LastClickPosition;
+}
+
+Text[CPlayer] GetClicPointId() {
+	return G_LastClickPointId;
+}
+
+Boolean GetPointVisibility(CPlayer _Player, Text _PointId) {
+	
+	declare Boolean ReturnValue = False;
+	
+	declare UI <=> UIManager.GetUI(_Player);
+	if(UI != Null) 
+	{
+		declare netwrite Boolean[Text] 	Net_LibMM_DynamicPointVisibility for UI;
+		if(Net_LibMM_DynamicPointVisibility.existskey(_PointId))
+		{
+			ReturnValue = Net_LibMM_DynamicPointVisibility[_PointId];
+		}
+		else
+		{
+			log("[MiniMap - GetPointVisibility()] Warning - The PointId doesn't exist");
+		}
+	}
+	else
+	{
+		log("[MiniMap - GetPointVisibility()] Warning - Don't find the UI of the Player");
+	}
+	return ReturnValue;
+}
+
+Vec3 GetPointColor(CPlayer _Player, Text _PointId) {
+	
+	declare Vec3 ReturnValue = <0., 0., 0.>;
+	
+	declare UI <=> UIManager.GetUI(_Player);
+	if(UI != Null) 
+	{
+		declare netwrite Vec3[Text] Net_DynamicPointColor for Teams[0];
+		if(Net_DynamicPointColor.existskey(_PointId))
+		{
+			ReturnValue = Net_DynamicPointColor[_PointId];
+		}
+		else
+		{
+			log("[MiniMap - GetPointVisibility()] Warning - The PointId doesn't exist");
+		}
+	}
+	else
+	{
+		log("[MiniMap - GetPointVisibility()] Warning - Don't find the UI of the Player");
+	}
+	
+	return ReturnValue;
+}
+
+Text GetPointImage(CPlayer _Player, Text _PointId) {
+	
+	declare Text ReturnValue = "";
+	
+	declare UI <=> UIManager.GetUI(_Player);
+	if(UI != Null) 
+	{
+		declare netwrite Text[Text] Net_DynamicPointImage for Teams[0];
+		if(Net_DynamicPointImage.existskey(_PointId))
+		{
+			ReturnValue = Net_DynamicPointImage[_PointId];
+		}
+	}
+	return ReturnValue;
+}
+
+/**
+ * Build the layer
+ *
+ */
+Text Private_BuildMapLayer(Boolean _IsRadar) {
+	
+	declare Integer RadarRadius;
+	G_IsRadar = _IsRadar;
+	
+	declare netwrite Vec2[][Text] Net_MapPoints for Teams[0];
+	
+	declare Text ML = """
+	
+		<script><!--
+	
+	
+	#Include "MathLib" as MathLib
+	#Include "TextLib" as TextLib
+	
+	declare Real 			 G_MapSize;
+	declare Integer 		 G_QuadMapSize;
+	declare Integer			 G_MapZoom;
+	declare Real 			 G_SizePoint;
+	declare Boolean[Integer] G_ArrayDynamicPointActivate;
+	declare Integer[Text] 	 G_ArrayDynamicPoint;
+	
+	
+	Boolean IsDynamicPointVisible(Text _IdPoint)
+	{
+		declare netread Boolean[Text] Net_LibMM_DynamicPointVisibility 	for UI;
+		declare Boolean IsVisible;
+		
+		if(Net_LibMM_DynamicPointVisibility.existskey(_IdPoint))
+		{
+			IsVisible = Net_LibMM_DynamicPointVisibility[_IdPoint];
+		}
+		else
+		{
+			IsVisible = True;
+		}
+		
+		return IsVisible;
+	}
+	
+	Boolean IsDynamicPointBlockVisible(Text _IdPoint)
+	{
+		declare netread Boolean[Text] Net_DynamicPointBlockVisible		for UI;
+		declare Boolean IsVisible;
+		
+		if(Net_DynamicPointBlockVisible.existskey(_IdPoint))
+		{
+			IsVisible = Net_DynamicPointBlockVisible[_IdPoint];
+		}
+		else
+		{
+			IsVisible = False;
+		}
+		
+		return IsVisible;
+	}
+	
+	Void UpdatePointPosition()
+	{
+		declare Frame_MapDynamicPointsCategory <=> (Page.GetFirstChild("Frame_MapDynamicPointsCategory") as CMlFrame);
+		declare Integer TeamIndex = InputPlayer.CurrentClan -1;
+		
+		declare netread Vec3[Text] Net_DynamicPointPosition for Teams[0];
+		declare Boolean IsRadar	= {{{G_IsRadar}}};
+		
+		if(IsRadar) 
+		{
+			declare Integer RadarRadius = G_QuadMapSize/2;
+			declare Real RadarZoom 		= {{{G_RadarRadius}}};
+			declare PlayerAimNorme 		= 
+				MathLib::Sqrt((InputPlayer.AimDirection.X*InputPlayer.AimDirection.X)+(InputPlayer.AimDirection.Z*InputPlayer.AimDirection.Z));
+			declare PlayerAimDirectionX =  InputPlayer.AimDirection.X/PlayerAimNorme;
+			declare PlayerAimDirectionY = -InputPlayer.AimDirection.Z/PlayerAimNorme;
+			
+			// l'opposé de l'angle de rotation du joueur.
+			declare Real AngleRotationVisuelle = 0.;
+			if(PlayerAimDirectionY > 0) AngleRotationVisuelle = MathLib::Acos(PlayerAimDirectionX);
+			else AngleRotationVisuelle = (2*MathLib::PI()) - MathLib::Acos(PlayerAimDirectionX);
+		
+			foreach(IdPoint => QuadIndex in G_ArrayDynamicPoint)
+			{
+				declare Quad_MapDynamicPoint <=> (Frame_MapDynamicPointsCategory.GetFirstChild(""^QuadIndex) as CMlQuad);
+				
+				if(! G_ArrayDynamicPointActivate[QuadIndex]) continue;
+				
+				
+				//Position
+				Quad_MapDynamicPoint.PosnX = ((Net_DynamicPointPosition[IdPoint].X-InputPlayer.Position.X)/G_MapSize*G_QuadMapSize)*RadarZoom;
+				Quad_MapDynamicPoint.PosnY = ((Net_DynamicPointPosition[IdPoint].Z-InputPlayer.Position.Z)/G_MapSize*G_QuadMapSize*-1)*RadarZoom;
+				
+				declare Real DistancePlayerPoint = 
+					MathLib::Sqrt((Quad_MapDynamicPoint.PosnX*Quad_MapDynamicPoint.PosnX) + (Quad_MapDynamicPoint.PosnY*Quad_MapDynamicPoint.PosnY));
+				
+				if(DistancePlayerPoint <= 0.01) continue;
+				
+				//Rotation
+				declare PointNormX 				= Quad_MapDynamicPoint.PosnX / DistancePlayerPoint;
+				declare AngleQuad_RadarPoint	= 0.;
+				if(Quad_MapDynamicPoint.PosnY > 0) AngleQuad_RadarPoint = MathLib::Acos(PointNormX);
+				else AngleQuad_RadarPoint 	= (2*MathLib::PI()) - MathLib::Acos(PointNormX);
+				Quad_MapDynamicPoint.PosnX 	= MathLib::Cos(AngleRotationVisuelle-AngleQuad_RadarPoint-(MathLib::PI()/2.))*DistancePlayerPoint;
+				Quad_MapDynamicPoint.PosnY 	= -MathLib::Sin(AngleRotationVisuelle-AngleQuad_RadarPoint-(MathLib::PI()/2.))*DistancePlayerPoint;
+				
+				//Snap
+				declare Integer SnapDistance = RadarRadius - 4;
+				if( DistancePlayerPoint>SnapDistance && DistancePlayerPoint < RadarRadius + 10 )
+				{
+					Quad_MapDynamicPoint.PosnX = SnapDistance/DistancePlayerPoint*Quad_MapDynamicPoint.PosnX;
+					Quad_MapDynamicPoint.PosnY = SnapDistance/DistancePlayerPoint*Quad_MapDynamicPoint.PosnY;
+					if(IsDynamicPointVisible(IdPoint) || IsDynamicPointBlockVisible(IdPoint))
+					{
+						Quad_MapDynamicPoint.Visible = True;
+					}
+					else
+					{
+						Quad_MapDynamicPoint.Visible = False;
+					}
+				}
+				else if( DistancePlayerPoint > RadarRadius + 10 )
+				{
+					Quad_MapDynamicPoint.PosnX 		= SnapDistance/DistancePlayerPoint*Quad_MapDynamicPoint.PosnX;
+					Quad_MapDynamicPoint.PosnY 		= SnapDistance/DistancePlayerPoint*Quad_MapDynamicPoint.PosnY;
+					Quad_MapDynamicPoint.Visible	= IsDynamicPointBlockVisible(IdPoint);
+				}
+			}
+		} else {
+			declare Real MapRadius = 1.* (G_QuadMapSize/2);
+			declare Real TransoCoef = G_QuadMapSize*G_MapZoom/G_MapSize;
+			
+			foreach(IdPoint => QuadIndex in G_ArrayDynamicPoint)
+			{
+				if(! G_ArrayDynamicPointActivate[QuadIndex]) continue;
+				declare Quad_MapDynamicPoint <=> (Frame_MapDynamicPointsCategory.GetFirstChild(""^QuadIndex) as CMlQuad);
+				
+				declare PointPos = Net_DynamicPointPosition[IdPoint];
+				//Position
+				Quad_MapDynamicPoint.PosnX = -PointPos.X*TransoCoef + MapRadius;
+				Quad_MapDynamicPoint.PosnY =  PointPos.Z*TransoCoef - MapRadius;
+				
+				//Snap
+				if(PointPos.Z >= 380)	Quad_MapDynamicPoint.PosnY =   MapRadius;
+				if(PointPos.Z <= 0)		Quad_MapDynamicPoint.PosnY = - MapRadius;
+				if(PointPos.X >= 380)	Quad_MapDynamicPoint.PosnX = - MapRadius;
+				if(PointPos.X <= 0)		Quad_MapDynamicPoint.PosnX =   MapRadius;
+			}
+		}
+	}
+	
+	/**
+	 * Fonction qui met à jours les Parametres des points dynamiques
+	 *	Update the parameters of the dynamics points
+	 */
+	Void UpdatePointParam()
+	{
+		declare Integer TeamIndex = InputPlayer.CurrentClan -1;
+		declare Frame_MapDynamicPointsCategory <=> (Page.GetFirstChild("Frame_MapDynamicPointsCategory") as CMlFrame);
+		declare Frame_Map <=> (Page.GetFirstChild("Frame_Map") as CMlFrame);
+		declare netread Text[Text] Net_DynamicPointImageforPlayer for UI;
+		
+		Frame_Map.Show();
+		
+		foreach(IdPoint => Point in G_ArrayDynamicPoint)
+		{
+			if(G_ArrayDynamicPointActivate[Point])
+			{
+				declare Quad_MapDynamicPoint <=> (Frame_MapDynamicPointsCategory.GetFirstChild(""^G_ArrayDynamicPoint[IdPoint]) as CMlQuad);
+				
+				//VISIBILITY
+				declare Boolean PointIsVisible = IsDynamicPointVisible(IdPoint);
+				declare Boolean PointIsBlockVisible = IsDynamicPointBlockVisible(IdPoint);
+				Quad_MapDynamicPoint.Visible = PointIsVisible;
+				if(PointIsBlockVisible)
+				{
+					Quad_MapDynamicPoint.Visible = True;
+				}
+				
+				//IMG
+				if(Net_DynamicPointImageforPlayer.existskey(IdPoint))
+				{
+					Quad_MapDynamicPoint.ChangeImageUrl(Net_DynamicPointImageforPlayer[IdPoint]);
+				}
+			}
+		}
+	}
+	
+	Void UpdatePointParamforAll()
+	{
+		declare Frame_MapDynamicPointsCategory <=> (Page.GetFirstChild("Frame_MapDynamicPointsCategory") as CMlFrame);
+		declare Frame_Map <=> (Page.GetFirstChild("Frame_Map") as CMlFrame);
+		declare netread Vec3[Text] Net_DynamicPointColor 			for Teams[0];
+		declare netread Vec3[Text] Net_DynamicPointModulateColor	for Teams[0];
+		declare netread Text[Text] Net_DynamicPointImage 			for Teams[0];
+		declare netread Real[Text] Net_DynamicPointSize 			for Teams[0];
+		declare netread Text[Text] Net_DynamicPointImageforPlayer	for UI;
+		
+		Frame_Map.Show();
+		
+		foreach(IdPoint => Point in G_ArrayDynamicPoint)
+		{
+			if(G_ArrayDynamicPointActivate[Point])
+			{
+				declare Quad_MapDynamicPoint <=> (Frame_MapDynamicPointsCategory.GetFirstChild(""^G_ArrayDynamicPoint[IdPoint]) as CMlQuad);
+				//IMG
+				if(!Net_DynamicPointImageforPlayer.existskey(IdPoint))
+				{
+					if(Net_DynamicPointImage.existskey(IdPoint))
+					{
+						Quad_MapDynamicPoint.ChangeImageUrl(Net_DynamicPointImage[IdPoint]);
+					}
+					else
+					{
+						Quad_MapDynamicPoint.ChangeImageUrl("{{{C_PointsImage}}}");
+					}
+				}
+				//SIZE
+				if(Net_DynamicPointSize.existskey(IdPoint))
+				{
+					declare Real PointSize 		= Net_DynamicPointSize[IdPoint];
+					Quad_MapDynamicPoint.Size.X = PointSize;
+					Quad_MapDynamicPoint.Size.Y = PointSize;
+				}
+				else
+				{
+					Quad_MapDynamicPoint.Size.X = G_SizePoint;
+					Quad_MapDynamicPoint.Size.Y = G_SizePoint;
+				}
+				
+				//COLOR
+				if(Net_DynamicPointColor.existskey(IdPoint))Quad_MapDynamicPoint.Colorize = Net_DynamicPointColor[IdPoint];
+				
+				//MODULATE COLOR
+				if(Net_DynamicPointModulateColor.existskey(IdPoint))Quad_MapDynamicPoint.ModulateColor = Net_DynamicPointModulateColor[IdPoint];
+			}
+		}
+	}
+	
+	
+	/**
+	 * Animation des points HighLight
+	 */
+	Void HighLightUpdate(Real _UpgradeHL)
+	{
+		declare Integer TeamIndex = InputPlayer.CurrentClan -1;
+		declare netread Boolean[Text] Net_DynamicPointHighlighted 		for UI;
+		declare netread Integer[Text] Net_DynamicPointHighlightedTime 	for UI;
+		
+		declare Frame_MapDynamicPointsCategory <=> (Page.GetFirstChild("Frame_MapDynamicPointsCategory") as CMlFrame);
+		
+		foreach(IdPoint => Point in Net_DynamicPointHighlighted)
+		{
+			if(Net_DynamicPointHighlighted[IdPoint]) 
+			{
+				if(!G_ArrayDynamicPoint.existskey(IdPoint)) continue;
+				
+				declare DynamicPoint = G_ArrayDynamicPoint[IdPoint];
+				declare Quad_MapDynamicPoint <=> (Frame_MapDynamicPointsCategory.GetFirstChild(""^DynamicPoint) as CMlQuad);
+				
+				if(IsDynamicPointVisible(IdPoint) || IsDynamicPointBlockVisible(IdPoint))
+				{
+					if(ArenaNow < Net_DynamicPointHighlightedTime[IdPoint])
+					{
+						Quad_MapDynamicPoint.Visible = (_UpgradeHL > 115);
+					}
+					else
+					{
+						Quad_MapDynamicPoint.Visible = True;
+					}
+				}
+			}
+		}
+		
+	}
+	
+	/**
+	 * Vérifie si un nouveau point dynamique est sur la liste et l'ajoute
+	 */
+	Void AddDynamicPoint()
+	{
+		declare netread Vec3[Text] Net_DynamicPointPosition for Teams[0];
+		
+		foreach(IdPoint => PointPosition in Net_DynamicPointPosition)
+		{
+			if(!G_ArrayDynamicPoint.existskey(IdPoint))
+			{
+				//Permet de trouver le 1er False du tableau G_ArrayDynamicPointActivate
+				declare Integer Compte = -1;
+				for(I, 0 , G_ArrayDynamicPointActivate.count-1) {
+					if(!G_ArrayDynamicPointActivate[I]) {
+						Compte = I;
+						break;
+					}
+				}
+				
+				if(Compte < 0) {
+					log("[Map::AddDynamicPoint] Warning: Not enough dynamics points. No Quad Available");
+					return;
+				} else {
+					G_ArrayDynamicPoint[IdPoint] = Compte;
+					G_ArrayDynamicPointActivate[Compte] = True;
+				}
+			}
+		}
+	}
+	
+	/**
+	 * Vérifie si un point dynamique n'est plus sur la liste et l'enlève
+	 **/
+	Void RemoveDynamicPoint()
+	{
+		declare netread Vec3[Text] Net_DynamicPointPosition for Teams[0];
+		declare Frame_MapDynamicPointsCategory <=> (Page.GetFirstChild("Frame_MapDynamicPointsCategory") as CMlFrame);
+		
+		foreach(IdPoint => PointQuadIndex in G_ArrayDynamicPoint)
+		{
+			if(!Net_DynamicPointPosition.existskey(IdPoint))
+			{
+				declare Quad_MapDynamicPoint <=> 
+					(Frame_MapDynamicPointsCategory.GetFirstChild(""^PointQuadIndex) as CMlQuad);
+				Quad_MapDynamicPoint.Visible = False;
+				G_ArrayDynamicPointActivate[PointQuadIndex] = False;
+				G_ArrayDynamicPoint.removekey(IdPoint);
+			}
+		}
+		
+	}
+	
+	Void UpdateDynamicPointArray()
+	{
+		RemoveDynamicPoint();
+		AddDynamicPoint();
+	}
+	
+	main()
+	{
+		
+		while( InputPlayer == Null ) sleep( 50 );
+				
+		G_MapSize 		= {{{G_MapSize}}};
+		G_QuadMapSize	= {{{G_QuadMapSize}}};
+		G_SizePoint 	= {{{C_SizePointDefault}}};
+		G_MapZoom 		= 1;
+		
+		declare Integer PrevUpdateArray  		= 0;
+		declare Integer PrevUpdatePosition		= 0;
+		declare Integer PrevParamUpdate  		= 0;
+		declare Integer PrevParamUpdateforAll 	= 0;
+		declare Real 	HighLightPercentage 	= 100.;
+		declare Boolean HighLightSens	 		= True;
+		
+		declare netread Vec3[Text] Net_DynamicPointPosition 			for Teams[0];
+		declare netread Integer Net_UpdateDynamicPointPosition 			for Teams[0];
+		declare netread Integer Net_UpdatePointArray		 			for Teams[0];
+		declare netread Integer Net_UpdateParamforAll		 			for Teams[0];
+		declare netread Integer Net_UpdateDynamicPointParam 			for UI;
+		declare netread Boolean[Text] Net_DynamicPointHighlighted 		for UI;
+		declare netread Boolean Net_HideMiniMap 						for UI;
+		
+		declare Frame_Map 			<=> (Page.GetFirstChild("Frame_Map") 			as CMlFrame);
+		declare Quad_Map_Background <=> (Page.GetFirstChild("Quad_Map_Background") 	as CMlQuad);
+		declare Quad_Contour		<=> (Page.GetFirstChild("Quad_Contour")			as CMlQuad);
+		
+		declare netwrite Integer Net_ClicUpdate	for UI;
+		declare netwrite Vec3 Net_ClicPosition 	for UI;
+		declare netwrite Text Net_ClicPointId 	for UI;
+		
+		Net_ClicUpdate   = 0;
+		Net_ClicPosition = <0.,0.,0.>;
+		Net_ClicPointId  = "";
+		
+		if({{{G_IsRadar}}})
+		{
+			Quad_Map_Background.ChangeImageUrl("{{{G_RadarBG}}}");
+			Quad_Contour.ChangeImageUrl("{{{G_RadarContour}}}");
+		}
+		else
+		{
+			Quad_Map_Background.ChangeImageUrl("{{{G_MiniMapBG}}}");
+			Quad_Contour.ChangeImageUrl("{{{G_MiniMapContour}}}");
+		}
+		
+		for(I,0,{{{G_NbQuadDynamic-1}}})
+		{
+			G_ArrayDynamicPointActivate[I] = False;
+		}
+		
+		declare Integer NextFrameUpdate = 0;
+		while(True)
+		{
+			// We have to yield, and not sleep, because we have events
+			yield;
+
+			if(Net_HideMiniMap)
+			{
+				Frame_Map.Hide();
+				continue;
+			}
+			else
+			{
+				if({{{!G_IsRadar}}})
+				{
+					foreach (Event in PendingEvents) 
+					{
+						switch(Event.Type)
+						{
+							case CMlEvent::Type::MouseClick:
+							{
+								declare Vec3 ClickPosition;
+								//Définit la position du Clic sur la carte (3D)
+								ClickPosition.X = (G_MapSize*((MouseX-{{{G_LayerPosition.X}}}) - (G_QuadMapSize/2)))/(G_MapZoom*G_QuadMapSize*-1.);
+								ClickPosition.Z = (G_MapSize*((MouseY-{{{G_LayerPosition.Y}}}) + (G_QuadMapSize/2)))/(G_MapZoom*G_QuadMapSize*1.);
+								
+								Net_ClicUpdate = Now;
+								Net_ClicPosition = ClickPosition;
+															
+								if(Event.ControlId == "Quad_Map_Background") {
+									Net_ClicPointId = "";
+								} else {
+									declare Integer QuadNumber = TextLib::ToInteger(Event.ControlId);
+									if(!G_ArrayDynamicPoint.exists(QuadNumber)) continue;
+									
+									Net_ClicPointId = G_ArrayDynamicPoint.keyof(QuadNumber);
+								}
+							}
+						}
+					}
+				}
+				// do not refresh each 'yield'
+				if(Now < NextFrameUpdate) continue;
+				NextFrameUpdate = Now + {{{G_MapTimeTick}}};
+				
+				
+				// struture modified : change everything
+				if(Net_UpdatePointArray != PrevUpdateArray)
+				{
+					PrevUpdateArray 		= Net_UpdatePointArray;
+					PrevParamUpdateforAll 	= Net_UpdateParamforAll;
+					PrevParamUpdate 		= Net_UpdateDynamicPointParam;
+					PrevUpdatePosition 		= Net_UpdateDynamicPointPosition;
+					
+					UpdateDynamicPointArray();
+					UpdatePointParamforAll();
+					UpdatePointParam();
+					UpdatePointPosition();
+				}
+				
+				if(Net_UpdateParamforAll != PrevParamUpdateforAll)
+				{
+					PrevParamUpdateforAll = Net_UpdateParamforAll;
+					UpdatePointParamforAll();
+				}
+				
+				if(Net_UpdateDynamicPointParam != PrevParamUpdate)
+				{
+					PrevParamUpdate = Net_UpdateDynamicPointParam;
+					UpdatePointParam();
+				}
+				
+				// TODO - Voir pourquoi la mise à jours ne se fait pas bien sur le Radar
+				// EG : est-ce encore d'actualité ?
+				if(Net_UpdateDynamicPointPosition != PrevUpdatePosition)
+				{
+					PrevUpdatePosition = Net_UpdateDynamicPointPosition;
+					UpdatePointPosition();
+				} else if({{{G_IsRadar}}}) {
+					UpdatePointPosition();
+				}
+				
+				//Crée l'animation pour les points High Light
+				if(Net_DynamicPointHighlighted.exists(True))
+				{
+					HighLightUpdate(HighLightPercentage);
+					if(HighLightSens)
+					{
+						HighLightPercentage += 10;
+						if(HighLightPercentage >= 130.) HighLightSens= False;
+					}
+					else
+					{
+						HighLightPercentage -= 10;
+						if(HighLightPercentage <= 100.) HighLightSens= True;
+					}
+				}
+				
+				
+			}
+		}
+	}
+	
+	--></script>
+	<frame posn="{{{G_LayerPosition.X}}} {{{G_LayerPosition.Y}}}" id="Frame_Map">
+		<quad id="Quad_Map_Background" posn="0.0 0.3 -1" sizen="{{{G_QuadMapSize}}} {{{G_QuadMapSize}}}" autoscale="false" valign="center" halign="center" opacity="1." scriptevents="1"/>""";
+		
+		declare Real PercentageMapOutline;
+		
+		if(G_IsRadar)
+		{
+			PercentageMapOutline = G_QuadMapSize*4/100.;
+			ML^="""<quad id="Quad_Contour" posn="0 0.4 4" sizen="{{{G_QuadMapSize + PercentageMapOutline}}} {{{G_QuadMapSize + PercentageMapOutline}}}" autoscale="false" valign="center" halign="center" opacity="1."/>""";
+			
+		}
+		else
+		{
+			PercentageMapOutline = G_QuadMapSize*7./100.;
+			declare Real PositionLabelY = -44.8*(G_QuadMapSize + PercentageMapOutline)/107;
+			declare Real ScaleLabel = 1.7*(G_QuadMapSize + PercentageMapOutline)/107;
+			ML^="""<quad id="Quad_Contour" posn="0 0 4" sizen="{{{G_QuadMapSize + PercentageMapOutline}}} {{{G_QuadMapSize + PercentageMapOutline}}}" autoscale="false"  valign="center" halign="center" opacity="1."/>
+					<label id="Label_MiniMap" posn="0 {{{PositionLabelY}}} 4" text="Mini Map" textsize="1" opacity="0.2" style="TextTitle3" autoscale="false" sizen="26" valign="center" halign="center" scale="{{{ScaleLabel}}}"/>
+			""";
+		}
+		ML^="""
+		<frame posn="0 0 0" id="Frame_MapDynamicPointsCategory" valign="center" halign="center">
+		""";
+	
+	for(i, 0, G_NbQuadDynamic)
+	{
+		ML ^="""
+			<quad valign="center" halign="center" posn="0 0 1" sizen="G_SizePoint G_SizePoint" image="" id="{{{i}}}" scriptevents="1"/>""";
+	}
+	
+	ML ^="""
+		</frame>
+	</frame>""";
+	
+	
+	return ML;
+}
+
+Text BuildRadarLayer() {
+	return Private_BuildMapLayer(True);
+}
+Text BuildMiniMapLayer() {
+	return Private_BuildMapLayer(False);
+}

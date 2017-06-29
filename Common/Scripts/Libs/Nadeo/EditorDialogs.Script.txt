@@ -1,0 +1,153 @@
+
+Integer Display_Common(Text _Message, Text[] _ButtonLabels, Boolean _DisplayTextInput, Text _DefaultTextInput)
+{
+	declare OffsetX = 0.0;			// horizontal center
+	declare OffsetY = 25.0;			// top of the dialog box
+	declare DialogWidth = 150.0;
+	declare MessageWidth = 135.0;
+	declare ButtonWidth = 30.0;
+	declare TextInputWidth = 120.0;
+	
+	declare TopMargin = 3.0;
+	declare MessageHeight = 25.0;
+	declare MiddleMargin1 = 3.0;
+	declare TextInputHeight = 4.0;	// ignored if _DisplayTextInput == False
+	declare MiddleMargin2 = 3.0;		// ignored if _DisplayTextInput == False
+	declare ButtonHeight = 6.0;
+	declare BottomMargin = 3.0;
+	
+	declare DialogHeight = TopMargin + MessageHeight + MiddleMargin1 + ButtonHeight + BottomMargin;
+	if(_DisplayTextInput)
+		DialogHeight += TextInputHeight + MiddleMargin2;
+	
+	if(_ButtonLabels.count == 0)
+	{
+		log("Error in Display_Common : no button labels");
+		return -1;
+	}
+	
+	declare Dialog_ButtonClickedIndex for ManialinkPage = -1;
+	Dialog_ButtonClickedIndex = -1;
+	declare Dialog_TextInput for ManialinkPage = "";
+	
+	declare OldManialinkText = ManialinkText;
+	
+	ManialinkText =
+	"""
+<script><!--
+	Void OnButtonClicked(Integer ButtonIndex)	{ declare Integer Dialog_ButtonClickedIndex for Page; Dialog_ButtonClickedIndex = ButtonIndex; }
+	
+	main () {
+		while(True) {
+			yield;
+			foreach(Event in PendingEvents) {
+				if(Event.Type == CGameManialinkScriptEvent::Type::MouseClick)
+				{
+					for(I,0,{{{_ButtonLabels.count-1}}})
+					{
+						if(Event.ControlId == "Button" ^ I ^ "Quad")
+							OnButtonClicked(I);
+					}
+				}
+			}
+		}
+	}
+--></script>
+<frame>
+	<quad id="DialogQuad" posn="{{{OffsetX}}} {{{OffsetY}}} -1" sizen="{{{DialogWidth}}} {{{DialogHeight}}}" halign="center" style="Bgs1" substyle="BgList"/>
+		
+		<label id="Message" text="{{{_Message}}}" posn="{{{OffsetX}}} {{{OffsetY - TopMargin - MessageHeight/2}}}" sizen="{{{MessageWidth}}} 4" maxlines="5" autonewline="1" halign="center" valign="center" textsize="3"/>
+	""";
+	if(_DisplayTextInput)
+	{
+		ManialinkText ^=
+		"""
+		<entry id="TextInput" text="{{{_Message}}}" default="{{{_DefaultTextInput}}}" posn="{{{OffsetX}}} {{{OffsetY - TopMargin - MessageHeight - MiddleMargin1 - TextInputHeight/2}}}" sizen="{{{TextInputWidth}}} {{{TextInputHeight}}}" halign="center" valign="center" textsize="3"/>
+		""";
+	}
+	for(I,0,_ButtonLabels.count-1)
+	{
+		declare DeltaX = DialogWidth / (1 + _ButtonLabels.count);
+		ManialinkText ^=
+		"""
+		<quad id="{{{"Button" ^ I ^ "Quad"}}}" posn="{{{OffsetX - DialogWidth/2 + (I+1)*DeltaX}}} {{{OffsetY - DialogHeight + BottomMargin + ButtonHeight/2}}} 1" sizen="30 6" halign="center" valign="center" style="Bgs1" substyle="BgCard" ScriptEvents="1"/>
+			<label id="{{{"Button" ^ I ^ "Label"}}}" text="{{{_ButtonLabels[I]}}}" posn="{{{OffsetX - DialogWidth/2 + (I+1)*DeltaX}}} {{{OffsetY - DialogHeight + BottomMargin + ButtonHeight/2}}} 2" halign="center" valign="center" style="TextButtonSmall" textsize="2"/>
+		""";
+	}
+	ManialinkText ^=
+	"""
+		</frame>
+	""";
+	
+	while(Dialog_ButtonClickedIndex == -1)
+		yield;
+	
+	if(_DisplayTextInput)
+	{
+		declare TextInputEntry <=> (ManialinkPage.GetFirstChild("TextInput") as CMlEntry);
+		Dialog_TextInput = TextInputEntry.Value;
+	}
+	
+	ManialinkText = OldManialinkText;
+	
+	return Dialog_ButtonClickedIndex;
+}
+
+
+Void Display_Message(Text _Message)
+{
+	declare Text[] ButtonLabels;
+	ButtonLabels.add("Ok");
+	declare ButtonClickedIndex = Display_Common(_Message, ButtonLabels, False, "");
+}
+
+Text Display_YesNo(Text _Message)
+{
+	declare Text[] ButtonLabels;
+	ButtonLabels.add("Yes");
+	ButtonLabels.add("No");
+	declare ButtonClickedIndex = Display_Common(_Message, ButtonLabels, False, "");
+	return ButtonLabels[ButtonClickedIndex];
+}
+
+Text Display_OkCancel(Text _Message)
+{
+	declare Text[] ButtonLabels;
+	ButtonLabels.add("Ok");
+	ButtonLabels.add("Cancel");
+	declare ButtonClickedIndex = Display_Common(_Message, ButtonLabels, False, "");
+	return ButtonLabels[ButtonClickedIndex];
+}
+
+Text Display_YesNoCancel(Text _Message)
+{
+	declare Text[] ButtonLabels;
+	ButtonLabels.add("Yes");
+	ButtonLabels.add("No");
+	ButtonLabels.add("Cancel");
+	declare ButtonClickedIndex = Display_Common(_Message, ButtonLabels, False, "");
+	return ButtonLabels[ButtonClickedIndex];
+}
+
+Text Display_Custom(Text _Message, Text[] _ButtonLabels)
+{
+	declare ButtonClickedIndex = Display_Common(_Message, _ButtonLabels, False, "");
+	return _ButtonLabels[ButtonClickedIndex];
+}
+
+Text Display_TextInput(Text _Message, Text _ResultOnCancel, Text _DefaultText)
+{
+	declare Text[] ButtonLabels;
+	declare Text Dialog_TextInput for ManialinkPage;
+	ButtonLabels.add("Ok");
+	ButtonLabels.add("Cancel");
+	declare ButtonClickedIndex = Display_Common(_Message, ButtonLabels, True, _DefaultText);
+	if(ButtonClickedIndex == 0)
+		return Dialog_TextInput;
+	return _ResultOnCancel;	// on cancel
+}
+
+Text Display_TextInput(Text _Message, Text _ResultOnCancel)
+{
+	return Display_TextInput(_Message, _ResultOnCancel, "");
+}

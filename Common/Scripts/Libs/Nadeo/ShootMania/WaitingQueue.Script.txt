@@ -1,0 +1,919 @@
+//////////////////////////////////////////
+//   Waiting Queue Lib
+//////////////////////////////////////////
+
+#Const Version 				"2014-12-02"
+#Const ScriptName			"WaitingQueue.Script.txt"
+
+#Const DEBUG				False						///< Active debug mode
+
+
+#Include "MathLib" as MathLib
+#Include "TextLib" as TL
+
+
+declare Ident[Ident]		PlayersTeam; 				///< Who is in the team of who (PlayerId => TeamId)
+declare Integer[Ident]	    AllTeams;					///< All Team created and number of player in each
+declare Ident[Integer]		WaitingQueue;				///< order in wich teams will play
+declare Integer[Ident] 		LockedTeam;					///< Team is locked ?
+declare Text[Ident]			TeamName;					///< Name of teams
+declare Integer[Ident]		MatchResults;				///< Results of the current match
+declare Integer[Ident][]	PreviousMatchResults;		///< Results of the previous matches
+declare Boolean[Ident] 		IsABot;						///< Players are bots or not ?
+
+declare Integer				NBPLAYERS;					///< The number of players in one team to get ready
+declare Boolean 			USETEAM;					///< FFA ou Team ?
+declare Boolean				USEBOT;						///< Allow bots or not
+declare Boolean				USELIB;						///< Use this lib or not	
+
+declare Ident 				LayerWaitingLineId;	
+declare Ident[]				UsedLayers;	
+declare Integer				LastUpdate;
+
+declare Boolean 			G_LibWQ_DisplayScore;		///< If true, displays a custom table with scores.
+
+/* ------------------------------------- */
+/** Return the version number of the script
+ *
+ *	@return		The version number of the script
+ */
+Text GetScriptVersion() {
+	return Version;
+}
+
+/* ------------------------------------- */
+/** Return the name of the script
+ *
+ *	@return		The name of the script
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+/* ------------------------------------- */
+/** DEBUG Functions
+ */
+
+Void DEBUG() {
+	if(DEBUG) {
+		log("PlayersTeam = "^PlayersTeam);
+		log("AllTeams = "^AllTeams);
+		log("WaitingQueue = "^WaitingQueue);
+	}
+}
+
+Boolean MapBegin() {
+	return MatchResults.count == 0;
+}
+/* ------------------------------------- */
+/** Accesseurs
+ */
+
+Integer WaitingQueueLength() {
+	return WaitingQueue.count;
+}
+
+Ident GetWaitingQueue(Integer _Pos) {
+	if(WaitingQueue.existskey(_Pos))
+		return WaitingQueue[_Pos];
+	if(DEBUG) log("WL->GetWaitingQueue: Out of array :"^_Pos^"/"^WaitingQueueLength()-1);
+	return NullId;
+}
+
+Text GetTeamName(Ident _PlayerId) {
+	if(TeamName.existskey(_PlayerId))
+		return TeamName[_PlayerId];
+	else if(PlayersTeam.existskey(_PlayerId) && TeamName.existskey(PlayersTeam[_PlayerId])) 
+		return TeamName[PlayersTeam[_PlayerId]];
+	if(DEBUG) log("WL->GetTeamName: "^_PlayerId^" doesn't have a TeamName");
+	return "";
+}
+
+Text GetTeamName(Integer _TeamPos) {
+	if(!USELIB && Teams.existskey(_TeamPos)) return Teams[_TeamPos].ColorizedName;
+	return GetTeamName(GetWaitingQueue(_TeamPos));
+}
+
+/* ------------------------------------- */
+/** Manually lock a team (during playing phase for instance)
+ *
+ * @param _TeamId		The Id of the team
+ * @param _TeamPos		The position of the team in the WaitingQueue
+ */
+Void LockTeam(Ident _TeamId) {
+	if(LockedTeam.existskey(_TeamId) && LockedTeam[_TeamId] == 0) LockedTeam[_TeamId] = 2;
+}
+
+Void LockTeam(Integer _TeamPos) {
+	if(WaitingQueue.existskey(_TeamPos)) 
+		LockTeam(WaitingQueue[_TeamPos]);
+}
+
+/* ------------------------------------- */
+/** Update the array LockedTeam
+ *
+ *  @return 	s'il y a eu une action (nécessité d'updater le layer)
+ */
+Boolean UpdateLockedTeam() {
+
+	declare Return = False;
+
+	foreach(TeamId => NbMembers in AllTeams) {
+		if(!Players.existskey(TeamId)) continue;
+		declare UI <=> UIManager.GetUI(Players[TeamId]);
+		if(UI == Null) continue;
+		declare netread Net_LockTeam for UI = 0;
+		if(!LockedTeam.existskey(TeamId) || ((LockedTeam[TeamId] == 2 && Net_LockTeam == 1) 
+		|| (LockedTeam[TeamId] == 1 && Net_LockTeam == 0) || (LockedTeam[TeamId] == 0 && Net_LockTeam == 1))) {
+			LockedTeam[TeamId] = Net_LockTeam;
+			Return = True;
+		}
+	}
+	return Return;
+}
+
+
+/* ------------------------------------- */
+/** Fill the array with PlayersId in the _TeamId
+ * 
+ * @param _TeamId		The Team Id
+ * @param _TeamPos		The Team position in the WaitingQueue
+ *
+ * @return Team			The array with id of players
+ */
+Ident[] FillTeam(Ident _TeamId) {
+	declare Ident[] Team;
+	foreach(PlayerId => TeamId in  PlayersTeam) {
+		if(TeamId == _TeamId)
+			if(!Team.exists(PlayerId)) Team.add(PlayerId);
+	}
+	return Team;
+}
+
+Ident[] FillTeam(Integer _TeamPos) {
+	return FillTeam(GetWaitingQueue(_TeamPos));
+}
+
+/* ------------------------------------- */
+/** go to the end of the WaitingQueue
+ * 
+ * @param _TeamPos		The position of the team in the WaitingQueue
+ */
+Void UpdateQueueMap(Integer _TeamPos) {
+	if(WaitingQueue.count < 2 || !WaitingQueue.existskey(_TeamPos)) return;
+	declare old = WaitingQueue[_TeamPos];
+	for(i, _TeamPos, WaitingQueue.count-2) {
+		WaitingQueue[i] = WaitingQueue[i+1];
+	}
+	WaitingQueue[WaitingQueue.count-1] = old;
+}
+
+Void UpdateQueueSubmatch(Integer _TeamPos) {
+	if(WaitingQueue.count < 3) return;
+	if(_TeamPos == 0) {
+		declare old = WaitingQueue[0];
+		WaitingQueue[0] = WaitingQueue[2];
+		WaitingQueue[2] = old;
+		UpdateQueueMap(2);
+	} else UpdateQueueMap(_TeamPos);
+}
+
+/* ------------------------------------- */
+/** Update the array WaitingQueue
+ */
+Void UpdateWaitingQueue() { 
+	declare i = 0;
+
+	foreach(TeamId => NbMembers in AllTeams) {
+		if(NbMembers >= NBPLAYERS) {
+			if(!WaitingQueue.exists(TeamId)) {
+				WaitingQueue[WaitingQueue.count] = TeamId;
+				declare Text MembersLogin;
+				foreach(PlayerId in FillTeam(TeamId)) {
+					if(Players.existskey(PlayerId)) {
+						MembersLogin ^= Players[PlayerId].User.Login^";";
+					}
+				}
+				XmlRpc.SendCallback("TeamReady", MembersLogin);
+			}
+		}
+		else if (WaitingQueue.exists(TeamId)) {
+				UpdateQueueMap(WaitingQueue.keyof(TeamId));
+				if(!WaitingQueue.removekey(WaitingQueue.count-1)) {}
+			}
+	}
+}
+
+/* ------------------------------------- */
+/** Check players who quit or spectate
+ *
+ *  @return 	s'il y a eu une action (nécessité d'updater le layer)
+ */
+Boolean UpdatePlayersOnServeur() { 
+	declare Return = False;
+
+	foreach(PlayerId => TeamId in PlayersTeam) {
+		if(!Players.existskey(PlayerId)) { 
+			if(!PlayersTeam.removekey(PlayerId)) {}
+			Return = True;
+		} 
+		if(!Players.existskey(TeamId)) {
+					if(!PlayersTeam.removekey(PlayerId)) {}
+			if(AllTeams.existskey(TeamId)) 
+				if(!AllTeams.removekey(TeamId)) {}
+					if(WaitingQueue.exists(TeamId)) {
+						UpdateQueueMap(WaitingQueue.keyof(TeamId));
+						if(!WaitingQueue.removekey(WaitingQueue.count-1)) {}
+					}
+					Return = True;
+				}	
+	}
+	return Return;
+}
+
+/* ------------------------------------- */
+/** Bots fonctionnality	
+ *
+ *	Use UpdateBot(a,b); to have bots on the map
+ */
+
+Void UpdateIsABot() {
+	foreach(Player in Players) {
+		IsABot[Player.Id] = Player.IsFakePlayer;
+	}
+}
+
+Void BotJoinTeam()
+{
+	if(!USEBOT) {
+		if(DEBUG) log("WL->BotJoinTeam : Unable to Use; _UseBot = False");
+		return;
+	}
+	
+	foreach(Player in Players) {
+		if(!Player.IsFakePlayer) continue;
+		foreach(TeamId => NbMembers in AllTeams) {
+			if(NbMembers < NBPLAYERS && !PlayersTeam.existskey(Player.Id)) {
+				PlayersTeam[Player.Id] = TeamId;
+				AllTeams[TeamId] += 1;
+				break;
+			}
+		}
+	}
+}
+
+Void UpdateBot(Integer _a, Integer _b) {
+
+	if(!USEBOT) {
+		if(DEBUG) log("WL->UpdateBot : Unable to Use; _UseBot = False");
+		return;
+	}
+	
+	foreach(PlayerId => IsFakePlayer in IsABot) {
+		if(IsFakePlayer && PlayersTeam.existskey(PlayerId)) {
+			DEBUG();
+			AllTeams[PlayersTeam[PlayerId]] -= 1;
+			if(!PlayersTeam.removekey(PlayerId)) {}
+		}
+	}
+	IsABot.clear();
+	SetNbFakePlayers(_a, _b);
+	UpdateIsABot();
+	BotJoinTeam();
+}
+
+
+// fonctions à placer dans TextLib...?
+/* ------------------------------------- */
+/** the text is hexadecimal
+ * 
+ * @param _T	The text
+ */
+Boolean IsHexa(Text _T) {
+	declare CurrentCar = "";
+	for(i, 0, TL::Length(_T)-1) {
+		CurrentCar = TL::SubString(_T, i, 1);
+		if(CurrentCar != "0" && CurrentCar != "1" && CurrentCar != "2" && CurrentCar != "3" &&
+		CurrentCar != "4" && CurrentCar != "5" && CurrentCar != "6" && CurrentCar != "7" &&
+		CurrentCar != "8" && CurrentCar != "9" && CurrentCar != "a" && CurrentCar != "b" && 
+		CurrentCar != "c" && CurrentCar != "d" && CurrentCar != "e" && CurrentCar != "f" && 
+		CurrentCar != "A" && CurrentCar != "B" && CurrentCar != "C" && CurrentCar != "C" && 
+		CurrentCar != "D" && CurrentCar != "E" && CurrentCar != "F") 
+			return False;
+	}
+	return True;
+}
+
+/* ------------------------------------- */
+/** Parse the PlayerName to find the team tag
+ * 
+ * @param _PlayerName	PlayerName
+ *
+ * @return				Tag of the team
+ */
+Text TeamTag(Text _PlayerName) {
+	declare i = 0;
+	declare j = 0;
+	declare BracketOpen = False;
+	declare CurrentCar = "";
+	while(i+j < TL::Length(_PlayerName)) { 
+		CurrentCar = TL::SubString(_PlayerName, i+j, 1);
+		if(CurrentCar == "$") {
+			CurrentCar = TL::SubString(_PlayerName, i+j+1, 1);
+			// it's a color
+			if(IsHexa(CurrentCar)) {
+				j += 3;
+			} else {
+				CurrentCar = TL::SubString(_PlayerName, i+j+1, 1);
+				declare NextCar = TL::SubString(_PlayerName, i+j+2, 1);
+				if(( CurrentCar == "h" || CurrentCar == "H" || CurrentCar == "l" || CurrentCar == "L") && NextCar == "[") {
+					j += 2;
+					while(CurrentCar != "]") {
+						j += 1;
+						CurrentCar = TL::SubString(_PlayerName, i+j, 1);
+					}
+				}
+				else j += 1;
+			}
+			j += 1;
+			continue;
+		}
+		if(CurrentCar == "." || CurrentCar == " " || CurrentCar == "'" || CurrentCar == "|" || CurrentCar == "`" || CurrentCar == "-" || CurrentCar == "~" || CurrentCar == "=" || CurrentCar == "/" || CurrentCar == "\\") {
+			if(i > 1 && i < 7 && !BracketOpen)  
+				return "Team "^TL::SubString(_PlayerName, 0, i+j);
+		} else if (CurrentCar == "]" || CurrentCar == "}" || CurrentCar == ")" || CurrentCar == "<" || CurrentCar == ">") {
+			if(i > 2 && i < 9 && BracketOpen)
+				return "Team "^TL::SubString(_PlayerName, 0, i+j+1);
+		} else if (CurrentCar == "[" || CurrentCar == "{" || CurrentCar == "(" || CurrentCar == "<" || CurrentCar == ">") 
+			BracketOpen = True;
+		i += 1;
+	}
+	return _PlayerName;
+}
+
+/* ------------------------------------- */
+/** Check if a team name is valid
+ * 
+ * @param _TeamName		The new TeamName
+ *
+ * @return				is valid or not
+ */
+Boolean IsValidTeamName(Text _TeamName) {
+	declare Length = 0;
+	declare i = 0;
+	declare CurrentCar = "";
+	while(i+Length < TL::Length(_TeamName)) {
+		CurrentCar = TL::SubString(_TeamName, i+Length, 1);
+		if(CurrentCar == "$") {
+			i += 1;
+			CurrentCar = TL::SubString(_TeamName, i+Length, 1);
+			// it's a color
+			if(IsHexa(CurrentCar)) {
+				i += 3;
+			} else {
+				declare NextCar = TL::SubString(_TeamName, i+Length+1, 1);
+				if(( CurrentCar == "h" || CurrentCar == "H" || CurrentCar == "l" || CurrentCar == "L") && NextCar == "[") {
+					i += 2;
+					while(CurrentCar != "]") {
+						i += 1;
+						CurrentCar = TL::SubString(_TeamName, i+Length, 1);
+					}
+				}
+				else i += 1;
+			}
+		} else Length += 1;
+	}
+	if(TL::SubString(_TeamName, TL::Length(_TeamName)-1, 1) == "$" 
+	&& TL::SubString(_TeamName, TL::Length(_TeamName)-2, 2) != "$$") 
+		return False;
+	if(Length > 1 && Length < 15) return True; 
+	return False;
+}
+/* ------------------------------------- */
+/** Update the array LockedTeam
+ *
+ *  @return 	s'il y a eu une action (nécessité d'updater le layer)
+ */
+Boolean UpdateTeamName() {
+	
+	declare Return = False;
+
+	foreach(TeamId => NbMembers in AllTeams) {
+		if(!Players.existskey(TeamId)) continue;
+		declare UI <=> UIManager.GetUI(Players[TeamId]);
+		if(UI == Null) continue;
+		declare netread Net_TeamName for UI = "";
+		declare OldTeamName for UI = "";
+		declare ShortName = TL::SubText(Net_TeamName, 0, 30);
+		if(ShortName != "" && OldTeamName != ShortName && TeamName.existskey(TeamId) 
+			&& TeamName[TeamId] != ShortName) {
+			if(IsValidTeamName(ShortName)) {
+				TeamName[TeamId] = ShortName;
+				Return = True;
+			}
+			OldTeamName = ShortName;
+		}
+	}
+	return Return;
+}
+
+/* ------------------------------------- */
+/** Update the array PlayersTeam; When a player click on a team to join it on the manialink
+ *
+ *  @return 			if we have to update the layer
+ */
+Boolean UpdatePlayersTeam() {
+
+	if(!USETEAM) {
+		if(DEBUG) log("WL->UpdatePlayersTeam : Unable to Use; _UseTeam = False");
+		return False;
+	}
+	
+	declare Return = False;
+	
+	Return = UpdateLockedTeam(); 
+	
+	foreach(Player in Players) {
+	
+		if(Player.IsFakePlayer) continue;
+		declare UI <=> UIManager.GetUI(Player);
+		if(UI == Null) continue;
+		declare netread Net_PlayerToJoinLogin for UI = "";
+		declare PlayerTeamLogin for Player = "";
+		declare PlayerToJoinId = NullId;
+		
+		if(Net_PlayerToJoinLogin != PlayerTeamLogin) {
+			foreach(Player in Players) {
+				if(Player.User.Login == Net_PlayerToJoinLogin) {
+					PlayerToJoinId = Player.Id; 
+					break;	
+				}
+			}
+			// it's a new team
+			if(!AllTeams.existskey(PlayerToJoinId) && PlayerToJoinId != NullId) {
+				PlayersTeam[PlayerToJoinId] = PlayerToJoinId;
+				AllTeams[PlayerToJoinId] = 1;
+				TeamName[PlayerToJoinId] = TeamTag(Players[PlayerToJoinId].User.Name);
+			// join a team which already exist
+			} else if(PlayerToJoinId != NullId && AllTeams.existskey(PlayerToJoinId) 
+			&& LockedTeam[PlayerToJoinId] == 0) {
+					PlayersTeam[Player.Id] = PlayerToJoinId;
+					AllTeams[PlayerToJoinId] += 1;
+					if(AllTeams.existskey(Player.Id)) {
+						if(!AllTeams.removekey(Player.Id)) {}
+					}
+					if(WaitingQueue.exists(Player.Id)) {
+						if(!WaitingQueue.remove(Player.Id)) {}
+					}			
+			}
+			PlayerTeamLogin = Net_PlayerToJoinLogin;
+			Return = True;
+		}
+	}
+	return Return;
+}
+
+/* ------------------------------------- */
+/** Identify the tag of a player and join his team if it exists
+ *
+ *  @return 	s'il y a eu une action (nécessité d'updater le layer)
+ */
+Boolean AutoJoinTeamWithTag() {
+
+	declare Return = False;
+	
+	foreach(Player in Players) {
+		if(Player.IsFakePlayer) continue;
+		declare Integer TryAutoJoinTag for Player;
+		if(PlayersTeam.existskey(Player.Id) && TryAutoJoinTag != AllTeams.count) continue;
+		declare Tag = TeamTag(Player.User.Name);
+		if(TeamName.exists(Tag) && AllTeams.existskey(TeamName.keyof(Tag)) 
+		&& LockedTeam.existskey(TeamName.keyof(Tag)) && LockedTeam[TeamName.keyof(Tag)] == 0 
+		&& Players.existskey(TeamName.keyof(Tag))) {
+			declare TeamId = TeamName.keyof(Tag);
+			declare PlayerTeamLogin for Player = "";
+			PlayersTeam[Player.Id] = TeamId;
+			AllTeams[Player.Id] += 1;
+			PlayerTeamLogin = Players[TeamId].User.Login;
+			Return = True;
+		}
+		TryAutoJoinTag = AllTeams.count;
+	}
+	return Return;
+}
+
+Boolean AutoJoinTeam() {
+	declare Return  = False;
+	foreach(Player in Players) {
+		if(PlayersTeam.existskey(Player.Id)) continue;
+		PlayersTeam[Player.Id] = Player.Id;
+		AllTeams[Player.Id] = 1;
+		TeamName[Player.Id] = Player.User.Name;
+		Return = True;
+	}
+	return Return;
+}
+
+
+
+
+Ident GetWinner(Integer _NbPoints) {
+	foreach(TeamId => Score in MatchResults) {
+		if(Score >= _NbPoints) return TeamId;
+	}
+	return NullId;
+}
+
+Integer GetScore(Ident _TeamId) {
+	if(MatchResults.existskey(_TeamId))
+		return MatchResults[_TeamId];
+	return 0;
+}
+
+Integer GetScore(Integer _TeamPos) {
+	if(WaitingQueue.existskey(_TeamPos))
+		return GetScore(WaitingQueue[_TeamPos]);
+	return 0;
+}
+
+Void EndMap() {
+	PreviousMatchResults.add(MatchResults);
+	MatchResults.clear();
+}
+
+/* ------------------------------------- */
+/** Update Score after a match 
+ *
+ * @param _TeamId		The Id of the team
+ * @param _TeamPos		The position of the team in the WaitingQueue
+ */
+
+Void EndMatch(Ident _TeamIdWin, Ident _TeamIdLoose) {
+	if(_TeamIdWin != NullId) {
+		if(MatchResults.existskey(_TeamIdWin)) MatchResults[_TeamIdWin] += 1;
+		else MatchResults[_TeamIdWin] = 1;
+	}
+	if(_TeamIdLoose != NullId) {
+		if(MatchResults.existskey(_TeamIdLoose)) MatchResults[_TeamIdLoose] += 0;
+		else MatchResults[_TeamIdLoose] = 0;
+	}
+}
+Void EndMatch(Integer _TeamWinPos, Integer _TeamLoosePos) {
+	EndMatch(GetWaitingQueue(_TeamWinPos) ,GetWaitingQueue(_TeamLoosePos));
+}
+
+
+/* ------------------------------------- */
+/** Manialink to display the waiting Queue
+ *
+ * @return				The manialink
+ */
+Text UpdateLayerWaitingQueue() {
+
+	if(!USELIB) return "";
+	
+	// display the waiting Queue
+	declare i = 0;
+	declare Text Frame;
+	declare Marge = 0;
+	if(WaitingQueueLength() > 2) Marge = 1;
+		
+	declare Taille = WaitingQueueLength();
+	if(Taille > 9) Taille = 9;
+	declare Integer quadsize;
+	if(Taille > 1) quadsize = Taille - 2;
+	declare Real Width = 42.;//35.; // 33. & 31.
+	
+	Frame = """<frame posn="-162 25 2">""";
+	
+	Frame ^= """
+		<quad posn="0 -2 3" sizen="{{{Width}}} {{{ quadsize*5+7+Marge }}}" halign="left" image="file://Media/Manialinks/ShootMania/Common/RoleChoiceBg.dds" colorize="777" />
+		<label posn="{{{Width/2.}}} -3.5 5" halign="center" text="{{{_("Waiting Queue")}}}" textsize="2" sizen="40 0" textemboss="1" />""";
+
+	for(j, 2, Taille-1) {
+		i += 1;
+		Frame ^= """<label posn="{{{Width/2.}}} {{{ -5*i-4 }}} 5" halign="center" text="{{{ TL::MLEncode(GetTeamName(j)) }}}" textsize="2" sizen="40 0" textemboss="1"  />""";
+	}
+	
+	/*
+	Frame ^= """<quad posn="0 0 4" sizen="33 10" halign="left" style="Bgs1InRace" substyle="BgTitle2" />
+		<quad posn="0 -2 3" sizen="31 {{{ quadsize*5+6+Marge }}}" halign="left" style="Bgs1InRace" substyle="BgWindow3" />
+		<label posn="5 -3 5" halign="left" text="{{{_("Waiting Queue")}}}" sizen="25 0" />""";
+
+	for(j, 2, Taille-1) {
+		i += 1;
+		Frame ^= """<label posn="5 {{{ -5*i-4 }}} 5" halign="left" text="{{{ TL::MLEncode(GetTeamName(j)) }}}" sizen="25 0" />""";
+	}
+	*/
+	Frame ^= "</frame>";
+
+
+	// display the score layer
+	if(G_LibWQ_DisplayScore) {
+		declare Integer[Ident][] AllMatchResults = PreviousMatchResults;
+		if(!(MatchResults.count == 0)) AllMatchResults.add(MatchResults);
+		
+		declare LineHeight = 6;
+		declare NamesWidth = 23;
+		declare ScoreMargin = 2;
+		declare ScoreWidth = 6;
+		declare TopMargin = 3;
+		declare LeftMargin = 5;
+		
+		while (AllMatchResults.count > 5) {
+			declare Removed = AllMatchResults.removekey(0);
+			if(DEBUG) log("AllMatchResults = "^AllMatchResults);
+		}
+		
+		declare Ident[] TeamNames;
+		foreach (iMatch => Results in AllMatchResults) {
+			foreach (TeamId => Score in Results) {
+				if (!TeamNames.exists(TeamId) && Players.existskey(TeamId)) TeamNames.add(TeamId);
+			}
+		}
+		
+		if(AllMatchResults.count == 0 && MatchResults.count == 0) return Frame;
+		
+		Frame ^= """<frame posn="164 25 2">
+				<quad posn="0 0 4" sizen="{{{ LeftMargin+NamesWidth+2 }}} {{{TeamNames.count*LineHeight+2*TopMargin-1}}}" 
+					halign="right" style="Bgs1InRace" substyle="BgTitle2" />
+				<quad posn="0 {{{ 1-TopMargin }}} 3" sizen="{{{ LeftMargin+NamesWidth+2+AllMatchResults.count*(ScoreWidth+ScoreMargin) }}} {{{TeamNames.count*LineHeight+1}}}" halign="right" style="Bgs1InRace" substyle="BgWindow3" />""";
+		
+		foreach (iTeam => TeamId in TeamNames) {
+			declare Y =  - TopMargin - iTeam*LineHeight;
+			Frame ^= """<label posn="{{{ -LeftMargin+1 }}} {{{Y}}} 5" halign="right"
+					text="{{{ TL::MLEncode(GetTeamName(TeamId)) }}}" sizen="{{{NamesWidth}}} 0" />""";
+			declare j = 0;
+			declare xshift = AllMatchResults.count - 1;
+			if (xshift > 4) xshift = 4;
+			foreach (iMatch => Results in AllMatchResults) {
+				declare TeamMatchScore = -1;
+				foreach (Id => Score in Results) {
+					if (Id == TeamId) {
+						TeamMatchScore = Score;
+						break;
+					}
+				}
+				if(j > 4) break;
+				j += 1;
+				Frame ^= """<label posn="{{{ -LeftMargin - NamesWidth - ScoreWidth - (xshift - iMatch)*(ScoreWidth+ScoreMargin)}}} {{{Y}}}	5" """;
+				if(TeamMatchScore >= 0) {
+					Frame ^= """ halign="left" text="{{{ TeamMatchScore }}}" style="TextValueSmallSm" />""";
+				} else {
+					Frame ^= """ halign="left" text="" style="TextValueSmallSm" />""";
+				}
+			}
+		}
+	
+		Frame ^= "</frame>";
+	}
+	
+	return Frame;
+}
+
+/* ------------------------------------- */
+/** Manialink to choose and create a team
+ * 
+ * @param _PlayerId		The id of the player
+ *
+ * @return				The manialink
+ */
+Text UpdateLayerChooseTeam(Ident _PlayerId) { 
+	if(!USELIB) return "";
+	if(!USETEAM) {
+		if(DEBUG) log("WL->UpdateLayerChooseTeam : Unable to Use; _UseTeam = False");
+		return "";
+	}
+	
+	
+	declare i = 1;
+	declare Integer Member;
+	declare Text ScriptEvent;
+	declare Text Label;
+	declare TeamClosed = False;
+	
+	declare Frame = """<frame posn="138 30 2" id="Frame_ChooseTeam">""";
+	
+	foreach(TeamId => NbMembers in AllTeams) {
+		TeamClosed = LockedTeam.existskey(TeamId) && LockedTeam[TeamId] != 0;
+		Member = 0; 		// he is not a team member
+		if(PlayersTeam.existskey(_PlayerId) && PlayersTeam[_PlayerId] == TeamId)
+			Member = 1;	    // he is just a team member
+		if(TeamId == _PlayerId)
+			Member = 2;		// he is a team leader
+			
+		if(Member == 1) {
+			ScriptEvent = "";
+			Label = """label text="{{{ TL::MLEncode(TeamName[TeamId]) }}}" """;
+		} else if(Member == 2) {
+			ScriptEvent = """name="ChangeTeamName" id="ChangeTeamName" """;
+			Label = """entry default="{{{ TL::MLEncode(TeamName[TeamId]) }}}" """;
+		} else {
+			ScriptEvent = """ id="{{{ TeamId }}}" ScriptEvents="1" """;
+			Label = """label text="Join {{{ TL::MLEncode(TeamName[TeamId]) }}}" """;
+		}
+
+		Frame ^= """<quad posn="0 {{{ -8*i+3 }}} 4" sizen="42 10" halign="center" style="Bgs1InRace" substyle="BgTitle2"/>
+			<label text="{{{ AllTeams[TeamId] }}}/{{{NBPLAYERS}}} " posn="-18 {{{ -8*i }}} 5"  />
+			<{{{ Label }}} posn="4 {{{ -8*i }}} 5" halign="center" sizen="29 0" {{{ ScriptEvent }}} />""";
+				
+		// if the player is the leader of the team
+		if(Member == 2) {
+			if(TeamClosed)
+				Frame ^="""<quad posn="18 {{{ -8*i }}} 6" sizen="5 5" style="Icons128x128_1" id="LockTeam" 
+				substyle="BackFocusable" ScriptEvents="1" />""";
+			else Frame ^="""<quad posn="18 {{{ -8*i }}} 6" sizen="5 5" style="Icons128x128_Blink"  
+				id="LockTeam" substyle="BackFocusable" ScriptEvents="1" />""";
+				
+		// if the player is just in the team
+		} else if(Member == 1) {
+				Frame ^= """<quad posn="18 {{{-8*i}}} 6" sizen="5 5" style="Icons128x128_1" substyle="BackFocusable"/>""";
+				}
+		if(TeamClosed) {
+			Frame ^="""<quad posn="-23 {{{ -8*i+1 }}} 6" sizen="5 5" style="Icons128x128_1"  id="LockTeam" 
+			substyle="Padlock" ScriptEvents="1" />""";
+		}
+		i+= 1;
+	}
+	
+	if(!AllTeams.existskey(_PlayerId)) {
+		Frame ^= """<quad posn="0 {{{ -8*i+3 }}} 4" sizen="42 10" halign="center" style="Bgs1InRace" substyle="BgTitle2" />
+		<label posn="0 {{{ -8*i }}} 4" halign="center" text="Create New Team"  id="NewTeam" ScriptEvents="1" />""";
+	}
+	Frame ^= "</frame>";
+	Frame ^="""<script><!--
+	main () {
+		declare netwrite Net_TeamName for UI = "";
+		declare OldTeamName = "";
+		declare NewTeamName = "";
+		declare EntryTeamName <=> (Page.GetFirstChild("ChangeTeamName") as CMlEntry);
+		if(EntryTeamName != Null) {
+			OldTeamName = EntryTeamName.Value;
+			NewTeamName = EntryTeamName.Value;
+			Net_TeamName = EntryTeamName.Value;
+		}
+		declare netwrite Net_PlayerToJoinLogin for UI = "";
+		declare netwrite Net_LockTeam for UI = 0;
+		
+		Net_PlayerToJoinLogin = "";
+		
+		while(True) {
+			yield;
+			
+			if(EntryTeamName != Null) {
+				NewTeamName = EntryTeamName.Value;
+			}
+			if(NewTeamName != OldTeamName) {
+				Net_TeamName = NewTeamName;
+			}
+			// process events.
+			foreach(Event in PendingEvents)	{
+				switch(Event.Type){
+					case CMlEvent::Type::MouseClick :
+					{""";
+						foreach(TeamId => NbMembers in AllTeams) {
+							Frame ^="""if (Event.ControlId == "{{{ TeamId }}}") 
+										Net_PlayerToJoinLogin = "{{{ Players[TeamId].User.Login }}}";""";
+						}
+						Frame ^="""if (Event.ControlId == "NewTeam")	
+										Net_PlayerToJoinLogin = "{{{ Players[_PlayerId].User.Login }}}"; """;
+						Frame ^="""if (Event.ControlId == "LockTeam") {
+										if(Net_LockTeam != 0) Net_LockTeam = 0;
+										else Net_LockTeam = 1;
+									} """;	
+	Frame ^= """	}
+				}
+			}
+		}
+	}
+--></script>
+""";
+
+	// display players in your team
+	if(PlayersTeam.existskey(_PlayerId)) {
+		Frame ^= """<frame posn="164 -35 2" id="PlayersInTeam" >""";
+		Frame ^= """<quad posn="0 0 4" sizen="38 10" halign="right" style="Bgs1InRace" substyle="BgTitle2" />
+			<quad posn="0 -2 3" sizen="36 {{{ AllTeams[PlayersTeam[_PlayerId]]*5+7 }}}" 
+				halign="right" style="Bgs1InRace" substyle="BgWindow3" />
+			<label posn="-7 -3 5" halign="right" text="{{{ TL::MLEncode(GetTeamName(PlayersTeam[_PlayerId])) }}}" sizen="28 0" />""";
+		declare j = 1;
+		
+		foreach(PlayerId in FillTeam(PlayersTeam[_PlayerId])) {
+			if(j > 6) break;
+			Frame ^= """<label posn="-5 {{{ -5*j-4 }}} 5" halign="right" 
+					text="{{{ TL::MLEncode(Players[PlayerId].User.Name) }}}" sizen="30 0" />""";
+			j += 1;
+		}
+		Frame ^= "</frame>";
+	}
+	return Frame;
+}
+
+// Phase = 0 playing time, 1 warmup KotM, 2 warmup free, 3 waiting time, 4 transition 
+Void UpdateLayers(Integer _Phase) {
+	
+	declare UnusedLayers = Ident[];
+	declare TempLayers = Ident[];
+	declare CUILayer LayerWaitingLine;
+
+	if(USETEAM) {
+		foreach (Player in Players) {
+			declare UI <=> UIManager.GetUI(Player);
+			if (UI == Null) continue;
+			declare CUILayer LayerChooseTeam;
+			declare Ident LayerChooseTeamId for UI;
+			if(UI.UILayers.existskey(LayerChooseTeamId)) {
+				LayerChooseTeam <=> UI.UILayers[LayerChooseTeamId];
+			} else {
+				LayerChooseTeam <=> UIManager.UILayerCreate();
+				LayerChooseTeamId = LayerChooseTeam.Id;
+				UI.UILayers.add(LayerChooseTeam);
+			}
+			
+			if(!UsedLayers.exists(LayerChooseTeam.Id)) UsedLayers.add(LayerChooseTeam.Id);
+			TempLayers.add(LayerChooseTeam.Id);
+			
+			LayerChooseTeam.ManialinkPage = UpdateLayerChooseTeam(Player.Id);
+			if (Player.CurrentClan == 0 && _Phase != 4) {
+				LayerChooseTeam.IsVisible = True;
+			} else if(_Phase == 1) {
+				LayerChooseTeam.IsVisible = False;
+			} else if (_Phase == 3) {
+				LayerChooseTeam.IsVisible = True;
+			} else {
+				LayerChooseTeam.IsVisible = False;
+			}
+		}
+	}
+	if(!UIManager.UIAll.UILayers.existskey(LayerWaitingLineId)) {
+		LayerWaitingLine <=> UIManager.UILayerCreate();
+		UIManager.UIAll.UILayers.add(LayerWaitingLine);
+		LayerWaitingLineId = LayerWaitingLine.Id;
+		LayerWaitingLine.Type = CUILayer::EUILayerType::ScoresTable;
+	}
+	UIManager.UIAll.UILayers[LayerWaitingLineId].ManialinkPage = UpdateLayerWaitingQueue();
+	
+	if (_Phase == 2) {
+		UIManager.UIAll.UILayers[LayerWaitingLineId].IsVisible = False;
+	}
+	
+	// Remove unused layers
+	foreach (LayerId in UsedLayers) {
+		if(!TempLayers.exists(LayerId) && UIManager.UILayers.existskey(LayerId)) UnusedLayers.add(LayerId);
+	}
+	foreach (LayerId in UnusedLayers) {  
+		UIManager.UILayerDestroy(UIManager.UILayers[LayerId]);
+	}
+}
+
+/* ------------------------------------- */
+/** Active the main loop;
+ *
+ *  @return 	s'il y a eu une action (nécessité d'updater le layer)
+ */
+Void UpdateLoop(Integer _Phase) {
+	declare Return = False;
+	if(USETEAM) {
+		Return = UpdatePlayersTeam() || Return;
+		Return = UpdateTeamName() || Return;
+	} else Return = AutoJoinTeam() || Return;
+	if(USETEAM && Return) {
+		declare UpdateLayer = AutoJoinTeamWithTag();
+	}
+	if(USEBOT && USETEAM) BotJoinTeam();
+	Return = UpdatePlayersOnServeur() || Return;
+	UpdateWaitingQueue();
+	if(Return || Now > LastUpdate + 500){
+		UpdateLayers(_Phase);
+		LastUpdate = Now;
+	}
+}
+/* ------------------------------------- */
+/** Initalisation Functions
+ */
+
+Void InitSettings(Integer _NbPlayers, Boolean _UseTeam, Boolean _UseBot, Boolean _UseLibWL) {
+	NBPLAYERS = _NbPlayers;
+	USETEAM = _UseTeam;
+	USEBOT = _UseBot;
+	USELIB = _UseLibWL;
+	if(!USETEAM && NBPLAYERS != 1) {
+		NBPLAYERS = 1;
+		if(DEBUG) log("WL->InitSettings : _UseTeam = False => _NbPlayers = 1");
+	}
+	LastUpdate = Now;
+	UsedLayers.clear();
+	
+	G_LibWQ_DisplayScore = True;
+}
+
+Void InitSettings(Integer _NbPlayers) {
+	if(_NbPlayers == 1)
+		InitSettings(_NbPlayers, False, False, True);
+	else 
+		InitSettings(_NbPlayers, True, False, True);
+}
+
+Void SetShowScore(Boolean _ShowScore) {
+	G_LibWQ_DisplayScore = _ShowScore;
+}

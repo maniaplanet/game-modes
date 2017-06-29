@@ -1,0 +1,773 @@
+/**
+ *	WeaponSelection lib
+ *	Display an interface for choosing a weapon while not spawned
+ */
+#Const	Version		"2014-06-18"
+#Const	ScriptName	"WeaponSelection2.Script.txt"
+
+#Include "TextLib" as TL
+
+// ---------------------------------- //
+// Constant
+// ---------------------------------- //
+#Const C_LibWeapSel2_LayerPosition <0., 0.>
+
+// ---------------------------------- //
+// Globales
+// ---------------------------------- //
+declare Ident G_LibWeapSel2_LayerWeaponSelectionId;
+declare Text[] G_LibWeapSel2_Groups;
+declare Integer[] G_LibWeapSel2_AllWeapons;
+declare Integer[][Text] G_LibWeapSel2_GroupsWeapons;
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+// Private
+// ---------------------------------- //
+
+// ---------------------------------- //
+/// Log the current lib status
+Void Private_Log() {
+	log(Now^"> G_LibWeapSel2_Groups: "^G_LibWeapSel2_Groups);
+	log(Now^"> G_LibWeapSel2_GroupsWeapons: "^G_LibWeapSel2_GroupsWeapons);
+	
+	foreach (Player in AllPlayers) {
+		declare LibWeapSel2_CurrentGroup for Player = "";
+		declare LibWeapSel2_Weapon for Player = Integer[Text];
+		log(Now^"> "^Player.User.Login^" > LibWeapSel2_CurrentGroup: "^LibWeapSel2_CurrentGroup^" | LibWeapSel2_Weapon: "^LibWeapSel2_Weapon);
+	}
+}
+
+// ---------------------------------- //
+/// Count the number of players for each weapon in each group
+Void Private_UpdateCount() {
+	declare netwrite Integer[Integer][Text] Net_LibWeapSel2_WeaponsCount for Teams[0];
+	Net_LibWeapSel2_WeaponsCount.clear();
+	
+	foreach (Player in Players) {
+		declare LibWeapSel2_CurrentGroup for Player = "";
+		declare LibWeapSel2_Weapon for Player = Integer[Text];
+			
+		if (!LibWeapSel2_Weapon.existskey(LibWeapSel2_CurrentGroup)) continue;
+		declare WeaponNum = LibWeapSel2_Weapon[LibWeapSel2_CurrentGroup];
+		
+		if (!Net_LibWeapSel2_WeaponsCount.existskey(LibWeapSel2_CurrentGroup)) {
+			Net_LibWeapSel2_WeaponsCount[LibWeapSel2_CurrentGroup] = Integer[Integer];
+		}
+		if (!Net_LibWeapSel2_WeaponsCount[LibWeapSel2_CurrentGroup].existskey(WeaponNum)) {
+			Net_LibWeapSel2_WeaponsCount[LibWeapSel2_CurrentGroup][WeaponNum] = 1;
+		} else {
+			Net_LibWeapSel2_WeaponsCount[LibWeapSel2_CurrentGroup][WeaponNum] += 1;
+		}
+	}
+	
+	declare netwrite Integer Net_LibWeapSel2_WeaponsCountUpdate for Teams[0];
+	Net_LibWeapSel2_WeaponsCountUpdate = Now;
+}
+
+// ---------------------------------- //
+/** Create the weapon selection manialink
+ *
+ *	@return		The weapon selection manialink
+ */
+Text Private_CreateLayerWeaponSelection() {
+	declare RocketButton = _("Rocket (Press 1)");
+	declare LaserButton = _("Laser (Press 2)");
+	declare NucleusButton = _("Nucleus (Press 3)");
+	declare ArrowButton = _("Arrow (Press 4)");
+	
+	declare WeaponText = _("|WeaponName (Press keyname)|%1 (Press %2)");
+	
+	return """
+<frame posn="{{{C_LibWeapSel2_LayerPosition.X}}} {{{C_LibWeapSel2_LayerPosition.Y}}}" hidden="1" id="Frame_WeaponSelection">
+	<quad posn="0 2 -2" sizen="170 32" halign="center" style="Bgs1InRace" substyle="BgList" id="Quad_Background" />
+	<label posn="0 0" halign="center" style="TextRaceMessage" text="{{{_("Select your weapon")}}}" id="Label_Message" />
+	<quad posn="-60 -16 -1" sizen="45 23" halign="center" valign="center" style="Bgs1InRace" substyle="BgTitle3_5" id="Quad_Selection" />
+	<frame posn="0 -20">
+		<frame posn="-60 0" id="Frame_Rocket">
+			<quad posn="0 8" sizen="8 8" halign="right" valign="center" image="file://Media/Manialinks/ShootMania/Common/RocketWhite.dds" />
+			<label posn="1 8" sizen="8 8" valign="center2" textemboss="1" text="0" id="Label_Rocket" />
+			<label halign="center" valign="center" style="CardButtonSmall" text="{{{RocketButton}}}" scriptevents="1" id="Button_Rocket" />
+		</frame>
+		<frame posn="-20 0" id="Frame_Laser">
+			<quad posn="0 8" sizen="8 8" halign="right" valign="center" image="file://Media/Manialinks/ShootMania/Common/LaserWhite.dds" />
+			<label posn="1 8" sizen="8 8" valign="center2" textemboss="1" text="0" id="Label_Laser" />
+			<label halign="center" valign="center" style="CardButtonSmall" text="{{{LaserButton}}}" scriptevents="1" id="Button_Laser" />
+		</frame>
+		<frame posn="20 0" id="Frame_Nucleus">
+			<quad posn="0 8" sizen="8 8" halign="right" valign="center" image="file://Media/Manialinks/ShootMania/Common/NucleusWhite.dds" />
+			<label posn="1 8" sizen="8 8" valign="center2" textemboss="1" text="0" id="Label_Nucleus" />
+			<label halign="center" valign="center" style="CardButtonSmall" text="{{{NucleusButton}}}" scriptevents="1" id="Button_Nucleus" />
+		</frame>
+		<frame posn="60 0" id="Frame_Arrow">
+			<quad posn="0 8" sizen="8 8" halign="right" valign="center" image="file://Media/Manialinks/ShootMania/Common/ArrowWhite.dds" />
+			<label posn="1 8" sizen="8 8" valign="center2" textemboss="1" text="0" id="Label_Arrow" />
+			<label halign="center" valign="center" style="CardButtonSmall" text="{{{ArrowButton}}}" scriptevents="1" id="Button_Arrow" />
+		</frame>
+	</frame>
+</frame>
+<script><!--
+#Include "TextLib" as TL
+
+#Const C_Weapon_Rocket	{{{GetWeaponNum(CSmMode::EWeapon::Rocket)}}}
+#Const C_Weapon_Laser	{{{GetWeaponNum(CSmMode::EWeapon::Laser)}}}
+#Const C_Weapon_Nucleus	{{{GetWeaponNum(CSmMode::EWeapon::Nucleus)}}}
+#Const C_Weapon_Arrow	{{{GetWeaponNum(CSmMode::EWeapon::Arrow)}}}
+
+declare CMlFrame[Integer] Frame_Weapons;
+declare CMlLabel[Integer] Label_Weapons;
+declare CMlQuad Quad_Selection;
+declare Integer[Integer] G_Weapons;
+
+Void UpdateAvailableWeapons() {
+	declare netread Integer[][Text] Net_LibWeapSel2_GroupsWeapons for Teams[0];
+	declare netread Text Net_LibWeapSel2_CurrentGroup for UI;
+	if (!Net_LibWeapSel2_GroupsWeapons.existskey(Net_LibWeapSel2_CurrentGroup)) return;
+	
+	declare Total = 0;
+	G_Weapons.clear();
+	foreach (WeaponNum => Frame_Weapon in Frame_Weapons) {
+		if (!Net_LibWeapSel2_GroupsWeapons[Net_LibWeapSel2_CurrentGroup].exists(WeaponNum)) {
+			Frame_Weapon.Hide();
+		} else {
+			Frame_Weapon.Show();
+			Total += 1;
+			G_Weapons[Total] = WeaponNum;
+			declare Label_Text <=> (Frame_Weapon.Controls[2] as CMlLabel);
+			declare WeaponName = "";
+			switch (WeaponNum) {
+				case C_Weapon_Laser		: WeaponName = "Laser";
+				case C_Weapon_Nucleus	: WeaponName = "Nucleus";
+				case C_Weapon_Arrow		: WeaponName = "Arrow";
+				default					: WeaponName = "Rocket";
+			}
+			Label_Text.Value = TL::Compose("{{{WeaponText}}}", WeaponName, TL::ToText(Total));
+		}
+	}
+	
+	declare ItemWidth = 40.;
+	declare Width = Total * ItemWidth;
+	declare X = -((Width - ItemWidth)/2.);
+	foreach (Frame_Weapon in Frame_Weapons) {
+		if (!Frame_Weapon.Visible) continue;
+		Frame_Weapon.RelativePosition.X = X;
+		X += ItemWidth;
+	}
+	declare Quad_Background <=> (Page.GetFirstChild("Quad_Background") as CMlQuad);
+	declare BgWidth = Width + 10.;
+	if (BgWidth < 70.) BgWidth = 70.;
+	Quad_Background.Size.X = BgWidth;
+	
+	declare netwrite Integer Net_LibWeapSel2_Selection for UI;
+	if (Frame_Weapons.existskey(Net_LibWeapSel2_Selection)) {
+		Quad_Selection.RelativePosition.X = Frame_Weapons[Net_LibWeapSel2_Selection].RelativePosition.X;
+	}
+}
+
+Void UpdateWeaponsCount() {
+	declare netread Integer[Integer][Text] Net_LibWeapSel2_WeaponsCount for Teams[0];
+	declare netread Text Net_LibWeapSel2_CurrentGroup for UI;
+	
+	if (Net_LibWeapSel2_WeaponsCount.existskey(Net_LibWeapSel2_CurrentGroup)) {
+		foreach (WeaponNum => Label_Weapon in Label_Weapons) {
+			if (Net_LibWeapSel2_WeaponsCount[Net_LibWeapSel2_CurrentGroup].existskey(WeaponNum)) {
+				Label_Weapon.SetText(TL::ToText(Net_LibWeapSel2_WeaponsCount[Net_LibWeapSel2_CurrentGroup][WeaponNum]));
+			} else {
+				Label_Weapon.SetText("0");
+			}
+		}
+	} else {
+		foreach (Label_Weapon in Label_Weapons) {
+			Label_Weapon.SetText("0");
+		}
+	}
+}
+
+Void SelectWeapon(Integer _Weapon) {
+	if (!Frame_Weapons.existskey(_Weapon)) return;
+	
+	declare netread Integer[][Text] Net_LibWeapSel2_GroupsWeapons for Teams[0];
+	declare netread Text Net_LibWeapSel2_CurrentGroup for UI;
+	if (!Net_LibWeapSel2_GroupsWeapons.existskey(Net_LibWeapSel2_CurrentGroup)) return;
+	if (!Net_LibWeapSel2_GroupsWeapons[Net_LibWeapSel2_CurrentGroup].exists(_Weapon)) return;
+	
+	declare netwrite Integer Net_LibWeapSel2_SelectionUpdate for UI;
+	declare netwrite Integer Net_LibWeapSel2_Selection for UI;
+	
+	Net_LibWeapSel2_SelectionUpdate = Now;
+	Net_LibWeapSel2_Selection = _Weapon;
+	Quad_Selection.RelativePosition.X = Frame_Weapons[_Weapon].RelativePosition.X;
+}
+
+Void SelectWeaponFromIndex(Integer _WeaponIndex) {
+	if (!G_Weapons.existskey(_WeaponIndex)) return;
+	
+	declare WeaponNum = G_Weapons[_WeaponIndex];
+	
+	declare netwrite Integer Net_LibWeapSel2_SelectionUpdate for UI;
+	declare netwrite Integer Net_LibWeapSel2_Selection for UI;
+	
+	Net_LibWeapSel2_SelectionUpdate = Now;
+	Net_LibWeapSel2_Selection = WeaponNum;
+	
+	if (Frame_Weapons.existskey(WeaponNum)) {
+		Quad_Selection.RelativePosition.X = Frame_Weapons[WeaponNum].RelativePosition.X;
+	}
+}
+
+main() {
+	declare Frame_WeaponSelection	<=> (Page.GetFirstChild("Frame_WeaponSelection")			as CMlFrame);
+	declare Label_Message			<=> (Page.GetFirstChild("Label_Message")					as CMlLabel);
+	Quad_Selection					<=> (Frame_WeaponSelection.GetFirstChild("Quad_Selection")	as CMlQuad);
+	
+	Frame_Weapons = [
+		C_Weapon_Rocket		=> (Frame_WeaponSelection.GetFirstChild("Frame_Rocket")		as CMlFrame),
+		C_Weapon_Laser		=> (Frame_WeaponSelection.GetFirstChild("Frame_Laser")		as CMlFrame),
+		C_Weapon_Nucleus	=> (Frame_WeaponSelection.GetFirstChild("Frame_Nucleus")	as CMlFrame),
+		C_Weapon_Arrow		=> (Frame_WeaponSelection.GetFirstChild("Frame_Arrow")		as CMlFrame)
+	];
+	
+	Label_Weapons = [
+		C_Weapon_Rocket		=> (Frame_WeaponSelection.GetFirstChild("Label_Rocket")		as CMlLabel),
+		C_Weapon_Laser		=> (Frame_WeaponSelection.GetFirstChild("Label_Laser")		as CMlLabel),
+		C_Weapon_Nucleus	=> (Frame_WeaponSelection.GetFirstChild("Label_Nucleus")	as CMlLabel),
+		C_Weapon_Arrow		=> (Frame_WeaponSelection.GetFirstChild("Label_Arrow")		as CMlLabel)
+	];
+	
+	declare netread Integer Net_LibWeapSel2_SynchroServer		for Teams[0];
+	declare netread Integer Net_LibWeapSel2_WeaponsCountUpdate	for Teams[0];
+	declare netread Text	Net_LibWeapSel2_CurrentGroup		for UI;
+	declare netread Vec2	Net_LibWeapSel2_LayerPosition		for Teams[0];
+	declare netread Integer Net_LibWeapSel2_ForceWeaponUpdate	for UI;
+	declare netread Integer Net_LibWeapSel2_ForceWeapon			for UI;
+	declare netread Integer Net_LibWeapSel2_EndTime				for Teams[0];
+	
+	declare netwrite Integer Net_LibWeapSel2_SynchroClient for UI;
+	declare netwrite Integer Net_LibWeapSel2_SelectionUpdate for UI;
+	declare netwrite Integer Net_LibWeapSel2_Selection for UI;
+	Net_LibWeapSel2_SelectionUpdate = 0;
+	Net_LibWeapSel2_Selection = 0;
+	Net_LibWeapSel2_SynchroClient = 0;
+	
+	G_Weapons.clear();
+	
+	declare PrevWeaponsCountUpdate = 0;
+	declare PrevGroup = "";
+	declare PrevForceWeaponUpdate = 0;
+	declare PrevIsSpectatorMode = False;
+	declare PrevLayerPosition = <0., 0.>;
+	declare PrevEndTime = 0;
+	declare CurrentEndTime = 0;
+	
+	while (True) {
+		yield;
+		
+		if (InputPlayer == Null) continue;
+		if (!PageIsVisible) continue;
+		
+		if (Net_LibWeapSel2_SynchroClient != Net_LibWeapSel2_SynchroServer) {
+			Net_LibWeapSel2_SynchroClient = Net_LibWeapSel2_SynchroServer;
+		}
+		
+		if (PrevForceWeaponUpdate != Net_LibWeapSel2_ForceWeaponUpdate) {
+			PrevForceWeaponUpdate = Net_LibWeapSel2_ForceWeaponUpdate;
+			
+			SelectWeapon(Net_LibWeapSel2_ForceWeapon);
+		}
+		
+		if (PrevGroup != Net_LibWeapSel2_CurrentGroup) {
+			PrevGroup = Net_LibWeapSel2_CurrentGroup;
+			
+			if (PrevGroup == "") Frame_WeaponSelection.Hide();
+			else {
+				Frame_WeaponSelection.Show();
+				UpdateAvailableWeapons();
+			}
+		}
+		
+		if (PrevIsSpectatorMode != IsSpectatorMode) {
+			PrevIsSpectatorMode = IsSpectatorMode;
+			
+			if (IsSpectatorMode) Frame_WeaponSelection.Hide();
+			else Frame_WeaponSelection.Show();
+		}
+		
+		if (PrevWeaponsCountUpdate != Net_LibWeapSel2_WeaponsCountUpdate) {
+			PrevWeaponsCountUpdate = Net_LibWeapSel2_WeaponsCountUpdate;
+			
+			UpdateWeaponsCount();
+		}
+		
+		if (PrevLayerPosition != Net_LibWeapSel2_LayerPosition) {
+			PrevLayerPosition = Net_LibWeapSel2_LayerPosition;
+			
+			Frame_WeaponSelection.RelativePosition.X = PrevLayerPosition.X;
+			Frame_WeaponSelection.PosnY = PrevLayerPosition.Y;
+		}
+		
+		if (PrevEndTime != Net_LibWeapSel2_EndTime) {
+			PrevEndTime = Net_LibWeapSel2_EndTime;
+			
+			if (PrevEndTime <= 0) {
+				Label_Message.SetText("{{{_("Select your weapon")}}}");
+			}
+		}
+		if (PrevEndTime > 0) {
+			declare NewEndTime = ((Net_LibWeapSel2_EndTime - ArenaNow) / 1000) + 1;
+			if (CurrentEndTime != NewEndTime) {
+				CurrentEndTime = NewEndTime;
+				
+				Label_Message.SetText(TL::Compose("%1 (%2)", "{{{_("Select your weapon")}}}", TL::ToText(CurrentEndTime)));
+			}
+		}
+		
+		foreach (Event in PendingEvents) {
+			switch (Event.Type) {
+				case CMlEvent::Type::MouseClick: {
+					switch (Event.ControlId) {
+						case "Button_Rocket": {
+							SelectWeapon(C_Weapon_Rocket);
+						}
+						case "Button_Laser": {
+							SelectWeapon(C_Weapon_Laser);
+						}
+						case "Button_Nucleus": {
+							SelectWeapon(C_Weapon_Nucleus);
+						}
+						case "Button_Arrow": {
+							SelectWeapon(C_Weapon_Arrow);
+						}
+					}
+				}
+				case CMlEvent::Type::KeyPress: {
+					if (Event.KeyName == "1" || Event.KeyName == "Numpad1") {
+						SelectWeaponFromIndex(1);
+					} else if (Event.KeyName == "2" || Event.KeyName == "Numpad2") {
+						SelectWeaponFromIndex(2);
+					} else if (Event.KeyName == "3" || Event.KeyName == "Numpad3") {
+						SelectWeaponFromIndex(3);
+					} else if (Event.KeyName == "4" || Event.KeyName == "Numpad4") {
+						SelectWeaponFromIndex(4);
+					}
+				}
+			}
+		}
+	}
+}
+--></script>
+""";
+}
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Return the version number of the script
+ *
+ *	@return		The version number of the script
+ */
+Text GetScriptVersion() {
+	return Version;
+}
+
+// ---------------------------------- //
+/** Return the name of the script
+ *
+ *	@return		The name of the script
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+// ---------------------------------- //
+/// Unload the library
+Void Unload() {
+	if (UIManager.UILayers.existskey(G_LibWeapSel2_LayerWeaponSelectionId)) {
+		UIManager.UILayerDestroy(UIManager.UILayers[G_LibWeapSel2_LayerWeaponSelectionId]);
+		G_LibWeapSel2_LayerWeaponSelectionId = NullId;
+	}
+	
+	declare netwrite Vec2 Net_LibWeapSel2_LayerPosition for Teams[0];
+	declare netwrite Integer Net_LibWeapSel2_WeaponsCountUpdate	for Teams[0];
+	declare netwrite Integer[][Text] Net_LibWeapSel2_GroupsWeapons for Teams[0];
+	Net_LibWeapSel2_LayerPosition = C_LibWeapSel2_LayerPosition;
+	Net_LibWeapSel2_WeaponsCountUpdate = 0;
+	Net_LibWeapSel2_GroupsWeapons.clear();
+	
+	foreach (Player in AllPlayers) {		
+		declare LibWeapSel2_CurrentGroup for Player = "";
+		declare LibWeapSel2_Weapon for Player = Integer[Text];
+		LibWeapSel2_CurrentGroup = "";
+		LibWeapSel2_Weapon = Integer[Text];
+		
+		declare UI <=> UIManager.GetUI(Player);
+		if (UI != Null) {
+			declare netwrite Text		Net_LibWeapSel2_CurrentGroup		for UI;
+			declare netwrite Integer	Net_LibWeapSel2_ForceWeaponUpdate	for UI;
+			declare netwrite Integer	Net_LibWeapSel2_ForceWeapon			for UI;
+			Net_LibWeapSel2_CurrentGroup = 	"";
+			Net_LibWeapSel2_ForceWeaponUpdate = Now;
+			Net_LibWeapSel2_ForceWeapon = -1;
+		}
+	}
+	
+	G_LibWeapSel2_Groups.clear();
+	G_LibWeapSel2_AllWeapons.clear();
+	G_LibWeapSel2_GroupsWeapons.clear();
+}
+
+// ---------------------------------- //
+/// Load the library
+Void Load() {
+	Unload();
+	
+	// Create and assign the layer
+	declare LayerWeaponSelection <=> UIManager.UILayerCreate();
+	LayerWeaponSelection.ManialinkPage = Private_CreateLayerWeaponSelection();
+	G_LibWeapSel2_LayerWeaponSelectionId = LayerWeaponSelection.Id;
+	
+	G_LibWeapSel2_AllWeapons = [
+		GetWeaponNum(CSmMode::EWeapon::Rocket),
+		GetWeaponNum(CSmMode::EWeapon::Laser),
+		GetWeaponNum(CSmMode::EWeapon::Nucleus),
+		GetWeaponNum(CSmMode::EWeapon::Arrow)
+	];
+}
+
+// ---------------------------------- //
+/** Create a new group
+ *
+ *	@param	_GroupName		The name of the group to create
+ */
+Void CreateGroup(Text _GroupName) {
+	if (_GroupName == "") return;
+	if (G_LibWeapSel2_Groups.exists(_GroupName)) return;
+	
+	// Initialize the group and allow all the weapons
+	G_LibWeapSel2_Groups.add(_GroupName);
+	G_LibWeapSel2_GroupsWeapons[_GroupName] = Integer[];
+	foreach (WeaponNum in G_LibWeapSel2_AllWeapons) {
+		if (G_LibWeapSel2_GroupsWeapons[_GroupName].exists(WeaponNum)) continue;
+		G_LibWeapSel2_GroupsWeapons[_GroupName].add(WeaponNum);
+	}
+	declare netwrite Net_LibWeapSel2_GroupsWeapons for Teams[0] = G_LibWeapSel2_GroupsWeapons;
+	Net_LibWeapSel2_GroupsWeapons = G_LibWeapSel2_GroupsWeapons;
+}
+
+// ---------------------------------- //
+/** Destroy an existing group
+ *
+ *	@param	_GroupName		The name of the group to destroy
+ */
+Void DestroyGroup(Text _GroupName) {
+	if (!G_LibWeapSel2_Groups.exists(_GroupName)) return;
+	
+	// Delete the group and its weapons
+	declare Removed = G_LibWeapSel2_Groups.remove(_GroupName);
+	Removed = G_LibWeapSel2_GroupsWeapons.removekey(_GroupName);
+	
+	declare netwrite Net_LibWeapSel2_GroupsWeapons for Teams[0] = G_LibWeapSel2_GroupsWeapons;
+	Net_LibWeapSel2_GroupsWeapons = G_LibWeapSel2_GroupsWeapons;
+	
+	// Update the players
+	foreach (Player in AllPlayers) {
+		// Remove the weapon selection for this group
+		declare LibWeapSel2_Weapon for Player = Integer[Text];
+		Removed = LibWeapSel2_Weapon.removekey(_GroupName);
+		
+		// Remove the player from the group
+		declare LibWeapSel2_CurrentGroup for Player = "";
+		if (LibWeapSel2_CurrentGroup == _GroupName) LibWeapSel2_CurrentGroup = "";
+	}
+}
+
+// ---------------------------------- //
+/** Set the available weapons of a group
+ *
+ *	@param	_GroupName		The name of the group to set
+ *	@param	_Weapons		The list of availble weapons
+ */
+Void SetGroupWeapons(Text _GroupName, CSmMode::EWeapon[] _Weapons) {
+	if (!G_LibWeapSel2_Groups.exists(_GroupName)) return;
+	
+	G_LibWeapSel2_GroupsWeapons[_GroupName].clear();
+	// Allow all weapons ...
+	if (_Weapons.count <= 0) {
+		foreach (WeaponNum in G_LibWeapSel2_AllWeapons) {
+			if (G_LibWeapSel2_GroupsWeapons[_GroupName].exists(WeaponNum)) continue;
+			G_LibWeapSel2_GroupsWeapons[_GroupName].add(WeaponNum);
+		}
+	} 
+	// ... or a specific list
+	else {
+		foreach (Weapon in _Weapons) {
+			declare WeaponNum = GetWeaponNum(Weapon);
+			if (G_LibWeapSel2_GroupsWeapons[_GroupName].exists(WeaponNum)) continue;
+			G_LibWeapSel2_GroupsWeapons[_GroupName].add(WeaponNum);
+		}
+	}
+	
+	declare netwrite Net_LibWeapSel2_GroupsWeapons for Teams[0] = G_LibWeapSel2_GroupsWeapons;
+	Net_LibWeapSel2_GroupsWeapons = G_LibWeapSel2_GroupsWeapons;
+	
+	// Update the players choice
+	foreach (Player in AllPlayers) {
+		declare LibWeapSel2_Weapon for Player = Integer[Text];
+		if (!LibWeapSel2_Weapon.existskey(_GroupName)) continue;
+		
+		if (!G_LibWeapSel2_GroupsWeapons[_GroupName].exists(LibWeapSel2_Weapon[_GroupName])) {
+			LibWeapSel2_Weapon[_GroupName] = G_LibWeapSel2_GroupsWeapons[_GroupName][0];
+		}
+	}
+}
+
+// ---------------------------------- //
+/** Create a group and assign the available weapons
+ *	If the group already exists, it will only update the weapons list
+ *
+ *	@param	_GroupName		The name of the new group
+ *	@param	_Weapons		The new avaible weapons for the group
+ */
+Void CreateGroup(Text _GroupName, CSmMode::EWeapon[] _Weapons) {
+	CreateGroup(_GroupName);
+	SetGroupWeapons(_GroupName, _Weapons);
+}
+
+// ---------------------------------- //
+/** Set a player in a group
+ *
+ *	@param	_Player		The player to set
+ *	@param	_GroupName	The name of the group to set
+ */
+Void SetPlayerGroup(CSmPlayer _Player, Text _GroupName) {
+	if (!G_LibWeapSel2_Groups.exists(_GroupName)) return;
+	
+	// Add the player in his new group
+	declare LibWeapSel2_CurrentGroup for _Player = "";
+	LibWeapSel2_CurrentGroup = _GroupName;
+	
+	// Select the default weapon
+	declare LibWeapSel2_Weapon for _Player = Integer[Text];
+	if (!LibWeapSel2_Weapon.existskey(_GroupName)) {
+		LibWeapSel2_Weapon[_GroupName] = G_LibWeapSel2_GroupsWeapons[_GroupName][0];
+	} else if (!G_LibWeapSel2_GroupsWeapons[_GroupName].exists(LibWeapSel2_Weapon[_GroupName])) {
+		LibWeapSel2_Weapon[_GroupName] = G_LibWeapSel2_GroupsWeapons[_GroupName][0];
+	}
+	
+	// Send the data to the UI
+	declare UI <=> UIManager.GetUI(_Player);
+	if (UI != Null) {
+		declare netwrite Text		Net_LibWeapSel2_CurrentGroup		for UI;
+		declare netwrite Integer	Net_LibWeapSel2_ForceWeaponUpdate	for UI;
+		declare netwrite Integer	Net_LibWeapSel2_ForceWeapon			for UI;
+		Net_LibWeapSel2_CurrentGroup = _GroupName;
+		Net_LibWeapSel2_ForceWeaponUpdate = Now;
+		Net_LibWeapSel2_ForceWeapon = LibWeapSel2_Weapon[_GroupName];
+	}
+}
+
+// ---------------------------------- //
+/** Remove a player from a group
+ *
+ *	@param	_Player		The player to remove
+ */
+Void UnsetPlayerGroup(CSmPlayer _Player) {
+	// Remove from group
+	declare LibWeapSel2_CurrentGroup for _Player = "";
+	LibWeapSel2_CurrentGroup = "";
+	
+	// Remove weapon
+	declare LibWeapSel2_Weapon for _Player = Integer[Text];
+	LibWeapSel2_Weapon.clear();
+	
+	// Send the data to the UI
+	declare UI <=> UIManager.GetUI(_Player);
+	if (UI != Null) {
+		declare netwrite Text		Net_LibWeapSel2_CurrentGroup		for UI;
+		Net_LibWeapSel2_CurrentGroup = "";
+	}
+}
+
+// ---------------------------------- //
+/** Get the current group of a player
+ *
+ *	@param	_Player		The player to check
+ *
+ *	@param		The name of the group if any, an empty Text otherwise
+ */
+Text GetPlayerGroup(CSmPlayer _Player) {
+	if (_Player == Null) return "";
+	
+	declare LibWeapSel2_CurrentGroup for _Player = "";
+	return LibWeapSel2_CurrentGroup;
+}
+
+// ---------------------------------- //
+/** Get the number of the weapon selected by a player
+ *
+ *	@param	_Player		The player to check
+ *
+ *	@return		The number of the selected weapon, -1 if the player is not inside a valid group
+ */
+Integer GetPlayerWeaponNum(CSmPlayer _Player) {
+	declare LibWeapSel2_CurrentGroup for _Player = "";
+	declare LibWeapSel2_Weapon for _Player = Integer[Text];
+	
+	if (!LibWeapSel2_Weapon.existskey(LibWeapSel2_CurrentGroup)) return -1;
+	return LibWeapSel2_Weapon[LibWeapSel2_CurrentGroup];
+}
+
+// ---------------------------------- //
+/** Get the weapon selected by a player
+ *
+ *	@param	_Player		The player to check
+ *
+ *	@return		The selected weapon, CSmMode::EWeapon::Rocket if the player is not in a valid group
+ */
+CSmMode::EWeapon GetPlayerWeapon(CSmPlayer _Player) {
+	declare WeaponNum = GetPlayerWeaponNum(_Player);
+	
+	switch (WeaponNum) {
+		case GetWeaponNum(CSmMode::EWeapon::Rocket)	: return CSmMode::EWeapon::Rocket;
+		case GetWeaponNum(CSmMode::EWeapon::Laser)	: return CSmMode::EWeapon::Laser;
+		case GetWeaponNum(CSmMode::EWeapon::Nucleus): return CSmMode::EWeapon::Nucleus;
+		case GetWeaponNum(CSmMode::EWeapon::Arrow)	: return CSmMode::EWeapon::Arrow;
+	}
+	
+	return CSmMode::EWeapon::Rocket;
+}
+
+// ---------------------------------- //
+/** Set the EndTime counter of the UI
+ *
+ *	@param	_EndTime	The new EndTime
+ */
+Void SetEndTime(Integer _EndTime) {
+	declare netwrite Net_LibWeapSel2_EndTime for Teams[0] = 0;
+	Net_LibWeapSel2_EndTime = _EndTime;
+}
+
+// ---------------------------------- //
+/// Unset the EndTime counter of the UI
+Void UnsetEndTime() {
+	declare netwrite Net_LibWeapSel2_EndTime for Teams[0] = 0;
+	Net_LibWeapSel2_EndTime = 0;
+}
+
+// ---------------------------------- //
+/// Rebuild the weapon selection UI
+Void RebuildUI() {
+	if (!UIManager.UILayers.existskey(G_LibWeapSel2_LayerWeaponSelectionId)) return;
+	UIManager.UILayers[G_LibWeapSel2_LayerWeaponSelectionId].ManialinkPage = Private_CreateLayerWeaponSelection();
+}
+
+// ---------------------------------- //
+/** Set the position of the weapon selection layer
+ *
+ *	@param	_Pos	The new position
+ */
+Void SetLayerPosition(Vec2 _Pos) {
+	declare netwrite Net_LibWeapSel2_LayerPosition for Teams[0] = C_LibWeapSel2_LayerPosition;
+	Net_LibWeapSel2_LayerPosition = _Pos;
+}
+
+// ---------------------------------- //
+/// Attach the weapon selection layer
+Void Attach() {
+	if (
+		UIManager.UILayers.existskey(G_LibWeapSel2_LayerWeaponSelectionId) 
+		&& !UIManager.UIAll.UILayers.existskey(G_LibWeapSel2_LayerWeaponSelectionId)
+	) {
+		UIManager.UIAll.UILayers.add(UIManager.UILayers[G_LibWeapSel2_LayerWeaponSelectionId]);
+	}
+}
+
+// ---------------------------------- //
+/// Detach the weapon selection layer
+Void Detach() {
+	declare Removed = UIManager.UIAll.UILayers.removekey(G_LibWeapSel2_LayerWeaponSelectionId);
+}
+
+// ---------------------------------- //
+/// Initialize the weapon selection
+Void Begin() {	
+	// Send the default weapon or previously selected weapon of each player to the UI
+	foreach (Player in AllPlayers) {
+		declare LibWeapSel2_PrevSelectionUpdate for Player = 0;
+		declare LibWeapSel2_CurrentGroup for Player = "";
+		declare LibWeapSel2_Weapon for Player = Integer[Text];
+		
+		if (LibWeapSel2_CurrentGroup != "" && LibWeapSel2_Weapon.existskey(LibWeapSel2_CurrentGroup)) {
+			declare UI <=> UIManager.GetUI(Player);
+			if (UI != Null) {
+				declare netwrite Text		Net_LibWeapSel2_CurrentGroup		for UI;
+				declare netwrite Integer	Net_LibWeapSel2_ForceWeaponUpdate	for UI;
+				declare netwrite Integer	Net_LibWeapSel2_ForceWeapon			for UI;
+				Net_LibWeapSel2_CurrentGroup = LibWeapSel2_CurrentGroup;
+				Net_LibWeapSel2_ForceWeaponUpdate = Now;
+				Net_LibWeapSel2_ForceWeapon = LibWeapSel2_Weapon[LibWeapSel2_CurrentGroup];
+			}
+		}
+	}
+	
+	// Synchro
+	declare netwrite Net_LibWeapSel2_SynchroServer for Teams[0] = 0;
+	Net_LibWeapSel2_SynchroServer += 1;
+	
+	Attach();
+}
+
+// ---------------------------------- //
+/// Clean after the weapon selection
+Void End() {
+	Detach();
+}
+
+// ---------------------------------- //
+/// Weapon selection loop
+Void Loop() {
+	declare UpdateCount = False;
+	
+	foreach (Player in Players) {
+		declare LibWeapSel2_CurrentGroup for Player = "";
+		if (!G_LibWeapSel2_Groups.exists(LibWeapSel2_CurrentGroup)) continue;
+		
+		declare UI <=> UIManager.GetUI(Player);
+		if (UI == Null) continue;
+		
+		// If the player is not synchro, skip it
+		declare netwrite Net_LibWeapSel2_SynchroServer for Teams[0] = 0;
+		declare netread Integer Net_LibWeapSel2_SynchroClient for UI;
+		if (Net_LibWeapSel2_SynchroServer != Net_LibWeapSel2_SynchroClient) continue;
+		
+		// Check the players selection
+		declare LibWeapSel2_PrevSelectionUpdate for Player = 0;
+		declare netread Integer Net_LibWeapSel2_SelectionUpdate for UI;
+		if (LibWeapSel2_PrevSelectionUpdate != Net_LibWeapSel2_SelectionUpdate) {
+			LibWeapSel2_PrevSelectionUpdate = Net_LibWeapSel2_SelectionUpdate;
+			
+			declare LibWeapSel2_Weapon for Player = Integer[Text];
+			declare netread Integer Net_LibWeapSel2_Selection for UI;
+			
+			if (G_LibWeapSel2_GroupsWeapons[LibWeapSel2_CurrentGroup].exists(Net_LibWeapSel2_Selection)) {
+				LibWeapSel2_Weapon[LibWeapSel2_CurrentGroup] = Net_LibWeapSel2_Selection;
+				UpdateCount = True;
+			}
+		}
+	}
+	
+	foreach (Spectator in Spectators) {
+		declare LibWeapSel2_CurrentGroup for Spectator = "";
+		if (LibWeapSel2_CurrentGroup != "") {
+			UnsetPlayerGroup(Spectator);
+		}
+	}
+	
+	if (UpdateCount) {
+		Private_UpdateCount();
+	}
+}

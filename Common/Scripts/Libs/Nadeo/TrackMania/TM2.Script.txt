@@ -1,0 +1,776 @@
+/** 
+ *	TM library
+ */
+
+#Const Version		"2016-09-08"
+#Const ScriptName	"Libs/Nadeo/TrackMania/TM2.Script.txt"
+
+// ---------------------------------- //
+// Libraries
+// ---------------------------------- //
+#Include "TextLib" as TL
+#Include "Libs/Nadeo/XmlRpc2.Script.txt" as XmlRpc
+#Include "Libs/Nadeo/TrackMania/XmlRpc.Script.txt" as XmlRpc_Deprecated
+
+// ---------------------------------- //
+// Constant
+// ---------------------------------- //
+#Const C_SpawnDuration			3000	///< Time before respawn (3,2,1,Go!)
+#Const C_OutroDuration			8000	///< Outro sequence duration
+#Const C_OutroScoresTableTime	3000	///< Time before the display of the scores table in the outro sequence
+
+#Const C_SpawnStatus_Racing		1	///< The player is currently racing
+#Const C_SpawnStatus_Waiting	2	///< The player is winting to be spawned
+#Const C_SpawnStatus_Outro		3	///< The player is watching the outro sequence
+
+// XmlRpc
+#Const C_Callback_Event_StartCountdown	"Trackmania.Event.StartCountdown"
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+// Private
+// ---------------------------------- //
+// ---------------------------------- //
+/** Start the outro sequence for a player
+ *
+ *	@param	_Player					The player to set in outro sequence
+ *	@param	_DisplayScoresTable		Display the scores table during the outro
+ */
+Void Private_OutroStart(CTmPlayer _Player, Boolean _DisplayScoresTable) {
+	if (_Player == Null) return;
+	
+	declare LibTM2_OutroEndTime for _Player = -1;
+	LibTM2_OutroEndTime = Now + C_OutroDuration;
+	
+	declare LibTM2_OutroScoresTableTime for _Player = -1;
+	if (_DisplayScoresTable) {
+		LibTM2_OutroScoresTableTime = Now + C_OutroScoresTableTime;
+	} else {
+		LibTM2_OutroScoresTableTime = -1;
+	}
+}
+
+// ---------------------------------- //
+/** Display the scores table for a player during the outro sequence
+ *
+ *	@param	_Player		The player who will see the scores table
+ */
+Void Private_OutroScoresTable(CTmPlayer _Player) {
+	if (_Player == Null) return;
+	
+	declare LibTM2_OutroScoresTableTime for _Player = -1;
+	LibTM2_OutroScoresTableTime = -1;
+	
+	declare UI <=> UIManager.GetUI(_Player);
+	if (UI != Null) {
+		UI.ScoreTableVisibility = CUIConfig::EVisibility::ForcedVisible;
+	}
+}
+
+// ---------------------------------- //
+/** Stop the outro sequence for a player
+ *
+ *	@param	_Player		The player to get out of the outro sequence
+ */
+Void Private_OutroStop(CTmPlayer _Player) {
+	if (_Player == Null) return;
+	
+	declare LibTM2_OutroEndTime for _Player = -1;
+	LibTM2_OutroEndTime = -1;
+	
+	declare UI <=> UIManager.GetUI(_Player);
+	if (UI != Null) {
+		UI.ScoreTableVisibility = CUIConfig::EVisibility::None;
+	}
+}
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Return the version number of the script
+ *
+ *	@return				The version number of the script
+ */
+Text GetScriptVersion() {
+	return Version;
+}
+
+// ---------------------------------- //
+/** Return the name of the script
+ *
+ *	@return				The name of the script
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+// ---------------------------------- //
+/** Spawn a player for a race
+ *	If this player was already spawned, he will be respawned
+ *
+ *	@param	_Player				The player to spawn
+ *	@param	_StartTime			Server time of the beginning of the race
+ *	@param	_RegisterOnLadder	Try to register the player on the ladder if he wasn't
+ */
+Void StartRace(CTmPlayer _Player, Integer _StartTime, Boolean _RegisterOnLadder) {
+	if (_Player == Null) return;
+	
+	declare LibTM2_SpawnStatus for _Player = C_SpawnStatus_Waiting;
+	
+	_Player.IsSpawned = True;
+	_Player.RaceStartTime = _StartTime;
+	LibTM2_SpawnStatus = C_SpawnStatus_Racing;
+	
+	if(_RegisterOnLadder && _Player.Score != Null && !_Player.Score.IsRegisteredForLadderMatch) {
+		Ladder_AddPlayer(_Player.Score);
+	}
+	
+	// Undo forced visible scores table when starting race
+	declare UI <=> UIManager.GetUI(_Player);
+	if (UI != Null) {
+		if (UI.ScoreTableVisibility == CUIConfig::EVisibility::ForcedVisible) {
+			UI.ScoreTableVisibility = CUIConfig::EVisibility::None;
+		}
+		if (UI.UISequence != CUIConfig::EUISequence::None) {
+			UI.UISequence = CUIConfig::EUISequence::None;
+		}
+	}
+	
+	XmlRpc_Deprecated::OnStartCountdown(_Player);
+	
+	declare JSON = """{
+	"time": {{{dump(Now)}}},
+	"login": {{{XmlRpc::JsonGetText(_Player.Login)}}}
+}""";
+	XmlRpc::SendCallback(C_Callback_Event_StartCountdown, [JSON]);
+}
+
+// ---------------------------------- //
+/** Spawn a player for a race
+ *	If this player was already spawned, he will be respawned
+ *
+ *	@param	_Player			The player to spawn
+ *	@param	_StartTime		Server time of the beginning of the race
+ */
+Void StartRace(CTmPlayer _Player, Integer _StartTime) {
+	StartRace(_Player, _StartTime, True);
+}
+
+// ---------------------------------- //
+/** Spawn a player for a race
+ *	If this player was already spawned, he will be respawned
+ *
+ *	@param	_Player		The player to spawn
+ */
+Void StartRace(CTmPlayer _Player) {
+	StartRace(_Player, Now + C_SpawnDuration, True);
+}
+
+// ---------------------------------- //
+/** Unspawn a racing player and skip the outro sequence
+ *
+ *	@param	_Player		The player to unspawn
+ */
+Void WaitRace(CTmPlayer _Player) {
+	if (_Player == Null) return;
+	
+	declare LibTM2_SpawnStatus for _Player = C_SpawnStatus_Waiting;
+	
+	declare UI <=> UIManager.GetUI(_Player);
+	if (UI != Null) UI.UISequence = CUIConfig::EUISequence::None;
+	if (LibTM2_SpawnStatus == C_SpawnStatus_Outro) Private_OutroStop(_Player);
+	
+	_Player.IsSpawned = False;
+	_Player.RaceStartTime = -1;
+	LibTM2_SpawnStatus = C_SpawnStatus_Waiting;
+}
+
+// ---------------------------------- //
+/// Unspawn all the players
+Void WaitRaceAll() {
+	foreach (Player in AllPlayers) {
+		WaitRace(Player);
+	}
+}
+
+// ---------------------------------- //
+/** Unspawn a racing player and send him in the outro sequence
+ *
+ *	@param	_Player					The player to unspawn
+ *	@param	_DisplayScoresTable		Display the scores table during the outro
+ */
+Void EndRace(CTmPlayer _Player, Boolean _DisplayScoresTable) {
+	if (_Player == Null) return;
+	
+	declare LibTM2_SpawnStatus for _Player = C_SpawnStatus_Waiting;
+	
+	// Don't switch to the outro status if the player was not racing
+	// Force the waiting status in this case
+	// This happens because the give up event can arrive at the
+	// same time or a few milliseconds before the finish event
+	// on the server side
+	declare IsRacing = (
+		LibTM2_SpawnStatus == C_SpawnStatus_Racing &&
+		_Player.IsSpawned == True &&
+		_Player.RaceStartTime >= 0 &&
+		_Player.RaceStartTime <= Now
+	);
+	if (!IsRacing) {
+		WaitRace(_Player);
+		return;
+	}
+	
+	LibTM2_SpawnStatus = C_SpawnStatus_Outro;
+	
+	Private_OutroStart(_Player, _DisplayScoresTable);
+}
+
+// ---------------------------------- //
+/** Unspawn a racing player and send him in the outro sequence
+ *
+ *	@param	_Player		The player to unspawn
+ */
+Void EndRace(CTmPlayer _Player) {
+	EndRace(_Player, True);
+}
+
+// ---------------------------------- //
+/// End race all the players
+Void EndRaceAll() {
+	foreach (Player in AllPlayers) {
+		EndRace(Player);
+	}
+}
+
+// ---------------------------------- //
+/** Check if a player is racing
+ *
+ *	@param	_Player		The player to check
+ *
+ *	@return				True if the player is racing, false otherwise
+ */
+Boolean IsRacing(CTmPlayer _Player) {
+	if (_Player == Null) return False;
+	
+	declare LibTM2_SpawnStatus for _Player = C_SpawnStatus_Waiting;
+	
+	return (LibTM2_SpawnStatus == C_SpawnStatus_Racing);
+}
+
+// ---------------------------------- //
+/** Check if a player is waiting to be spawned
+ *
+ *	@param	_Player		The player to check
+ *
+ *	@return				True if the player is waiting to be spawned, false otherwise
+ */
+Boolean IsWaiting(CTmPlayer _Player) {
+	if (_Player == Null) return False;
+	
+	declare LibTM2_SpawnStatus for _Player = C_SpawnStatus_Waiting;
+	
+	return (LibTM2_SpawnStatus == C_SpawnStatus_Waiting);
+}
+
+// ---------------------------------- //
+/** Check if a player is watching the outro sequence
+ *
+ *	@param	_Player		The player to check
+ *
+ *	@return				True if the player is watching the outro, false otherwise
+ */
+Boolean IsWatchingOutro(CTmPlayer _Player) {
+	if (_Player == Null) return False;
+	
+	declare LibTM2_SpawnStatus for _Player = C_SpawnStatus_Waiting;
+	
+	return (LibTM2_SpawnStatus == C_SpawnStatus_Outro);
+}
+
+// ---------------------------------- //
+/** Get the current spawn status of a player
+ *
+ *	@param	_Player		The player to check
+ *
+ *	@return				The current status of the player or -1 if the player doesn't exist
+ */
+Integer GetPlayerStatus(CTmPlayer _Player) {
+	if (_Player == Null) return -1;
+	
+	declare LibTM2_SpawnStatus for _Player = C_SpawnStatus_Waiting;
+	return LibTM2_SpawnStatus;
+}
+
+// ---------------------------------- //
+/// Update the library
+Void Loop() {
+	foreach (Player in AllPlayers) {
+		declare LibTM2_SpawnStatus for Player = C_SpawnStatus_Waiting;
+		
+		// ---------------------------------- //
+		// Sequence outro
+		if (LibTM2_SpawnStatus == C_SpawnStatus_Outro) {
+			declare LibTM2_OutroEndTime for Player = -1;
+			declare LibTM2_OutroScoresTableTime for Player = -1;
+			
+			if (LibTM2_OutroScoresTableTime > 0 && Now >= LibTM2_OutroScoresTableTime) {
+				Private_OutroScoresTable(Player);
+			}
+			if (Now >= LibTM2_OutroEndTime) {
+				WaitRace(Player);
+			}
+		}
+		// ---------------------------------- //
+		// Others
+		else if (LibTM2_SpawnStatus != C_SpawnStatus_Waiting) {
+			if (Player.RequestsSpectate || Player.RaceStartTime <= 0) {
+				WaitRace(Player);
+			}
+		} else if (LibTM2_SpawnStatus == C_SpawnStatus_Waiting) {
+			if (Player.RaceStartTime > 0) WaitRace(Player);
+		}
+	}
+}
+Void Yield() {
+	Loop();
+}
+
+// ---------------------------------- //
+/**	Get a player from its login
+ *
+ *	@param	_Login		Login of the player to get
+ *	
+ *	@return				The player if found, Null otherwise
+ */
+CTmPlayer GetPlayer(Text _Login) {
+	foreach (Player in AllPlayers) {
+		if (Player.Login == _Login) return Player;
+	}
+	
+	return Null;
+}
+
+// ---------------------------------- //
+/**	Get a user from its login
+ *
+ *	@param	_Login		Login of the user to get
+ *	
+ *	@return				The user if found, Null otherwise
+ */
+CUser GetUser(Text _Login) {
+	if (_Login == "") return Null;
+	
+	foreach (User in Users) {
+		if (User.Login == _Login) return User;
+	}
+	
+	return Null;
+}
+
+// ---------------------------------- //
+/**	Get a score from its login
+ *
+ *	@param	_Login		Login of the score to get
+ *	
+ *	@return				The score if found, Null otherwise
+ */
+CTmScore GetScore(Text _Login) {
+	if (_Login == "") return Null;
+	
+	foreach (Score in Scores) {
+		if (Score.User != Null && Score.User.Login == _Login) return Score;
+	}
+	
+	return Null;
+}
+
+// ---------------------------------- //
+/**	Convert a time (Integer) to a Text
+ *
+ *	@param	_Time		The time to convert
+ *	
+ *	@return				The time converted in Text
+ */
+Text TimeToText(Integer _Time) {
+	if (_Time < 0) {
+		return "???";
+	}
+	
+	declare MilliSeconds = _Time % 1000;
+	declare Seconds = (_Time / 1000) % 60;
+	declare Minutes = (_Time / 60000) % 60;
+	declare Hours = (_Time / 3600000) % 24;
+	
+	declare Time = TL::FormatInteger(Minutes, 2)^":"^TL::FormatInteger(Seconds, 2)^"."^TL::FormatInteger(MilliSeconds, 3);
+	if (Hours > 0) Time = Hours^":"^Time;
+	return Time;
+}
+
+// ---------------------------------- //
+/**	Convert a Text to a time (Integer)
+ *
+ *	@param	_Value		The Text to convert
+ *	
+ *	@return				The Text converted in time
+ */
+Integer TextToTime(Text _Value) {
+	declare Time = 0;
+	declare Split = TL::Split(":", _Value);
+	
+	// mm:ss.xxx
+	if (Split.count == 2) { 
+		Time += TL::ToInteger(Split[0]) * 60000;
+		
+		// ss.xxx
+		declare Split2 = TL::Split(".", Split[1]);
+		if (Split2.count > 1) {
+			Time += TL::ToInteger(Split2[0]) * 1000;
+			Time += TL::ToInteger(Split2[1]);
+		} else {
+			Time += TL::ToInteger(Split2[0]) * 1000;
+		}
+	} 
+	// h:mm:ss.xxx
+	else if (Split.count == 3) { 
+		Time += TL::ToInteger(Split[0]) * 3600000;
+		Time += TL::ToInteger(Split[1]) * 60000;
+		
+		// ss.xxx
+		declare Split2 = TL::Split(".", Split[2]);
+		if (Split2.count > 1) {
+			Time += TL::ToInteger(Split2[0]) * 1000;
+			Time += TL::ToInteger(Split2[1]);
+		} else {
+			Time += TL::ToInteger(Split2[0]) * 1000;
+		}
+	} 
+	// ss.xxx
+	else {
+		declare Split2 = TL::Split(".", Split[0]);
+		if (Split2.count > 1) {
+			Time += TL::ToInteger(Split2[0]) * 1000;
+			Time += TL::ToInteger(Split2[1]);
+		} else {
+			Time += TL::ToInteger(Split2[0]) * 1000;
+		}
+	}
+	
+	if (Time < 0) Time = 0;
+	return Time;
+}
+
+// ---------------------------------- //
+/**	Inject TimeToText into a ManiaLink
+ *	
+ *	@return				TimeToText() function
+ */
+Text InjectMLTimeToText() {
+	return """
+Text TimeToText(Integer _Time) {
+	if (_Time < 0) {
+		return "???";
+	}
+	
+	declare MilliSeconds = _Time % 1000;
+	declare Seconds = (_Time / 1000) % 60;
+	declare Minutes = (_Time / 60000) % 60;
+	declare Hours = (_Time / 3600000) % 24;
+	
+	declare Time = TL::FormatInteger(Minutes, 2)^":"^TL::FormatInteger(Seconds, 2)^"."^TL::FormatInteger(MilliSeconds, 3);
+	if (Hours > 0) Time = Hours^":"^Time;
+	return Time;
+}""";
+}
+
+// ---------------------------------- //
+/**	Inject TextToTime into a ManiaLink
+ *	
+ *	@return				TextToTime() function
+ */
+Text InjectMLTextToTime() {
+	return """
+Integer TextToTime(Text _Value) {
+	declare Time = 0;
+	declare Split = TL::Split(":", _Value);
+	
+	// mm:ss.xxx
+	if (Split.count == 2) { 
+		Time += TL::ToInteger(Split[0]) * 60000;
+		
+		// ss.xxx
+		declare Split2 = TL::Split(".", Split[1]);
+		if (Split2.count > 1) {
+			Time += TL::ToInteger(Split2[0]) * 1000;
+			Time += TL::ToInteger(Split2[1]);
+		} else {
+			Time += TL::ToInteger(Split2[0]) * 1000;
+		}
+	} 
+	// h:mm:ss.xxx
+	else if (Split.count == 3) { 
+		Time += TL::ToInteger(Split[0]) * 3600000;
+		Time += TL::ToInteger(Split[1]) * 60000;
+		
+		// ss.xxx
+		declare Split2 = TL::Split(".", Split[2]);
+		if (Split2.count > 1) {
+			Time += TL::ToInteger(Split2[0]) * 1000;
+			Time += TL::ToInteger(Split2[1]);
+		} else {
+			Time += TL::ToInteger(Split2[0]) * 1000;
+		}
+	} 
+	// ss.xxx
+	else {
+		declare Split2 = TL::Split(".", Split[0]);
+		if (Split2.count > 1) {
+			Time += TL::ToInteger(Split2[0]) * 1000;
+			Time += TL::ToInteger(Split2[1]);
+		} else {
+			Time += TL::ToInteger(Split2[0]) * 1000;
+		}
+	}
+	
+	if (Time < 0) Time = 0;
+	return Time;
+}""";
+}
+
+// ---------------------------------- //
+/** Get the number of clans with at least one player
+ *
+ *	@return				The number of clans with at least one player
+ */
+Integer GetClansNbTotal() {
+	declare Integer[] Clans;
+	
+	foreach (Player in AllPlayers) {
+		if (!Clans.existskey(Player.CurrentClan)) {
+			Clans.add(Player.CurrentClan);
+		}
+	}
+	
+	return Clans.count;
+}
+
+// ---------------------------------- //
+/** Get the number of clans with at least one player racing
+ *
+ *	@return				The number of clans with at least one player racing
+ */
+Integer GetClansNbRacing() {
+	declare Integer[] Clans;
+	
+	foreach (Player in PlayersRacing) {
+		if (!Clans.existskey(Player.CurrentClan)) {
+			Clans.add(Player.CurrentClan);
+		}
+	}
+	
+	return Clans.count;
+}
+
+// ---------------------------------- //
+/** Get the number of clans with all players waiting
+ *
+ *	@return				The number of clans with all players waiting
+ */
+Integer GetClansNbWaiting() {
+	return GetClansNbTotal() - GetClansNbRacing();
+}
+
+// ---------------------------------- //
+/** Get the number of players in a clan
+ *
+ *	@param	_Clan		The clan to check
+ *
+ *	@return				The number of players in the clan
+ */
+Integer GetClanNbPlayers(Integer _Clan) {
+	declare Count = 0;
+	
+	if (ClansNbPlayers.existskey(_Clan)) {
+		return ClansNbPlayers[_Clan];
+	}
+	
+	foreach (Player in AllPlayers) {
+		if (_Clan == Player.CurrentClan) {
+			Count += 1;
+		}
+	}
+	
+	return Count;
+}
+
+// ---------------------------------- //
+/** Get the number of players in each clan
+ *
+ *	@return				The number of players in each clan
+ */
+Integer[Integer] GetClansNbPlayers() {
+	declare Integer[Integer] Count;
+	
+	foreach (Player in AllPlayers) {
+		if (!Count.existskey(Player.CurrentClan)) {
+			Count[Player.CurrentClan] = 0;
+		}
+		Count[Player.CurrentClan] += 1;
+	}
+	
+	return Count;
+}
+
+// ---------------------------------- //
+/** Get the number of players racing in a clan
+ *
+ *	@param	_Clan		The clan to check
+ *
+ *	@return				The number of players racing in the given clan
+ */
+Integer GetClanNbPlayersRacing(Integer _Clan) {
+	declare Integer Count;
+	
+	foreach (Player in PlayersRacing) {
+		if (_Clan == Player.CurrentClan) {
+			Count += 1;
+		}
+	}
+	
+	return Count;
+}
+
+// ---------------------------------- //
+/** Get the number of players racing in racing clans
+ *
+ *	@return				The number of players racing in racing clans
+ */
+Integer[Integer] GetClansNbPlayersRacing() {
+	declare Integer[Integer] Count;
+	
+	foreach (Player in PlayersRacing) {
+		if (!Count.existskey(Player.CurrentClan)) {
+			Count[Player.CurrentClan] = 0;
+		}
+		Count[Player.CurrentClan] += 1;
+	}
+	
+	return Count;
+}
+
+// ---------------------------------- //
+/** Get the number of players waiting in a clan
+ *
+ *	@param	_Clan		The clan to check
+ *
+ *	@return				The number of players waiting in the given clan
+ */
+Integer GetClanNbPlayersWaiting(Integer _Clan) {
+	declare Integer Count;
+	
+	foreach (Player in PlayersWaiting) {
+		if (_Clan == Player.CurrentClan) {
+			Count += 1;
+		}
+	}
+	
+	return Count;
+}
+
+// ---------------------------------- //
+/** Get the number of players waiting in waiting clans
+ *
+ *	@return				The number of players waiting in waiting clans
+ */
+Integer[Integer] GetClansNbPlayersWaiting() {
+	declare Integer[Integer] Count;
+	
+	foreach (Player in PlayersWaiting) {
+		if (!Count.existskey(Player.CurrentClan)) {
+			Count[Player.CurrentClan] = 0;
+		}
+		Count[Player.CurrentClan] += 1;
+	}
+	
+	return Count;
+}
+
+// ---------------------------------- //
+/** Reset a score without removing him from the ladder
+ *
+ *	@param	_Score		The score to reset
+ */
+Void ResetScore(CTmScore _Score) {
+	_Score.Points = 0;
+	_Score.PrevRaceDeltaPoints = 0;
+	_Score.BestRace = Null;
+	_Score.BestLap = Null;
+	_Score.PrevRace = Null;
+	_Score.TempResult = Null;
+}
+
+// ---------------------------------- //
+/// Reset all scores
+Void ResetAllScores() {
+	foreach (Score in Scores) {
+		ResetScore(Score);
+	}
+}
+
+// ---------------------------------- //
+/// Set the default visibility for labels
+Void SetupDefaultVisibility() {
+	UIManager.UIAll.AlliesLabelsMaxCount = 2;
+	UIManager.UIAll.AlliesLabelsVisibility = CUIConfig::ELabelsVisibility::Always;
+	UIManager.UIAll.AlliesLabelsShowGauges = CUIConfig::EVisibility::ForcedHidden;
+	UIManager.UIAll.AlliesLabelsShowNames = CUIConfig::EVisibility::Normal;
+	
+	UIManager.UIAll.TeamLabelsVisibility = CUIConfig::ELabelsVisibility::WhenInFrustum;
+	UIManager.UIAll.TeamLabelsShowGauges = CUIConfig::EVisibility::ForcedHidden;
+	UIManager.UIAll.TeamLabelsShowNames = CUIConfig::EVisibility::Normal;
+	
+	UIManager.UIAll.OpposingTeamLabelsVisibility = CUIConfig::ELabelsVisibility::WhenInFrustum;
+	UIManager.UIAll.OpposingTeamLabelsShowGauges = CUIConfig::EVisibility::ForcedHidden;
+	UIManager.UIAll.OpposingTeamLabelsShowNames = CUIConfig::EVisibility::ForcedVisible;
+}
+
+// ---------------------------------- //
+/// Unload the library
+Void Unload() {
+	foreach (Player in AllPlayers) {
+		declare LibTM2_SpawnStatus for Player = C_SpawnStatus_Waiting;
+		declare LibTM2_OutroEndTime for Player = -1;
+		declare LibTM2_OutroScoresTableTime for Player = -1;
+		LibTM2_SpawnStatus = C_SpawnStatus_Waiting;
+		LibTM2_OutroEndTime = -1;
+		LibTM2_OutroScoresTableTime = -1;
+	}
+	
+	XmlRpc::UnregisterCallback(C_Callback_Event_StartCountdown);
+}
+
+// ---------------------------------- //
+/// Load the library
+Void Load() {
+	Unload();
+	
+	XmlRpc::RegisterCallback(C_Callback_Event_StartCountdown, """
+* Name: {{{C_Callback_Event_StartCountdown}}}
+* Type: CallbackArray
+* Description: Callback sent when a player see the 3,2,1,Go! countdown.
+* Data:
+	- Version >=2.0.0:
+	```
+	[
+		"{
+			"time": 123456 //< Server time when the event occured,
+			"login": "PlayerLogin"
+		}"
+	]
+	```
+	""");
+}

@@ -1,0 +1,671 @@
+/**
+ *	Toss library
+ */
+
+#Const Version		"2013-07-16"
+#Const ScriptName	"Toss.Script.txt"
+
+#Include "MathLib" as MathLib
+#Include "TextLib" as TextLib
+
+/* ------------------------------------- */
+// Settings
+/* ------------------------------------- */
+#Const C_LibToss_Debug		False	///< Active debug mode
+#Const C_LibToss_TossTime	5000	///< Maximum time before forcing the end of the toss
+#Const C_LibToss_VoteTime	8000	///< Maximum time before forcing the end of the vote
+
+/* ------------------------------------- */
+// Globales
+/* ------------------------------------- */
+
+/* ------------------------------------- */
+// Functions
+/* ------------------------------------- */
+
+/* ------------------------------------- */
+/** Return the version number of the script
+ *
+ *	@return		The version number of the script
+ */
+Text GetScriptVersion() {
+	return Version;
+}
+
+/* ------------------------------------- */
+/** Return the name of the script
+ *
+ *	@return		The name of the script
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+/* ------------------------------------- */
+/**	Get the Toss interface
+ *
+ *	@param	_Spectator	Create the UI for spectators
+ *
+ *	@return		The Toss manialink interface
+ */
+Text GetTossUI(Boolean _Spectator) {
+	return 
+"""
+<manialink version="1" name="Lib_Toss:Toss">
+<script><!--
+	#Include "TextLib" as TextLib
+	
+	main() {
+		declare netwrite	Net_TossActivated for UI = False;
+		declare netread		Net_TossWinner for UI = 0;
+		declare netwrite	Net_TossCompleted for UI = False;
+		
+		Net_TossActivated = False;
+		
+		declare Result	<=> (Page.GetFirstChild("Result") as CMlLabel);
+		declare Winner	<=> (Page.GetFirstChild("Winner") as CMlLabel);
+		declare Toss	<=> (Page.GetFirstChild("Toss") as CMlLabel);
+		declare Left1	<=> (Page.GetFirstChild("Left1") as CMlLabel);
+		declare Left2	<=> (Page.GetFirstChild("Left2") as CMlLabel);
+		declare Right1	<=> (Page.GetFirstChild("Right1") as CMlLabel);
+		declare Right2	<=> (Page.GetFirstChild("Right2") as CMlLabel);
+		declare Team1	<=> (Page.GetFirstChild("Team1") as CMlLabel);
+		declare Team2	<=> (Page.GetFirstChild("Team2") as CMlLabel);
+		
+		Left2.Hide();
+		Right2.Hide();
+		Result.Hide();
+		
+		Team1.SetText("$s"^Teams[0].ColorizedName);
+		Team2.SetText("$s"^Teams[1].ColorizedName);
+		
+		if ({{{_Spectator}}}) {
+			Toss.Hide();
+			Winner.SetText(_("Waiting for the players to toss"));
+		}
+		
+		declare NextInversion = 100;
+		declare LastInversion = 0;
+		declare Invert = False;
+		declare Processing = ["|", "/", "-", "\\"];
+		declare ProcessingIndex = 0;
+		
+		while (True) {
+			yield;
+			
+			foreach (Event in PendingEvents) {
+				if (Event.Type == CMlEvent::Type::MouseClick) {
+					if (Event.ControlId == "Toss") {
+						Net_TossActivated = True;
+					}
+				}
+			}
+			
+			// Toss activated
+			if (Net_TossWinner != 0) {
+				// Duration ~= 6500ms
+				if (LastInversion + NextInversion < Now) {
+					if (NextInversion > 1000) break;
+					if (Invert) {
+						Left1.Show(); Left2.Hide();
+						Right1.Hide(); Right2.Show();
+					} else {
+						Left1.Hide(); Left2.Show();
+						Right1.Show(); Right2.Hide();
+					}
+					
+					Invert = !Invert;
+					NextInversion += NextInversion / 2;
+					LastInversion = Now;
+				}
+				
+				Toss.Hide();
+				Winner.SetText(_("Tossing"));
+			} else {
+				Toss.Show();
+				Winner.SetText("");
+			}
+			
+			Result.SetText(""^Net_TossWinner);
+			Team1.SetText("$s"^Teams[0].ColorizedName);
+			Team2.SetText("$s"^Teams[1].ColorizedName);
+		}
+		
+		if (Net_TossWinner == 1) {
+			Left1.Hide(); Left2.Show();
+			Right1.Show(); Right2.Hide();
+			Winner.SetText(TextLib::Compose(_("$s$<%1$> wins the toss!"), Teams[0].ColorizedName));
+		} else if (Net_TossWinner == 2) {
+			Left1.Show(); Left2.Hide();
+			Right1.Hide(); Right2.Show();
+			Winner.SetText(TextLib::Compose(_("$s$<%1$> wins the toss!"), Teams[1].ColorizedName));
+		} else {
+			Winner.SetText(_("Waiting the result..."));
+		}
+	}
+--></script>
+<frame posn="0 -18 5" id="Frame_Toss" >
+	<quad posn="0 0 0" sizen="170 38" halign="center" valign="bottom" bgcolor="0007" />
+	
+	<frame posn="0 26 2">
+		<label posn="0 0 6" textprefix="$s" text="0" textsize="12" halign="center" valign="center" scriptevents="True" id="Result" />
+		
+		<quad posn="0 -1.5 5" sizen="20 20" halign="right" valign="center" style="Icons64x64_1" substyle="ShowLeft" id="Left1" />
+		<quad posn="0 -1.5 5" sizen="20 20" halign="right" valign="center" style="Icons64x64_1" substyle="ShowLeft2" id="Left2" />
+		<quad posn="0 -1.5 5" sizen="20 20" halign="left" valign="center" style="Icons64x64_1" substyle="ShowRight" id="Right1" />
+		<quad posn="0 -1.5 5" sizen="20 20" halign="left" valign="center" style="Icons64x64_1" substyle="ShowRight2" id="Right2" />
+		
+		<label posn="-18 0 5" sizen="60 20" textsize="10" halign="right" valign="center" id="Team1" />
+		<label posn=" 18 0 5" sizen="60 20" textsize="10" halign="left" valign="center" id="Team2" />
+	</frame>
+	
+	<quad posn="0 12.5 3" sizen="170 0.5" halign="center" bgcolor="aaaf" />
+	<quad posn="0 0 1" sizen="170 12" halign="center" valign="bottom" bgcolor="000a" />
+	
+	<label posn="0 7 4" sizen="150 20" textsize="6" halign="center" valign="center" textprefix="$s" id="Winner" />
+	<label posn="0 6 4" sizen="170 12" focusareacolor1="000f" focusareacolor2="eeef" halign="center" valign="center" style="TextButtonNav" textprefix="$fff" text="{{{_("Press this button to toss")}}}" scriptevents="True" id="Toss" />
+</frame>
+</manialink>""";
+}
+
+/* ------------------------------------- */
+/**	Get the Vote interface
+ *
+ *	@param	_ClanNb		The clan who'll choose its side
+ *
+ *	@return		The Vote manialink interface
+ */
+Text GetVoteUI(Integer _ClanNb) {	
+	return
+"""
+<manialink version="1" name="Lib_Toss:Vote">
+<script><!--
+	#Include "TextLib" as TextLib
+	
+	main() {
+		declare netwrite	Net_SelectedSide for UI = 0;
+		declare netread		Net_VoteForAttack for UI = 0;
+		declare netread		Net_VoteForDefend for UI = 0;
+		declare netread		Net_EndTime for UI = 0;
+		declare netread		Net_Result for UI = 0;
+		declare netread		Net_BarrierServer for UI = 0;
+		declare netwrite	Net_BarrierClient for UI = 0;
+		
+		Net_SelectedSide = 0;
+		Net_BarrierClient = 0;
+		
+		declare Title			<=> (Page.GetFirstChild("Title") as CMlLabel);
+		declare VoteButtons		<=> (Page.GetFirstChild("VoteButtons") as CMlFrame);
+		declare Result			<=> (Page.GetFirstChild("Result") as CMlLabel);
+		declare ResultAttack	<=> (Page.GetFirstChild("ResultAttack") as CMlLabel);
+		declare ResultDefend	<=> (Page.GetFirstChild("ResultDefend") as CMlLabel);
+		declare Left1			<=> (Page.GetFirstChild("Left1") as CMlLabel);
+		declare Left2			<=> (Page.GetFirstChild("Left2") as CMlLabel);
+		declare Right1			<=> (Page.GetFirstChild("Right1") as CMlLabel);
+		declare Right2			<=> (Page.GetFirstChild("Right2") as CMlLabel);
+		declare Countdown		<=> (Page.GetFirstChild("Countdown") as CMlLabel);
+		
+		Left2.Hide();
+		Right2.Hide();
+		
+		declare PrevBarrier = 0;
+		declare TimeLeft = {{{C_LibToss_VoteTime}}} / 1000;
+		declare VotingClan = {{{_ClanNb}}};
+		declare TeamName = "";
+		if (Teams.existskey(VotingClan - 1)) TeamName = Teams[VotingClan - 1].ColorizedName;
+		Title.SetText(TextLib::Compose(_("$s$<%1$>: do you want to attack or defend first?"), TeamName));
+		
+		while (True) {
+			yield;
+			
+			if (PrevBarrier != Net_BarrierServer) {
+				PrevBarrier = Net_BarrierServer;
+				Net_BarrierClient = Net_BarrierServer;
+			}
+			
+			if (InputPlayer != Null && InputPlayer.CurrentClan == VotingClan && Net_SelectedSide == 0) {
+				VoteButtons.Show();
+			} else {
+				VoteButtons.Hide();
+			}
+		
+			// Process event only if the player can vote
+			if (InputPlayer != Null && InputPlayer.CurrentClan == VotingClan && Net_SelectedSide == 0) {
+				foreach (Event in PendingEvents) {
+					if (Event.Type == CMlEvent::Type::MouseClick) {
+						if (Event.ControlId == "VoteAttack") {
+							Net_SelectedSide = 1;
+							VoteButtons.Hide();
+						} else if (Event.ControlId == "VoteDefend") {
+							Net_SelectedSide = 2;
+							VoteButtons.Hide();
+						}
+					} else if (Event.Type == CMlEvent::Type::KeyPress) {
+						if (Event.KeyName == "F1" || Event.KeyName == "1" || Event.KeyName == "Numpad1") {
+							Net_SelectedSide = 1;
+							VoteButtons.Hide();
+						} else if (Event.KeyName == "F2" || Event.KeyName == "2" || Event.KeyName == "Numpad2") {
+							Net_SelectedSide = 2;
+							VoteButtons.Hide();
+						}
+					}
+				}
+			}
+			
+			// Calculate time left before the end of the vote
+			TimeLeft = (Net_EndTime - ArenaNow) / 1000;
+			if (InputPlayer != Null && InputPlayer.CurrentClan == VotingClan && Net_SelectedSide != 0) {
+				if (Net_SelectedSide == 1) Result.SetText(_("You voted for the attack."));
+				else if (Net_SelectedSide == 2) Result.SetText(_("You voted for the defense."));
+				Countdown.SetText("$s"^TimeLeft);
+			} else if (InputPlayer != Null && InputPlayer.CurrentClan == VotingClan) {
+				Countdown.SetText("$s"^TimeLeft);
+			} else {
+				Result.SetText(_("Vote in progress."));
+				Countdown.SetText("$s"^TimeLeft);
+			}
+			
+			// Update the results
+			ResultAttack.SetText("$s"^Net_VoteForAttack);
+			ResultDefend.SetText("$s"^Net_VoteForDefend);
+			if (Net_VoteForAttack > Net_VoteForDefend) {
+				Left1.Hide(); Left2.Show();
+				Right1.Show(); Right2.Hide();
+			} else if (Net_VoteForAttack < Net_VoteForDefend) {
+				Left1.Show(); Left2.Hide();
+				Right1.Hide(); Right2.Show();
+			} else {
+				Left1.Show(); Left2.Hide();
+				Right1.Show(); Right2.Hide();
+			}
+			
+			if (TimeLeft <= 0) break;
+		}
+		
+		// Keep refreshing to be sure to get the result
+		declare ResultEndTime = Now + 10000;
+		declare AttackString = TextLib::Compose(_("$s$<%1$> will start in attack."), TeamName);
+		declare DefendString = TextLib::Compose(_("$s$<%1$> will start in defense."), TeamName);
+		VoteButtons.Hide();
+		//Result.SetText(_("Fetching result."));
+		while (Now < ResultEndTime) {
+			yield;
+			if (Net_Result == 1) {
+				Result.SetText(AttackString);
+				Left1.Hide(); Left2.Show();
+				Right1.Show(); Right2.Hide();
+			} else if (Net_Result == 2) {
+				Result.SetText(DefendString);
+				Left1.Show(); Left2.Hide();
+				Right1.Hide(); Right2.Show();
+			}
+			
+			// Continue to update the results
+			ResultAttack.SetText("$s"^Net_VoteForAttack);
+			ResultDefend.SetText("$s"^Net_VoteForDefend);
+		}
+	}
+--></script>
+<frame posn="0 -26 5" id="Frame_Vote">
+	<quad posn="0 0 0" sizen="170 55" halign="center" valign="bottom" bgcolor="0007" />
+	
+	<frame posn="0 32 6">
+		<label posn="-3 0 11" text="$s0" textsize="12" halign="right" valign="center" id="ResultAttack" />
+		<label posn="0 0 11" text="$s-" textsize="12" halign="center" valign="center" />
+		<label posn="3 0 11" text="$s0" textsize="12" halign="left" valign="center" id="ResultDefend" />
+		<label posn="0 15 11" sizen="166 10" textsize="6" halign="center" valign="center" id="Title" />
+		
+		<quad posn="-10 -1.5 10" sizen="20 20" halign="right" valign="center" style="Icons64x64_1" substyle="ShowLeft" id="Left1" />
+		<quad posn="-10 -1.5 10" sizen="20 20" halign="right" valign="center" style="Icons64x64_1" substyle="ShowLeft2" id="Left2" />
+		<quad posn="10 -1.5 10" sizen="20 20" halign="left" valign="center" style="Icons64x64_1" substyle="ShowRight" id="Right1" />
+		<quad posn="10 -1.5 10" sizen="20 20" halign="left" valign="center" style="Icons64x64_1" substyle="ShowRight2" id="Right2" />
+		
+		<label posn="-30 0 10" textprefix="$s" text="{{{_("|Imperative|Attack")}}}" textsize="10" halign="right" valign="center" />
+		<label posn="30 0 10" textprefix="$s" text="{{{_("|Imperative|Defend")}}}" textsize="10" halign="left" valign="center" />
+	</frame>
+	
+	<frame posn="0 18 7">
+		<label posn="0 0 10" textsize="5" halign="center" valign="center" id="Countdown" />
+	</frame>
+	
+	<quad posn="0 12.5 2" sizen="170 0.5" halign="center" bgcolor="aaaf" />
+	<quad posn="0 0 1" sizen="170 12" halign="center" valign="bottom" bgcolor="000a" />
+	
+	<frame posn="0 0 7" id="VoteButtons">
+		<quad posn="0 0 11" sizen="0.5 12.5" halign="center" valign="bottom" bgcolor="aaaf" />
+		<label posn="-42.5 6 10" sizen="85 12" focusareacolor1="000f" focusareacolor2="ffff" halign="center" valign="center" style="TextButtonNav" textprefix="$fff" text="{{{_("|Imperative|Attack")}}}" scriptevents="True" id="VoteAttack" />
+		<label posn=" 42.5 6 10" sizen="85 12" focusareacolor1="000f" focusareacolor2="ffff" halign="center" valign="center" style="TextButtonNav" textprefix="$fff" text="{{{_("|Imperative|Defend")}}}" scriptevents="True" id="VoteDefend" />
+	</frame>
+	<frame posn="0 7 7">
+		<label posn="0 0 10" textsize="4" halign="center" valign="center" textprefix="$s" id="Result" />
+	</frame>
+</frame>
+</manialink>""";
+}
+
+/* ------------------------------------- */
+/** Play the toss
+ *
+ *	@return		The number of the clan who won the toss
+ */
+Integer Toss() {
+	// Save UISequence
+	declare OldUISequence = UIManager.UIAll.UISequence;
+	//UIManager.UIAll.UISequence = CUIConfig::EUISequence::Intro;
+	 
+	// Create layer
+	declare LayerTossPlayer <=> UIManager.UILayerCreate();
+	LayerTossPlayer.ManialinkPage = GetTossUI(False);
+	declare LayerTossSpectator <=> UIManager.UILayerCreate();
+	LayerTossSpectator.ManialinkPage = GetTossUI(True);
+	
+	// Initialize players
+	foreach (Player in Players) {
+		declare UI <=> UIManager.GetUI(Player);
+		if (UI == Null) continue;
+		
+		declare netwrite Net_TossActivated for UI = False;
+		declare netwrite Net_TossWinner for UI = 0;
+		
+		Net_TossActivated = False;
+		Net_TossWinner = 0;
+		
+		UI.UILayers.add(LayerTossPlayer);
+	}
+	// Initialize spectator
+	foreach (Spectator in Spectators) {
+		declare UI <=> UIManager.GetUI(Spectator);
+		if (UI == Null) continue;
+		
+		declare netwrite Net_TossActivated for UI = False;
+		declare netwrite Net_TossWinner for UI = 0;
+		
+		Net_TossActivated = False;
+		Net_TossWinner = 0;
+		
+		UI.UILayers.add(LayerTossSpectator);
+	}
+	
+	sleep(1000);
+	
+	declare State = 0;	///< 0: waiting toss start, 1: waiting toss end
+	declare TossActivated = False;
+	declare TossWinner = 0;
+	declare TossActivationTime = 0;
+	
+	while (!ServerShutdownRequested && !MatchEndRequested) {
+		yield;
+		
+		// Waiting toss start
+		if (State == 0) {
+			foreach (Player in Players) {
+				declare UI <=> UIManager.GetUI(Player);
+				if (UI == Null) continue;
+				
+				if (!UI.UILayers.exists(LayerTossPlayer)) {					
+					UI.UILayers.add(LayerTossPlayer);
+					declare Removed = UI.UILayers.remove(LayerTossSpectator);
+					if (C_LibToss_Debug) log(Now^"> Created missing player toss layer for "^Player.User.Login);
+				}
+				
+				declare netread Net_TossActivated for UI = False;
+				
+				if (Net_TossActivated) {
+					if (C_LibToss_Debug) log(Now^"> Toss activated by "^Player.User.Login);
+					State = 1;
+					TossWinner = MathLib::Rand(1, 2);
+				}
+			}
+			foreach (Spectator in Spectators) {
+				declare UI <=> UIManager.GetUI(Spectator);
+				if (UI == Null) continue;
+				
+				if (!UI.UILayers.exists(LayerTossSpectator)) {
+					UI.UILayers.add(LayerTossSpectator);
+					declare Removed = UI.UILayers.remove(LayerTossPlayer);
+					if (C_LibToss_Debug) log(Now^"> Created missing spectator toss layer for "^Spectator.User.Login);
+				}
+			}
+		} 
+		// Send the toss result to the players
+		else if (State == 1 && !TossActivated) {
+			foreach (Player in Players) {
+				declare UI <=> UIManager.GetUI(Player);
+				if (UI == Null) continue;
+				
+				declare netwrite Net_TossActivated for UI = False;
+				declare netwrite Net_TossWinner for UI = 0;
+				
+				Net_TossActivated = True;
+				Net_TossWinner = TossWinner;
+			}
+			foreach (Spectator in Spectators) {
+				declare UI <=> UIManager.GetUI(Spectator);
+				if (UI == Null) continue;
+				
+				declare netwrite Net_TossActivated for UI = False;
+				declare netwrite Net_TossWinner for UI = 0;
+				
+				Net_TossActivated = True;
+				Net_TossWinner = TossWinner;
+			}
+			
+			TossActivationTime = Now;
+			TossActivated = True;
+		} 
+		// Waiting toss end
+		else if (State == 1) {
+			if (TossActivationTime + C_LibToss_TossTime < Now) break;
+		}
+	}
+	
+	// destroy layer
+	UIManager.UILayerDestroy(LayerTossPlayer);
+	UIManager.UILayerDestroy(LayerTossSpectator);
+	
+	// Restore UISequence
+	UIManager.UIAll.UISequence = OldUISequence;
+	
+	// Check if the toss winner is valid
+	if (TossWinner != 1 && TossWinner != 2) TossWinner = MathLib::Rand(1, 2);
+	
+	return TossWinner;
+}
+
+/* ------------------------------------- */
+/** One clan vote to decide if it will attack or defend first
+ *
+ *	@param _ClanNb	The number of the clan who'll vote
+ *
+ *	@return		The side the clan choosed 1 = attack and 2 = defend
+ */
+Integer SelectSide(Integer _ClanNb) {
+	declare SelectedSide = 0;
+	declare VoteForAttack = 0;
+	declare VoteForDefend = 0;
+	declare BarrierServer = Now;
+	
+	// Save UISequence
+	declare OldUISequence = UIManager.UIAll.UISequence;
+	//UIManager.UIAll.UISequence = CUIConfig::EUISequence::Intro;
+	
+	// Create layer
+	declare LayerVote <=> UIManager.UILayerCreate();
+	LayerVote.ManialinkPage = GetVoteUI(_ClanNb);
+	
+	// Initialize player
+	declare VoteEndTime = Now + C_LibToss_VoteTime;
+	declare MaxVote = 0;
+	
+	foreach (Player in Players) {
+		declare UI <=> UIManager.GetUI(Player);
+		if (UI == Null) continue;
+		
+		SetPlayerClan(Player, Player.RequestedClan);
+		UI.UILayers.add(LayerVote);
+		if (Player.CurrentClan == _ClanNb) MaxVote += 1;
+		
+		declare netwrite Net_BarrierServer for UI = 0;
+		declare netwrite Net_EndTime for UI = 0;
+		declare netwrite Net_Result for UI = 0;
+		Net_BarrierServer = BarrierServer;
+		Net_EndTime = VoteEndTime;
+		Net_Result = 0;
+	}
+	foreach (Spectator in Spectators) {
+		declare UI <=> UIManager.GetUI(Spectator);
+		if (UI == Null) continue;
+		
+		SetPlayerClan(Spectator, 0);
+		UI.UILayers.add(LayerVote);
+		
+		declare netwrite Net_BarrierServer for UI = 0;
+		declare netwrite Net_EndTime for UI = 0;
+		declare netwrite Net_Result for UI = 0;
+		Net_BarrierServer = BarrierServer;
+		Net_EndTime = VoteEndTime;
+		Net_Result = 0;
+	}
+	
+	while (!ServerShutdownRequested && !MatchEndRequested) {
+		yield;
+		
+		// Reset the vote count
+		VoteForAttack = 0;
+		VoteForDefend = 0;
+		
+		// Get the vote of the players
+		foreach (Player in Players) {
+			declare UI <=> UIManager.GetUI(Player);
+			if (UI == Null) continue;
+			
+			if (!UI.UILayers.exists(LayerVote)) {
+				declare netwrite Net_BarrierServer for UI = 0;
+				declare netwrite Net_EndTime for UI = 0;
+				declare netwrite Net_Result for UI = 0;
+				Net_BarrierServer = BarrierServer;
+				Net_EndTime = VoteEndTime;
+				Net_Result = 0;
+				UI.UILayers.add(LayerVote);
+				if (C_LibToss_Debug) log(Now^"> Created missing player vote layer for "^Player.User.Login);
+			}
+			
+			// Only count vote from the voting clan
+			declare netread Net_BarrierClient for UI = 0;
+			if (Player.CurrentClan != _ClanNb || Net_BarrierClient != BarrierServer) continue;
+			declare netread Net_SelectedSide for UI = 0;
+			if (Net_SelectedSide == 1) {
+				VoteForAttack += 1;
+			} else if (Net_SelectedSide == 2) {
+				VoteForDefend += 1;
+			}
+		}
+		foreach (Spectator in Spectators) {
+			declare UI <=> UIManager.GetUI(Spectator);
+			if (UI == Null) continue;
+			
+			if (!UI.UILayers.exists(LayerVote)) {
+				declare netwrite Net_BarrierServer for UI = 0;
+				declare netwrite Net_EndTime for UI = 0;
+				declare netwrite Net_Result for UI = 0;
+				Net_BarrierServer = BarrierServer;
+				Net_EndTime = VoteEndTime;
+				Net_Result = 0;				
+				UI.UILayers.add(LayerVote);
+				if (C_LibToss_Debug) log(Now^"> Created missing spectator vote layer for "^Spectator.User.Login);
+			}
+		}
+		
+		// Update the results on the player UI
+		foreach (Player in Players) {
+			declare UI <=> UIManager.GetUI(Player);
+			if (UI == Null) continue;
+			
+			declare netwrite Net_VoteForAttack for UI = 0;
+			declare netwrite Net_VoteForDefend for UI = 0;
+			
+			Net_VoteForAttack = VoteForAttack;
+			Net_VoteForDefend = VoteForDefend;
+		}
+		foreach (Spectator in Spectators) {
+			declare UI <=> UIManager.GetUI(Spectator);
+			if (UI == Null) continue;
+			
+			declare netwrite Net_VoteForAttack for UI = 0;
+			declare netwrite Net_VoteForDefend for UI = 0;
+			
+			Net_VoteForAttack = VoteForAttack;
+			Net_VoteForDefend = VoteForDefend;
+		}
+		
+		if (VoteForAttack + VoteForDefend >= MaxVote) {
+			VoteEndTime = Now;
+			foreach (Player in AllPlayers) {
+				declare UI <=> UIManager.GetUI(Player);
+				if (UI == Null) continue;
+				
+				declare netwrite Net_EndTime for UI = 0;
+				Net_EndTime = VoteEndTime;
+			}
+		}
+		
+		// Stop the vote when time run out
+		if (Now >= VoteEndTime) break;
+	}
+	
+	// Calculate result
+	if (VoteForAttack > VoteForDefend) {
+		SelectedSide = 1;
+	} else if (VoteForAttack < VoteForDefend) {
+		SelectedSide = 2;
+	} else {
+		SelectedSide = MathLib::Rand(1, 2);
+	}
+	// Send the result
+	foreach (Player in AllPlayers) {
+		declare UI <=> UIManager.GetUI(Player);
+		if (UI == Null) continue;
+		
+		declare netwrite Net_Result for UI = 0;
+		Net_Result = SelectedSide;
+	}
+	sleep(4000);
+	
+	// Destroy layer and reset player UI
+	UIManager.UILayerDestroy(LayerVote);
+	foreach (Player in Players) {
+		declare UI <=> UIManager.GetUI(Player);
+		if (UI == Null) continue;
+		
+		declare netwrite Net_SelectedSide for UI = 0;
+		declare netwrite Net_VoteForAttack for UI = 0;
+		declare netwrite Net_VoteForDefend for UI = 0;
+		declare netwrite Net_EndTime for UI = 0;
+		declare netwrite Net_Result for UI = 0;
+		Net_SelectedSide = 0;
+		Net_VoteForAttack = 0;
+		Net_VoteForDefend = 0;
+		Net_EndTime = 0;
+		Net_Result = 0;
+	}
+	foreach (Spectator in Spectators) {
+		declare UI <=> UIManager.GetUI(Spectator);
+		if (UI == Null) continue;
+		
+		declare netwrite Net_SelectedSide for UI = 0;
+		declare netwrite Net_VoteForAttack for UI = 0;
+		declare netwrite Net_VoteForDefend for UI = 0;
+		declare netwrite Net_EndTime for UI = 0;
+		declare netwrite Net_Result for UI = 0;
+		Net_SelectedSide = 0;
+		Net_VoteForAttack = 0;
+		Net_VoteForDefend = 0;
+		Net_EndTime = 0;
+		Net_Result = 0;
+	}
+	
+	// Restore UISequence
+	UIManager.UIAll.UISequence = OldUISequence;
+	
+	return SelectedSide;
+}

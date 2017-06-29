@@ -1,0 +1,244 @@
+/**
+ *	Settings lib
+ *
+ *	Get settings from an XML files
+ *
+ *	Format:
+ *	<r>
+ *		<s n="NameOfTheSetting" t="TypeOfTheSetting" v="ValueOfTheSetting" />
+ *		<s n="MyText" t="T" v="SomeText" />
+ *		<s n="MyInteger" t="I" v="123" />
+ *		<s n="MyReal" t="R" v="456.789" />
+ *		<s n="MyBoolean" t="B" v="False" />
+ *	</r>
+ *
+ *	The valid types are t="T" (for Text) Text, t="I" (for Integer), t="R" (for Real) and t="B" (for Boolean).
+ */
+
+#Const	Version		"2015-11-17"
+#Const	ScriptName	"Settings.Script.txt"
+
+/* ------------------------------------- */
+// Constants
+/* ------------------------------------- */
+#Const C_RequestTimeOut	5000	///< Time before the request is considered failed
+
+/* ------------------------------------- */
+// Globales
+/* ------------------------------------- */
+declare Text[Text] 		G_LibSettings_SettingsText;		///< Save the Text settings
+declare Integer[Text] 	G_LibSettings_SettingsInteger;	///< Save the Integer settings
+declare Real[Text] 		G_LibSettings_SettingsReal;		///< Save the Real settings
+declare Boolean[Text] 	G_LibSettings_SettingsBoolean;	///< Save the boolean settings
+declare CHttpRequest	G_LibSettings_SettingsRequest;	///< The current request to get the settings
+
+/* ------------------------------------- */
+// Functions
+/* ------------------------------------- */
+
+/* ------------------------------------- */
+/** Return the version number of the script
+ *
+ *	@return		The version number of the script
+ */
+Text GetScriptVersion() {
+	return Version;
+}
+
+/* ------------------------------------- */
+/** Return the name of the script
+ *
+ *	@return		The name of the script
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+/* ------------------------------------- */
+/// Unoad the library
+Void Unload() {
+	G_LibSettings_SettingsText.clear();
+	G_LibSettings_SettingsInteger.clear();
+	G_LibSettings_SettingsReal.clear();
+	G_LibSettings_SettingsBoolean.clear();
+	if (G_LibSettings_SettingsRequest != Null) Http.Destroy(G_LibSettings_SettingsRequest);
+}
+
+/* ------------------------------------- */
+/// Load the library
+Void Load() {
+	Unload();
+}
+
+/* ------------------------------------- */
+/** Load the settings from an url
+ *
+ *	@param	_Url	The url to get
+ *
+ *	@return			True if the settings have been loaded, false if an error happened
+ */
+Boolean LoadFromUrl(Text _Url) {
+	if (G_LibSettings_SettingsRequest != Null) Http.Destroy(G_LibSettings_SettingsRequest);
+	G_LibSettings_SettingsRequest = Null;
+	
+	if (Http.IsValidUrl(_Url)) {
+		G_LibSettings_SettingsRequest = Http.CreateGet(_Url);
+	} else {
+		return False;
+	}
+	
+	declare RequestStartTime = Now;
+	while (!G_LibSettings_SettingsRequest.IsCompleted) {
+		yield;
+		if (RequestStartTime + C_RequestTimeOut <= Now) break;
+	}
+	if (!G_LibSettings_SettingsRequest.IsCompleted) return False;
+	
+	declare SettingsXml = Xml.Create(G_LibSettings_SettingsRequest.Result);
+	Http.Destroy(G_LibSettings_SettingsRequest);
+	G_LibSettings_SettingsRequest = Null;
+	
+	if (SettingsXml != Null && SettingsXml.Root != Null && SettingsXml.Root.Name == "r") {
+		foreach (Node in SettingsXml.Root.Children) {
+			if (Node.Name == "s") {
+				switch (Node.GetAttributeText("t", "notype")) {
+					case "T": G_LibSettings_SettingsText[Node.GetAttributeText("n", "")]	= Node.GetAttributeText("v", "");
+					case "I": G_LibSettings_SettingsInteger[Node.GetAttributeText("n", "")]	= Node.GetAttributeInteger("v", 0);
+					case "R": G_LibSettings_SettingsReal[Node.GetAttributeText("n", "")]	= Node.GetAttributeReal("v", 0.);
+					case "B": G_LibSettings_SettingsBoolean[Node.GetAttributeText("n", "")]	= Node.GetAttributeBoolean("v", False);
+				}
+			}
+		}
+	} else {
+		Xml.Destroy(SettingsXml);
+		return False;
+	}
+	
+	Xml.Destroy(SettingsXml);
+	
+	return True;
+}
+
+/* ------------------------------------- */
+/** Check if the given setting exists in the Text array
+ *
+ *	@param	_Name	The name of the setting to check
+ *
+ *	@return			True if the setting exists, false otherwise
+ */
+Boolean ExistsText(Text _Name) {
+	if (G_LibSettings_SettingsText.existskey(_Name)) return True;
+	return False;
+}
+
+/* ------------------------------------- */
+/** Check if the given setting exists in the Integer array
+ *
+ *	@param	_Name	The name of the setting to check
+ *
+ *	@return			True if the setting exists, false otherwise
+ */
+Boolean ExistsInteger(Text _Name) {
+	if (G_LibSettings_SettingsInteger.existskey(_Name)) return True;
+	return False;
+}
+
+/* ------------------------------------- */
+/** Check if the given setting exists in the Real array
+ *
+ *	@param	_Name	The name of the setting to check
+ *
+ *	@return			True if the setting exists, false otherwise
+ */
+Boolean ExistsReal(Text _Name) {
+	if (G_LibSettings_SettingsReal.existskey(_Name)) return True;
+	return False;
+}
+
+/* ------------------------------------- */
+/** Check if the given setting exists in the Boolean array
+ *
+ *	@param	_Name	The name of the setting to check
+ *
+ *	@return			True if the setting exists, false otherwise
+ */
+Boolean ExistsBoolean(Text _Name) {
+	if (G_LibSettings_SettingsBoolean.existskey(_Name)) return True;
+	return False;
+}
+
+/* ------------------------------------- */
+/** Get a setting in the Text array
+ *
+ *	@param	_Name		The name of the setting to get
+ *	@param	_Default	The value to return if the setting is not found
+ *
+ *	@return				The setting value if found, default value otherwise
+ */
+Text GetText(Text _Name, Text _Default) {
+	if (ExistsText(_Name)) return G_LibSettings_SettingsText[_Name];
+	return _Default;
+}
+
+/* ------------------------------------- */
+/// GetText() overload
+Text GetText(Text _Name) {
+	return GetText(_Name, "");
+}
+
+/* ------------------------------------- */
+/** Get a setting in the Integer array
+ *
+ *	@param	_Name		The name of the setting to get
+ *	@param	_Default	The value to return if the setting is not found
+ *
+ *	@return				The setting value if found, default value otherwise
+ */
+Integer GetInteger(Text _Name, Integer _Default) {
+	if (ExistsInteger(_Name)) return G_LibSettings_SettingsInteger[_Name];
+	return _Default;
+}
+
+/* ------------------------------------- */
+/// GetInteger overload
+Integer GetInteger(Text _Name) {
+	return GetInteger(_Name, 0);
+}
+
+/* ------------------------------------- */
+/** Get a setting in the Real array
+ *
+ *	@param	_Name		The name of the setting to get
+ *	@param	_Default	The value to return if the setting is not found
+ *
+ *	@return				The setting value if found, default value otherwise
+ */
+Real GetReal(Text _Name, Real _Default) {
+	if (ExistsReal(_Name)) return G_LibSettings_SettingsReal[_Name];
+	return _Default;
+}
+
+/* ------------------------------------- */
+/// GetReal overload
+Real GetReal(Text _Name) {
+	return GetReal(_Name, 0.);
+}
+
+/* ------------------------------------- */
+/** Get a setting in the Boolean array
+ *
+ *	@param	_Name		The name of the setting to get
+ *	@param	_Default	The value to return if the setting is not found
+ *
+ *	@return				The setting value if found, default value otherwise
+ */
+Boolean GetBoolean(Text _Name, Boolean _Default) {
+	if (ExistsBoolean(_Name)) return G_LibSettings_SettingsBoolean[_Name];
+	return _Default;
+}
+
+/* ------------------------------------- */
+/// GetBoolean overload
+Boolean GetBoolean(Text _Name) {
+	return GetBoolean(_Name, False);
+}

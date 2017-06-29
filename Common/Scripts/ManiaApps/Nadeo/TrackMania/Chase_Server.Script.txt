@@ -1,0 +1,151 @@
+/**
+ * Chase UI
+ */
+#Const Version    "2017-06-14"
+#Const ScriptName "ManiaApps/Nadeo/TrackMania/Chase_Server.Script.txt"
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+// ---------------------------------- //
+/** Return the version number of the script
+ *
+ *  @return                           The version number of the script
+ */
+Text GetScriptVersion() {
+  return Version;
+}
+
+// ---------------------------------- //
+/** Return the name of the script
+ *
+ *  @return                           The name of the script
+ */
+Text GetScriptName() {
+  return ScriptName;
+}
+
+// ---------------------------------- //
+/** Send the login of the next relay
+ *  player to the UI
+ *
+ *  @param  _Login                    The login of the next relay player
+ */
+Void SetRelayPlayer(CTeam _Team, Text _Login) {
+  if (_Team == Null) return;
+
+  declare netwrite Net_MAChase_NextRelayLogin for _Team = "";
+  Net_MAChase_NextRelayLogin = _Login;
+}
+
+// ---------------------------------- //
+/** Enable or disable the display of the header
+ *
+ *	@param	_Enable										True to display
+ *																		False to hide
+ */
+Void SetHeaderVisibility(Boolean _Enable) {
+	declare netwrite Net_MAChase_HeaderIsVisible for Teams[0] = True;
+	Net_MAChase_HeaderIsVisible = _Enable;
+}
+
+// ---------------------------------- //
+/** Send the checkpoint grade of a
+ *	player to his UI
+ *
+ *	@param	_Player										The recipient
+ *	@param	_Grade										The grade
+ *	@param	_Color										Color of the grade
+ *	@param	_Combo										Combo counter
+ *	@param	_Score										The score of the player
+ */
+Void SendCheckpointGrade(CTmPlayer _Player, Text _Grade, Vec3 _Color, Integer _Combo, Integer _Score) {
+	if (_Player == Null) return;
+	declare UI <=> UIManager.GetUI(_Player);
+	if (UI == Null) return;
+	
+	declare netwrite Net_MAChase_CheckpointGradeUpdate for UI = -1;
+	declare netwrite Net_MAChase_CheckpointGrade for UI = "";
+	declare netwrite Net_MAChase_CheckpointGradeColor for UI = <1., 1., 1.>;
+	declare netwrite Net_MAChase_CheckpointGradeCombo for UI = 0;
+	declare netwrite Net_MAChase_CheckpointGradeScore for UI = 0;
+	Net_MAChase_CheckpointGrade = _Grade;
+	Net_MAChase_CheckpointGradeColor = _Color;
+	Net_MAChase_CheckpointGradeCombo = _Combo;
+	Net_MAChase_CheckpointGradeScore = _Score;
+	Net_MAChase_CheckpointGradeUpdate = Now;
+}
+
+// ---------------------------------- //
+/** Send relay info to the UI
+ *
+ *	@param	_NextCheckpointPlayerId	Id of the player that must cross
+ *																		the next checkpoint for each clan
+ *																		[Clan => PlayerId]
+ *	@param	_MarkersPlayers						Players associated to each marker
+ */
+Void SendRelayInfo(Ident[Integer] _NextCheckpointPlayerId, CTmPlayer[] _MarkersPlayers) {
+	declare netwrite Net_MAChase_RelayUpdate for Teams[0] = -1;
+	declare netwrite Net_MAChase_RelayLogins for Teams[0] = Text[Integer];
+	declare netwrite Net_MAChase_MarkersLogins for Teams[0] = Text[];
+	declare netwrite Net_MAChase_MarkersNames for Teams[0] = Text[];
+	declare netwrite Net_MAChase_MarkersClans for Teams[0] = Integer[];
+	
+	declare RelayLogins = Text[Integer];
+	foreach (Clan => PlayerId in _NextCheckpointPlayerId) {
+		if (AllPlayers.existskey(PlayerId)) {
+			RelayLogins[Clan] = AllPlayers[PlayerId].User.Login;
+		}
+	}
+	
+	declare Logins = Text[];
+	declare Names = Text[];
+	declare Clans = Integer[];
+	foreach (Player in _MarkersPlayers) {
+		if (Player == Null) continue;
+		Logins.add(Player.User.Login);
+		Names.add(Player.User.Name);
+		Clans.add(Player.CurrentClan);
+	}
+	
+	Net_MAChase_MarkersLogins = Logins;
+	Net_MAChase_MarkersNames = Names;
+	Net_MAChase_MarkersClans = Clans;
+	Net_MAChase_RelayLogins = RelayLogins;
+	Net_MAChase_RelayUpdate = Now;
+}
+
+// ---------------------------------- //
+/** Update the round points limit
+ *
+ *	@param														The round points limit
+ */
+Void SetRoundPointsLimit(Integer _RoundPointsLimit) {
+	declare netwrite Net_MAChase_RoundPointsLimit for Teams[0] = 0;
+	Net_MAChase_RoundPointsLimit = _RoundPointsLimit;
+}
+
+// ---------------------------------- //
+/// Unload the library
+Void Unload() {
+	SetHeaderVisibility(True);
+	SendRelayInfo(Ident[Integer], CTmPlayer[]);
+	SetRoundPointsLimit(0);
+	
+  foreach (Team in Teams) {
+    SetRelayPlayer(Team, "");
+  }
+	
+	foreach (Player in AllPlayers) {
+		SendCheckpointGrade(Player, "", <1., 1., 1.>, 0, 0);
+	}
+}
+
+// ---------------------------------- //
+/// Load the library
+Void Load() {
+  Unload();
+}

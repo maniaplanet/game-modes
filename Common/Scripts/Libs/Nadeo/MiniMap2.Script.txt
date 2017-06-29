@@ -1,0 +1,431 @@
+/**
+ *	MiniMap2 library
+ */
+#Const	Version		"2014-12-02"
+#Const	ScriptName	"MiniMap2.Script.txt"
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_LibMiniMap2_Pos			<92., 0., 0.>
+#Const C_LibMiniMap2_Size			<60., 60.>
+#Const C_LibMiniMap2_Scale			1.
+#Const C_LibMiniMap2_Zoom			1.
+#Const C_LibMiniMap2_WorldPosition	<0., 0., 0.>
+#Const C_LibMiniMap2_WorldPositionFollow False
+#Const C_LibMiniMap2_MapPosition	<1., 0.>
+#Const C_LibMiniMap2_MapYaw			0.
+#Const C_LibMiniMap2_MapYawFollow	False
+#Const C_LibMiniMap2_OverlayImage 	"file://Media/Manialinks/Common/Minimap/MinimapOverlay2.dds"
+#Const C_LibMiniMap2_OverlayPos		<-4.2, 4.2>
+#Const C_LibMiniMap2_OverlaySize	<68., 68.>
+
+// ---------------------------------- //
+// Globales
+// ---------------------------------- //
+declare Ident G_LibMiniMap2_LayerMiniMapId;
+declare Text[Text] G_LibMiniMap2_Points;
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+// ---------------------------------- //
+// Private
+// ---------------------------------- //
+// ---------------------------------- //
+/** Create the mini map manialink
+ *
+ *	@return		The mini map manialink
+ */
+Text Private_GetMLMiniMap() {
+	return """
+<manialink version="2" name="Lib_MiniMap2:MiniMap">
+<frame posn="{{{C_LibMiniMap2_Pos.X}}} {{{C_LibMiniMap2_Pos.Y}}} {{{C_LibMiniMap2_Pos.Z}}}" scale="{{{C_LibMiniMap2_Scale}}}" id="Frame_Global">
+	<frame posn="0 0 10" id="Frame_Overlay">
+		<quad posn="{{{C_LibMiniMap2_OverlayPos.X}}} {{{C_LibMiniMap2_OverlayPos.Y}}}" sizen="{{{C_LibMiniMap2_OverlaySize.X}}} {{{C_LibMiniMap2_OverlaySize.Y}}}" image="{{{C_LibMiniMap2_OverlayImage}}}" hidden="1" id="Quad_Overlay" />
+	</frame>
+	<frame id="Frame_MiniMap">
+		<minimap sizen="{{{C_LibMiniMap2_Size.X}}} {{{C_LibMiniMap2_Size.Y}}}" mapposition="{{{C_LibMiniMap2_MapPosition.X}}} {{{C_LibMiniMap2_MapPosition.Y}}}" zoomfactor="{{{C_LibMiniMap2_Zoom}}}" id="Minimap_Main" />
+	</frame>
+</frame>
+<script><!--
+Void UpdateOverlay() {
+	declare Quad_Overlay <=> (Page.GetFirstChild("Quad_Overlay") as CMlQuad);
+	
+	declare netread Text Net_LibMiniMap2_OverlayImage for Teams[0];
+	declare netread Vec2 Net_LibMiniMap2_OverlayPos for Teams[0];
+	declare netread Vec2 Net_LibMiniMap2_OverlaySize for Teams[0];
+	
+	if (Net_LibMiniMap2_OverlayImage != "") {
+		Quad_Overlay.Visible = True;
+	} else {
+		Quad_Overlay.Visible = False;
+	}
+	
+	Quad_Overlay.ChangeImageUrl(Net_LibMiniMap2_OverlayImage);
+	Quad_Overlay.RelativePosition = <Net_LibMiniMap2_OverlayPos.X, Net_LibMiniMap2_OverlayPos.Y, Quad_Overlay.RelativePosition.Z>;
+	Quad_Overlay.Size = Net_LibMiniMap2_OverlaySize;
+}
+
+main() {
+	declare Frame_Global <=> (Page.GetFirstChild("Frame_Global") as CMlFrame);
+	declare Minimap_Main <=> (Page.GetFirstChild("Minimap_Main") as CMlMinimap);
+	
+	declare netread Vec3 Net_LibMiniMap2_Pos for Teams[0];
+	declare netread Vec2 Net_LibMiniMap2_Size for Teams[0];
+	declare netread Real Net_LibMiniMap2_Scale for Teams[0];
+	declare netread Real Net_LibMiniMap2_Zoom for Teams[0];
+	declare netread Vec3 Net_LibMiniMap2_WorldPosition for Teams[0];
+	declare netread Boolean Net_LibMiniMap2_WorldPositionFollow for Teams[0];
+	declare netread Vec2 Net_LibMiniMap2_MapPosition for Teams[0];
+	declare netread Real Net_LibMiniMap2_MapYaw for Teams[0];
+	declare netread Boolean Net_LibMiniMap2_MapYawFollow for Teams[0];
+	declare netread Integer Net_LibMiniMap2_UpdateOverlay for Teams[0];
+	declare netread Boolean Net_LibMiniMap2_VisibilityAll for Teams[0];
+	declare netread Integer Net_LibMiniMap2_VisibilityPlayer for UI;
+	
+	declare PrevPos = <0., 0., 0.>;
+	declare PrevSize = <0., 0.>;
+	declare PrevScale = 0.;
+	declare PrevZoom = 0.;
+	declare PrevWorldPosition = <0., 0., 0.1>;
+	declare PrevMapPosition = <1., 0.>;
+	declare PrevMapYaw = 0.;
+	declare PrevUpdateOverlay = -1;
+	declare PrevVisibilityAll = True;
+	declare PrevVisibilityPlayer = 0;
+	
+	Minimap_Main.WorldPosition = <0., 0.1, 0.>;
+	sleep(1);
+	Minimap_Main.WorldPosition = <0., 0., 0.>;
+	
+	while (True) {
+		yield;
+		if (!PageIsVisible || InputPlayer == Null) continue;
+		
+		if (PrevVisibilityAll != Net_LibMiniMap2_VisibilityAll) {
+			PrevVisibilityAll = Net_LibMiniMap2_VisibilityAll;
+			if (Net_LibMiniMap2_VisibilityPlayer == 0) {
+				Frame_Global.Visible = Net_LibMiniMap2_VisibilityAll;
+			}
+		}
+		if (PrevVisibilityPlayer != Net_LibMiniMap2_VisibilityPlayer) {
+			PrevVisibilityPlayer = Net_LibMiniMap2_VisibilityPlayer;
+			if (Net_LibMiniMap2_VisibilityPlayer > 0) {
+				Frame_Global.Visible = True;
+			} else if (Net_LibMiniMap2_VisibilityPlayer < 0) {
+				Frame_Global.Visible = False;
+			} else {
+				Frame_Global.Visible = Net_LibMiniMap2_VisibilityAll;
+			}
+		}
+		
+		if (Frame_Global.Visible) {
+			if (PrevSize != Net_LibMiniMap2_Size) {
+				PrevSize = Net_LibMiniMap2_Size;
+				Minimap_Main.Size = Net_LibMiniMap2_Size;
+			}
+			
+			if (PrevPos != Net_LibMiniMap2_Pos) {
+				PrevPos = Net_LibMiniMap2_Pos;
+				Frame_Global.RelativePosition = Net_LibMiniMap2_Pos;
+			}
+			
+			if (PrevScale != Net_LibMiniMap2_Scale) {
+				PrevScale = Net_LibMiniMap2_Scale;
+				Frame_Global.RelativeScale = Net_LibMiniMap2_Scale;
+			}
+			
+			if (PrevZoom != Net_LibMiniMap2_Zoom) {
+				PrevZoom = Net_LibMiniMap2_Zoom;
+				Minimap_Main.ZoomFactor = Net_LibMiniMap2_Zoom;
+			}
+			
+			if (Net_LibMiniMap2_WorldPositionFollow && GUIPlayer != Null) {
+				Minimap_Main.WorldPosition = GUIPlayer.Position + Net_LibMiniMap2_WorldPosition;
+			} else if (PrevWorldPosition != Net_LibMiniMap2_WorldPosition) {
+				PrevWorldPosition = Net_LibMiniMap2_WorldPosition;
+				Minimap_Main.WorldPosition = Net_LibMiniMap2_WorldPosition;
+			}
+			
+			if (PrevMapPosition != Net_LibMiniMap2_MapPosition) {
+				PrevMapPosition = Net_LibMiniMap2_MapPosition;
+				Minimap_Main.MapPosition = Net_LibMiniMap2_MapPosition;
+			}
+			
+			if (Net_LibMiniMap2_MapYawFollow && GUIPlayer != Null) {
+				Minimap_Main.MapYaw = GUIPlayer.AimYaw + Net_LibMiniMap2_MapYaw;
+			} else if (PrevMapYaw != Net_LibMiniMap2_MapYaw) {
+				PrevMapYaw = Net_LibMiniMap2_MapYaw;
+				Minimap_Main.MapYaw = Net_LibMiniMap2_MapYaw;
+			}
+			
+			if (PrevUpdateOverlay != Net_LibMiniMap2_UpdateOverlay) {
+				PrevUpdateOverlay = Net_LibMiniMap2_UpdateOverlay;
+				UpdateOverlay();
+			}
+		}
+	}
+}
+--></script>
+</manialink>""";
+}
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+// ---------------------------------- //
+/** Return the version number of the script
+ *
+ *	@return		The version number of the script
+ */
+Text GetScriptVersion() {
+	return Version;
+}
+
+// ---------------------------------- //
+/** Return the name of the script
+ *
+ *	@return		The name of the script
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+// ---------------------------------- //
+/// Unload the library
+Void Unload() {
+	// Destroy the minimap layer
+	if (UIManager.UILayers.existskey(G_LibMiniMap2_LayerMiniMapId)) {
+		declare LayerMiniMap = UIManager.UILayers[G_LibMiniMap2_LayerMiniMapId];
+		declare Removed = UIManager.UIAll.UILayers.remove(LayerMiniMap);
+		UIManager.UILayerDestroy(LayerMiniMap);
+	}
+	
+	G_LibMiniMap2_LayerMiniMapId = NullId;
+	G_LibMiniMap2_Points.clear();
+	
+	// Turn off the minimap
+	UseMinimap = False;
+}
+
+// ---------------------------------- //
+/// Load the library
+Void Load() {
+	Unload();
+	
+	// Turn on the minimap
+	UseMinimap = True;
+	
+	// Create the minimap layer
+	declare LayerMiniMap = UIManager.UILayerCreate();
+	G_LibMiniMap2_LayerMiniMapId = LayerMiniMap.Id;
+	LayerMiniMap.ManialinkPage = Private_GetMLMiniMap();
+	
+	// Initialize UI variables
+	declare netwrite Vec3 Net_LibMiniMap2_Pos for Teams[0];
+	declare netwrite Vec2 Net_LibMiniMap2_Size for Teams[0];
+	declare netwrite Real Net_LibMiniMap2_Scale for Teams[0];
+	declare netwrite Real Net_LibMiniMap2_Zoom for Teams[0];
+	declare netwrite Vec3 Net_LibMiniMap2_WorldPosition for Teams[0];
+	declare netwrite Boolean Net_LibMiniMap2_WorldPositionFollow for Teams[0];
+	declare netwrite Vec2 Net_LibMiniMap2_MapPosition for Teams[0];
+	declare netwrite Real Net_LibMiniMap2_MapYaw for Teams[0];
+	declare netwrite Boolean Net_LibMiniMap2_MapYawFollow for Teams[0];
+	declare netwrite Boolean Net_LibMiniMap2_VisibilityAll for Teams[0];
+	declare netwrite Integer Net_LibMiniMap2_UpdateOverlay for Teams[0];
+	declare netwrite Text Net_LibMiniMap2_OverlayImage for Teams[0];
+	declare netwrite Vec2 Net_LibMiniMap2_OverlayPos for Teams[0];
+	declare netwrite Vec2 Net_LibMiniMap2_OverlaySize for Teams[0];
+	
+	Net_LibMiniMap2_Pos = C_LibMiniMap2_Pos;
+	Net_LibMiniMap2_Size = C_LibMiniMap2_Size;
+	Net_LibMiniMap2_Scale = C_LibMiniMap2_Scale;
+	Net_LibMiniMap2_Zoom = C_LibMiniMap2_Zoom;
+	Net_LibMiniMap2_WorldPosition = C_LibMiniMap2_WorldPosition;
+	Net_LibMiniMap2_WorldPositionFollow = C_LibMiniMap2_WorldPositionFollow;
+	Net_LibMiniMap2_MapPosition = C_LibMiniMap2_MapPosition;
+	Net_LibMiniMap2_MapYaw = C_LibMiniMap2_MapYaw;
+	Net_LibMiniMap2_MapYawFollow = C_LibMiniMap2_MapYawFollow;
+	Net_LibMiniMap2_VisibilityAll = True;
+	Net_LibMiniMap2_UpdateOverlay = 0;
+	Net_LibMiniMap2_OverlayImage = C_LibMiniMap2_OverlayImage;
+	Net_LibMiniMap2_OverlayPos = C_LibMiniMap2_OverlayPos;
+	Net_LibMiniMap2_OverlaySize = C_LibMiniMap2_OverlaySize;
+}
+
+// ---------------------------------- //
+/** Attach the minimap to the UI
+ *
+ *	/!\ DO IT ONLY AFTER THE MAP IS LOADED
+ *	The minimap won't be generated correclty otherwise
+ *	and the UI will disappear
+ */
+Void Attach() {
+	if (
+		UIManager.UILayers.existskey(G_LibMiniMap2_LayerMiniMapId)
+		&& !UIManager.UIAll.UILayers.existskey(G_LibMiniMap2_LayerMiniMapId)
+	) {
+		UIManager.UIAll.UILayers.add(UIManager.UILayers[G_LibMiniMap2_LayerMiniMapId]);
+	}
+}
+
+// ---------------------------------- //
+/// Detach the minimap from the UI
+Void Detach() {
+	declare Removed = UIManager.UIAll.UILayers.removekey(G_LibMiniMap2_LayerMiniMapId);
+}
+
+// ---------------------------------- //
+/** Set the position of the minimap in the HUD
+ *
+ *	@param	_Pos	The new position
+ */
+Void Pos(Vec3 _Pos) {
+	declare netwrite Vec3 Net_LibMiniMap2_Pos for Teams[0];
+	Net_LibMiniMap2_Pos = _Pos;
+}
+
+// ---------------------------------- //
+/** Set the size of the minimap
+ *
+ *	@param	_Size	The new size
+ */
+Void Size(Vec2 _Size) {
+	declare netwrite Vec2 Net_LibMiniMap2_Size for Teams[0];
+	Net_LibMiniMap2_Size = _Size;
+}
+
+// ---------------------------------- //
+/** Set the scale of the minimap
+ *
+ *	@param	_Scale	The new size
+ */
+Void Scale(Real _Scale) {
+	declare netwrite Real Net_LibMiniMap2_Scale for Teams[0];
+	Net_LibMiniMap2_Scale = _Scale;
+}
+
+// ---------------------------------- //
+/** Set the visibility of the minimap by default
+ *
+ *	@param	_Visible	True to show the minimap
+ */
+Void Visibility(Boolean _Visible) {
+	declare netwrite Boolean Net_LibMiniMap2_VisibilityAll for Teams[0];
+	Net_LibMiniMap2_VisibilityAll = _Visible;
+}
+
+// ---------------------------------- //
+/** Set the visibility of the minimap for one player
+ *	This setting will override the default one
+ *
+ *	@param	_Player		The player to update
+ *	@param	_Visible	True to show the minimap
+ */
+Void Visibility(CPlayer _Player, Boolean _Visible) {
+	if (_Player == Null) return;
+	
+	declare UI <=> UIManager.GetUI(_Player);
+	if (UI == Null) return;
+	
+	declare netwrite Integer Net_LibMiniMap2_VisibilityPlayer for UI;
+	if (_Visible) {
+		Net_LibMiniMap2_VisibilityPlayer = 1;
+	} else {
+		Net_LibMiniMap2_VisibilityPlayer = -1;
+	}
+}
+
+// ---------------------------------- //
+/** Reset the visibility of the minimap at the player level to the default
+ *
+ *	@param	_Player		The player to reset
+ */
+Void ResetVisibility(CPlayer _Player) {
+	if (_Player == Null) return;
+	
+	declare UI <=> UIManager.GetUI(_Player);
+	if (UI == Null) return;
+	
+	declare netwrite Integer Net_LibMiniMap2_VisibilityPlayer for UI;
+	Net_LibMiniMap2_VisibilityPlayer = 0;
+}
+
+// ---------------------------------- //
+/** Set the properties of the overlay on the minimap
+ *
+ *	@param	_ImgPath		The path to the image
+ *	@param	_Pos			The position of the overlay
+ *	@param	_Size			The size of the overlay
+ */
+Void Overlay(Text _ImgPath, Vec2 _Pos, Vec2 _Size) {
+	declare netwrite Integer Net_LibMiniMap2_UpdateOverlay for Teams[0];
+	declare netwrite Text Net_LibMiniMap2_OverlayImage for Teams[0];
+	declare netwrite Vec2 Net_LibMiniMap2_OverlayPos for Teams[0];
+	declare netwrite Vec2 Net_LibMiniMap2_OverlaySize for Teams[0];
+	Net_LibMiniMap2_UpdateOverlay += 1;
+	Net_LibMiniMap2_OverlayImage = _ImgPath;
+	Net_LibMiniMap2_OverlayPos = _Pos;
+	Net_LibMiniMap2_OverlaySize = _Size;
+}
+
+// ---------------------------------- //
+/** Set the zoom of the minimap
+ *
+ *	@param	_Zoom	The new zoom
+ */
+Void Zoom(Real _Zoom) {
+	declare netwrite Real Net_LibMiniMap2_Zoom for Teams[0];
+	Net_LibMiniMap2_Zoom = _Zoom;
+}
+
+// ---------------------------------- //
+/** Set the world position of the minimap
+ *
+ *	@param	_Pos	The new world position
+ */
+Void WorldPosition(Vec3 _Pos) {
+	declare netwrite Vec3 Net_LibMiniMap2_WorldPosition for Teams[0];
+	Net_LibMiniMap2_WorldPosition = _Pos;
+}
+
+// ---------------------------------- //
+/** The world position is equal to the GUIPlayer position + the default world position
+ *
+ *	@param	_Follow		The map follow the player position or not
+ */
+Void WorldPositionFollow(Boolean _Follow) {
+	declare netwrite Boolean Net_LibMiniMap2_WorldPositionFollow for Teams[0];
+	Net_LibMiniMap2_WorldPositionFollow = _Follow;
+}
+
+// ---------------------------------- //
+/** Set the map position of the minimap
+ *
+ *	@param	_Pos	The new map position
+ */
+Void MapPosition(Vec2 _Pos) {
+	declare netwrite Vec2 Net_LibMiniMap2_MapPosition for Teams[0];
+	Net_LibMiniMap2_MapPosition = _Pos;
+}
+
+// ---------------------------------- //
+/** Set the map yaw of the minimap
+ *
+ *	@param	_Yaw	The new yaw
+ */
+Void MapYaw(Real _Yaw) {
+	declare netwrite Real Net_LibMiniMap2_MapYaw for Teams[0];
+	Net_LibMiniMap2_MapYaw = _Yaw;
+}
+
+// ---------------------------------- //
+/** The map yaw is equal to the GUIPlayer yaw + the default yaw
+ *
+ *	@param	_Follow		The map follow the player yaw or not
+ */
+Void MapYawFollow(Boolean _Follow) {
+	declare netwrite Boolean Net_LibMiniMap2_MapYawFollow for Teams[0];
+	Net_LibMiniMap2_MapYawFollow = _Follow;
+}

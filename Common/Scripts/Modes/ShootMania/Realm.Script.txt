@@ -1,0 +1,1472 @@
+/**
+ * Realm mode
+ */
+#Extends "Modes/ShootMania/Base/ModeBase.Script.txt"
+
+#Const	CompatibleMapTypes	"RealmArena"
+#Const	Version							"2016-04-15"
+#Const	ScriptName					"Realm.Script.txt"
+
+#Include "TextLib" as TL
+#Include "MathLib" as ML
+#Include "Libs/Nadeo/Color.Script.txt" as Color
+#Include "Libs/Nadeo/Layers2.Script.txt" as Layers
+#Include "Libs/Nadeo/Message.Script.txt" as Message
+#Include "Libs/Nadeo/ShootMania/SM.Script.txt" as SM
+#Include "Libs/Nadeo/ShootMania/Map.Script.txt" as Map
+#Include "Libs/Nadeo/ShootMania/Score.Script.txt" as Scores
+#Include "Libs/Nadeo/ShootMania/SpawnScreen.Script.txt" as SpawnScreen
+
+// ---------------------------------- //
+// Settings
+// ---------------------------------- //
+#Setting S_PoleCaptureDuration	15		as _("Duration of the pole capture")
+#Setting S_PoleUncaptureSpeed		3.		as _("Speed multiplier for the uncapture")
+#Setting S_UsePoleRegeneration	False	as _("Use pole regeneration")
+#Setting S_SpawnTimeBase				10		as _("Time before respawn")
+#Setting S_SpawnTimeIncrease		5			as _("Respawn time increment per minute")
+#Setting S_SpawnTimeMax					60		as _("Maximum time before respawn")
+#Setting S_MapPointsLimit				2			as _("Number of rounds to win a map")
+#Setting S_MapPointsGap					2			as _("Minimum round gap between the two teams to win")
+#Setting S_MapRoundsLimit				3			as _("Maximum number of rounds on a map")
+#Setting S_HudModulePath 				"Nadeo/ShootMania/Realm/Hud.Module.Gbx" as "<hidden>"
+// Clublinks settings
+#Setting S_UsePlayerClublinks		False	as _("Use players clublinks")	///< Use the players clublinks, or otherwise use the default teams
+#Setting S_ForceClublinkTeam1		""		as "<hidden>"	///< Force the Clublink of team 1 (format: http://www.example.com/MyTeam.Club.xml)
+#Setting S_ForceClublinkTeam2		""		as "<hidden>"	///< Force the Clublink of team 2 (format: http://www.example.com/MyTeam.Club.xml)
+
+
+#Const C_PlayerRefreshInterval	250		///< Time between two UI refresh
+#Const C_PointsRefreshInterval	1000	///< Time between two points count
+#Const C_TurnPointsLimit				[120, 60, 30, 15, 5] ///< Turn points limit depending on the round number
+#Const C_SleepEndTurn						5000	///< Time spent to wait at the end of the turn
+#Const C_SleepEndMap						15000	///< Time spend to wait at the end of the map
+#Const C_BlueBots								0			///< Number of blue bots for debugging
+#Const C_RedBots								0			///< Number of red bots for debugging
+#Const C_ImgBaseDir							"file://Media/Manialinks/Shootmania/Common/"
+
+#Const C_ModeObjectives _("$<%11. $>Teams must control the majority of poles.\n$<%12. $>The countdown of the team with the majority of poles will decrease.\n$<%13. $>Teams whose countdown reaches 0 go to finalist mode.\n$<%14. $>A team in finalist mode can win the turn by having a majority of fully controled poles. \n$<%15. $>The first team who scores %2 points and has a lead of %3 points wins the map.")
+#Const C_ModeConditions _("$<%11. $>To control a pole you must fill its gauge with your color by staying near it.\n$<%12. $>You can steal a pole of the opposing team the same way.\n$<%13. $>It's always the team with the most players near a pole that will capture it.")
+
+#Const Description  _("TYPE: Team versus Team\nOBJECTIVE: Your team must control the absolute majority of poles on the map for a fixed amount of time.\nStay near a pole to capture and control it. Your poles can be stolen by the opposing team.\nThe first team to reach the points limit wins the map.")
+
+// ---------------------------------- //
+// Globales
+// ---------------------------------- //
+
+***LogVersion***
+***
+MB_LogVersion(ScriptName, Version);
+MB_LogVersion(SM::GetScriptName(), SM::GetScriptVersion());
+MB_LogVersion(Map::GetScriptName(), Map::GetScriptVersion());
+MB_LogVersion(Color::GetScriptName(), Color::GetScriptVersion());
+MB_LogVersion(Scores::GetScriptName(), Scores::GetScriptVersion());
+MB_LogVersion(Layers::GetScriptName(), Layers::GetScriptVersion());
+MB_LogVersion(Message::GetScriptName(), Message::GetScriptVersion());
+MB_LogVersion(SpawnScreen::GetScriptName(), SpawnScreen::GetScriptVersion());
+***
+
+***InitServer***
+***
+MB_UseSectionRound			= True;
+MB_UseSectionTurn			= True;
+MB_UsePlayerClublinks		= S_UsePlayerClublinks;
+***
+
+***StartServer***
+***	
+// ---------------------------------- //
+// Set mode options
+UseClans = True;
+SM::SetupDefaultVisibility();
+UIManager.UIAll.NoticesFilter_LevelToShowAsBigMessage = CUIConfig::ENoticeLevel::MatchInfo;
+Color::Load();
+
+// ---------------------------------- //
+// Create the rules
+CreateRules();
+ModeStatusMessage =  _("TYPE: Team versus Team\nOBJECTIVE: Your team must control the absolute majority of poles on the map for a fixed amount of time.");
+
+// ---------------------------------- //
+// Create the layers
+Layers::Create("SpawnSelection", CreateLayerSpawnSelection());
+Layers::Create("Info");
+Layers::Create("Markers");
+Layers::SetType("Markers", CUILayer::EUILayerType::Markers);
+
+// ---------------------------------- //
+// Init scores table
+/*ST2::SetStyle("LibST_SMBaseTeams");
+ST2::SetStyle("LibST_SMBasePoints");
+MB_SetScoresTableStyleFromXml(S_ScoresTableStylePath);
+ST2::Build("SM");*/
+Hud_Load(S_HudModulePath);
+if (Hud != Null && Hud.ScoresTable != Null) {
+  Hud.ScoresTable.Scores_Sort(CModulePlaygroundScoresTable::EScoreSortOrder::SMPoints);
+}
+***
+
+***InitMap***
+***
+declare CSmMapLandmark[Integer]	PoleList;
+declare CSmMapLandmark[Integer]	SpawnList;
+declare CSmMapLandmark[Integer]	SpawnStartList;
+declare Integer[Integer]		BaseClanList;
+declare Integer[Integer]		ClanMapScores;
+declare Integer[Integer]		ClanMapAdvantage;
+declare Integer TurnFirstClan;
+declare Integer ClanMapWinner;
+declare Integer PointsLimitShift;
+***
+
+***StartMap***
+***
+// ---------------------------------- //
+// Add bots
+Users_SetNbFakeUsers(C_BlueBots, C_RedBots);
+
+// ---------------------------------- //
+// Init pole
+UIManager.UIAll.MarkersXML = "";
+PoleList.clear();
+foreach (LandmarkGauge in MapLandmarks_Gauge) {
+	if (LandmarkGauge.Tag == "Pole" && LandmarkGauge.Sector != Null) {
+		PoleList[LandmarkGauge.Order] <=> LandmarkGauge;
+		//Create markers
+		UIManager.UIAll.MarkersXML ^= """<marker pos="{{{LandmarkGauge.Position.X}}} {{{LandmarkGauge.Position.Y+25.}}} {{{LandmarkGauge.Position.Z}}}" manialinkframeid="Marker_Pole_{{{LandmarkGauge.Order}}}" />""";
+	}
+}
+
+// ---------------------------------- //
+// Init spawn
+SpawnList.clear();
+foreach (LandmarkPlayerSpawn in MapLandmarks_PlayerSpawn) {
+	if (LandmarkPlayerSpawn.Tag == "Spawn") SpawnList[LandmarkPlayerSpawn.Order] <=> LandmarkPlayerSpawn;
+	else if (LandmarkPlayerSpawn.Tag == "SpawnStart") SpawnStartList[LandmarkPlayerSpawn.Order] <=> LandmarkPlayerSpawn;
+}
+
+// ---------------------------------- //
+// Misc init
+//ST2::ClearScores();
+Scores::MatchBegin();
+Layers::Attach("Markers");
+Layers::Attach("Info");
+ClanMapScores		= [1 => 0, 2 => 0];
+ClanMapAdvantage	= [1 => 0, 2 => 0];
+ClanMapWinner		= 0;
+ClanScores[1]		= 0;
+ClanScores[2]		= 0;
+PointsLimitShift	= 0;
+
+// ---------------------------------- //
+// Update the rules
+CreateRules();
+
+// ---------------------------------- //
+// Update the players clublinks
+if (S_ForceClublinkTeam1 == "" && S_ForceClublinkTeam2 == "") Clublink::DefineTeamAuto();
+else Clublink::DefineTeamFromUrl(S_ForceClublinkTeam1, S_ForceClublinkTeam2);
+Clublink::SyncUpdate();
+***
+
+***InitRound***
+***
+declare Integer[Integer] ClanRoundScores;
+declare Integer TurnPointsLimit;
+declare Integer Turn1Winner;
+declare Integer Turn2Winner;
+***
+
+***StartRound***
+***
+// ---------------------------------- //
+// Select first turn clan side
+if (MB_SectionRoundNb == 1) TurnFirstClan = ML::Rand(1, 2);
+else TurnFirstClan = 3 - TurnFirstClan;
+
+// ---------------------------------- //
+// Set the points limit
+if (C_TurnPointsLimit.existskey(PointsLimitShift)) TurnPointsLimit = C_TurnPointsLimit[PointsLimitShift];
+else TurnPointsLimit = C_TurnPointsLimit[C_TurnPointsLimit.count - 1];
+
+// ---------------------------------- //
+// Init scores
+ClanRoundScores = [1 => 0, 2 => 0];
+Turn1Winner		= 0;
+Turn2Winner		= 0;
+UpdateRoundScores(ClanRoundScores);
+***
+
+***InitTurn***
+***
+declare Integer Side1Clan;
+declare Integer Side2Clan;
+declare Integer PrevPlayerRefresh;
+declare Integer PrevPointsRefresh;
+declare Integer ClanTurnWinner;
+declare Integer[Integer]ClanTurnScores;
+***
+
+***StartTurn***
+***
+// ---------------------------------- //
+// Init spawn time
+foreach (Score in Scores) {
+	declare SpectatedSpawn	for Score = -1;
+	declare DesiredSpawn	for Score = -1;
+	declare NextSpawnTime	for Score = Now;
+	declare WaitForRespawn	for Score = False;
+	SpectatedSpawn	= 0;
+	DesiredSpawn	= 0;
+	NextSpawnTime	= Now;
+	WaitForRespawn	= False;
+}
+
+// ---------------------------------- //
+// Init poles
+foreach (Key => Pole in PoleList) {
+	Pole.Gauge.Clan		= 0;
+	Pole.Gauge.Max		= S_PoleCaptureDuration * 1000;
+	Pole.Gauge.Value	= 0;
+	Pole.Gauge.Speed	= 0;
+	if (Pole.Base != Null) Pole.Base.Clan = 0;
+	BaseClanList[Key]	= 0;
+	
+	declare PoleClan for Pole = 0;
+	PoleClan = 0;
+}
+UpdatePolesStatus(BaseClanList);
+
+foreach (LandmarkPlayerSpawn in MapLandmarks_PlayerSpawn) {
+	declare SpawnClan for LandmarkPlayerSpawn = 0;
+	if (LandmarkPlayerSpawn.Tag == "SpawnStart") {
+		SpawnClan = LandmarkPlayerSpawn.Order;
+	} else {
+		SpawnClan = 0;
+	}
+}
+UpdateBasesColors();
+
+// ---------------------------------- //
+// Select clan side
+if (MB_SectionTurnNb % 2 == 0) {
+	Side1Clan = TurnFirstClan;
+	Side2Clan = 3 - TurnFirstClan;
+} else {
+	Side1Clan = 3 - TurnFirstClan;
+	Side2Clan = TurnFirstClan;
+}
+
+// ---------------------------------- //
+// Init variables
+foreach (Player in Players) {
+	SetPlayerClan(Player, Player.RequestedClan);
+	declare SkipSpawnSelection for Player = False;
+	SkipSpawnSelection = True;
+}
+
+// ---------------------------------- //
+// Update the players clublinks
+if (S_ForceClublinkTeam1 == "" && S_ForceClublinkTeam2 == "") Clublink::DefineTeamAuto();
+else Clublink::DefineTeamFromUrl(S_ForceClublinkTeam1, S_ForceClublinkTeam2);
+Clublink::SyncUpdate();
+
+UpdateScoresHeader(ClanMapScores);
+Scores::RoundBegin();
+//ST2::SetFooterText(TL::Compose("%1 "^S_MapPointsLimit, _("Points limit : ")));
+if (Hud != Null) Hud.ScoresTable.SetFooterText(TL::Compose("%1 "^S_MapPointsLimit, _("Points limit : ")));
+
+Layers::Update("Markers", CreateLayerMarkers());
+Layers::Update("Info", CreateLayerInfo());
+UIManager.UIAll.UISequence		= CUIConfig::EUISequence::Playing;
+UIManager.UIAll.BigMessageSound	= CUIConfig::EUISound::Default;
+UIManager.UIAll.StatusMessage	= GetScoresString(TurnPointsLimit, TurnPointsLimit, 0, [1 => False, 2 => False]);
+PrevPlayerRefresh	= 0;
+PrevPointsRefresh	= 0;
+ClanTurnWinner		= 0;
+ClanTurnScores		= [1 => 0, 2 => 0];
+StartTime			= Now + 1000;
+***
+
+***OnNewPlayer***
+***
+declare UI <=> UIManager.GetUI(Player);
+SetPlayerClan(Player, Player.RequestedClan);
+if (UI != Null) {
+	UI.SpectatorForcedClan		= Player.CurrentClan;
+	UI.SpectatorForceCameraType	= 1;
+}
+if (Player.Score != Null) {
+	declare WaitForRespawn	for Player.Score = False;
+	WaitForRespawn = False;
+}
+***
+
+***OnNewSpectator***
+***
+declare UI <=> UIManager.GetUI(Spectator);
+if (UI != Null) {
+	UI.SpectatorForcedClan		= 0;
+	UI.SpectatorForceCameraType	= 15;
+}
+if (Spectator.Score != Null) {
+	declare WaitForRespawn	for Spectator.Score = False;
+	WaitForRespawn = False;
+}
+***
+
+***PlayLoop***
+***
+// ---------------------------------- //
+// Update lib
+Message::Loop();
+
+// ---------------------------------- //
+// Manage events
+foreach (Event in PendingEvents) {
+	if (Event.Type == CSmModeEvent::EType::OnHit) {
+		if (Event.Victim == Null) { //< Hit on shield
+			PassOn(Event);
+		} else if (Event.Shooter == Event.Victim) { //< Hit self
+			Discard(Event);
+		} else if (Event.Shooter != Null && Event.Victim != Null && Event.Shooter.CurrentClan == Event.Victim.CurrentClan) { //< Hit teammate
+			Discard(Event);
+		} else {
+			declare Points = Event.Damage / 100;
+			Scores::AddPoints(Event.Shooter, Points);
+			Event.ShooterPoints = Points;
+			XmlRpc::OnHit(Event);
+			PassOn(Event);
+		}
+	} else if (Event.Type == CSmModeEvent::EType::OnArmorEmpty) {
+		if (Event.Victim != Null && Event.Victim.Score != Null) {
+			declare NextSpawnTime for Event.Victim.Score = Now;
+			declare Delay = (S_SpawnTimeBase * 1000) + (((Now - StartTime) / (60 * 1000)) * (S_SpawnTimeIncrease * 1000));
+			if (Delay > S_SpawnTimeMax * 1000) Delay = S_SpawnTimeMax * 1000;
+			NextSpawnTime = Now + Delay;
+			UpdateSpawnStatus(Event.Victim);
+		}
+		XmlRpc::OnArmorEmpty(Event);
+		PassOn(Event);
+	} else if (Event.Type == CSmModeEvent::EType::OnPlayerRequestRespawn) {
+		if (Event.Player != Null && Event.Player.Score != Null) {
+			declare NextSpawnTime for Event.Player.Score = Now;
+			declare Delay = (S_SpawnTimeBase * 1000) + (((Now - StartTime) / (60 * 1000)) * (S_SpawnTimeIncrease * 1000));
+			if (Delay > S_SpawnTimeMax * 1000) Delay = S_SpawnTimeMax * 1000;
+			NextSpawnTime = Now + Delay;
+			UpdateSpawnStatus(Event.Player);
+		}
+		XmlRpc::OnPlayerRequestRespawn(Event);
+		PassOn(Event);
+	} else {
+		PassOn(Event);
+	}
+}
+
+// ---------------------------------- //
+// Pole management
+declare CapturedBases	= [1 => 0, 2 => 0];
+declare ContestedBases	= [1 => 0, 2 => 0];
+foreach (Key => Pole in PoleList) {
+	// ---------------------------------- //
+	// Capture pole
+	if (Pole.Sector.PlayersIds.count > 0) {
+		declare PlayerCount = [1 => 0, 2 => 0];
+		foreach (PlayerId in Pole.Sector.PlayersIds) {
+			declare Player <=> Players[PlayerId];
+			PlayerCount[Player.CurrentClan] += 1;
+		}
+		
+		if (Pole.Gauge.Clan == 0) {
+			if (PlayerCount[1] > PlayerCount[2]) Pole.Gauge.Clan = 1;
+			else if (PlayerCount[2] > PlayerCount[1]) Pole.Gauge.Clan = 2;
+		}
+		
+		declare CapturingClan	= Pole.Gauge.Clan;
+		declare OpposingClan	= 3 - Pole.Gauge.Clan;
+		
+		// Capturing
+		if (PlayerCount[CapturingClan] > PlayerCount[OpposingClan] && !Pole.Gauge.Captured) {
+			Pole.Gauge.Speed = PlayerCount[CapturingClan] - PlayerCount[OpposingClan];
+		} 
+		// Opposing
+		else if (PlayerCount[OpposingClan] > PlayerCount[CapturingClan]) {
+			Pole.Gauge.Speed = ML::NearestInteger((PlayerCount[CapturingClan] - PlayerCount[OpposingClan]) * S_PoleUncaptureSpeed);
+			if (Pole.Gauge.Value == 0) Pole.Gauge.Clan = OpposingClan;
+		} 
+		// Draw
+		else {
+			Pole.Gauge.Speed = 0;
+		}
+	} 
+	// Pole regenaration
+	else if (S_UsePoleRegeneration && BaseClanList[Key] != 0 && !Pole.Gauge.Captured) {
+		if (BaseClanList[Key] == Pole.Gauge.Clan) {
+			Pole.Gauge.Speed = 1;
+		} else {
+			Pole.Gauge.Speed = ML::NearestInteger(-S_PoleUncaptureSpeed);
+			if (Pole.Gauge.Value == 0) Pole.Gauge.Clan = 3 - Pole.Gauge.Clan;
+		}
+	}
+	// Iddle
+	else {
+		Pole.Gauge.Speed = 0;
+	}
+	
+	// ---------------------------------- //
+	// Capture base
+	if (Pole.Gauge.Value >= Pole.Gauge.Max && Pole.Gauge.Clan != BaseClanList[Key]) {
+		BaseClanList[Key] = Pole.Gauge.Clan;
+		UpdatePolesStatus(BaseClanList);
+		if (SpawnList.existskey(Key)) {
+			declare SpawnClan for SpawnList[Key] = 0;
+			SpawnClan = Pole.Gauge.Clan;
+		}
+		declare PoleClan for Pole = 0;
+		PoleClan = Pole.Gauge.Clan;
+		UpdateBasesColors();
+	}
+	
+	// ---------------------------------- //
+	// Update base status
+	if (BaseClanList[Key] != 0) CapturedBases[BaseClanList[Key]] += 1;
+	if (BaseClanList[Key] != 0 && Pole.Gauge.Value < Pole.Gauge.Max) ContestedBases[BaseClanList[Key]] += 1;
+}
+
+// ---------------------------------- //
+// Player management
+if (PrevPlayerRefresh + C_PlayerRefreshInterval <= Now) {
+	PrevPlayerRefresh = Now;
+	UpdateScoresHeader(ClanMapScores);
+	
+	foreach (Player in Players) {
+		// ---------------------------------- //
+		// Update UI
+		declare UI <=> UIManager.GetUI(Player);
+		if (UI == Null) continue;
+		
+		if (Player.SpawnStatus != CSmPlayer::ESpawnStatus::NotSpawned) continue;
+		
+		declare SkipSpawnSelection for Player = False;
+		declare SpectatedSpawn	for Player.Score = -1;
+		declare DesiredSpawn	for Player.Score = -1;
+		declare NextSpawnTime	for Player.Score = Now;
+		declare WaitForRespawn	for Player.Score = False;
+		declare	SynchroClient	for UI = -1;
+		
+		if (!SkipSpawnSelection) {
+			if (!WaitForRespawn) {
+				WaitForRespawn	= True;
+				SynchroClient	= -1;
+				Layers::Attach("SpawnSelection", Player);
+				SetPlayerClan(Player, Player.RequestedClan);
+			}
+			
+			declare netread Integer Net_SynchroClient	for UI;
+			declare netread Integer	Net_SpectatedSpawn	for UI;
+			declare netread Integer	Net_DesiredSpawn	for UI;
+			
+			// Update the selected spawn
+			if (Net_SynchroClient != SynchroClient) {
+				SpectatedSpawn	= Net_SpectatedSpawn;
+				DesiredSpawn	= Net_DesiredSpawn;
+				SynchroClient	= Net_SynchroClient;
+				
+				// Try to center the camera on the selected spawn
+				declare Ident SpawnId;
+				if (SpectatedSpawn <= 0) {
+					if (Player.CurrentClan == 1) SpawnId = SpawnStartList[Side1Clan].Id;
+					else if (Player.CurrentClan == 2) SpawnId = SpawnStartList[Side2Clan].Id;
+				} else if (SpawnList.existskey(SpectatedSpawn)) {
+					SpawnId = SpawnList[SpectatedSpawn].Id;
+				}
+				UI.SpectatorForcedTarget = SpawnId;
+			}
+		}
+		
+		// ---------------------------------- //
+		// Spawn players
+		if (SkipSpawnSelection || (NextSpawnTime <= Now && DesiredSpawn >= 0)) {
+			if (SkipSpawnSelection) DesiredSpawn = 0;
+			
+			declare CSmMapPlayerSpawn Spawn;
+			if (DesiredSpawn == 0) {
+				if (Player.CurrentClan == 1) Spawn <=> SpawnStartList[Side1Clan].PlayerSpawn;
+				else if (Player.CurrentClan == 2) Spawn <=> SpawnStartList[Side2Clan].PlayerSpawn;
+			} else if (
+				SpawnList.existskey(DesiredSpawn) 
+				&& BaseClanList.existskey(DesiredSpawn)
+				&& BaseClanList[DesiredSpawn] == Player.CurrentClan
+			) {
+				Spawn <=> SpawnList[DesiredSpawn].PlayerSpawn;
+			}
+			
+			if (Spawn != Null) {
+				SkipSpawnSelection	= False;
+				WaitForRespawn		= False;
+				SpectatedSpawn		= -1;
+				DesiredSpawn		= -1;
+				UI.SpectatorForcedTarget	= NullId;
+				UI.SpectatorForcedClan		= Player.CurrentClan;
+				Layers::Detach("SpawnSelection", Player);
+				SM::SpawnPlayer(Player, Player.CurrentClan, Spawn, Now);
+			}
+		}
+	}
+}
+
+// ---------------------------------- //
+// Points management
+if (PrevPointsRefresh + C_PointsRefreshInterval <= Now) {
+	PrevPointsRefresh = Now;
+	
+	if (ClanTurnScores[1] < TurnPointsLimit && CapturedBases[1] > PoleList.count / 2) {
+		ClanTurnScores[1] += 1;
+		declare CanWin = ContestedBases[1] < CapturedBases[1] - (PoleList.count / 2);
+		UIManager.UIAll.StatusMessage = GetScoresString(
+			TurnPointsLimit - ClanTurnScores[1], TurnPointsLimit - ClanTurnScores[2], 1, [1 => CanWin, 2 => False]
+		);
+		// 10 seconds warning
+		if (TurnPointsLimit - ClanTurnScores[1] == 10) {
+			Message::SendBigMessage(TL::Compose(_("$<%1$> is close to win"), Teams[0].ColorizedName), 5000, 1, CUIConfig::EUISound::Warning, 0);
+		}
+		// The team need to fully capture more poles
+		if (TurnPointsLimit - ClanTurnScores[1] == 0 && !CanWin) {
+			Message::SendBigMessage(TL::Compose(_("$<%1$> needs to capture more poles"), Teams[0].ColorizedName), 5000, 1, CUIConfig::EUISound::PhaseChange, 0);
+		}
+	} else if (ClanTurnScores[2] < TurnPointsLimit && CapturedBases[2] > PoleList.count / 2) {
+		ClanTurnScores[2] += 1;
+		declare CanWin = ContestedBases[2] < CapturedBases[2] - (PoleList.count / 2);
+		UIManager.UIAll.StatusMessage = GetScoresString(
+			TurnPointsLimit - ClanTurnScores[1], TurnPointsLimit - ClanTurnScores[2], 2, [1 => False, 2 => CanWin]
+		);
+		// 10 seconds warning
+		if (TurnPointsLimit - ClanTurnScores[2] == 10) {
+			Message::SendBigMessage(TL::Compose(_("$<%1$> is close to win"), Teams[1].ColorizedName), 5000, 1, CUIConfig::EUISound::Warning, 0);
+		}
+		// The team need to fully capture more poles
+		if (TurnPointsLimit - ClanTurnScores[2] == 0 && !CanWin) {
+			Message::SendBigMessage(TL::Compose(_("$<%1$> needs to capture more poles"), Teams[1].ColorizedName), 5000, 1, CUIConfig::EUISound::PhaseChange, 0);
+		}
+	}
+}
+
+// ---------------------------------- //
+// Turn victory
+if (
+	ClanTurnScores[1] >= TurnPointsLimit 
+	&& CapturedBases[1] > PoleList.count / 2 
+	&& ContestedBases[1] < CapturedBases[1] - (PoleList.count / 2)
+) {
+	ClanTurnWinner = 1;
+	UIManager.UIAll.SendNotice(
+		"", CUIConfig::ENoticeLevel::MatchInfo, 
+		Null, CUIConfig::EAvatarVariant::Default, 
+		CUIConfig::EUISound::VictoryPoint, 0
+	);
+	MB_StopTurn = True;
+} else if (
+	ClanTurnScores[2] >= TurnPointsLimit 
+	&& CapturedBases[2] > PoleList.count / 2 
+	&& ContestedBases[2] < CapturedBases[2] - (PoleList.count / 2)
+) {
+	ClanTurnWinner = 2;
+	UIManager.UIAll.SendNotice(
+		"", CUIConfig::ENoticeLevel::MatchInfo, 
+		Null, CUIConfig::EAvatarVariant::Default, 
+		CUIConfig::EUISound::VictoryPoint, 0
+	);
+	MB_StopTurn = True;
+}
+***
+
+***EndTurn***
+***
+// ---------------------------------- //
+// Unspawn players
+MB_Sleep(500);
+SM::UnspawnAllPlayers();
+StartTime = -1;
+
+// ---------------------------------- //
+// Clean UI
+foreach (Player in Players) Layers::Detach("SpawnSelection", Player);
+foreach (Spectator in Spectators) Layers::Detach("SpawnSelection", Spectator);
+Message::CleanAllMessages();
+
+// ---------------------------------- //
+// Update map scores
+if (ClanTurnWinner == 1) {
+	ClanRoundScores[1]	+= 1;
+	ClanMapAdvantage[1]	+= ClanTurnScores[1] - ClanTurnScores[2];
+	UIManager.UIAll.StatusMessage = GetScoresString(TurnPointsLimit - ClanTurnScores[1], TurnPointsLimit - ClanTurnScores[2], ClanTurnWinner, [1 => True, 2 => False]);
+} else if (ClanTurnWinner == 2) {
+	ClanRoundScores[2]	+= 1;
+	ClanMapAdvantage[2]	+= ClanTurnScores[2] - ClanTurnScores[1];
+	UIManager.UIAll.StatusMessage = GetScoresString(TurnPointsLimit - ClanTurnScores[1], TurnPointsLimit - ClanTurnScores[2], ClanTurnWinner, [1 => False, 2 => True]);
+}
+UpdateScoresHeader(ClanMapScores);
+Scores::RoundEnd();
+if (MB_SectionTurnNb % 2 == 1) Turn1Winner = ClanTurnWinner;
+else Turn2Winner = ClanTurnWinner;
+UpdateRoundScores(ClanRoundScores);
+//ST2::SetFooterText(TL::Compose("%1 "^S_MapPointsLimit, _("Points limit : ")));
+if (Hud != Null) Hud.ScoresTable.SetFooterText(TL::Compose("%1 "^S_MapPointsLimit, _("Points limit : ")));
+XmlRpc::ScoresReady();
+
+// ---------------------------------- //
+// Display result
+UIManager.UIAll.UISequence				= CUIConfig::EUISequence::EndRound;
+UIManager.UIAll.BigMessageSound			= CUIConfig::EUISound::EndRound;
+UIManager.UIAll.ScoreTableVisibility	= CUIConfig::EVisibility::ForcedVisible;
+if (ClanTurnWinner == 0) {
+	UIManager.UIAll.BigMessage = _("|Match|Draw");
+} else {
+	if (MB_SectionTurnNb % 2 == 1) {
+		UIManager.UIAll.BigMessage = TL::Compose(_("$<%1$> wins the turn"), Teams[ClanTurnWinner - 1].ColorizedName);
+	} else {
+		if (Turn1Winner == Turn2Winner) {
+			UIManager.UIAll.BigMessage = TL::Compose(_("$<%1$> wins the round"), Teams[ClanTurnWinner - 1].ColorizedName);
+		} else {
+			UIManager.UIAll.BigMessage = TL::Compose(_("$<%1$> countered $<%2$>"), Teams[ClanTurnWinner - 1].ColorizedName, Teams[(3 - ClanTurnWinner) - 1].ColorizedName);
+		}
+	}
+}
+MB_Sleep(C_SleepEndTurn);
+UIManager.UIAll.ScoreTableVisibility	= CUIConfig::EVisibility::Normal;
+UIManager.UIAll.BigMessage				= "";
+UIManager.UIAll.StatusMessage			= "";
+
+// ---------------------------------- //
+// Go to next round
+if (MB_SectionTurnNb % 2 == 0) {
+	if (Turn1Winner == Turn2Winner) {
+		ClanMapScores[Turn1Winner] += 1;
+		ClanScores[1] = ClanMapScores[1];
+		ClanScores[2] = ClanMapScores[2];
+		PointsLimitShift = 0;
+	} else {
+		PointsLimitShift += 1;
+	}
+	MB_StopRound = True;
+}
+***
+
+***EndRound***
+***
+// ---------------------------------- //
+// Map victory
+if (ClanMapScores[1] >= S_MapPointsLimit && ClanMapScores[1] - ClanMapScores[2] >= S_MapPointsGap) {
+	ClanMapWinner	= 1;
+	MB_StopMap		= True;
+} else if (ClanMapScores[2] >= S_MapPointsLimit && ClanMapScores[2] - ClanMapScores[1] >= S_MapPointsGap) {
+	ClanMapWinner	= 2;
+	MB_StopMap		= True;
+} else if (ClanMapScores[1] + ClanMapScores[2] >= S_MapRoundsLimit) {
+	if (ClanMapScores[1] > ClanMapScores[2])			ClanMapWinner = 1;
+	else if (ClanMapScores[2] > ClanMapScores[1])		ClanMapWinner = 2;
+	else if (ClanMapAdvantage[1] > ClanMapAdvantage[2]) ClanMapWinner = 1;
+	else if (ClanMapAdvantage[2] > ClanMapAdvantage[1]) ClanMapWinner = 2;
+	else ClanMapWinner = 0;
+	MB_StopMap = True;
+}
+***
+
+***EndMap***
+***
+// ---------------------------------- //
+// Update map scores
+Scores::MatchEnd();
+UpdateScoresHeader(ClanMapScores);
+
+Layers::Detach("Markers");
+Layers::Detach("Info");
+UIManager.UIAll.BigMessage		= "";
+UIManager.UIAll.StatusMessage	= "";
+
+// ---------------------------------- //
+// Display result
+UIManager.UIAll.UISequence				= CUIConfig::EUISequence::EndRound;
+UIManager.UIAll.BigMessageSound			= CUIConfig::EUISound::EndRound;
+UIManager.UIAll.ScoreTableVisibility	= CUIConfig::EVisibility::ForcedVisible;
+if (ClanMapWinner == 0) {
+	UIManager.UIAll.BigMessage = _("|Match|Draw");
+} else {
+	if (ClanMapScores[1] == ClanMapScores[2]) UIManager.UIAll.StatusMessage = TL::Compose(_("Victory by goal average: $<%1$> %2 - %3 $<%4$>"), Teams[0].ColorizedName, TL::TimeToText(ClanMapAdvantage[1], False), TL::TimeToText(ClanMapAdvantage[2], False), Teams[1].ColorizedName);
+	UIManager.UIAll.BigMessage = TL::Compose(_("$<%1$> wins the map"), Teams[ClanMapWinner - 1].ColorizedName);
+}
+MB_Sleep(C_SleepEndMap/2);
+UIManager.UIAll.UISequence				= CUIConfig::EUISequence::Podium;
+MB_Sleep(C_SleepEndMap/2);
+UIManager.UIAll.ScoreTableVisibility	= CUIConfig::EVisibility::Normal;
+UIManager.UIAll.BigMessage				= "";
+***
+	
+***EndServer***
+***
+// ---------------------------------- //
+// Clean the UI
+SpawnScreen::DestroyRules();
+Layers::Destroy("SpawnSelection");
+Layers::Destroy("Markers");
+Layers::Destroy("Info");
+UIManager.ResetAll();
+UIManager.UILayerDestroyAll();
+
+// ---------------------------------- //
+// Stop the library
+Color::Unload();
+***
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Get the time formatted turn score string
+ *
+ *	@return		The formatted score
+ */
+Text GetScoresString(Integer _Clan1Score, Integer _Clan2Score, Integer _Majority, Boolean[Integer] _Winner) {
+	declare Team1Color = Teams[0].ColorText;
+	declare Team2Color = Teams[1].ColorText;
+	declare Team1Score = "";
+	declare Team2Score = "";
+	
+	if (_Majority != 1) {
+		Team1Color = "$"^Color::HsvToHex(Color::Darken(Color::RgbToHsv(Teams[0].ColorPrimary), 0.75));
+	}
+	if (_Majority != 2) {
+		Team2Color = "$"^Color::HsvToHex(Color::Darken(Color::RgbToHsv(Teams[1].ColorPrimary), 0.75));
+	}
+	
+	if (_Clan1Score <= 0 && !_Winner[1]) Team1Score = _("Finalist");
+	else if (_Clan1Score <= 0 && _Winner[1]) Team1Score = _("Winner");
+	else Team1Score = TL::TimeToText(_Clan1Score*1000, False);
+	if (_Clan2Score <= 0 && !_Winner[2]) Team2Score = _("Finalist");
+	else if (_Clan2Score <= 0 && _Winner[2]) Team2Score = _("Winner");
+	else Team2Score = TL::TimeToText(_Clan2Score*1000, False);
+	
+	return TL::Compose("$<%1%2$> - $<%3%4$>", Team1Color, Team1Score, Team2Color, Team2Score);
+}
+
+// ---------------------------------- //
+/** Convert a number in letter
+ *
+ *	@param	_Number		The number to convert
+ *
+ *	@return				The corresponding letter
+ */
+Text GetLetterFromNumber(Integer _Number) {
+	switch(_Number) {
+		case 1 : return "A";
+		case 2 : return "B";
+		case 3 : return "C";
+		case 4 : return "D";
+		case 5 : return "E";
+		case 6 : return "F";
+		case 7 : return "G";
+		case 8 : return "H";
+		case 9 : return "I";
+		case 10 : return "J";
+		case 11 : return "K";
+		case 12 : return "L";
+		case 13 : return "M";
+		case 14 : return "N";
+		case 15 : return "O";
+		case 16 : return "P";
+		case 17 : return "Q";
+		case 18 : return "R";
+		case 19 : return "S";
+		case 20 : return "T";
+		case 21 : return "U";
+		case 22 : return "V";
+		case 23 : return "W";
+		case 24 : return "X";
+		case 25 : return "Y";
+		case 26 : return "Z";
+	}
+	return " ";
+}
+
+// ---------------------------------- //
+/** Update the scores header
+ *
+ *	@param	_Points				The round scores of the clans
+ */
+Void UpdateScoresHeader(Integer[Integer] _Points) {
+	UIManager.UIAll.OverlayScoreSummary = True;
+	declare PlayerClan1Id = NullId;
+	declare PlayerClan2Id = NullId;
+	
+	foreach (Player in Players) {
+		if ((PlayerClan1Id == NullId) && (Player.CurrentClan == 1)) PlayerClan1Id = Player.Id;
+		if ((PlayerClan2Id == NullId) && (Player.CurrentClan == 2)) PlayerClan2Id = Player.Id;
+		
+		if (PlayerClan1Id != NullId && PlayerClan2Id != NullId) break;
+	}
+	
+	if (PlayerClan1Id != NullId) UIManager.UIAll.ScoreSummary_Player1 = PlayerClan1Id;
+	else UIManager.UIAll.ScoreSummary_Player1 = NullId;
+	if (PlayerClan2Id != NullId) UIManager.UIAll.ScoreSummary_Player2 = PlayerClan2Id;
+	else UIManager.UIAll.ScoreSummary_Player2 = NullId;
+	UIManager.UIAll.ScoreSummary_Points1 = _Points[1];
+	UIManager.UIAll.ScoreSummary_Points2 = _Points[2];
+}
+
+// ---------------------------------- //
+/// End map timer for MatchMaking
+Void UpdateBasesColors() {
+	foreach (Base in MapBases) {
+		Base.Clan = 0;
+		Base.IsActive = True;
+	}
+	
+	declare UpdatedBases = Ident[];
+	
+	foreach (LandmarkPlayerSpawn in MapLandmarks_PlayerSpawn) {
+		if (LandmarkPlayerSpawn.Base == Null) continue;
+		
+		declare SpawnClan for LandmarkPlayerSpawn = 0;
+		
+		if (!UpdatedBases.exists(LandmarkPlayerSpawn.Base.Id)) {
+			if (LandmarkPlayerSpawn.Tag == "SpawnStart") {
+				LandmarkPlayerSpawn.Base.Clan = LandmarkPlayerSpawn.Order;
+			} else {
+				LandmarkPlayerSpawn.Base.Clan = SpawnClan;
+				if (SpawnClan == 0) LandmarkPlayerSpawn.Base.IsActive = False;
+			}
+		} else {
+			if (LandmarkPlayerSpawn.Tag == "SpawnStart") {
+				if (LandmarkPlayerSpawn.Base.Clan != LandmarkPlayerSpawn.Order) LandmarkPlayerSpawn.Base.Clan = 0;
+				LandmarkPlayerSpawn.Base.IsActive = True;
+			} else if (SpawnClan != LandmarkPlayerSpawn.Base.Clan) {
+				LandmarkPlayerSpawn.Base.Clan = 0;
+				LandmarkPlayerSpawn.Base.IsActive = True;
+			}
+		}
+		UpdatedBases.add(LandmarkPlayerSpawn.Base.Id);
+	}
+	
+	foreach (LandmarkGauge in MapLandmarks_Gauge) {
+		if (LandmarkGauge.Base == Null) continue;
+		
+		declare PoleClan for LandmarkGauge = 0;
+		
+		if (!UpdatedBases.exists(LandmarkGauge.Base.Id)) {
+			LandmarkGauge.Base.Clan = PoleClan;
+			if (PoleClan == 0) LandmarkGauge.Base.IsActive = False;
+			UpdatedBases.add(LandmarkGauge.Base.Id);
+		} else if (LandmarkGauge.Base.Clan != PoleClan) {
+			LandmarkGauge.Base.Clan = 0;
+			LandmarkGauge.Base.IsActive = True;
+		}
+	}
+}
+
+// ---------------------------------- //
+/** Send the round score to the interface
+ *
+ *	@param	_RoundScores		The round scores
+ */
+Void UpdateRoundScores(Integer[Integer] _RoundScores) {
+	foreach (Player in Players) {
+		declare UI <=> UIManager.GetUI(Player);
+		if (UI == Null) continue;
+		
+		declare netwrite Integer[Integer] Net_RoundScores for UI;
+		Net_RoundScores = _RoundScores;
+	}
+	foreach (Spectator in Spectators) {
+		declare UI <=> UIManager.GetUI(Spectator);
+		if (UI == Null) continue;
+		
+		declare netwrite Integer[Integer] Net_RoundScores for UI;
+		Net_RoundScores = _RoundScores;
+	}
+}
+
+// ---------------------------------- //
+/** Send the status of the poles to the interface
+ *
+ *	@param	_BaseClanList		The owners of each poles
+ */
+Void UpdatePolesStatus(Integer[Integer] _BaseClanList) {
+	foreach (Player in Players) {
+		declare UI <=> UIManager.GetUI(Player);
+		if (UI == Null) continue;
+		
+		declare netwrite Integer			Net_SynchroServer	for UI;
+		declare netwrite Integer[Integer]	Net_BaseClanList	for UI;
+		Net_SynchroServer	= Now;
+		Net_BaseClanList	= _BaseClanList;
+	}
+}
+
+// ---------------------------------- //
+/** Send the spawn status of a player to the interface
+ *
+ *	@param	_Player				Tee player to update
+ */
+Void UpdateSpawnStatus(CSmPlayer _Player) {
+	if (_Player.Score == Null) return;
+	declare UI <=> UIManager.GetUI(_Player);
+	if (UI == Null) return;
+	
+	declare NextSpawnTime for _Player.Score = Now;
+	declare netwrite Integer Net_NextSpawnTime for UI;
+	Net_NextSpawnTime = NextSpawnTime;
+}
+
+// ---------------------------------- //
+/// Create the rules in the spawn screen
+Void CreateRules() {
+	declare ModeName = "Realm";
+	
+	SpawnScreen::ResetRulesSection();
+	SpawnScreen::AddSubsection(_("Type"), _("Team versus Team"), 0.);
+	SpawnScreen::AddSubsection(
+		_("Objectives"), 
+		TL::Compose(C_ModeObjectives, "$"^SpawnScreen::GetModeColor(), TL::ToText(S_MapPointsLimit), TL::ToText(S_MapPointsGap)), 
+		25.
+	);
+	SpawnScreen::AddSubsection(
+		_("Conditions"), 
+		TL::Compose(C_ModeConditions, "$"^SpawnScreen::GetModeColor()), 
+		80.
+	);
+	SpawnScreen::CreatePrettyRules(ModeName);
+}
+
+// ---------------------------------- //
+/**	Create the spawn selection manialink
+ *
+ *	@return		The spawn selection manialink string
+ */
+Text CreateLayerSpawnSelection() {
+	declare SpawnML = "";
+	declare SpawnOffML = "";
+	declare SpawnSelectedML = "";
+	
+	for (I, 1, 5) {
+		SpawnML ^= """
+<label posn="0 {{{-6*I}}}" sizen="40 6" focusareacolor1="000f" focusareacolor2="ffff" halign="center" valign="center" textprefix="$fff" text="Spawn {{{GetLetterFromNumber(I)}}}" scriptevents="1" id="Button_Spawn_{{{I}}}" hidden="1" />
+""";
+		SpawnOffML ^= """
+<frame posn="0 {{{-6*I}}}" id="Button_SpawnOff_{{{I}}}">
+	<quad  sizen="40 6" halign="center" valign="center" bgcolor="555f" />
+	<label sizen="40 6" halign="center" valign="center" textprefix="$ccc" text="Spawn {{{GetLetterFromNumber(I)}}}" />
+</frame>
+""";
+		SpawnSelectedML ^= """
+<frame posn="0 {{{-6*I}}}" id="Button_SpawnSelected_{{{I}}}" hidden="1">
+	<quad  sizen="40 6" halign="center" valign="center" bgcolor="ffff" />
+	<label sizen="40 6" halign="center" valign="center" textprefix="$2af" text="Spawn {{{GetLetterFromNumber(I)}}}" />
+</frame>
+""";
+	}
+	
+	return """
+<frame posn="135 -25" id="Frame_SpawnSelection">
+	<quad sizen="40 60 0" halign="center" bgcolor="0007" />
+	<label posn="0 -5 1" sizen="38 10" halign="center" valign="center" style="TextRaceMessage" text="{{{_("Select a spawn")}}}" id="Label_SpawnStatus" />
+	<frame posn="0 -15 2" id="Frame_Active">
+		<format style="TextButtonNav" />
+		<label posn="0 0" sizen="40 6" focusareacolor1="000f" focusareacolor2="ffff" halign="center" valign="center" textprefix="$fff" text="Spawn Start" scriptevents="1" id="Button_SpawnStart" hidden="1" />
+		{{{SpawnML}}}
+	</frame>
+	<frame posn="0 -15 4" id="Frame_Off">
+		<format style="TextButtonNav" />
+		<frame posn="0 0" id="Button_SpawnStartOff">
+			<quad  sizen="40 6" halign="center" valign="center" bgcolor="555f" />
+			<label sizen="40 6" halign="center" valign="center" textprefix="$ccc" text="Spawn Start" />
+		</frame>
+		{{{SpawnOffML}}}
+	</frame>
+	<frame posn="0 -15 3" id="Frame_Selected">
+		<format style="TextButtonNav" />
+		<frame posn="0 0" id="Button_SpawnStartSelected" hidden="1">
+			<quad  sizen="40 6" halign="center" valign="center" bgcolor="ffff" />
+			<label sizen="40 6" halign="center" valign="center" textprefix="$2af" text="Spawn Start" />
+		</frame>
+		{{{SpawnSelectedML}}}
+	</frame>
+	<frame posn="0 -12 5">
+		<quad posn="0 0" sizen="40 0.5" bgcolor="aaaf" halign="center" />
+		<quad posn="0 -6" sizen="40 0.5" bgcolor="aaaf" halign="center" />
+		<quad posn="0 -12" sizen="40 0.5" bgcolor="aaaf" halign="center" />
+		<quad posn="0 -18" sizen="40 0.5" bgcolor="aaaf" halign="center" />
+		<quad posn="0 -24" sizen="40 0.5" bgcolor="aaaf" halign="center" />
+		<quad posn="0 -30" sizen="40 0.5" bgcolor="aaaf" halign="center" />
+		<quad posn="0 -36" sizen="40 0.5" bgcolor="aaaf" halign="center" />
+	</frame>
+	<frame posn="0 -54 1">
+		<label sizen="38 10 2" halign="center" valign="center" style="CardButtonMedium" text="Go" scriptevents="1" id="Button_Validate" />
+		<quad posn="5 0 3" sizen="3 3" halign="center" valign="center" style="Icons64x64_1" substyle="LvlRed" id="Quad_Validate" />
+	</frame>
+</frame>
+<script><!-- 
+#Include "TextLib" as TL
+
+declare Integer G_DesiredSpawn;
+declare Boolean[Integer] G_ActiveSpawns;
+
+declare CMlLabel[Integer] Buttons_Spawn;
+declare CMlFrame[Integer] Buttons_SpawnOff;
+declare CMlFrame[Integer] Buttons_SpawnSelected;
+	
+Void UpdateSpawnButtons() {
+	for(I, 0, 5) {
+		if (!G_ActiveSpawns[I]) {
+			Buttons_Spawn[I].Hide();
+			Buttons_SpawnOff[I].Show();
+			Buttons_SpawnSelected[I].Hide();
+		} else if (G_DesiredSpawn == I) {
+			Buttons_Spawn[I].Hide();
+			Buttons_SpawnOff[I].Hide();
+			Buttons_SpawnSelected[I].Show();
+		} else {
+			Buttons_Spawn[I].Show();
+			Buttons_SpawnOff[I].Hide();
+			Buttons_SpawnSelected[I].Hide();
+		}
+	}
+}
+
+Integer SelectSpawn(Text _ControlId) {
+	declare Button <=> (Page.GetFirstChild(_ControlId) as CMlLabel);
+	if (Button == Null) return G_DesiredSpawn;
+	
+	declare Tag for Button = "";
+	declare Order for Button = -1;
+	if (Tag == "Spawn" && Order >= 0) {
+		G_DesiredSpawn = Order;
+	}
+	
+	UpdateSpawnButtons();
+	
+	return G_DesiredSpawn;
+}
+
+main() {
+	declare Label_SpawnStatus	<=> (Page.GetFirstChild("Label_SpawnStatus")	as CMlLabel);
+	declare Frame_Active		<=> (Page.GetFirstChild("Frame_Active") 		as CMlFrame);
+	declare Frame_Off			<=> (Page.GetFirstChild("Frame_Off")			as CMlFrame);
+	declare Frame_Selected		<=> (Page.GetFirstChild("Frame_Selected")		as CMlFrame);
+	declare Quad_Validate		<=> (Page.GetFirstChild("Quad_Validate")		as CMlQuad);
+	
+	for (I, 0, 5) {
+		if (I == 0) {
+			Buttons_Spawn[I]			= (Frame_Active.GetFirstChild("Button_SpawnStart")			as CMlLabel);
+			Buttons_SpawnOff[I]			= (Frame_Off.GetFirstChild("Button_SpawnStartOff")			as CMlFrame);
+			Buttons_SpawnSelected[I]	= (Frame_Selected.GetFirstChild("Button_SpawnStartSelected")as CMlFrame);
+			G_ActiveSpawns[I] = True;
+		} else {
+			Buttons_Spawn[I]			= (Frame_Active.GetFirstChild("Button_Spawn_"^I)			as CMlLabel);
+			Buttons_SpawnOff[I]			= (Frame_Off.GetFirstChild("Button_SpawnOff_"^I)			as CMlFrame);
+			Buttons_SpawnSelected[I]	= (Frame_Selected.GetFirstChild("Button_SpawnSelected_"^I)	as CMlFrame);
+			G_ActiveSpawns[I] = False;
+		}
+		
+		declare Tag for Buttons_Spawn[I]	= "";
+		declare Order for Buttons_Spawn[I]	= -1;
+		Tag		= "Spawn";
+		Order	= I;
+	}
+	
+	declare netwrite Net_SpectatedSpawn	for UI = -1;
+	declare netwrite Net_DesiredSpawn	for UI = -1;
+	declare netwrite Net_SynchroClient	for UI = Now;
+	
+	declare netread Integer Net_SynchroServer for UI;
+	declare netread Integer Net_NextSpawnTime for UI;
+	declare netread Integer[Integer] Net_BaseClanList for UI;
+	
+	declare Integer SynchroServer	= 0;
+	declare Boolean WaitRespawn		= True;
+	declare Boolean	Go				= False;
+	G_DesiredSpawn		= 0;
+	Net_SpectatedSpawn	= 0;
+	Net_DesiredSpawn	= -1;
+	Net_SynchroClient	= Now;
+	
+	UpdateSpawnButtons();
+	
+	while (True) {
+		yield;
+		if (!PageIsVisible) continue;
+		if (InputPlayer == Null) continue;
+		
+		if (Net_SynchroServer != SynchroServer) {
+			SynchroServer = Net_SynchroServer;
+			
+			if (InputPlayer != Null) {
+				foreach (Key => BaseClan in Net_BaseClanList) {
+					if (InputPlayer.CurrentClan == BaseClan) G_ActiveSpawns[Key] = True;
+					else G_ActiveSpawns[Key] = False;
+				}
+			}
+			UpdateSpawnButtons();
+			
+			if (!WaitRespawn && Net_NextSpawnTime > ArenaNow) {
+				WaitRespawn = True;
+			}
+		}
+		
+		if (WaitRespawn && Net_NextSpawnTime > ArenaNow) {
+			Label_SpawnStatus.SetText(TL::Compose(_("Waiting: %1"), TL::ToText((Net_NextSpawnTime - ArenaNow + 1000) / 1000)));
+		} else if (WaitRespawn && Net_NextSpawnTime <= ArenaNow) {
+			WaitRespawn = False;
+			Label_SpawnStatus.SetText("{{{_("Select a spawn")}}}");
+		}
+		
+		foreach (Event in PendingEvents) {
+			if (Event.Type == CMlEvent::Type::MouseClick) {
+				if (Event.ControlId == "Button_Validate") {
+					Go = !Go;
+					if (Go) {
+						Net_DesiredSpawn		= G_DesiredSpawn;
+						Net_SynchroClient		= Now;
+						Quad_Validate.Substyle	= "LvlGreen";
+					} else {
+						Net_DesiredSpawn	= -1;
+						Net_SynchroClient	= Now;
+						Quad_Validate.Substyle	= "LvlRed";
+					}
+				} else {
+					if (Go) Net_DesiredSpawn = SelectSpawn(Event.ControlId);
+					Net_SpectatedSpawn	= SelectSpawn(Event.ControlId);
+					Net_SynchroClient	= Now;
+				}
+			}
+		}
+	}
+}
+--></script>
+""";
+}
+
+// ---------------------------------- //
+/**	Create the script managing the poles UI
+ *
+ *	@return		The script
+ */
+Text CreateScriptPoles() {
+	declare ImgPole 	 	= C_ImgBaseDir^"goal.dds";
+	declare ImgPoleCapture	= C_ImgBaseDir^"goal_cap.dds";
+	
+	return """
+<script><!--
+#Const C_RefreshInterval 250
+
+declare CMlFrame[Integer]	Markers_Pole;
+declare CMlFrame			Frame_PoleInfo;
+declare CMlLabel			Label_PoleMessage;
+declare CMlQuad				Quad_PoleImage;
+declare CMlGauge			Gauge_PoleValue;
+
+Void UpdatePoleClan(Integer _PoleOrder, Integer _BaseClan) {
+	declare Quad_PoleClan1		<=> (Markers_Pole[_PoleOrder].GetFirstChild("Quad_PoleClan1")	as CMlQuad);
+	declare Quad_PoleClan2		<=> (Markers_Pole[_PoleOrder].GetFirstChild("Quad_PoleClan2")	as CMlQuad);
+	declare Quad_PoleDefault	<=> (Markers_Pole[_PoleOrder].GetFirstChild("Quad_PoleDefault")	as CMlQuad);
+	declare Label_PoleName		<=> (Markers_Pole[_PoleOrder].GetFirstChild("Label_PoleName")	as CMlLabel);
+	
+	if (_BaseClan == 1) {
+		Quad_PoleClan1.Show();
+		Quad_PoleClan2.Hide();
+		Quad_PoleDefault.Hide();
+	} else if (_BaseClan == 2) {
+		Quad_PoleClan1.Hide();
+		Quad_PoleClan2.Show();
+		Quad_PoleDefault.Hide();
+	} else {
+		Quad_PoleClan1.Hide();
+		Quad_PoleClan2.Hide();
+		Quad_PoleDefault.Show();
+	}
+	
+	declare DefaultName for Label_PoleName = "";
+	if (DefaultName == "") DefaultName = Label_PoleName.Value;
+	if (_BaseClan == 1 || _BaseClan == 2) {
+		Label_PoleName.SetText(Teams[_BaseClan-1].ColorText^DefaultName);
+	} else {
+		Label_PoleName.SetText(DefaultName);
+	}
+}
+
+Void UpdatePoleGauge(Integer _PoleOrder, Integer _GaugeClan, Real _GaugeValue) {
+	declare Gauge_Capture <=> (Markers_Pole[_PoleOrder].GetFirstChild("Gauge_Capture") as CMlGauge);
+	Gauge_Capture.SetClan(_GaugeClan);
+	Gauge_Capture.SetRatio(_GaugeValue);
+}
+
+Void UpdatePoleControl(Integer _PoleOrder, Boolean _FullyControled) {
+	declare Quad_PoleClan1		<=> (Markers_Pole[_PoleOrder].GetFirstChild("Quad_PoleClan1")	as CMlQuad);
+	declare Quad_PoleClan2		<=> (Markers_Pole[_PoleOrder].GetFirstChild("Quad_PoleClan2")	as CMlQuad);
+	declare Quad_PoleDefault	<=> (Markers_Pole[_PoleOrder].GetFirstChild("Quad_PoleDefault")	as CMlQuad);
+	
+	if (_FullyControled) {
+		Quad_PoleClan1.ChangeImageUrl("{{{ImgPoleCapture}}}");
+		Quad_PoleClan2.ChangeImageUrl("{{{ImgPoleCapture}}}");
+		Quad_PoleDefault.ChangeImageUrl("{{{ImgPoleCapture}}}");
+	} else {
+		Quad_PoleClan1.ChangeImageUrl("{{{ImgPole}}}");
+		Quad_PoleClan2.ChangeImageUrl("{{{ImgPole}}}");
+		Quad_PoleDefault.ChangeImageUrl("{{{ImgPole}}}");
+	}
+}
+
+Void UpdatePoleInfo(Integer _BaseClan) {
+	if (InputPlayer == Null || InputPlayer.CapturedLandmark == Null) return;
+	if (InputPlayer.CapturedLandmark.Gauge == Null || InputPlayer.CapturedLandmark.Sector == Null) return;
+	declare Gauge <=> InputPlayer.CapturedLandmark.Gauge;
+	declare Sector <=> InputPlayer.CapturedLandmark.Sector;
+	
+	declare State = 0;
+	
+	if (Gauge.Speed != 0) {
+		if (Gauge.Clan == InputPlayer.CurrentClan) {
+			if (Gauge.Speed > 0) {
+				if (_BaseClan == InputPlayer.CurrentClan) {
+					State = 1; ///< I'm recovering my pole
+				} else {
+					State = 2; ///< I'm capturing the enemy pole
+				}
+			} else {
+				if (_BaseClan == InputPlayer.CurrentClan) {
+					State = 3; ///< I can't protect my pole
+				} else {
+					State = 4; ///< I can't capture the enemy pole
+				}
+			}
+		} else {
+			if (Gauge.Speed > 0) {
+				if (_BaseClan == InputPlayer.CurrentClan) {
+					State = 3; ///< I can't protect my pole
+				} else {
+					State = 4; ///< I can't capture the enemy pole
+				}
+			} else {
+				if (_BaseClan == InputPlayer.CurrentClan) {
+					State = 1; ///< I'm recovering my pole
+				} else {
+					State = 2; ///< I'm capturing the enemy pole
+				}
+			}
+		}
+	} else {
+		if (_BaseClan == InputPlayer.CurrentClan || (Gauge.Clan == InputPlayer.CurrentClan && Gauge.ValueReal >= 1.)) {
+			State = 5; ///< I'm protecting my pole
+		} else if (Sector.PlayersIds.count == 1) {
+			State = 1; ///< Avoid to display the can't capture picture for a few ms before the Gauge.Speed value is updated
+		} else {
+			State = 4; ///< I can't capture the enemy pole
+		}
+	}
+	
+	switch (State) {
+		case 1: {
+			Label_PoleMessage.SetText("{{{_("Recovering")}}}");
+			Quad_PoleImage.ChangeImageUrl("{{{C_ImgBaseDir}}}c_goal_capture.dds");
+		}
+		case 2: {
+			Label_PoleMessage.SetText("{{{_("Capturing")}}}");
+			Quad_PoleImage.ChangeImageUrl("{{{C_ImgBaseDir}}}c_goal_capture.dds");
+		}
+		case 3: {
+			Label_PoleMessage.SetText("{{{_("Not enough to protect")}}}");
+			Quad_PoleImage.ChangeImageUrl("{{{C_ImgBaseDir}}}c_goal_shield_block.dds");
+		}
+		case 4: {
+			Label_PoleMessage.SetText("{{{_("Not enough to capture")}}}");
+			Quad_PoleImage.ChangeImageUrl("{{{C_ImgBaseDir}}}c_goal_lock.dds");
+		}
+		case 5: {
+			Label_PoleMessage.SetText("{{{_("Protecting")}}}");
+			Quad_PoleImage.ChangeImageUrl("{{{C_ImgBaseDir}}}c_goal_shield.dds");
+		}
+	}
+}
+
+Void UpdatePoleInfoGauge() {
+	if (InputPlayer == Null || InputPlayer.CapturedLandmark == Null) return;
+	if (InputPlayer.CapturedLandmark.Gauge == Null) return;
+	Gauge_PoleValue.SetClan(InputPlayer.CapturedLandmark.Gauge.Clan);
+	Gauge_PoleValue.SetRatio(InputPlayer.CapturedLandmark.Gauge.ValueReal);
+}
+
+main() {
+	declare LastRefresh = 0;
+	
+	declare netread Integer[Integer]	Net_BaseClanList	for UI;
+	declare netread Integer[Integer]	Net_RoundScores		for UI;
+	
+	declare Integer[Integer]	BasesClan;
+	declare Boolean[Integer]	FullyControled;
+	foreach (LandmarkGauge in MapLandmarks_Gauge) {
+		if (LandmarkGauge.Tag != "Pole") continue;
+		Markers_Pole[LandmarkGauge.Order]	= (Page.GetFirstChild("Marker_Pole_"^LandmarkGauge.Order) as CMlFrame);
+		BasesClan[LandmarkGauge.Order]		= 0;
+		FullyControled[LandmarkGauge.Order]	= False;
+	}
+	
+	declare Frame_ScoreInfo			<=> (Page.GetFirstChild("Frame_ScoreInfo")		as CMlFrame);
+	declare Quad_Team1AdvantageOff	<=> (Page.GetFirstChild("Quad_Team1AdvantageOff")	as CMlQuad);
+	declare Quad_Team2AdvantageOff	<=> (Page.GetFirstChild("Quad_Team2AdvantageOff")	as CMlQuad);
+	declare Quad_Team1AdvantageOn	<=> (Page.GetFirstChild("Quad_Team1AdvantageOn")	as CMlQuad);
+	declare Quad_Team2AdvantageOn	<=> (Page.GetFirstChild("Quad_Team2AdvantageOn")	as CMlQuad);
+	
+	Frame_PoleInfo <=> (Page.GetFirstChild("Frame_PoleInfo") as CMlFrame);
+	if (Frame_PoleInfo != Null) {
+		Label_PoleMessage	<=> (Page.GetFirstChild("Label_PoleMessage")	as CMlLabel);
+		Quad_PoleImage		<=> (Page.GetFirstChild("Quad_PoleImage")		as CMlQuad);
+		Gauge_PoleValue		<=> (Page.GetFirstChild("Gauge_PoleValue")		as CMlGauge);
+	}
+	declare IsOnPole = False;
+	declare PrevBaseClan = 0;
+	declare PrevGaugeClan = 0;
+	declare PrevGaugeSpeed = 0;
+	declare PrevRoundScores = [1 => 0, 2 => 0];
+	
+	
+	while (True) {
+		yield;
+		if (!PageIsVisible) continue;
+		if (InputPlayer == Null) continue;
+		
+		if (Frame_PoleInfo != Null && InputPlayer != Null) {
+			if (!IsOnPole && InputPlayer.CapturedLandmark != Null && InputPlayer.CapturedLandmark.Tag == "Pole") {
+				IsOnPole = True;
+				Frame_PoleInfo.Show();
+			} else if (IsOnPole && InputPlayer.CapturedLandmark == Null) {
+				IsOnPole = False;
+				Frame_PoleInfo.Hide();
+			}
+			
+			if (IsOnPole) {
+				if (
+					PrevBaseClan != BasesClan[InputPlayer.CapturedLandmark.Order]
+					|| PrevGaugeClan != InputPlayer.CapturedLandmark.Gauge.Clan
+					|| PrevGaugeSpeed != InputPlayer.CapturedLandmark.Gauge.Speed
+				) {
+					PrevBaseClan	= BasesClan[InputPlayer.CapturedLandmark.Order];
+					PrevGaugeClan	= InputPlayer.CapturedLandmark.Gauge.Clan;
+					PrevGaugeSpeed	= InputPlayer.CapturedLandmark.Gauge.Speed;
+					UpdatePoleInfo(PrevBaseClan);
+				}
+				UpdatePoleInfoGauge();
+			}
+		}
+		
+		if (LastRefresh + C_RefreshInterval <= Now) {
+			LastRefresh = Now;
+			
+			foreach (LandmarkGauge in MapLandmarks_Gauge) {
+				if (LandmarkGauge.Tag != "Pole") continue;
+				
+				if (Net_BaseClanList.existskey(LandmarkGauge.Order) && BasesClan[LandmarkGauge.Order] != Net_BaseClanList[LandmarkGauge.Order]) {
+					BasesClan[LandmarkGauge.Order] = Net_BaseClanList[LandmarkGauge.Order];
+					UpdatePoleClan(LandmarkGauge.Order, BasesClan[LandmarkGauge.Order]);
+					UpdatePoleGauge(LandmarkGauge.Order, LandmarkGauge.Gauge.Clan, LandmarkGauge.Gauge.ValueReal);
+				}
+				
+				if (LandmarkGauge.Gauge.Captured != FullyControled[LandmarkGauge.Order]) {
+					FullyControled[LandmarkGauge.Order] = LandmarkGauge.Gauge.Captured;
+					UpdatePoleControl(LandmarkGauge.Order, LandmarkGauge.Gauge.Captured);
+				}
+				
+				if (LandmarkGauge.Gauge.Speed != 0) {
+					UpdatePoleGauge(LandmarkGauge.Order, LandmarkGauge.Gauge.Clan, LandmarkGauge.Gauge.ValueReal);
+				}
+			}
+			
+			if (
+				Frame_ScoreInfo != Null
+				&& Net_RoundScores.existskey(1) && Net_RoundScores.existskey(2) 
+				&& (Net_RoundScores[1] != PrevRoundScores[1] || Net_RoundScores[2] != PrevRoundScores[2])
+			) {
+				PrevRoundScores[1] = Net_RoundScores[1];
+				PrevRoundScores[2] = Net_RoundScores[2];
+				
+				if (PrevRoundScores[1] > 0) { Quad_Team1AdvantageOn.Show(); Quad_Team1AdvantageOff.Hide(); }
+				else { Quad_Team1AdvantageOn.Hide(); Quad_Team1AdvantageOff.Show(); }
+				
+				if (PrevRoundScores[2] > 0) { Quad_Team2AdvantageOn.Show(); Quad_Team2AdvantageOff.Hide(); }
+				else { Quad_Team2AdvantageOn.Hide(); Quad_Team2AdvantageOff.Show(); }
+			}
+		}
+	}
+}
+--></script>
+""";
+}
+
+// ---------------------------------- //
+/**	Create the markers manialink
+ *
+ *	@return		The markers manialink string
+ */
+Text CreateLayerMarkers() {
+	declare MarkersML		= "";
+	declare WidthFactor		= 9./16.;
+	declare ImgSize			= 9.;
+	declare ImgPole 	 	= C_ImgBaseDir^"goal.dds";
+	declare ImgPoleCapture	= C_ImgBaseDir^"goal_cap.dds";
+	
+	foreach (LandmarkGauge in MapLandmarks_Gauge) {
+		if (LandmarkGauge.Tag == "Pole") {
+			MarkersML ^= """
+<frame id="Marker_Pole_{{{LandmarkGauge.Order}}}">
+	<gauge id="Gauge_Capture" posn="2.5 -3. -1" sizen="{{{ImgSize*1.5}}} 6." style="EnergyBar" drawbg="false" rotation="-90" drawblockbg="false" />
+	<quad sizen="{{{WidthFactor*ImgSize}}} {{{ImgSize}}}" halign="center" valign="center" image="{{{ImgPole}}}" colorize="{{{Teams[0].ColorPrimary.X}}} {{{Teams[0].ColorPrimary.Y}}} {{{Teams[0].ColorPrimary.Z}}}" autoscale="False" id="Quad_PoleClan1" hidden="1" />
+	<quad sizen="{{{WidthFactor*ImgSize}}} {{{ImgSize}}}" halign="center" valign="center" image="{{{ImgPole}}}" colorize="{{{Teams[1].ColorPrimary.X}}} {{{Teams[1].ColorPrimary.Y}}} {{{Teams[1].ColorPrimary.Z}}}" autoscale="False" id="Quad_PoleClan2" hidden="1" />
+	<quad sizen="{{{WidthFactor*ImgSize}}} {{{ImgSize}}}" halign="center" valign="center" image="{{{ImgPole}}}" colorize="0. 0. 0." autoscale="False" id="Quad_PoleDefault" />
+	<label posn="0 1.8" halign="center" valign="center" textprefix="$s" text="{{{GetLetterFromNumber(LandmarkGauge.Order)}}}" textsize="1" id="Label_PoleName" />
+</frame>
+""";
+		}
+	}
+	MarkersML ^= CreateScriptPoles();
+	return MarkersML;
+}
+
+// ---------------------------------- //
+/**	Create the info manialink
+ *
+ *	@return		The info manialink string
+ */
+Text CreateLayerInfo() {
+	declare MarkersML		= "";
+	declare WidthFactor		= 1.;
+	declare ImgSize			= 9.;
+	declare ImgPole 	 	= C_ImgBaseDir^"goal.dds";
+	declare ImgPoleCapture	= C_ImgBaseDir^"goal_cap.dds";
+	
+	foreach (LandmarkGauge in MapLandmarks_Gauge) {
+		if (LandmarkGauge.Tag == "Pole") {
+			MarkersML ^= """
+<frame posn="{{{90 + (LandmarkGauge.Order * 10)}}} 86 30" id="Marker_Pole_{{{LandmarkGauge.Order}}}">
+	<gauge id="Gauge_Capture" posn="4 -3 -1" sizen="{{{ImgSize*1.5}}} 8." style="EnergyBar" drawbg="false" rotation="-90" drawblockbg="false" />
+	<!--<gauge id="Gauge_Capture" posn="2.5 -3. -1" sizen="{{{ImgSize*1.5}}} 6." style="EnergyBar" drawbg="false" rotation="-90" drawblockbg="false" />-->
+	<quad sizen="{{{WidthFactor*ImgSize}}} {{{ImgSize}}}" halign="center" valign="center" image="{{{ImgPole}}}" colorize="{{{Teams[0].ColorPrimary.X}}} {{{Teams[0].ColorPrimary.Y}}} {{{Teams[0].ColorPrimary.Z}}}" autoscale="False" id="Quad_PoleClan1" hidden="1" />
+	<quad sizen="{{{WidthFactor*ImgSize}}} {{{ImgSize}}}" halign="center" valign="center" image="{{{ImgPole}}}" colorize="{{{Teams[1].ColorPrimary.X}}} {{{Teams[1].ColorPrimary.Y}}} {{{Teams[1].ColorPrimary.Z}}}" autoscale="False" id="Quad_PoleClan2" hidden="1" />
+	<quad sizen="{{{WidthFactor*ImgSize}}} {{{ImgSize}}}" halign="center" valign="center" image="{{{ImgPole}}}" colorize="0. 0. 0." autoscale="False" id="Quad_PoleDefault" />
+	<label posn="0 1.8" scale="0.3" halign="center" valign="center" style="TextRaceMessageBig" text="{{{GetLetterFromNumber(LandmarkGauge.Order)}}}" id="Label_PoleName" />
+</frame>
+<frame posn="0 -50 10" id="Frame_PoleInfo" hidden="1">
+	<quad sizen="18 18" halign="center" valign="bottom" id="Quad_PoleImage" />
+	<label halign="center" valign="top" style="TextCardScores2" id="Label_PoleMessage" />
+	<gauge posn="0 -6" sizen="60 6" halign="center" style="EnergyBar" id="Gauge_PoleValue" />
+</frame>
+<frame posn="0 62 5" id="Frame_ScoreInfo">
+	<quad posn="-8 0 6" sizen="5 5" halign="center" valign="center" style="Icons64x64_1" substyle="GenericButton" id="Quad_Team1AdvantageOff" />
+	<quad posn=" 8 0 6" sizen="5 5" halign="center" valign="center" style="Icons64x64_1" substyle="GenericButton" id="Quad_Team2AdvantageOff" />
+	<quad posn="-8 0 7" sizen="5 5" halign="center" valign="center" style="Icons64x64_1" substyle="LvlGreen" id="Quad_Team1AdvantageOn" hidden="1" />
+	<quad posn=" 8 0 7" sizen="5 5" halign="center" valign="center" style="Icons64x64_1" substyle="LvlGreen" id="Quad_Team2AdvantageOn" hidden="1" />
+</frame>
+""";
+		}
+	}
+	MarkersML ^= CreateScriptPoles();
+	return MarkersML;
+}

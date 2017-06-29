@@ -1,0 +1,298 @@
+/**
+ *	DEPRECATED - Use the new WeaponSelection2 library instead
+ *
+ *	Weapon selection library
+ *	Display an interface for choosing a weapon while not spawned
+ */
+
+#Const Version		"2013-02-14"
+#Const ScriptName	"WeaponSelection.Script.txt"
+
+/* ------------------------------------- */
+// Constants
+/* ------------------------------------- */
+#Const C_Rocket 	1
+#Const C_Laser		2
+#Const C_Nucleus	3
+
+/* ------------------------------------- */
+// Globales
+/* ------------------------------------- */
+declare Ident	G_LayerWeaponSelectionId;
+declare Ident[]	G_SelectingPlayersIds;
+
+/* ------------------------------------- */
+// Functions
+/* ------------------------------------- */
+
+/* ------------------------------------- */
+// Private
+/* ------------------------------------- */
+/* ------------------------------------- */
+/** Create the weapon selection manialink
+ *
+ *	@return		The weapon selection manialink
+ */
+Text Private_CreateLayerWeaponSelection() {
+	declare RocketButton = _("Rocket (Press 1)");
+	declare LaserButton = _("Laser (Press 2)");
+	declare NucleusButton = _("Nucleus (Press 3)");
+	return """
+<frame posn="0 -28 9" id="Frame_WeaponSelection" hidden="1">
+	<quad posn="0 0 10" sizen="180 30" halign="center" bgcolor="0007" />
+	<frame posn="0 -2 11">
+		<label posn="0 -1" halign="center" style="TextRaceMessage" text="{{{_("Select your weapon")}}}" id="Label_Message" />
+		<quad posn="0 -17 12" sizen="60 24" halign="center" valign="center" style="Bgs1InRace" substyle="BgTitle3_5" id="Quad_Selection" />
+		<frame posn="0 -12 13">
+			<quad posn="-60 0" sizen="8 8" halign="center" valign="center" image="file://Media/Manialinks/ShootMania/Common/RocketWhite.dds" />
+			<quad posn="  0 0" sizen="8 8" halign="center" valign="center" image="file://Media/Manialinks/ShootMania/Common/LaserWhite.dds" />
+			<quad posn=" 60 0" sizen="8 8" halign="center" valign="center" image="file://Media/Manialinks/ShootMania/Common/NucleusWhite.dds" />
+		</frame>
+		<frame posn="0 -20 14" id="VoteButtons">
+			<label posn="-60 0" halign="center" valign="center" style="CardButtonSmall" textprefix="$fff" text="{{{RocketButton}}}" scriptevents="True" id="Button_Rocket" />
+			<label posn="  0 0" halign="center" valign="center" style="CardButtonSmall" textprefix="$fff" text="{{{LaserButton}}}" scriptevents="True" id="Button_Laser" />
+			<label posn=" 60 0" halign="center" valign="center" style="CardButtonSmall" textprefix="$fff" text="{{{NucleusButton}}}" scriptevents="True" id="Button_Nucleus" />
+		</frame>
+	</frame>
+</frame>
+<script><!--
+#Const C_UpdateInterval	250
+#Const C_Rocket 		{{{C_Rocket}}}
+#Const C_Laser			{{{C_Laser}}}
+#Const C_Nucleus		{{{C_Nucleus}}}
+
+declare CMlFrame Frame_WeaponSelection;
+declare CMlQuad Quad_Selection;
+
+Void SelectWeapon(Integer _Weapon) {
+	if (InputPlayer != Null) {
+		declare netwrite Net_LibWS_SelectedWeapon for UI = C_Rocket;
+		Net_LibWS_SelectedWeapon = _Weapon;
+	}
+	
+	switch (_Weapon) {
+		case C_Rocket: {
+			Quad_Selection.PosnX = -60.;
+		}
+		case C_Laser: {
+			Quad_Selection.PosnX = 0.;
+		}
+		case C_Nucleus: {
+			Quad_Selection.PosnX = 60.;
+		}
+	}
+}
+
+main() {
+	Frame_WeaponSelection	<=> (Page.GetFirstChild("Frame_WeaponSelection")	as CMlFrame);
+	Quad_Selection			<=> (Page.GetFirstChild("Quad_Selection")			as CMlQuad);
+	
+	declare netwrite Net_LibWS_SelectedWeapon for UI = C_Rocket;
+	declare netread Integer Net_LibWS_Start for UI;
+	declare netread Integer Net_LibWS_Stop for UI;
+	declare PrevStart = 0;
+	declare PrevStop = 0;
+	
+	SelectWeapon(Net_LibWS_SelectedWeapon);
+	
+	while (True) {
+		yield;
+		
+		if (!PageIsVisible) continue;
+		
+		// Load settings
+		if (PrevStart != Net_LibWS_Start || PrevStop != Net_LibWS_Stop) {
+			PrevStart = Net_LibWS_Start;
+			PrevStop = Net_LibWS_Stop;
+			if (Net_LibWS_Start > Net_LibWS_Stop) {
+				Frame_WeaponSelection.Show();
+			} else {
+				Frame_WeaponSelection.Hide();
+			}
+		}
+		
+		foreach (Event in PendingEvents) {
+			if (Event.Type == CMlEvent::Type::MouseClick) {
+				if (Event.ControlId == "Button_Rocket")			SelectWeapon(C_Rocket);
+				else if (Event.ControlId == "Button_Laser")		SelectWeapon(C_Laser);
+				else if (Event.ControlId == "Button_Nucleus")	SelectWeapon(C_Nucleus);
+			} else if (Event.Type == CMlEvent::Type::KeyPress) {
+				if (Event.KeyName == "1" || Event.KeyName == "Numpad1")			SelectWeapon(C_Rocket);
+				else if (Event.KeyName == "2" || Event.KeyName == "Numpad2")	SelectWeapon(C_Laser);
+				else if (Event.KeyName == "3" || Event.KeyName == "Numpad3")	SelectWeapon(C_Nucleus);
+			}
+		}
+	}
+}
+--></script>
+""";
+}
+
+/* ------------------------------------- */
+/// Attach the weapon selection layer
+Void Private_Attach() {
+	if (UIManager.UIAll.UILayers.existskey(G_LayerWeaponSelectionId)) return;
+	if (!UIManager.UILayers.existskey(G_LayerWeaponSelectionId)) return;
+	
+	UIManager.UIAll.UILayers.add(UIManager.UILayers[G_LayerWeaponSelectionId]);
+}
+
+/* ------------------------------------- */
+/// Detach the weapon selection layer
+Void Private_Detach() {
+	if (!UIManager.UIAll.UILayers.existskey(G_LayerWeaponSelectionId)) return;
+	if (!UIManager.UILayers.existskey(G_LayerWeaponSelectionId)) return;
+	
+	declare Detached = UIManager.UIAll.UILayers.removekey(G_LayerWeaponSelectionId);
+}
+
+/* ------------------------------------- */
+// Public
+/* ------------------------------------- */
+
+/* ------------------------------------- */
+/** Return the version number of the script
+ *
+ *	@return		The version number of the script
+ */
+Text GetScriptVersion() {
+	return Version;
+}
+
+/* ------------------------------------- */
+/** Return the name of the script
+ *
+ *	@return		The name of the script
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+/* ------------------------------------- */
+/// Unload the library
+Void Unload() {
+	if (G_LayerWeaponSelectionId != NullId && UIManager.UILayers.existskey(G_LayerWeaponSelectionId)) {
+		UIManager.UILayerDestroy(UIManager.UILayers[G_LayerWeaponSelectionId]);
+		G_LayerWeaponSelectionId = NullId;
+	}
+	G_SelectingPlayersIds.clear();
+}
+
+/* ------------------------------------- */
+/// Load the library
+Void Load() {
+	Unload();
+	
+	// Create and assign the layer
+	declare LayerWeaponSelection <=> UIManager.UILayerCreate();
+	LayerWeaponSelection.ManialinkPage = Private_CreateLayerWeaponSelection();
+	G_LayerWeaponSelectionId = LayerWeaponSelection.Id;
+	
+	G_SelectingPlayersIds.clear();
+}
+
+/* ------------------------------------- */
+/** Start the weapon selection for the given players
+ *	if _PlayersIds is empty, start for all players
+ *
+ *	@param	_PlayersIds		The players ids
+ */
+Void Start(Ident[] _PlayersIds) {
+	if (_PlayersIds.count <= 0) {
+		G_SelectingPlayersIds.clear();
+	} else {
+		foreach (PlayerId in _PlayersIds) {
+			if (!G_SelectingPlayersIds.exists(PlayerId)) G_SelectingPlayersIds.add(PlayerId);
+		}
+	}
+	
+	UIManager.UIAll.UISequence = CUIConfig::EUISequence::Podium;
+	Private_Attach();
+	
+	foreach (Player in Players) {
+		declare UI <=> UIManager.GetUI(Player);
+		if (UI == Null) continue;
+		
+		declare netwrite Integer Net_LibWS_Start for UI = 0;
+		declare netwrite Integer Net_LibWS_Stop for UI = 0;
+		if (G_SelectingPlayersIds.count > 0) {
+			if (_PlayersIds.exists(Player.Id)) Net_LibWS_Start = Now;
+			else Net_LibWS_Start = 0;
+		} else {
+			Net_LibWS_Start = Now;
+		}
+		Net_LibWS_Stop = 0;
+	}
+}
+
+/* ------------------------------------- */
+/** Start the weapon selection for the given player
+ *
+ *	@param	_PlayerId		The player id
+ */
+Void Start(Ident _PlayerId) {
+	Start([_PlayerId]);
+}
+
+/* ------------------------------------- */
+/// Start the weapon selection for all players
+Void StartAll() {
+	Start(Ident[]);
+}
+
+/* ------------------------------------- */
+/** Stop the weapon selection for the given players
+ *	if _PlayersIds is empty, stop for all players
+ *
+ *	@param	_PlayersIds		The players ids
+ */
+Void Stop(Ident[] _PlayersIds) {
+	if (_PlayersIds.count <= 0) {
+		G_SelectingPlayersIds.clear();
+	} else if (G_SelectingPlayersIds.count > 0) {
+		foreach (PlayerId in _PlayersIds) {
+			declare Removed = G_SelectingPlayersIds.remove(PlayerId);
+		}
+	}
+	
+	if (G_SelectingPlayersIds.count <= 0) {
+		Private_Detach();
+	}
+	
+	foreach (Player in Players) {
+		declare UI <=> UIManager.GetUI(Player);
+		if (UI == Null) continue;
+		
+		declare netwrite Integer Net_LibWS_Start for UI = 0;
+		declare netwrite Integer Net_LibWS_Stop	for UI = 0;
+		if ((G_SelectingPlayersIds.count > 0 && _PlayersIds.exists(Player.Id)) || G_SelectingPlayersIds.count <= 0) {
+			Net_LibWS_Start	= 0;
+			Net_LibWS_Stop	= Now;
+		}
+		
+		declare LibWS_Weapon for Player.User = CSmMode::EWeapon::Rocket;
+		declare netread Integer Net_LibWS_SelectedWeapon for UI;
+		switch (Net_LibWS_SelectedWeapon) {
+			case C_Rocket	: LibWS_Weapon = CSmMode::EWeapon::Rocket;
+			case C_Laser	: LibWS_Weapon = CSmMode::EWeapon::Laser;
+			case C_Nucleus	: LibWS_Weapon = CSmMode::EWeapon::Nucleus;
+			default			: LibWS_Weapon = CSmMode::EWeapon::Rocket;
+		}
+	}
+}
+
+/* ------------------------------------- */
+/// Stop the weapon selection for all players
+Void StopAll() {
+	Stop(Ident[]);
+}
+
+/* ------------------------------------- */
+/** Get the selected weapon of a player
+ *
+ *	@param	_Player		The player to get
+ */
+CSmMode::EWeapon GetWeapon(CSmPlayer _Player) {
+	declare LibWS_Weapon for _Player.User = CSmMode::EWeapon::Rocket;
+	return LibWS_Weapon;
+}

@@ -1,0 +1,217 @@
+/**
+ *	DEPRECATED - Use the new Top2 library instead
+ *
+ *	Top library
+ */
+
+#Const Version		"2013-02-06"
+#Const ScriptName	"Top.Script.txt"
+
+#Include "TextLib" as TextLib
+
+declare Text[] TopIdents;
+declare Integer[Text] TopLengths;
+
+declare Integer[][Text] TopsPoints;
+declare Text[][Text] TopsNames;
+
+declare Integer[] MergedTopPoints;
+declare Text[] MergedTopNames;
+
+/* ------------------------------------- */
+/** Return the version number of the script
+ *
+ *	@return		The version number of the script
+ */
+Text GetScriptVersion() {
+	return Version;
+}
+
+/* ------------------------------------- */
+/** Return the name of the script
+ *
+ *	@return		The name of the script
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+Void MergeTops(Integer _TopSize, Integer[] _Points1, Text[] _Names1, Integer[] _Points2, Text[] _Names2) {
+	MergedTopPoints = Integer[];
+	MergedTopNames = Text[];
+	
+	assert(_Points1.count == _Names1.count);
+	assert(_Points2.count == _Names2.count);
+	
+	declare Index1 = 0;
+	declare Index2 = 0;
+	declare Index = 0;
+	while(True) {	
+		if( Index >= _TopSize) break;	
+		declare Name = "";
+		declare Points = 0;
+				
+		if( Index1 < _Points1.count && Index2 < _Points2.count ) {
+			if ( _Points1[Index1] > _Points2[Index2] ) {
+				Name = _Names1[Index1];
+				Points = _Points1[Index1];
+				Index1 += 1;
+			} else {
+				Name = _Names2[Index2];
+				Points = _Points2[Index2];
+				Index2 += 1;
+			}
+		} else if( Index1 < _Points1.count) {
+			Name = _Names1[Index1];
+			Points = _Points1[Index1];
+			Index1 += 1;	
+		} else if ( Index2 < _Points2.count ) {
+			Name = _Names2[Index2];
+			Points = _Points2[Index2];
+			Index2 += 1;	
+		} else {
+			break;
+		}	
+		MergedTopPoints.add(Points);
+		MergedTopNames.add(Name);
+		Index += 1;
+	}
+}
+
+Void MergeTopAndCurrent(Text _TopIdent) {
+
+	declare Integer[Ident] SortingPoinstAndIds;	
+	foreach(Player in Players) {
+		declare Integer[Text] CurrentTopScores for Player;		
+		if(CurrentTopScores.existskey(_TopIdent) && CurrentTopScores[_TopIdent] > 0) {
+			SortingPoinstAndIds[Player.Id] =  -CurrentTopScores[_TopIdent];
+		}
+	}
+	SortingPoinstAndIds = SortingPoinstAndIds.sort();	
+
+	declare Integer[] CurrentTopPoints;
+	declare Text[] CurrentTopNames;	
+	foreach(PlayerId => Points in SortingPoinstAndIds) {
+		CurrentTopPoints.add( -Points );
+		CurrentTopNames.add( Players[PlayerId].Name );							
+	}	
+	
+	MergeTops(TopLengths[_TopIdent],  TopsPoints[_TopIdent], TopsNames[_TopIdent], CurrentTopPoints, CurrentTopNames);
+}
+
+Void AddTop(Text _TopIdent, Integer _TopLength) {
+	foreach(TopIdent in TopIdents) {
+		assert(TopIdent != _TopIdent);
+	}
+	TopIdents.add(_TopIdent);
+	TopLengths[_TopIdent] = _TopLength;
+}
+
+Void MatchBegin() {
+	foreach(TopIdent in TopIdents) {
+		TopsPoints[TopIdent] = Integer[];
+		TopsNames[TopIdent] = Text[];	
+	}
+}
+
+Void RoundBegin() {
+	foreach(Player in Players) {
+		declare Integer[Text] CurrentTopScores for Player;
+		foreach(TopIdent in TopIdents) {
+			CurrentTopScores[TopIdent] = 0;
+		}		
+	}
+}
+
+Text GetFrameTop(Text  _TopIdent, Text _Title, Text _Pos, Text _UnitType) {
+	MergeTopAndCurrent(_TopIdent);	
+	declare FrameTop = """<frame posn="{{{_Pos}}}"><label posn="0 0" halign="center" textprefix="$000" text="{{{TextLib::MLEncode(_Title)}}}" />""";
+	
+	FrameTop ^= """<quad posn="0 1 0" sizen="50 {{{8+4*TopLengths[_TopIdent]}}}" halign="center" style="Bgs1InRace" substyle="BgWindow3" />"""; 
+	
+	foreach(I=>Points in MergedTopPoints) {
+		FrameTop ^= 
+"""<label posn="-15 {{{-4*I-6}}}" sizen="40 4" halign="left" valign="center" scale="0.8" style="TextCardSmallScores2" textprefix="$000" text=" {{{TextLib::MLEncode(MergedTopNames[I])}}}" />""";		
+		
+		declare Text PointsText;
+		switch(_UnitType) {
+			case "Percent": 		PointsText = Points ^"%";
+			default :				PointsText = Points ^" ";		
+		}
+		FrameTop ^=
+"""<label posn="-15 {{{-4*I-6}}}" halign="right" valign="center" scale="0.8" style="TextCardSmallScores2" textprefix="$0f0" text="{{{PointsText}}} " />""";
+	}
+
+	FrameTop ^= """</frame>""";
+	return FrameTop;
+}
+
+Text GetFrameTop2(Text  _TopIdent, Text _Title, Text _Pos, Text _UnitType) {
+	MergeTopAndCurrent(_TopIdent);
+	
+	declare PlayersList = "";
+	declare Title = TextLib::MLEncode(_Title);
+	declare TopHeight = 8.5+4*TopLengths[_TopIdent];
+	
+	foreach(I=>Points in MergedTopPoints) {
+		declare PosnY = -4.4*I-5;
+		declare Name = TextLib::MLEncode(MergedTopNames[I]);
+		declare Score = "";
+		switch(_UnitType) {
+			case "Percent": 		Score = Points ^"%";
+			default :				Score = Points ^" ";		
+		}
+		
+		PlayersList ^= """
+<label posn="-15 {{{PosnY}}} 10" sizen="8 4" textsize="2" halign="right" textprefix="$0a0" text="{{{Score}}} " />
+<label posn="-15 {{{PosnY}}} 10" sizen="38 4" textsize="2" halign="left" textprefix="$s" text="{{{Name}}}" />
+""";
+	}
+	
+	return """
+<frame posn="{{{_Pos}}}">
+	<quad posn="0 1 0" sizen="51 {{{TopHeight}}}" halign="center" bgcolor="3329" />
+	
+	<quad posn="0 1 5" sizen="51 0.5" halign="center" bgcolor="999f" />
+	<quad posn="25.5 1 5" sizen="0.5 {{{TopHeight}}}" halign="right" bgcolor="999f" />
+	<quad posn="0 {{{-TopHeight+1}}} 5" sizen="51 0.5" halign="center" valign="bottom" bgcolor="999f" />
+	<quad posn="-25.5 1 5" sizen="0.5 {{{TopHeight}}}" bgcolor="999f" />
+	
+	<quad posn="0 -4.5 5" sizen="48 0.5" halign="center" valign="center" bgcolor="999f" />
+	
+	<label posn="0 0 2" sizen="46 5" halign="center" textcolor="ddcf" textprefix="$s" text="{{{Title}}}" />
+	{{{PlayersList}}}
+</frame>
+""";
+}
+
+Void SetPlayerPoints(Text  _TopIdent, CPlayer _Player, Integer _Value) {
+	declare Integer[Text] CurrentTopScores for _Player;
+	CurrentTopScores[_TopIdent] = _Value;
+}
+
+Integer GetPlayerPoints(Text  _TopIdent, CPlayer _Player) {
+	declare Integer[Text] CurrentTopScores for _Player;
+	if(CurrentTopScores.existskey(_TopIdent))
+		return CurrentTopScores[_TopIdent];
+	return 0;
+}
+	
+Void IncrementPlayerPoints(Text  _TopIdent, CPlayer _Player, Integer _Incr) {
+	declare Integer[Text] CurrentTopScores for _Player;	
+	if(CurrentTopScores.existskey(_TopIdent))
+		CurrentTopScores[_TopIdent] += _Incr;
+	else 
+		CurrentTopScores[_TopIdent] = _Incr;
+}
+
+Void RoundEnd() {	
+	foreach(TopIdent in TopIdents) {
+		MergeTopAndCurrent(TopIdent);
+		TopsPoints[TopIdent] = MergedTopPoints;
+		TopsNames[TopIdent] = MergedTopNames;
+	}
+}
+
+Void MatchEnd() {
+}

@@ -1,0 +1,258 @@
+/**
+ *	Grid system for manialinks
+ */
+#Const	Version			"2017-04-21"
+#Const	ScriptName	"Libs/Nadeo/Manialink/Grid.Script.txt"
+
+// ---------------------------------- //
+// Libraries
+// ---------------------------------- //
+#Include "MathLib" as ML
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+// Element alignement
+#Const C_Align_Left		1
+#Const C_Align_Center	0
+#Const C_Align_Right		-1
+#Const C_Align_Top			-2
+#Const C_Align_Bottom	2
+
+// Grid direction
+#Const C_Direction_Right		1
+#Const C_Direction_Left		-1
+#Const C_Direction_Top			2
+#Const C_Direction_Bottom	-2
+
+// Configuration array indexes
+#Const C_Config_Width			0
+#Const C_Config_ColumnsNb	1
+#Const C_Config_Margin			2
+#Const C_Config_Padding		3
+#Const C_Config_Direction	4
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+// ---------------------------------- //
+// Private
+// ---------------------------------- //
+// ---------------------------------- //
+/**	Remove the width of the margins
+ *	from the width of the grid
+ *
+ *	@param	_GridWidth								The width of the grid
+ *	@param	_GridColumnsNb						The number of columns in the grid
+ *	@param	_GridMargin								The width of the margin around the columns
+ *
+ *	@return														The usable width for the columns in the grid
+ */
+Real Private_GetUsableWidth(Real _GridWidth, Integer _GridColumnsNb, Real _GridMargin, Boolean _GridPadding) {
+	// Total width - (all columns margins width)
+	declare UsableWidth = _GridWidth - (_GridColumnsNb * _GridMargin * 2);
+	
+	// When not using grid padding add the rightmost and leftmost margins to the usable width
+	if (!_GridPadding) {
+		UsableWidth += 2 * _GridMargin;
+	}
+	
+	return UsableWidth;
+}
+
+// ---------------------------------- //
+/**	Get the width of one column
+ *	without its margins
+ *
+ *	@param	_GridWidth								The width of the grid
+ *	@param	_GridColumnsNb						The number of columns in the grid
+ *	@param	_GridMargin								The width of the margin around the columns
+ *
+ *	@return														The column width
+ */
+Real Private_GetColumnWidth(Real _GridWidth, Integer _GridColumnsNb, Real _GridMargin, Boolean _GridPadding) {
+	return Private_GetUsableWidth(_GridWidth, _GridColumnsNb, _GridMargin, _GridPadding) / _GridColumnsNb;
+}
+
+// ---------------------------------- //
+/** Extract the grid width from a
+ *	grid config array
+ *
+ *	@param	_Config										The grid config array
+ *
+ *	@return														The grid width
+ */
+Real Private_Config_GetWidth(Real[Integer] _Config) {
+	return _Config[C_Config_Width];
+}
+
+// ---------------------------------- //
+/** Extract the grid columns number
+ *	from a grid config array
+ *
+ *	@param	_Config										The grid config array
+ *
+ *	@return														The grid columns number
+ */
+Integer Private_Config_GetColumnsNb(Real[Integer] _Config) {
+	return ML::NearestInteger(_Config[C_Config_ColumnsNb]);
+}
+
+// ---------------------------------- //
+/** Extract the grid margin from a
+ *	grid config array
+ *
+ *	@param	_Config										The grid config array
+ *
+ *	@return														The grid margin
+ */
+Real Private_Config_GetMargin(Real[Integer] _Config) {
+	return _Config[C_Config_Margin];
+}
+
+// ---------------------------------- //
+/** Extract the grid padding from a
+ *	grid config array
+ *
+ *	@param	_Config										The grid config array
+ *
+ *	@return														The grid padding
+ */
+Boolean Private_Config_GetPadding(Real[Integer] _Config) {
+	if (_Config[C_Config_Padding] < 0.) return False;
+	return True;
+}
+
+// ---------------------------------- //
+/** Extract the grid direction from a
+ *	grid config array
+ *
+ *	@param	_Config										The grid config array
+ *
+ *	@return														The grid direction
+ */
+Integer Private_Config_GetDirection(Real[Integer] _Config) {
+	return ML::NearestInteger(_Config[C_Config_Direction]);
+}
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+// ---------------------------------- //
+/**	Return the version number of the script
+ *
+ *	@return														The version number of the script
+ */
+Text GetScriptVersion() {
+	return Version;
+}
+
+// ---------------------------------- //
+/**	Return the name of the script
+ *
+ *	@return														The name of the script
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+// ---------------------------------- //
+/** Create a grid configuration array
+ *
+ *	@param	_GridWidth								The width of the grid
+ *	@param	_GridColumnsNb						The number of columns in the grid
+ *	@param	_GridMargin								The width of the margin around the columns
+ *	@param	_GridPadding							Enable or disable the grid padding
+ *	@param	_GridDirection						Direction of the grid
+ *
+ *	@return														A grid configuration array
+ */
+Real[Integer] CreateConfig(Real _GridWidth, Integer _GridColumnsNb, Real _GridMargin, Boolean _GridPadding, Integer _GridDirection) {
+	declare Padding = 1.;
+	if (!_GridPadding) Padding = -1.;
+	
+	return [
+		C_Config_Width => _GridWidth,
+		C_Config_ColumnsNb => _GridColumnsNb * 1.,
+		C_Config_Margin => _GridMargin,
+		C_Config_Padding => Padding,
+		C_Config_Direction => _GridDirection * 1.
+	];
+}
+
+// ---------------------------------- //
+/**	Push an element n columns to the right
+ *
+ *	@param	_GridConfig								A grid configuration array
+ *	@param	_Columns									The number of columns to push
+ *	@param	_Align										The alignment of the element
+ *	@param	_Width										The width of the element
+ *
+ *	@return														The position of the element in the grid
+ */
+Real Push(Real[Integer] _GridConfig, Integer _Columns, Integer _Align, Real _Width) {
+	declare GridWidth = Private_Config_GetWidth(_GridConfig);
+	declare GridColumnsNb = Private_Config_GetColumnsNb(_GridConfig);
+	declare GridMargin = Private_Config_GetMargin(_GridConfig);
+	declare GridPadding = Private_Config_GetPadding(_GridConfig);
+	declare GridDirection = Private_Config_GetDirection(_GridConfig);
+	
+	declare ColumnWidth = Private_GetColumnWidth(GridWidth, GridColumnsNb, GridMargin, GridPadding);
+	declare Pos = _Columns * (ColumnWidth + (GridMargin * 2));
+	
+	if (GridPadding) {
+		Pos += GridMargin;
+	}
+	
+	declare Direction = 1;
+	if (GridDirection < 0) Direction = -1;
+	
+	Pos *= Direction;
+	
+	declare Status = Direction * _Align;
+	if (Status < 0) {
+		Pos += Direction * _Width;
+	} else if (Status == 0) {
+		Pos += Direction * _Width * 0.5;
+	}
+	
+	return Pos;
+}
+
+// ---------------------------------- //
+/**	Push an element n columns to the right
+ *
+ *	@param	_GridConfig								A grid configuration array
+ *	@param	_Columns									The number of columns to push
+ *
+ *	@return														The position of the element in the grid
+ */
+Real Push(Real[Integer] _GridConfig, Integer _Columns) {
+	declare GridDirection = Private_Config_GetDirection(_GridConfig);
+	declare Align = C_Align_Left;
+	if (GridDirection == C_Direction_Top || GridDirection == C_Direction_Bottom) {
+		Align = C_Align_Top;
+	}
+	return Push(_GridConfig, _Columns, C_Align_Left, 0.);
+}
+
+// ---------------------------------- //
+/**	Get the position of an element
+ *	inside the grid
+ *
+ *	@param	_GridConfig								A grid configuration array
+ *	@param	_Column										The number of the column where the element
+ *																		is positionned
+ *
+ *	@return														The position of the element in the grid
+ */
+Real GetSize(Real[Integer] _GridConfig, Integer _Columns) {
+	declare GridWidth = Private_Config_GetWidth(_GridConfig);
+	declare GridColumnsNb = Private_Config_GetColumnsNb(_GridConfig);
+	declare GridMargin = Private_Config_GetMargin(_GridConfig);
+	declare GridPadding = Private_Config_GetPadding(_GridConfig);
+	
+	declare ColumnWidth = Private_GetColumnWidth(GridWidth, GridColumnsNb, GridMargin, GridPadding);
+	
+	return (_Columns * ColumnWidth) + ((_Columns - 1) * (GridMargin * 2));
+}

@@ -1,0 +1,705 @@
+/** 
+ *	ClubLink library
+ *	Allow a mode to get informations about the teams 
+ *	on the server from Club xml files
+ */
+
+#Const Version		"2014-04-22"
+#Const ScriptName	"Libs/Nadeo/Clublink.Script.txt"
+
+#Include "TextLib" as TL
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_LibClubLink_TeamDefaultName	["Blue", "Red"]
+#Const C_LibClubLink_TeamDefaultColor	[<0.,0.,1.>, <1.,0.,0.>]
+#Const C_LibClubLink_RequestTimeout		5000
+
+// ---------------------------------- //
+// Globales
+// ---------------------------------- //
+declare Boolean								G_LibClubLink_Loaded;						///< State of the library
+declare Ident[Integer]				G_LibClubLink_SourcePlayerId;		///< Id of the player owning the ClubLink to load
+declare Ident[Integer]				G_LibClubLink_LoadingPlayerId;	///< Id of the player owning the ClubLink currently loading
+declare Ident[Integer]				G_LibClubLink_LoadedPlayerId;		///< Id of the player owning the loaded ClubLink
+declare Integer[Integer]			G_LibClubLink_RequestStartTime;	///< StartTime of the player ClubLink HTTP request
+declare CHttpRequest[Integer]	G_LibClubLink_Request;					///< ClubLink request of each clan
+declare Ident									G_LibClubLink_LayerTeamsId;			///< Id of the team layer
+declare Text[]								G_LibClubLink_TeamDefaultName;	///< Default name for each team
+declare Vec3[]								G_LibClubLink_TeamDefaultColor;	///< Default color for each team
+declare Vec3[]								G_LibClubLink_TeamDesiredColor;	///< Color for each team as specified in the clublink
+declare Boolean								G_LibClubLink_Updated;					///< The ClubLink of a team is updated
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+// Private
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Create the teams layer
+ *
+ *	@return		The teams layer
+ */
+Text Private_CreateLayerTeams() {
+	return """
+<manialink version="1" name="Lib_Clublink:Teams">
+<frame posn="0 40" id="Frame_Spectators" hidden="1">
+	<quad posn="-159 0" sizen="40 20" halign="left"  id="Quad_SponsorTeam1" />
+	<quad posn=" 159 0" sizen="40 20" halign="right" id="Quad_SponsorTeam2" />
+</frame>
+<script><!--
+#Const C_SponsorCyclingDuration 5000
+
+main() {
+	declare Frame_Spectators <=> (Page.GetFirstChild("Frame_Spectators") as CMlFrame);
+	declare Quad_Sponsor = [
+		(Frame_Spectators.GetFirstChild("Quad_SponsorTeam1") as CMlQuad),
+		(Frame_Spectators.GetFirstChild("Quad_SponsorTeam2") as CMlQuad)
+	];
+	
+	declare netread Boolean Net_LibClubLink_DisplaySponsors for Teams[0];
+	
+	while (True) {
+		sleep(1000);
+		
+		// Display sponsors for spectators at the start/end of the map and the end of the round
+		declare DisplaySponsors =	IsSpectatorMode 
+									&& Net_LibClubLink_DisplaySponsors
+								 	&& (
+										UI.UISequence == CUIConfig::EUISequence::Podium 
+										|| UI.UISequence == CUIConfig::EUISequence::EndRound 
+										|| UI.UISequence == CUIConfig::EUISequence::Intro
+									);
+		Frame_Spectators.Visible = DisplaySponsors;
+		
+		if (DisplaySponsors) {
+			for (I, 0, 1) {
+				declare netread Text[] Net_LibClubLink_TeamSponsors for Teams[I];
+				declare Text Sponsor = "";
+				if (Net_LibClubLink_TeamSponsors.count > 0) Sponsor = Net_LibClubLink_TeamSponsors[(Now / C_SponsorCyclingDuration) % Net_LibClubLink_TeamSponsors.count];
+				Quad_Sponsor[I].ImageUrl	= Sponsor;
+				Quad_Sponsor[I].Visible		= (Sponsor != "");
+			}
+		} else {
+			for (I, 0, 1) Quad_Sponsor[I].Hide();
+		}
+	}
+}
+--></script>
+</manialink>
+""";
+}
+
+// ---------------------------------- //
+/** Read values from a node
+ *
+ *	@param	_Node		The parent node to use
+ *	@param	_ChildName	The node to search
+ *	@param	_AttribName	The attribute to read, if empty get the node text content
+ *
+ *	@return		The value if found, an empty string otherwise
+ */
+Text Private_ReadXmlText(CXmlNode _Node, Text _ChildName, Text _AttribName) {
+	if (_Node == Null) return "";
+	declare Elem = _Node.GetFirstChild(_ChildName);
+	if (Elem == Null) return "";
+	if (_AttribName != "") return Elem.GetAttributeText(_AttribName, "");
+	
+	return Elem.TextContents;
+}
+
+// ---------------------------------- //
+/// Overload of Text Private_ReadXmlText(CXmlNode _Node, Text _ChildName, Text _AttribName)
+Text Private_ReadXmlText(CXmlNode _Node, Text _ChildName) {
+	return Private_ReadXmlText(_Node, _ChildName, "");
+}
+
+// ---------------------------------- //
+/** Check that all the players in a clan are listed in the clublink before activating it
+ *
+ *	@param	_ClanNb		The clan to set
+ *	@param	_Xml		The XML document containing the info
+ *	@param	_ClubLinkUrl	The url of the clublink to use
+ *
+ *	@return				True if all the players of the clan are listed in the clublink
+ */
+Boolean Private_CheckPlayersList(Integer _ClanNb, CXmlDocument _Xml, Text _ClubLinkUrl) {
+	declare CXmlNode Root;
+	
+	if (_Xml != Null && _Xml.Root != Null && _Xml.Root.Name == "club") Root <=> _Xml.Root;
+	else return False;
+	
+	declare Logins = Text[];
+	declare TeamPlayers = Root.GetFirstChild("players");
+	if (TeamPlayers != Null) {
+		foreach (Player in TeamPlayers.Children) {
+			if (Player.Name != "player") continue;
+			declare Login = Player.GetAttributeText("login", "");
+			if (Login == "") continue;
+			Logins.add(Login);
+		}
+	}
+	
+	foreach (Player in Players) {
+		if (Player.CurrentClan != _ClanNb) continue;
+		if (Player.User.ClubLink != _ClubLinkUrl) return False;
+		if (!Logins.exists(Player.User.Login)) return False;
+	}
+	
+	return True;
+}
+
+// ---------------------------------- //
+/** Set the two teams color from desired colors, and avoid hue overlap.
+ *
+ */
+Void Private_ApplyDesiredTeamColors() {
+	// Write both team desired colors, and make sure they're different.
+	Teams[0].ColorPrimary	= G_LibClubLink_TeamDesiredColor[0];
+	Teams[1].ColorPrimary	= G_LibClubLink_TeamDesiredColor[1];
+	TweakTeamColorsToAvoidHueOverlap();
+}
+
+// ---------------------------------- //
+/** Reset the team info to their default value
+ *
+ *	@param	_ClanNb		The clan to reset
+ */
+Void Private_ResetClan(Integer _ClanNb) {	
+	if (G_LibClubLink_Loaded) {	
+		G_LibClubLink_SourcePlayerId[_ClanNb]	= NullId;
+		G_LibClubLink_LoadingPlayerId[_ClanNb]	= NullId;
+		G_LibClubLink_LoadedPlayerId[_ClanNb]	= NullId;
+		G_LibClubLink_RequestStartTime[_ClanNb]	= -1;
+		if (G_LibClubLink_Request[_ClanNb] != Null) Http.Destroy(G_LibClubLink_Request[_ClanNb]);
+		G_LibClubLink_Request[_ClanNb] = Null;
+	}
+	
+	declare Team <=> Teams[_ClanNb - 1];
+	Team.Name		= G_LibClubLink_TeamDefaultName[_ClanNb - 1];
+	Team.ZonePath	= "";
+	Team.City		= "";
+	Team.EmblemUrl	= "";
+	Team.PresentationManialinkUrl = "";
+	Team.ClubLinkUrl = "";
+
+	Team.ColorSecondary	= G_LibClubLink_TeamDefaultColor[_ClanNb - 1];
+	G_LibClubLink_TeamDesiredColor[_ClanNb - 1] = G_LibClubLink_TeamDefaultColor[_ClanNb - 1];
+	Private_ApplyDesiredTeamColors();
+	
+	declare netwrite Text[] Net_LibClubLink_TeamSponsors for Team;
+	declare Text[] LibClubLink_TeamPlayerLogins for Team;
+	declare Text[] LibClubLink_TeamPlayerNicknames for Team;
+	declare Text[] LibClubLink_TeamPlayerAvatars for Team;
+	Net_LibClubLink_TeamSponsors.clear();
+	LibClubLink_TeamPlayerLogins.clear();
+	LibClubLink_TeamPlayerNicknames.clear();
+	LibClubLink_TeamPlayerAvatars.clear();
+	
+	G_LibClubLink_Updated = True;
+}
+
+// ---------------------------------- //
+/** Set the team info from XML
+ *
+ *	@param	_ClanNb			The clan to set
+ *	@param	_Xml			The XML document containing the info
+ *	@param	_ClubLinkUrl	The url of the clublink to use
+ */
+Void Private_SetClan(Integer _ClanNb, CXmlDocument _Xml, Text _ClubLinkUrl) {
+	declare CXmlNode Root;
+	if (_Xml != Null && _Xml.Root != Null && _Xml.Root.Name == "club") Root <=> _Xml.Root;
+	else return;
+	
+	if (UseClans && !Private_CheckPlayersList(_ClanNb, _Xml, _ClubLinkUrl)) {
+		Private_ResetClan(_ClanNb);
+		return;
+	}
+	
+	declare Team <=> Teams[_ClanNb - 1];
+	Team.Name		= Private_ReadXmlText(Root, "name");
+	Team.ZonePath	= Private_ReadXmlText(Root, "zone");
+	Team.City		= Private_ReadXmlText(Root, "city");
+	Team.EmblemUrl	= Private_ReadXmlText(Root, "emblem");
+	Team.ClubLinkUrl= _ClubLinkUrl;
+	
+	declare TextColor = Private_ReadXmlText(Root, "color", "primary");
+	if (TextColor != "")	G_LibClubLink_TeamDesiredColor[_ClanNb - 1] = TL::ToColor(TextColor);
+	else					G_LibClubLink_TeamDesiredColor[_ClanNb - 1] = G_LibClubLink_TeamDefaultColor[_ClanNb - 1];
+	Private_ApplyDesiredTeamColors();
+	
+	declare netwrite Text[] Net_LibClubLink_TeamSponsors for Team;
+	Net_LibClubLink_TeamSponsors.clear();
+	declare Sponsors = Root.GetFirstChild("sponsors");
+	if (Sponsors != Null) {
+		foreach (Sponsor in Sponsors.Children) {
+			if (Sponsor.Name != "sponsor") continue;
+			declare Url = Private_ReadXmlText(Sponsor, "image_2x1");
+			if (Http.IsValidUrl(Url)) Net_LibClubLink_TeamSponsors.add(Url);
+		}
+	}
+	
+	declare Text[] LibClubLink_TeamPlayerLogins for Team;
+	declare Text[] LibClubLink_TeamPlayerNicknames for Team;
+	declare Text[] LibClubLink_TeamPlayerAvatars for Team;
+	LibClubLink_TeamPlayerLogins.clear();
+	LibClubLink_TeamPlayerNicknames.clear();
+	LibClubLink_TeamPlayerAvatars.clear();
+	declare TeamPlayers = Root.GetFirstChild("players");
+	if (TeamPlayers != Null) {
+		foreach (Player in TeamPlayers.Children) {
+			if (Player.Name != "player") continue;
+			declare Login = Player.GetAttributeText("login", "");
+			if (Login == "") continue;
+			declare Nickname = Private_ReadXmlText(Player, "nickname");
+			declare Avatar =  Private_ReadXmlText(Player, "avatar");
+			if (!Http.IsValidUrl(Avatar)) Avatar = "";
+			
+			LibClubLink_TeamPlayerLogins.add(Login);
+			LibClubLink_TeamPlayerNicknames.add(Nickname);
+			LibClubLink_TeamPlayerAvatars.add(Avatar);
+		}
+	}
+	
+	G_LibClubLink_Updated = True;
+}
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Return the version number of the script
+ *
+ *	@return		The version number of the script
+ */
+Text GetScriptVersion() {
+	return Version;
+}
+
+// ---------------------------------- //
+/** Return the name of the script
+ *
+ *	@return		The name of the script
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+// ---------------------------------- //
+// Unload the library
+Void Unload() {
+	Private_ResetClan(1);
+	Private_ResetClan(2);
+	
+	foreach (Req in G_LibClubLink_Request) {
+		if (Req != Null) Http.Destroy(Req);
+	}
+	
+	G_LibClubLink_SourcePlayerId.clear();
+	G_LibClubLink_LoadingPlayerId.clear();
+	G_LibClubLink_LoadedPlayerId.clear();
+	G_LibClubLink_RequestStartTime.clear();
+	G_LibClubLink_Request.clear();
+	
+	declare Removed = UIManager.UIAll.UILayers.removekey(G_LibClubLink_LayerTeamsId);
+	if (UIManager.UILayers.existskey(G_LibClubLink_LayerTeamsId)) UIManager.UILayerDestroy(UIManager.UILayers[G_LibClubLink_LayerTeamsId]);
+	G_LibClubLink_LayerTeamsId = NullId;
+	
+	//UseForcedClans					= False;
+	G_LibClubLink_Loaded			= False;
+	G_LibClubLink_Updated			= True;
+}
+
+// ---------------------------------- //
+/** Load the library
+ *
+ *	@param	_UsePlayerClubLinks			Active the use of the players clublinks
+ */
+Void Load(Boolean _UsePlayerClubLinks) {
+	G_LibClubLink_TeamDefaultName = C_LibClubLink_TeamDefaultName;
+	G_LibClubLink_TeamDefaultColor = C_LibClubLink_TeamDefaultColor;
+	G_LibClubLink_TeamDesiredColor = C_LibClubLink_TeamDefaultColor;
+	
+	Unload();
+	
+	if (!_UsePlayerClubLinks) return;
+	
+	G_LibClubLink_SourcePlayerId	= [1 => NullId, 2 => NullId];
+	G_LibClubLink_LoadingPlayerId	= [1 => NullId, 2 => NullId];
+	G_LibClubLink_LoadedPlayerId	= [1 => NullId, 2 => NullId];
+	G_LibClubLink_RequestStartTime	= [1 => -1, 2 => -1];
+	G_LibClubLink_Request			= [1 => Null, 2 => Null];
+	
+	declare LayerTeams <=> UIManager.UILayerCreate();
+	G_LibClubLink_LayerTeamsId = LayerTeams.Id;
+	LayerTeams.ManialinkPage = Private_CreateLayerTeams();
+	UIManager.UIAll.UILayers.add(LayerTeams);
+	
+	//UseForcedClans					= False;
+	G_LibClubLink_Loaded			= True;
+	
+	declare netwrite Net_LibClubLink_DisplaySponsors for Teams[0] = True;
+	Net_LibClubLink_DisplaySponsors = True;
+}
+
+// ---------------------------------- //
+/** Reset the clublink of a clan
+ *
+ *	@param	_ClanNb		The clan to reset
+ */
+Void Reset(Integer _ClanNb) {
+	Private_ResetClan(_ClanNb);
+}
+
+// ---------------------------------- //
+/// Reset the clublink of a all clans
+Void ResetAll() {
+	Private_ResetClan(1);
+	Private_ResetClan(2);
+}
+
+// ---------------------------------- //
+/// Attach the ClubLink layer
+Void Attach() {
+	if (!G_LibClubLink_Loaded) return;
+	if (!UIManager.UILayers.existskey(G_LibClubLink_LayerTeamsId)) return;
+	if (UIManager.UIAll.UILayers.existskey(G_LibClubLink_LayerTeamsId)) return;
+	
+	UIManager.UIAll.UILayers.add(UIManager.UILayers[G_LibClubLink_LayerTeamsId]);
+}
+
+// ---------------------------------- //
+/// Detach the ClubLink layer
+Void Detach() {
+	if (!G_LibClubLink_Loaded) return;
+	if (!UIManager.UILayers.existskey(G_LibClubLink_LayerTeamsId)) return;
+	if (!UIManager.UIAll.UILayers.existskey(G_LibClubLink_LayerTeamsId)) return;
+	
+	declare Removed = UIManager.UIAll.UILayers.removekey(G_LibClubLink_LayerTeamsId);
+}
+
+// ---------------------------------- //
+/** Toggle the sponsors display
+ *
+ *	@param	_Displayed		Hide or show the club sponsors
+ */
+Void SetSponsorsDisplay(Boolean _Displayed) {
+	declare netwrite Net_LibClubLink_DisplaySponsors for Teams[0] = True;
+	Net_LibClubLink_DisplaySponsors = _Displayed;
+}
+
+// ---------------------------------- //
+/** Set the default name of a team
+ *
+ *	@param	_Team		The team to update
+ *	@param	_Name		The new default name of the team
+ */
+Void SetTeamDefaultName(Integer _Team, Text _Name) {
+	if (!G_LibClubLink_Loaded) return;
+	if (!Teams.existskey(_Team)) return;
+	
+	G_LibClubLink_TeamDefaultName[_Team] = _Name;
+	if (G_LibClubLink_LoadedPlayerId[_Team + 1] == NullId) Teams[_Team].Name = _Name;
+}
+
+// ---------------------------------- //
+/** Set the default color of a team
+ *
+ *	@param	_Team		The team to update
+ *	@param	_Color		The new default color of the team
+ */
+Void SetTeamDefaultColor(Integer _Team, Vec3 _Color) {
+	if (!G_LibClubLink_Loaded) return;
+	if (!Teams.existskey(_Team)) return;
+	
+	G_LibClubLink_TeamDefaultColor[_Team] = _Color;
+	if (G_LibClubLink_LoadedPlayerId[_Team + 1] == NullId) {
+		G_LibClubLink_TeamDesiredColor[_Team] = _Color;
+		Private_ApplyDesiredTeamColors();
+	}
+}
+
+// ---------------------------------- //
+/** Get the sponsors list of a clan
+ *
+ *	@param	_Team	The team to check
+ *
+ *	@return			The sponsors with their logos
+ */
+Text[] GetTeamSponsors(Integer _Team) {
+	declare Empty = Text[];
+	if (!Teams.existskey(_Team)) return Empty;
+	
+	declare netwrite Net_LibClubLink_TeamSponsors for Teams[_Team] = Text[];
+	return Net_LibClubLink_TeamSponsors;
+}
+
+// ---------------------------------- //
+/// Manage HTTP requests (asynchrone)
+Void Update() {
+	if (!G_LibClubLink_Loaded) return;
+	
+	for (I, 1, 2) {
+		// Stop the previous request if a new source player is set
+		if (G_LibClubLink_RequestStartTime[I] >= 0 && G_LibClubLink_SourcePlayerId[I] != G_LibClubLink_LoadingPlayerId[I]) {
+			G_LibClubLink_LoadingPlayerId[I]	= NullId;
+			G_LibClubLink_RequestStartTime[I]	= -1;
+			Http.Destroy(G_LibClubLink_Request[I]);
+			G_LibClubLink_Request[I]			= Null;
+		}
+		
+		// Skip the update if no source player is set
+		if (G_LibClubLink_SourcePlayerId[I] == NullId) continue;
+		
+		// If the source player doesn't exist anymore
+		if (!Players.existskey(G_LibClubLink_SourcePlayerId[I])) {
+			Private_ResetClan(I);
+			continue;
+		}
+		// If the source player is not in the same team anymore
+		else if (Players[G_LibClubLink_SourcePlayerId[I]].CurrentClan != I) {
+			Private_ResetClan(I);
+			continue;
+		}
+		
+		// Receive the request
+		if (G_LibClubLink_RequestStartTime[I] >= 0) {
+			if (G_LibClubLink_Request[I] != Null && G_LibClubLink_Request[I].IsCompleted) {
+				G_LibClubLink_LoadingPlayerId[I]	= NullId;
+				G_LibClubLink_LoadedPlayerId[I]		= G_LibClubLink_SourcePlayerId[I];
+				G_LibClubLink_RequestStartTime[I]	= -1;
+				
+				declare ClubLinkXml <=> Xml.Create(G_LibClubLink_Request[I].Result);
+				if (ClubLinkXml != Null) {
+					Private_SetClan(I, ClubLinkXml, G_LibClubLink_Request[I].Url);
+					Xml.Destroy(ClubLinkXml);
+					ClubLinkXml <=> Null;
+				}
+				
+				Http.Destroy(G_LibClubLink_Request[I]);
+				G_LibClubLink_Request[I] = Null;
+			}
+		} 
+		// Send the request
+		else if (G_LibClubLink_SourcePlayerId[I] != NullId && G_LibClubLink_SourcePlayerId[I] != G_LibClubLink_LoadedPlayerId[I]) {
+			if (Http.SlotsAvailable > 0) {
+				declare Req <=> Http.CreateGet(Players[G_LibClubLink_SourcePlayerId[I]].User.ClubLink);
+				G_LibClubLink_LoadingPlayerId[I] = G_LibClubLink_SourcePlayerId[I];
+				G_LibClubLink_RequestStartTime[I] = Now;
+				G_LibClubLink_Request[I] = Req;
+			}
+		}
+	}
+}
+
+// ---------------------------------- //
+/// Load the selected Clublink (synchronous) 
+Void SyncUpdate() {
+	if (!G_LibClubLink_Loaded) return;
+	
+	for (I, 1, 2) {
+		// Stop the previous request if a new source player is set
+		if (G_LibClubLink_RequestStartTime[I] >= 0 && G_LibClubLink_SourcePlayerId[I] != G_LibClubLink_LoadingPlayerId[I]) {
+			G_LibClubLink_LoadingPlayerId[I]	= NullId;
+			G_LibClubLink_RequestStartTime[I]	= -1;
+			Http.Destroy(G_LibClubLink_Request[I]);
+			G_LibClubLink_Request[I]			= Null;
+		}
+		
+		// Skip the update if no source player is set
+		if (G_LibClubLink_SourcePlayerId[I] == NullId) continue;
+		
+		// If the source player doesn't exist anymore
+		if (!Players.existskey(G_LibClubLink_SourcePlayerId[I])) {
+			Private_ResetClan(I);
+			continue;
+		}
+		// If the source player is not in the same team anymore
+		else if (Players[G_LibClubLink_SourcePlayerId[I]].CurrentClan != I) {
+			Private_ResetClan(I);
+			continue;
+		}
+		
+		// Send the request
+		if (G_LibClubLink_SourcePlayerId[I] != NullId && G_LibClubLink_SourcePlayerId[I] != G_LibClubLink_LoadedPlayerId[I]) {
+			if (Http.SlotsAvailable > 0) {
+				declare Req <=> Http.CreateGet(Players[G_LibClubLink_SourcePlayerId[I]].User.ClubLink);
+				G_LibClubLink_LoadingPlayerId[I] = G_LibClubLink_SourcePlayerId[I];
+				G_LibClubLink_RequestStartTime[I] = Now;
+				G_LibClubLink_Request[I] = Req;
+			}
+		}
+		
+		// Receive the request
+		if (G_LibClubLink_RequestStartTime[I] >= 0) {
+		
+			declare RequestTimeout = Now + C_LibClubLink_RequestTimeout;
+			if (G_LibClubLink_Request[I] != Null) {
+				declare Req <=> G_LibClubLink_Request[I];
+				while (!Req.IsCompleted && RequestTimeout > Now) yield;
+			}
+		
+			if (G_LibClubLink_Request[I] != Null && G_LibClubLink_Request[I].IsCompleted) {
+				G_LibClubLink_LoadingPlayerId[I]	= NullId;
+				G_LibClubLink_LoadedPlayerId[I]		= G_LibClubLink_SourcePlayerId[I];
+				G_LibClubLink_RequestStartTime[I]	= -1;
+				
+				declare ClubLinkXml <=> Xml.Create(G_LibClubLink_Request[I].Result);
+				if (ClubLinkXml != Null) {
+					Private_SetClan(I, ClubLinkXml, G_LibClubLink_Request[I].Url);
+					Xml.Destroy(ClubLinkXml);
+					ClubLinkXml <=> Null;
+				}
+				
+				Http.Destroy(G_LibClubLink_Request[I]);
+				G_LibClubLink_Request[I] = Null;
+			}
+		} 
+	}
+}
+
+// ---------------------------------- //
+/** Manually define the players that'll be used as sources for the teams info
+ *
+ *	@param	_Player1	Source for team 1
+ *	@param	_Player2	Source for team 2
+ */
+Void DefineTeamFromPlayers(CPlayer _Player1, CPlayer _Player2) {
+	if (!G_LibClubLink_Loaded) return;
+	
+	if (_Player1 != Null) G_LibClubLink_SourcePlayerId[1] = _Player1.Id;
+	else G_LibClubLink_SourcePlayerId[1] = NullId;
+	if (_Player2 != Null) G_LibClubLink_SourcePlayerId[2] = _Player2.Id;
+	else G_LibClubLink_SourcePlayerId[2] = NullId;
+}
+
+// ---------------------------------- //
+/** /!\ WARNING: this function is synchronous
+ *	The script will wait until it receives a response or timeout
+ *
+ *	Manually define the clublinks that'll be used as sources for the teams info
+ *
+ *	@param	_Url1	Url of the team 1 clublink
+ *	@param	_Url2	Url of the team 2 clublink
+ */
+Void DefineTeamFromUrl(Text _Url1, Text _Url2) {
+	if (!G_LibClubLink_Loaded) return;
+	
+	Private_ResetClan(1);
+	Private_ResetClan(2);
+	
+	declare ClubLinkUrl = [_Url1, _Url2];
+	for(I, 0, 1) {
+		declare Url = ClubLinkUrl[I];
+		if (!Http.IsValidUrl(Url) || Http.SlotsAvailable <= 0) continue;
+		declare Req <=> Http.CreateGet(Url);
+		declare RequestTimeout = Now + C_LibClubLink_RequestTimeout;
+		
+		while (!Req.IsCompleted && RequestTimeout > Now) yield;
+		
+		if (Req.IsCompleted) {
+			declare ClubLinkXml <=> Xml.Create(Req.Result);
+			if (ClubLinkXml != Null) {
+				Private_SetClan(I + 1, ClubLinkXml, Req.Url);
+				Xml.Destroy(ClubLinkXml);
+				ClubLinkXml <=> Null;
+			}
+			Http.Destroy(Req);
+			Req <=> Null;
+		} else {
+			log(Now^"> Error > couldn't load the clublink: "^Url);
+		}
+	}
+}
+
+// ---------------------------------- //
+/** Automatically find the players that'll be used as source for the teams info
+ *	If the update is not forced, then we check if the current
+ *	source players are still here beforehand
+ *
+ *	@param	_Forced		Force the update
+ */
+Void DefineTeamAuto(Boolean _Forced) {
+	if (!G_LibClubLink_Loaded) return;
+	
+	declare Clan1Id = G_LibClubLink_SourcePlayerId[1];
+	declare Clan2Id = G_LibClubLink_SourcePlayerId[2];	
+	declare UpdateClan1 = False;
+	declare UpdateClan2 = False;
+	
+	if (_Forced) {
+		UpdateClan1 = True;
+		UpdateClan2 = True;
+	} else {
+		if (Clan1Id == NullId) UpdateClan1 = True;
+		else if (!Players.existskey(Clan1Id)) UpdateClan1 = True;
+		else if (Players[Clan1Id].CurrentClan != 1) UpdateClan1 = True;
+		
+		if (Clan2Id == NullId) UpdateClan2 = True;
+		else if (!Players.existskey(Clan2Id)) UpdateClan2 = True;
+		else if (Players[Clan2Id].CurrentClan != 2) UpdateClan2 = True;
+	}
+	
+	if (!UpdateClan1 && !UpdateClan2) return;
+	
+	foreach (Player in Players) {
+		if (Player.User.ClubLink == "") continue;
+		if (!Http.IsValidUrl(Player.User.ClubLink)) continue;
+		
+		if (UpdateClan1 && Player.CurrentClan == 1) {
+			if (Players.existskey(G_LibClubLink_SourcePlayerId[2])) {
+				if (Player.User.ClubLink == Players[G_LibClubLink_SourcePlayerId[2]].User.ClubLink) continue;
+			}
+			G_LibClubLink_SourcePlayerId[1] = Player.Id;
+		} else if (UpdateClan2 && Player.CurrentClan == 2) {
+			if (Players.existskey(G_LibClubLink_SourcePlayerId[1])) {
+				if (Player.User.ClubLink == Players[G_LibClubLink_SourcePlayerId[1]].User.ClubLink) continue;
+			}
+			G_LibClubLink_SourcePlayerId[2] = Player.Id;
+		}
+	}
+	
+	if (G_LibClubLink_SourcePlayerId[1] == NullId && G_LibClubLink_LoadedPlayerId[1] != NullId) Private_ResetClan(1);
+	if (G_LibClubLink_SourcePlayerId[2] == NullId && G_LibClubLink_LoadedPlayerId[2] != NullId) Private_ResetClan(2);
+}
+
+// ---------------------------------- //
+/// Overload of Void DefineTeamAuto(Boolean _Forced)
+Void DefineTeamAuto() {
+	if (!G_LibClubLink_Loaded) return;
+	
+	if (ForcedClubLinkUrl1 != "" && ForcedClubLinkUrl2 != "" )
+		DefineTeamFromUrl(ForcedClubLinkUrl1, ForcedClubLinkUrl2);
+	else
+		DefineTeamAuto(False);
+}
+
+// ---------------------------------- //
+/** Get the player used as the source for team info
+ *
+ *	@param	_ClanNb		The clan of the source player
+ *
+ *	@param		The source player if found, Null otherwise
+ */
+CPlayer GetSourcePlayer(Integer _ClanNb) {
+	if (!G_LibClubLink_Loaded) return Null;
+	
+	if (Players.existskey(G_LibClubLink_SourcePlayerId[_ClanNb])) return Players[G_LibClubLink_SourcePlayerId[_ClanNb]];
+	return Null;
+}
+
+// ---------------------------------- //
+/** Check if the a clublink was set/reset since the last this function was called
+ *
+ *	@return		True if a clublink was set/reset, false otherwise
+ */
+Boolean Updated() {
+	declare Updated = G_LibClubLink_Updated;
+	G_LibClubLink_Updated = False;
+	return Updated;
+}

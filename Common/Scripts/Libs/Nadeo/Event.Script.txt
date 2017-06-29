@@ -1,0 +1,817 @@
+/**
+ *	Library to manage metamode events
+ */
+#Const Version		"2015-01-16"
+#Const ScriptName	"Event.Script.txt"
+
+// ---------------------------------- //
+// Constant
+// ---------------------------------- //
+#Const C_ClassEvent_EventsQueueSize	100		///< Maximum number of events in a queue
+#Const C_ClassEvent_KeepAliveMax	1500	///< Maximum interval (ms) between two keep alive before removing a stream
+
+#Const C_ClassEvent_DefaultProperty_Emitter	"Event_Emitter"
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+// ---------------------------------- //
+// Private
+// ---------------------------------- //
+// ---------------------------------- //
+/** Create the helpers functions
+ *
+ *	@return					The helper functions
+ */
+Text Private_GetMLHelpers() {
+	return """
+Integer PrivateEvent_FindFreeKey() {
+	declare netwrite Net_ClassEvent_ServerRead_EventsQueueIds for UI = Integer[];
+	declare netread Net_ClassEvent_ClientFlush_EventsQueueIds for UI = Integer[];
+	
+	declare List = Integer[];
+	foreach (Key in Net_ClassEvent_ServerRead_EventsQueueIds) {
+		List.add(Key);
+	}
+	foreach (Key in Net_ClassEvent_ClientFlush_EventsQueueIds) {
+		if (!List.exists(Key)) List.add(Key);
+	}
+	List = List.sort();
+	
+	declare Count = 0;
+	foreach (Value in List) {
+		if (Value != Count) return Count;
+		Count += 1;
+	}
+	
+	return Count;
+}
+
+Integer Event_GetEventsQueueSize() {
+	declare netread Net_ClassEvent_EventsQueueSize for Teams[0] = {{{C_ClassEvent_EventsQueueSize}}};
+	return Net_ClassEvent_EventsQueueSize;
+}
+
+Text Event_GetName(Text[Text][Text] _Event) {
+	foreach (EventId => EventData in _Event) {
+		return EventId;
+	}
+	
+	return "";
+}
+
+Text[Text] Event_GetData(Text[Text][Text] _Event) {
+	foreach (EventId => EventData in _Event) {
+		return EventData;
+	}
+	
+	return Text[Text];
+}
+
+Text Event_GetEmitter(Text[Text][Text] _Event) {
+	foreach (EventId => EventData in _Event) {
+		if (EventData.existskey("{{{C_ClassEvent_DefaultProperty_Emitter}}}")) {
+			return EventData["{{{C_ClassEvent_DefaultProperty_Emitter}}}"];
+		} else {
+			return "";
+		}
+	}
+	
+	return "";
+}
+
+Void Event_Flush(Text _StreamId) {
+	if (_StreamId == "") return;
+	
+	declare ClassEvent_EventsQueue for This = Text[Text][Text][][Text];
+	declare Removed = ClassEvent_EventsQueue.removekey(_StreamId);
+}
+
+Text[Text][Text][] Event_Read(Text _StreamId) {
+	if (_StreamId == "") return Text[Text][Text][];
+	
+	declare ClassEvent_EventsQueue for This = Text[Text][Text][][Text];
+	if (!ClassEvent_EventsQueue.existskey(_StreamId)) {
+		return Text[Text][Text][];
+	}
+	
+	return ClassEvent_EventsQueue[_StreamId];
+}
+
+Text[Text][Text][] Event_ReadAndFlush(Text _StreamId) {
+	declare Events = Event_Read(_StreamId);
+	Event_Flush(_StreamId);
+	return Events;
+}
+
+// /!\ This function is different from the library !!! /!\
+Void Event_Publish(Text _EventId, Text[Text] _EventData, Boolean _NetSend) {
+	if (_EventId == "") return;
+	
+	// Insert default data in the event
+	declare EventData = _EventData;
+	if (!EventData.existskey("{{{C_ClassEvent_DefaultProperty_Emitter}}}")) {
+		declare Login = "";
+		if (LocalUser != Null) Login = LocalUser.Login;
+		EventData["{{{C_ClassEvent_DefaultProperty_Emitter}}}"] = Login;
+	}
+	
+	// Client
+	declare netwrite Net_ClassEvent_ServerRead_EventsStreams for UI = Text[][Text];
+	declare ClassEvent_EventsQueue for This = Text[Text][Text][][Text];
+	foreach (EventId => StreamsIds in Net_ClassEvent_ServerRead_EventsStreams) {
+		if (EventId != _EventId) continue;
+		
+		foreach (StreamId in StreamsIds) {
+			if (!ClassEvent_EventsQueue.existskey(StreamId)) {
+				ClassEvent_EventsQueue[StreamId] = Text[Text][Text][];
+			}
+			
+			if (ClassEvent_EventsQueue[StreamId].count < Event_GetEventsQueueSize()) {
+				ClassEvent_EventsQueue[StreamId].add([EventId => _EventData]);
+			}
+		}
+	}
+	
+	// Server
+	if (_NetSend) {
+		declare netread Net_ClassEvent_ClientRead_EventsStreams for Teams[0] = Text[][Text];
+		declare netwrite Net_ClassEvent_ServerRead_EventsQueue for UI = Text[Text][Text][Integer];
+		declare netwrite Net_ClassEvent_ServerRead_EventsQueueIds for UI = Integer[];
+		
+		foreach (EventId => StreamsIds in Net_ClassEvent_ClientRead_EventsStreams) {
+			if (EventId != _EventId) continue;
+			
+			foreach (StreamId in StreamsIds) {
+				declare FreeKey = PrivateEvent_FindFreeKey();
+				Net_ClassEvent_ServerRead_EventsQueueIds.add(FreeKey);
+				Net_ClassEvent_ServerRead_EventsQueue[FreeKey] = Text[Text][Text];
+				Net_ClassEvent_ServerRead_EventsQueue[FreeKey][EventId] = _EventData;
+			}
+		}
+	}
+}
+
+Void Event_Publish(Text _EventId, Text[Text] _EventData) {
+	Event_Publish(_EventId, _EventData, True);
+}
+
+Void Event_Publish(Text _EventId) {
+	Event_Publish(_EventId, Text[Text]);
+}
+
+// /!\ This function is different from the library !!! /!\
+Void Event_Subscribe(Text _StreamId, Text _EventId) {
+	if (_StreamId == "" || _EventId == "") return;
+	declare netwrite Net_ClassEvent_ServerRead_EventsStreams for UI = Text[][Text];
+	
+	if (!Net_ClassEvent_ServerRead_EventsStreams.existskey(_EventId)) {
+		Net_ClassEvent_ServerRead_EventsStreams[_EventId] = Text[];
+	}
+	
+	if (!Net_ClassEvent_ServerRead_EventsStreams[_EventId].exists(_StreamId)) {
+		Net_ClassEvent_ServerRead_EventsStreams[_EventId].add(_StreamId);
+	}
+	
+	// vvv This part is not inside the library vvv
+	
+	declare ClassEvent_MyStreamsIds for Page = Text[];
+	if (!ClassEvent_MyStreamsIds.exists(_StreamId)) {
+		ClassEvent_MyStreamsIds.add(_StreamId);
+	}
+	
+	declare ClassEvent_StreamsKeepAlive for This = Integer[Text];
+	ClassEvent_StreamsKeepAlive[_StreamId] = Now;
+}
+
+Void Event_Subscribe(Text _StreamId, Text[] _EventsIds) {
+	foreach (EventId in _EventsIds) {
+		Event_Subscribe(_StreamId, EventId);
+	}
+}
+
+
+Void Event_Unsubscribe(Text _StreamId, Text _EventId) {
+	if (_StreamId == "") return;
+	declare netwrite Net_ClassEvent_ServerRead_EventsStreams for UI = Text[][Text];
+	
+	if (!Net_ClassEvent_ServerRead_EventsStreams.existskey(_EventId)) return;
+	declare Removed = Net_ClassEvent_ServerRead_EventsStreams[_EventId].remove(_StreamId);
+}
+
+Void Event_Unsubscribe(Text _StreamId, Text[] _EventsIds) {
+	if (_StreamId == "") return;
+	foreach (EventId in _EventsIds) {
+		Event_Unsubscribe(_StreamId, EventId);
+	}
+}
+
+Void Event_Unsubscribe(Text _StreamId) {
+	if (_StreamId == "") return;
+	declare netwrite Net_ClassEvent_ServerRead_EventsStreams for UI = Text[][Text];
+	
+	declare EventsToRemove = Text[];
+	foreach (EventId => Streams in Net_ClassEvent_ServerRead_EventsStreams) {
+		if (!Streams.exists(_StreamId)) continue;
+		EventsToRemove.add(EventId);
+	}
+	
+	foreach (EventId in EventsToRemove) {
+		declare Removed = Net_ClassEvent_ServerRead_EventsStreams[EventId].remove(_StreamId);
+		if (Net_ClassEvent_ServerRead_EventsStreams[EventId].count <= 0) {
+			Removed = Net_ClassEvent_ServerRead_EventsStreams.removekey(EventId);
+		}
+	}
+}
+
+// /!\ This function is different from the library !!! /!\
+Void Event_Close(Text _StreamId) {
+	Event_Flush(_StreamId);
+	Event_Unsubscribe(_StreamId);
+	
+	// vvv This part is not inside the library vvv
+	
+	declare ClassEvent_StreamsKeepAlive for This = Integer[Text];
+	declare Remove = ClassEvent_StreamsKeepAlive.removekey(_StreamId);
+}
+
+Void Event_Update() {
+	declare ClassEvent_MyStreamsIds for Page = Text[];
+	declare ClassEvent_StreamsKeepAlive for This = Integer[Text];
+	
+	foreach (StreamId in ClassEvent_MyStreamsIds) {
+		ClassEvent_StreamsKeepAlive[StreamId] = Now;
+	}
+}
+""";
+}
+
+// ---------------------------------- //
+/** Create the event manager manialink
+ *
+ *	@return					The event manager manialink
+ */
+Text Private_GetMLEventManager() {
+	return """
+<manialink version="2" name="ClassEvent:EventManager">
+<script><!--
+
+{{{Private_GetMLHelpers()}}}
+
+main() {
+	declare ClassEvent_StreamsKeepAlive for This = Integer[Text];
+	
+	// Event buffer : client => server
+	declare netwrite Net_ClassEvent_ServerRead_EventsQueue for UI = Text[Text][Text][Integer];
+	declare netwrite Net_ClassEvent_ServerRead_EventsQueueIds for UI = Integer[];
+	declare netread Net_ClassEvent_ClientFlush_EventsQueueIds for UI = Integer[];
+	// Event buffer : server => client
+	declare netread Net_ClassEvent_ClientRead_EventsQueue for UI = Text[Text][Text][Integer];
+	declare netread Net_ClassEvent_ClientRead_EventsQueueIds for UI = Integer[];
+	declare netwrite Net_ClassEvent_ServerFlush_EventsQueueIds for UI = Integer[];
+	
+	while (True) {
+		yield;
+		
+		// Keep alive
+		declare StreamsToRemove = Text[];
+		foreach (StreamId => KeepAlive in ClassEvent_StreamsKeepAlive) {
+			if (Now - KeepAlive >= {{{C_ClassEvent_KeepAliveMax}}}) {
+				StreamsToRemove.add(StreamId);
+			}
+		}
+		foreach (StreamId in StreamsToRemove) {
+			Event_Close(StreamId);
+		}
+		
+		// Clean event buffer : client => server
+		foreach (Key in Net_ClassEvent_ClientFlush_EventsQueueIds) {
+			declare Removed = Net_ClassEvent_ServerRead_EventsQueueIds.remove(Key);
+			if (Removed) { 
+				Removed = Net_ClassEvent_ServerRead_EventsQueue.removekey(Key);
+			}
+		}
+		
+		// Read event buffer : server => client
+		foreach (Key in Net_ClassEvent_ClientRead_EventsQueueIds) {
+			if (Net_ClassEvent_ServerFlush_EventsQueueIds.exists(Key)) continue;
+			Net_ClassEvent_ServerFlush_EventsQueueIds.add(Key);
+			
+			if (Net_ClassEvent_ClientRead_EventsQueue.existskey(Key)) {
+				declare Event = Net_ClassEvent_ClientRead_EventsQueue[Key];
+				Event_Publish(Event_GetName(Event), Event_GetData(Event), False);
+			}
+		}
+		// Clean event buffer : server => client
+		declare KeysToRemove = Integer[];
+		foreach (Key in Net_ClassEvent_ServerFlush_EventsQueueIds) {
+			if (Net_ClassEvent_ClientRead_EventsQueueIds.exists(Key)) continue;
+			
+			KeysToRemove.add(Key);
+		}
+		foreach (Key in KeysToRemove) {
+			declare Removed = Net_ClassEvent_ServerFlush_EventsQueueIds.remove(Key);
+		}
+	}
+}
+--></script>
+</manialink>
+""";
+}
+
+// ---------------------------------- //
+/** Find the first Integer not in the list
+ *
+ *	@param	_UI				The UI to scan
+ *
+ *	@return					The first Integer not in the list
+ */
+Integer Private_FindFreeKey(CUIConfig _UI) {
+	if (_UI == Null) return -1;
+	
+	declare netwrite Net_ClassEvent_ClientRead_EventsQueueIds for _UI = Integer[];
+	declare netread Net_ClassEvent_ServerFlush_EventsQueueIds for _UI = Integer[];
+	
+	declare List = Integer[];
+	foreach (Key in Net_ClassEvent_ClientRead_EventsQueueIds) {
+		List.add(Key);
+	}
+	foreach (Key in Net_ClassEvent_ServerFlush_EventsQueueIds) {
+		if (!List.exists(Key)) List.add(Key);
+	}
+	List = List.sort();
+	
+	declare Count = 0;
+	foreach (Value in List) {
+		if (Value != Count) return Count;
+		Count += 1;
+	}
+	
+	return Count;
+}
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+// ---------------------------------- //
+/** Return the version number of the script
+ *
+ *	@return					The version number of the script
+ */
+Text GetScriptVersion() {
+	return Version;
+}
+
+// ---------------------------------- //
+/** Return the name of the script
+ *
+ *	@return					The name of the script
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+// ---------------------------------- //
+/** Set the event queue size
+ *
+ *	@param	_Size			The event queue size
+ */
+Void SetEventsQueueSize(Integer _Size) {
+	declare ClassEvent_EventsQueueSize for This = C_ClassEvent_EventsQueueSize;
+	ClassEvent_EventsQueueSize = _Size;
+	
+	declare netwrite Net_ClassEvent_EventsQueueSize for Teams[0] = C_ClassEvent_EventsQueueSize;
+	Net_ClassEvent_EventsQueueSize = ClassEvent_EventsQueueSize;
+}
+
+// ---------------------------------- //
+/** Get the event queue size
+ *
+ *	@return					The event queue size
+ */
+Integer GetEventsQueueSize() {
+	declare ClassEvent_EventsQueueSize for This = C_ClassEvent_EventsQueueSize;
+	return ClassEvent_EventsQueueSize;
+}
+
+// ---------------------------------- //
+/** Generate a unique stream id
+ *
+ *	@return					The stream id
+ */
+Text GetUniqueStreamId() {
+	declare ClassEvent_LastUniqueIdGeneration for This = 0;
+	declare ClassEvent_LastUniqueIdCount for This = 0;
+	
+	if (Now == ClassEvent_LastUniqueIdGeneration) ClassEvent_LastUniqueIdCount += 1;
+	else ClassEvent_LastUniqueIdCount = 0;
+	ClassEvent_LastUniqueIdGeneration = Now;
+	
+	return Now^"_"^ClassEvent_LastUniqueIdCount;
+}
+
+// ---------------------------------- //
+/** Get the name of an event
+ *
+ *	@param	_Event			The event to check
+ *
+ *	@return					The name of the event
+ */
+Text GetName(Text[Text][Text] _Event) {
+	foreach (EventId => EventData in _Event) {
+		return EventId;
+	}
+	
+	return "";
+}
+
+// ---------------------------------- //
+/** Get the data of an event
+ *
+ *	@param	_Event			The event to check
+ *
+ *	@return					The event data
+ */
+Text[Text] GetData(Text[Text][Text] _Event) {
+	foreach (EventId => EventData in _Event) {
+		return EventData;
+	}
+	
+	return Text[Text];
+}
+
+// ---------------------------------- //
+/** Get a precise data of an event
+ *
+ *	@param	_Event			The event to check
+ *	@param	_Key			The name of the data
+ *
+ *	@return					The data
+ */
+Text GetData(Text[Text][Text] _Event, Text _Key) {
+	foreach (EventId => EventData in _Event) {
+		if (EventData.existskey(_Key)) {
+			return EventData[_Key];
+		} else {
+			return "";
+		}
+	}
+	
+	return "";
+}
+
+// ---------------------------------- //
+/** Get the emitter of an event
+ *	An empty string means that the event was published by the server
+ *	Otherwise it contains the login of the player publishing the event
+ *
+ *	@param	_Event			The event to check
+ *
+ *	@return					The emitter
+ */
+Text GetEmitter(Text[Text][Text] _Event) {
+	foreach (EventId => EventData in _Event) {
+		if (EventData.existskey(C_ClassEvent_DefaultProperty_Emitter)) {
+			return EventData[C_ClassEvent_DefaultProperty_Emitter];
+		} else {
+			return "";
+		}
+	}
+	
+	return "";
+}
+
+// ---------------------------------- //
+/** Flush the events of a stream
+ *
+ *	@param	_StreamId	Id of the stream to flush
+ */
+Void Flush(Text _StreamId) {
+	if (_StreamId == "") return;
+	
+	declare ClassEvent_EventsQueue for This = Text[Text][Text][][Text];
+	declare Removed = ClassEvent_EventsQueue.removekey(_StreamId);
+}
+
+// ---------------------------------- //
+/** Read the events of a stream
+ *
+ *	@param	_StreamId		Id of the stream to read
+ *
+ *	@return					An array of events
+ */
+Text[Text][Text][] Read(Text _StreamId) {
+	if (_StreamId == "") return Text[Text][Text][];
+	
+	declare ClassEvent_EventsQueue for This = Text[Text][Text][][Text];
+	if (!ClassEvent_EventsQueue.existskey(_StreamId)) {
+		return Text[Text][Text][];
+	}
+	
+	return ClassEvent_EventsQueue[_StreamId];
+}
+
+// ---------------------------------- //
+/** Read the events of a stream and flush them
+ *
+ *	@param	_StreamId		Id of the stream to read and flush
+ *
+ *	@return					An array of events
+ */
+Text[Text][Text][] ReadAndFlush(Text _StreamId) {
+	declare Events = Read(_StreamId);
+	Flush(_StreamId);
+	return Events;
+}
+
+// ---------------------------------- //
+/** Publish an event.
+ *	It will be received only by streams that subscribed to this event.
+ *
+ *	@param	_EventId		Id of the event
+ *	@param	_EventData		Data of the event
+ *	@param	_NetSend		Send the event to the clients
+ */
+Void Publish(Text _EventId, Text[Text] _EventData, Boolean _NetSend, Text _Emitter) {
+	if (_EventId == "") return;
+	
+	// Insert default data in the event
+	declare EventData = _EventData;
+	EventData[C_ClassEvent_DefaultProperty_Emitter] = _Emitter;
+	
+	// ---------------------------------- //
+	// Server
+	declare netwrite Net_ClassEvent_ClientRead_EventsStreams for Teams[0] = Text[][Text];
+	declare ClassEvent_EventsQueue for This = Text[Text][Text][][Text];
+	
+	// Loop on the events
+	foreach (EventId => StreamsIds in Net_ClassEvent_ClientRead_EventsStreams) {
+		// Find subscribers of the given event
+		if (EventId != _EventId) continue;
+		
+		// Loop on the event's subscribers
+		foreach (StreamId in StreamsIds) {
+			// Create the queue if it doesn't exist already
+			if (!ClassEvent_EventsQueue.existskey(StreamId)) {
+				ClassEvent_EventsQueue[StreamId] = Text[Text][Text][];
+			}
+			
+			// Add the event to the queue
+			if (ClassEvent_EventsQueue[StreamId].count < GetEventsQueueSize()) {
+				ClassEvent_EventsQueue[StreamId].add([EventId => EventData]);
+			}
+		}
+	}
+	
+	// ---------------------------------- //
+	// Client
+	if (_NetSend) {
+		foreach (Player in AllPlayers) {
+			declare UI <=> UIManager.GetUI(Player);
+			if (UI == Null) continue;
+			
+			declare netread Net_ClassEvent_ServerRead_EventsStreams for UI = Text[][Text];
+			declare netwrite Net_ClassEvent_ClientRead_EventsQueue for UI = Text[Text][Text][Integer];
+			declare netwrite Net_ClassEvent_ClientRead_EventsQueueIds for UI = Integer[];
+			
+			// Loop on the events
+			foreach (EventId => StreamsIds in Net_ClassEvent_ServerRead_EventsStreams) {
+				// Find subscribers of the given event
+				if (EventId != _EventId) continue;
+				
+				// Loop on the event's subscribers
+				foreach (StreamId in StreamsIds) {
+					// Send the event to the clients
+					declare FreeKey = Private_FindFreeKey(UI);
+					Net_ClassEvent_ClientRead_EventsQueueIds.add(FreeKey);
+					Net_ClassEvent_ClientRead_EventsQueue[FreeKey] = Text[Text][Text];
+					Net_ClassEvent_ClientRead_EventsQueue[FreeKey][EventId] = EventData;
+				}
+			}
+		}
+	}
+}
+
+
+// ---------------------------------- //
+/** Publish an event.
+ *	(see the Publish() function above for more info)
+ *
+ *	@param	_EventId		Id of the event
+ *	@param	_EventData		Data of the event
+ */
+Void Publish(Text _EventId, Text[Text] _EventData) {
+	Publish(_EventId, _EventData, True, "");
+}
+
+// ---------------------------------- //
+/** Publish an event without data.
+ *	(see the Publish() function above for more info)
+ *
+ *	@param	_EventId		Id of the event
+ */
+Void Publish(Text _EventId) {
+	Publish(_EventId, Text[Text]);
+}
+
+// ---------------------------------- //
+/** Subscribe to an event.
+ *	When you subscribe, always call the Flush() function regularly afterwards.
+ *	If you don't the events queue will grow and slow down your script.
+ *
+ *	@param	_StreamId		Id of the stream
+ *	@param	_EventId		The event to subscribe
+ */
+Void Subscribe(Text _StreamId, Text _EventId) {
+	if (_StreamId == "" || _EventId == "") return;
+	declare netwrite Net_ClassEvent_ClientRead_EventsStreams for Teams[0] = Text[][Text];
+	
+	// Create the event if it doesn't exist already
+	if (!Net_ClassEvent_ClientRead_EventsStreams.existskey(_EventId)) {
+		Net_ClassEvent_ClientRead_EventsStreams[_EventId] = Text[];
+	}
+	
+	// Add the stream to the event
+	if (!Net_ClassEvent_ClientRead_EventsStreams[_EventId].exists(_StreamId)) {
+		Net_ClassEvent_ClientRead_EventsStreams[_EventId].add(_StreamId);
+	}
+}
+
+// ---------------------------------- //
+/** Subscribe to several events
+ *	(see the Subscribe() function above for more info)
+ *
+ *	@param	_StreamId		The name of the stream
+ *	@param	_EventsIds		The events to subscribe
+ */
+Void Subscribe(Text _StreamId, Text[] _EventsIds) {
+	foreach (EventId in _EventsIds) {
+		Subscribe(_StreamId, EventId);
+	}
+}
+
+// ---------------------------------- //
+/** Unsubscribe from an event.
+ *
+ *	@param	_StreamId		Id of the stream
+ *	@param	_EventId		The event to unsubscribe
+ */
+Void Unsubscribe(Text _StreamId, Text _EventId) {
+	if (_StreamId == "") return;
+	declare netwrite Net_ClassEvent_ClientRead_EventsStreams for Teams[0] = Text[][Text];
+	
+	if (!Net_ClassEvent_ClientRead_EventsStreams.existskey(_EventId)) return;
+	declare Removed = Net_ClassEvent_ClientRead_EventsStreams[_EventId].remove(_StreamId);
+}
+
+// ---------------------------------- //
+/** Unsubscribe from several events.
+ *
+ *	@param	_StreamId		Id of the stream
+ *	@param	_EventId		The event to unsubscribe
+ */
+Void Unsubscribe(Text _StreamId, Text[] _EventsIds) {
+	if (_StreamId == "") return;
+	foreach (EventId in _EventsIds) {
+		Unsubscribe(_StreamId, EventId);
+	}
+}
+
+// ---------------------------------- //
+/** Unsubscribe from all events.
+ *
+ *	@param	_StreamId		Id of the stream
+ */
+Void Unsubscribe(Text _StreamId) {
+	if (_StreamId == "") return;
+	declare netwrite Net_ClassEvent_ClientRead_EventsStreams for Teams[0] = Text[][Text];
+	
+	declare EventsToRemove = Text[];
+	foreach (EventId => StreamsIds in Net_ClassEvent_ClientRead_EventsStreams) {
+		if (!StreamsIds.exists(_StreamId)) continue;
+		EventsToRemove.add(EventId);
+	}
+	
+	foreach (EventId in EventsToRemove) {
+		declare Removed = Net_ClassEvent_ClientRead_EventsStreams[EventId].remove(_StreamId);
+		if (Net_ClassEvent_ClientRead_EventsStreams[EventId].count <= 0) {
+			Removed = Net_ClassEvent_ClientRead_EventsStreams.removekey(EventId);
+		}
+	}
+}
+
+// ---------------------------------- //
+/** Close a stream
+ *
+ *	@param	_StreamId		Id of the stream
+ */
+Void Close(Text _StreamId) {
+	Flush(_StreamId);
+	Unsubscribe(_StreamId);
+}
+
+// ---------------------------------- //
+/// Update the library
+Void Update() {
+	foreach (Player in AllPlayers) {
+		declare UI <=> UIManager.GetUI(Player);
+		if (UI == Null) continue;
+		
+		// Event buffer : client => server
+		declare netread Net_ClassEvent_ServerRead_EventsQueue for UI = Text[Text][Text][Integer];
+		declare netread Net_ClassEvent_ServerRead_EventsQueueIds for UI = Integer[];
+		declare netwrite Net_ClassEvent_ClientFlush_EventsQueueIds for UI = Integer[];
+		// Event buffer : server => client
+		declare netwrite Net_ClassEvent_ClientRead_EventsQueue for UI = Text[Text][Text][Integer];
+		declare netwrite Net_ClassEvent_ClientRead_EventsQueueIds for UI = Integer[];
+		declare netread Net_ClassEvent_ServerFlush_EventsQueueIds for UI = Integer[];
+		
+		// Clean event buffer : server => client
+		foreach (Key in Net_ClassEvent_ServerFlush_EventsQueueIds) {
+			declare Removed = Net_ClassEvent_ClientRead_EventsQueueIds.remove(Key);
+			if (Removed) { 
+				Removed = Net_ClassEvent_ClientRead_EventsQueue.removekey(Key);
+			}
+		}
+		
+		// Read event buffer : client => server
+		foreach (Key in Net_ClassEvent_ServerRead_EventsQueueIds) {
+			if (Net_ClassEvent_ClientFlush_EventsQueueIds.exists(Key)) continue;
+			Net_ClassEvent_ClientFlush_EventsQueueIds.add(Key);
+			
+			if (Net_ClassEvent_ServerRead_EventsQueue.existskey(Key)) {
+				declare Event = Net_ClassEvent_ServerRead_EventsQueue[Key];
+				Publish(GetName(Event), GetData(Event), False, Player.User.Login);
+			}
+		}
+		// Clean event buffer : client => server
+		declare KeysToRemove = Integer[];
+		foreach (Key in Net_ClassEvent_ClientFlush_EventsQueueIds) {
+			if (Net_ClassEvent_ServerRead_EventsQueueIds.exists(Key)) continue;
+			
+			KeysToRemove.add(Key);
+		}
+		foreach (Key in KeysToRemove) {
+			declare Removed = Net_ClassEvent_ClientFlush_EventsQueueIds.remove(Key);
+		}
+	}
+}
+
+// ---------------------------------- //
+/** Inject the event class functions into a manialink
+ *
+ *	@return					The event class functions
+ */
+Text InjectMLHelpers() {
+	return Private_GetMLHelpers();
+}
+
+// ---------------------------------- //
+/// Unload the library
+Void Unload() {
+	declare ClassEvent_EventsQueue for This = Text[Text][Text][][Text];
+	declare ClassEvent_LastUniqueIdGeneration for This = 0;
+	declare ClassEvent_LastUniqueIdCount for This = 0;
+	declare ClassEvent_EventsQueueSize for This = C_ClassEvent_EventsQueueSize;
+	ClassEvent_EventsQueue.clear();
+	ClassEvent_LastUniqueIdGeneration = 0;
+	ClassEvent_LastUniqueIdCount = 0;
+	ClassEvent_EventsQueueSize = C_ClassEvent_EventsQueueSize;
+	
+	declare netwrite Net_ClassEvent_ClientRead_EventsStreams for Teams[0] = Text[][Text];
+	declare netwrite Net_ClassEvent_EventsQueueSize for Teams[0] = C_ClassEvent_EventsQueueSize;
+	Net_ClassEvent_ClientRead_EventsStreams.clear();
+	Net_ClassEvent_EventsQueueSize = ClassEvent_EventsQueueSize;
+	
+	foreach (Player in AllPlayers) {
+		declare UI <=> UIManager.GetUI(Player);
+		if (UI == Null) continue;
+		
+		declare netwrite Net_ClassEvent_ClientRead_EventsQueue for UI = Text[Text][Text][Integer];
+		declare netwrite Net_ClassEvent_ClientRead_EventsQueueIds for UI = Integer[];
+		Net_ClassEvent_ClientRead_EventsQueue.clear();
+		Net_ClassEvent_ClientRead_EventsQueueIds.clear();
+	}
+	
+	// Destroy the event manager layer
+	declare ClassEvent_LayerEventManagerId for This = NullId;
+	if (UIManager.UILayers.existskey(ClassEvent_LayerEventManagerId)) {
+		declare LayerEventManager = UIManager.UILayers[ClassEvent_LayerEventManagerId];
+		declare Removed = UIManager.UIAll.UILayers.remove(LayerEventManager);
+		UIManager.UILayerDestroy(LayerEventManager);
+	}
+	ClassEvent_LayerEventManagerId = NullId;
+}
+
+// ---------------------------------- //
+/// Load the library
+Void Load() {
+	Unload();
+	
+	// Create the event manager layer
+	declare LayerEventManager = UIManager.UILayerCreate();
+	declare ClassEvent_LayerEventManagerId for This = NullId;
+	ClassEvent_LayerEventManagerId = LayerEventManager.Id;
+	LayerEventManager.ManialinkPage = Private_GetMLEventManager();
+	UIManager.UIAll.UILayers.add(LayerEventManager);
+}

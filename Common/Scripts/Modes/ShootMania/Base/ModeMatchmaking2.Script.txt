@@ -1,0 +1,365 @@
+/**
+ *  Matchmaking for a Shootmania game mode
+ */
+#Extends "Modes/ShootMania/Base/ModeBase2.Script.txt"
+
+#Const MB_MMS_Version		"2016-09-08"
+#Const MB_MMS_ScriptName	"Modes/ShootMania/ModeMatchmaking2.Script.txt"
+
+// ---------------------------------- //
+// Settings
+// ---------------------------------- //
+#Setting S_LobbyRoundPerMap				60
+#Setting S_LobbyMatchmakerPerRound	6
+#Setting S_LobbyInstagib						False	as "<hidden>"
+
+// ---------------------------------- //
+// Globales
+// ---------------------------------- //
+declare Integer Lobby_Private_BestCombo;
+
+// ---------------------------------- //
+// Extends
+// ---------------------------------- //
+***MB_Private_LogVersions***
+***
+Log::RegisterScript(MB_MMS_ScriptName, MB_MMS_Version);
+***
+
+***Lobby_Settings***
+***
+MB_Settings_UseDefaultTimer = False;
+***
+
+***Lobby_Rules***
+***
+ModeInfo::SetName("Lobby");
+ModeInfo::SetType(ModeInfo::Type_FreeForAll());
+ModeInfo::SetRules(MM_TL::Compose("$<%1%2$>\n\n%3\n$<%11. $>%4\n$<%12. $>%5", "$"^SpawnScreen::GetModeColor(), _("You will soon be redirected to a match server."), _("While waiting, try to become the King Of The Lobby!"), _("Perform as many hits as possible: the points you earn for each one will increase."), _("Your combo falls back to 1 when you are eliminated.")));
+ModeInfo::SetStatusMessage(_("TYPE: Free for all\nOBJECTIVE: Hit a maximum of players to win the game."));
+***
+
+***Lobby_StartServer***
+***
+// Config lobby
+UseAllies = True;
+UseClans = False;
+
+// Create UI
+Layers::Create("RulesReminder", Lobby_Private_GetMLRulesReminder());
+Layers::Attach("RulesReminder");
+Layers::SetType("RulesReminder", CUILayer::EUILayerType::CutScene);
+***
+
+***Lobby_StartRound***
+***
+Lobby_Private_BestCombo = 0;
+Scores::ResetPlayerWinner();
+***
+
+***Lobby_PlayLoop***
+***
+// Spawn players
+Lobby_Private_SpawnPlayers();
+
+// Manage events
+foreach (Event in PendingEvents) {
+	if (Event.Type == CSmModeEvent::EType::OnHit) {
+		if (Event.Shooter != Null && Event.Victim != Null && Event.Shooter != Event.Victim) {
+			declare PointsEarned = Lobby_Private_NotifyHit(Event.Shooter);
+			Event.ShooterPoints = PointsEarned;
+			Events::Valid(Event);
+		} else {
+			Events::Invalid(Event);
+		}
+	} else if (Event.Type == CSmModeEvent::EType::OnArmorEmpty) {
+		if (Event.Victim != Null) {
+			Lobby_Private_ResetBestCombo(Event.Victim);
+		}
+		Events::Valid(Event);
+	} else if (Event.Type == CSmModeEvent::EType::OnPlayerRequestRespawn) {
+		if (Event.Player != Null) {
+			Lobby_Private_ResetBestCombo(Event.Player);
+		}
+		Events::Valid(Event);
+	} else {
+		Events::Valid(Event);
+	}
+}
+***
+
+***Lobby_EndServer***
+***
+Layers::Destroy("RulesReminder");
+
+UseAllies = False;
+***
+
+***Match_EndMap***
+***
+// Find match Master
+if (MB_Private_UseMatchmaking && MMCommon::IsMatchServer()) {
+	if (MB_Settings_UseDefaultMatchmaking) {
+		declare MasterScore <=> Scores::GetBestPlayerMapPoints(Scores::Order_Descending());
+		declare MasterLogin = "";
+		if (MasterScore != Null) MasterLogin = MasterScore.User.Login;
+		MM_Private_SetMasterLogin(MasterLogin);
+	}
+}
+***
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+// ---------------------------------- //
+/** Set start time
+ *
+ *	@param	_StartTime								The new start time
+ */
+***MM_Private_SetStartTime***
+***
+StartTime = _StartTime;
+***
+
+// ---------------------------------- //
+/** Get start time
+ *
+ *	@return														The start time
+ */
+***MM_Private_GetStartTime***
+***
+return StartTime;
+***
+
+// ---------------------------------- //
+/** Set end time
+ *
+ *	@param	_EndTime									The new end time
+ *	@param	_Soft											Use soft limit
+ */
+***MM_Private_SetEndTime***
+***
+if (_Soft) UIManager.UIAll.CountdownEndTime = _EndTime;
+else EndTime = _EndTime;
+***
+
+// ---------------------------------- //
+/** Get end time
+ *
+ *	@param	_Soft											Use soft limit
+ *
+ *	@return														The end time
+ */
+***MM_Private_GetEndTime***
+***
+if (_Soft) return UIManager.UIAll.CountdownEndTime;
+return EndTime;
+***
+
+// ---------------------------------- //
+/** Reset the combo of a player
+ *
+ *	@param	_Player										The player to reset
+ */
+Void Lobby_Private_ResetBestCombo(CPlayer _Player) {
+	if (_Player == Null) return;
+	declare Integer Lobby_CurrentCombo for _Player = 0;
+	Lobby_CurrentCombo  = 0;
+}
+
+// ---------------------------------- //
+/// Reinitialize all the players
+Void Lobby_Private_InitPlayers() {
+	foreach (Player in AllPlayers) {
+		Lobby_Private_ResetBestCombo(Player);
+		Player.Armor = Player.ArmorMax;
+	}
+}
+
+// ---------------------------------- //
+/// Spawn the players
+Void Lobby_Private_SpawnPlayers() {
+	if (MapLandmarks_PlayerSpawn.count <= 0) return;
+	
+	foreach (Player in Players) {
+		// Spawn ready players
+		if (Player.SpawnStatus == CSmPlayer::ESpawnStatus::NotSpawned && MMLobby::IsReady(Player.User)) {
+			declare Boolean SpawnThePlayer = True;
+			
+			declare UI <=> UIManager.GetUI(Player);
+			if (UI != Null) {
+				declare netread Boolean Net_Lobby_RollingIntro for UI;				
+				SpawnThePlayer = !Net_Lobby_RollingIntro;
+			}
+			
+			if (SpawnThePlayer) SpawnThePlayer = !MMLobby::IsOnVersusScreen(Player);
+			if (SpawnThePlayer) SpawnThePlayer = !MMLobby::IsBeingTransferred(Player);
+			
+			if (SpawnThePlayer || UI == Null) {
+				if (S_LobbyInstagib) {
+					SetPlayerWeapon(Player, CSmMode::EWeapon::Laser, False);
+				} else {
+					SetPlayerWeapon(Player, CSmMode::EWeapon::Rocket, True);
+				}
+				SM::Spawn(Player, 0, MapLandmarks_PlayerSpawn[MB_ML::Rand(0, MapLandmarks_PlayerSpawn.count - 1)].PlayerSpawn, Now);
+				Lobby_Private_ResetBestCombo(Player);
+			}
+		} 
+		// Unspawn unready players
+		else if (Player.SpawnStatus == CSmPlayer::ESpawnStatus::Spawned && !MMLobby::IsReady(Player.User)) {
+			UnspawnPlayer(Player);
+		}
+	}
+}
+
+// ---------------------------------- //
+/// Unspawn the players
+Void Lobby_Private_UnspawnPlayers() {
+	SM::UnspawnAllPlayers();
+}
+
+// ---------------------------------- //
+/** Display a message to a player when he beats his best combo
+ *
+ *	@param	_Player										The player who'll receive the message
+ */
+Void Lobby_Private_ShowScore(CSmPlayer _Player) {
+	if (_Player == Null || _Player.Score == Null) return;
+	
+	declare MapPoints = Scores::GetPlayerMapPoints(_Player.Score);
+	declare Message = "";
+	if (MapPoints <= 1) {
+		Message = MM_TL::Compose( _("%1 point (Best score: %2)"), MM_TL::ToText(MapPoints), ""^Lobby_Private_BestCombo);
+	} else {
+		Message = MM_TL::Compose( _("%1 points (Best score: %2)"), MM_TL::ToText(MapPoints), ""^Lobby_Private_BestCombo);
+	}
+	
+	Message::SendStatusMessage(_Player, Message, 3000, 2);
+}
+
+// ---------------------------------- //
+/** Count points and display an hit notice to the shooter
+ *
+ *	@param	_Shooter									The player who shot and hit
+ *
+ *	@return														The number of points earned on this hit
+ */
+Integer Lobby_Private_NotifyHit(CSmPlayer _Shooter)  {
+	if (_Shooter == Null || _Shooter.Score == Null) return 0;
+	
+	declare Lobby_CurrentCombo for _Shooter = 0;
+	declare PointsEarned = 1 + (Lobby_CurrentCombo / 2);
+	Scores::AddPlayerMapPoints(_Shooter.Score, PointsEarned);
+	Lobby_CurrentCombo += 1;
+	
+	declare MapPoints = Scores::GetPlayerMapPoints(_Shooter.Score);
+	if (MapPoints > Lobby_Private_BestCombo) {
+		Lobby_Private_BestCombo = MapPoints;
+		Scores::SetPlayerWinner(_Shooter.Score);
+	}
+	
+	Lobby_Private_ShowScore(_Shooter);
+	
+	return PointsEarned;
+}
+
+// ---------------------------------- //
+/// Find the winner of the round
+Void Lobby_Private_FindWinner() {
+	if (Scores::GetPlayerWinner() == Null) {
+		Scores::SetPlayerWinner(
+			Scores::GetBestPlayerMapPoints(Scores::Order_Descending())
+		);
+	}
+}
+
+// ---------------------------------- //
+/** Create the rules reminder manialink
+ *
+ *	@return														The manialink
+ */
+Text Lobby_Private_GetMLRulesReminder() {
+	declare Text ImgBaseDir			= "file://Media/Manialinks/Shootmania/Common/";
+	declare Text WelcomeBgImage		= ImgBaseDir^"WelcomeBg.dds";
+
+	declare Text TitleText			= _("Waiting for your match to start");
+	
+	declare Text RulesReminder1		= MM_TL::Compose("$<%1%2$>", "$"^SpawnScreen::GetModeColor(), _("You will soon be redirected to a match server."));
+	declare Text RulesReminder2		= MM_TL::Compose("%1", _("While waiting, try to become the King Of The Lobby!"));
+	declare Text RulesReminder3		= MM_TL::Compose("$<%11. $>%2", "$"^SpawnScreen::GetModeColor(), _("Perform as many hits as possible: the points you earn for each one will increase."));
+	declare Text RulesReminder4		= MM_TL::Compose("$<%12. $>%2", "$"^SpawnScreen::GetModeColor(), _("Your combo falls back to 1 when you are eliminated."));
+	
+	
+	declare Text DoNotShowAgain		= _("Do Not Show Again");
+	declare Text Close				= _("Close");
+	
+	declare Integer	WindowWidth		= 192;
+	declare Integer	WindowHeight	= 38;
+	declare Real	WindowX			= 0.;
+	declare Real	WindowY			= 5.;
+	
+	return """
+<manialink version="1" name="ModeMatchmaking:RulesReminder">
+<frame id="RulesReminderMainFrame" posn="{{{WindowX}}} {{{WindowY}}} 0" hidden="true" >
+	<format  textemboss="1" />
+	<quad posn="0 -2" sizen="210 65" halign="center" valign="center" image="{{{WelcomeBgImage}}}" />
+	<label posn="0 {{{(WindowHeight/2)-3}}}" sizen="{{{WindowWidth-4}}} 4" halign="center" valign="center" text="{{{TitleText}}}" textsize="5" />
+	<label posn="{{{-(WindowWidth/2)+2}}} {{{(WindowHeight/2)-12}}}" sizen="{{{WindowWidth-4}}} 4" valign="center" text="{{{RulesReminder1}}}" textsize="2"/>
+	<label posn="{{{-(WindowWidth/2)+2}}} {{{(WindowHeight/2)-20}}}" sizen="{{{WindowWidth-4}}} 4" valign="center" text="{{{RulesReminder2}}}" textsize="2"/>
+	<label posn="{{{-(WindowWidth/2)+2}}} {{{(WindowHeight/2)-24}}}" sizen="{{{WindowWidth-4}}} 4" valign="center" text="{{{RulesReminder3}}}" textsize="2"/>
+	<label posn="{{{-(WindowWidth/2)+2}}} {{{(WindowHeight/2)-28}}}" sizen="{{{WindowWidth-4}}} 4" valign="center" text="{{{RulesReminder4}}}" textsize="2"/>
+	<label posn="{{{(WindowWidth/2)-2}}} {{{-(WindowHeight/2)+2}}}" halign="right" valign="center" text="{{{DoNotShowAgain}}}" style="CardButtonSmall" ScriptEvents="true" id="Button_DoNotShowAgain" />
+	<label posn="{{{(WindowWidth/2)-42}}} {{{-(WindowHeight/2)+2}}}" halign="right" valign="center" text="{{{Close}}}" style="CardButtonSmall" ScriptEvents="true" id="Button_Close" />
+</frame>
+<script><!--
+main() {
+	while (InputPlayer == Null) yield;
+	
+	// for the "do not show again" feature
+	declare persistent Boolean NadeoKoL_PersistentShowRulesReminder for This = True;
+	//NadeoKoL_PersistentShowRulesReminder = True;
+	
+	declare netwrite Boolean Net_Lobby_RollingIntro for UI;
+	declare netread Boolean Net_Lobby_ShowRules for UI;
+	declare netread Boolean Net_Lobby_ShowSubstituteML for UI;
+	declare netread Boolean Net_Lobby_ShowVersusML for UI;
+	declare netread Text Net_Lobby_ReconnectToServer for UI;
+	
+	if (!NadeoKoL_PersistentShowRulesReminder) {
+		Net_Lobby_RollingIntro = False;
+		return;
+	}
+	Net_Lobby_RollingIntro = True;
+	
+	declare Button_DoNotShowAgain <=> (Page.GetFirstChild("Button_DoNotShowAgain") as CMlLabel);
+	declare Button_Close <=> (Page.GetFirstChild("Button_Close") as CMlLabel);
+	declare RulesReminderMainFrame <=> (Page.GetFirstChild("RulesReminderMainFrame") as CMlFrame);
+
+	while (True) {
+		yield;
+		
+		if (Net_Lobby_ShowRules && !Net_Lobby_ShowVersusML && !Net_Lobby_ShowSubstituteML && Net_Lobby_ReconnectToServer == "") {
+			RulesReminderMainFrame.Show();
+		} else {
+			RulesReminderMainFrame.Hide();
+		}
+
+		foreach (Event in PendingEvents) {
+			switch (Event.Type){
+				case CMlEvent::Type::MouseClick: {
+					if (Event.ControlId == "Button_DoNotShowAgain") {
+						NadeoKoL_PersistentShowRulesReminder = False;
+						Net_Lobby_RollingIntro = False;
+					}
+					if (Event.ControlId == "Button_Close") {
+						Net_Lobby_RollingIntro = False;
+					}
+				}
+			}
+		}
+	}
+}
+--></script>
+</manialink>
+""";
+}
