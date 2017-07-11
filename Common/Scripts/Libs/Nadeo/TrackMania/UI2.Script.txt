@@ -14,15 +14,18 @@
  *	- CheckpointRanking -> display the player's ranking at the latest checkpoint
  *	- MapInfo -> display informations about the map
  *	- LiveInfo -> display informations about live events
+ *	- SpectatorInfo -> display informations about the player being spectated
+ *	- ViewersCount -> display the number of players currently spectating us
  */
 			
-#Const Version		"2017-05-31"
+#Const Version		"2017-07-07"
 #Const ScriptName	"UI.Script.txt"
 
 // ---------------------------------- //
 // Libraries
 // ---------------------------------- //
 #Include "TextLib" as TL
+#Include "Libs/Nadeo/Semver.Script.txt" as Semver
 #Include "Libs/Nadeo/XmlRpc2.Script.txt" as XmlRpc
 #Include "Libs/Nadeo/TrackMania/WarmUp3.Script.txt" as WarmUp
 #Include "ManiaApps/Nadeo/TrackMania/UI_Server.Script.txt" as UI_Server
@@ -31,11 +34,12 @@
 // ---------------------------------- //
 // Constants
 // ---------------------------------- //
+// Deprecated positions, use the ones in UI_Common instead
 #Const C_LibUI_TimeGapPos						<48., -52., 5.>
 #Const C_LibUI_SmallScoresTablePos		<-158.5, 40., 150.>
 #Const C_LibUI_ChronoPos							<0., -80., -5.>
 #Const C_LibUI_CheckpointTimePos			<0., 3., -10.>
-#Const C_LibUI_PrevBestTimePos				<157., -24., 	5.>
+#Const C_LibUI_PrevBestTimePos				<157., -24., 5.>
 #Const C_LibUI_SpeedAndDistancePos		<137., -69., 5.>
 #Const C_LibUI_CountdownPos					<153., -7., 5.>
 #Const C_LibUI_LapsPos								<140., 84., 5.>
@@ -45,9 +49,16 @@
 #Const C_LibUI_LiveInfoPos						<-159., 84., 5.>
 #Const C_LibUI_SpectatorInfoPos			<0., -68., 5.>
 // XmlRpc
-#Const C_Callback_Properties		"Trackmania.UI.Properties"
-#Const C_Method_GetProperties	"Trackmania.UI.GetProperties"
-#Const C_Method_SetProperties	"Trackmania.UI.SetProperties"
+#Const C_Callback_Properties "Trackmania.UI.Properties"
+#Const C_Method_GetProperties "Trackmania.UI.GetProperties"
+#Const C_Method_GetDefaultProperties "Trackmania.UI.GetDefaultProperties"
+#Const C_Method_SetProperties "Trackmania.UI.SetProperties"
+#Const C_Method_ResetProperties "Trackmania.UI.ResetProperties"
+#Const C_Callback_Property "Trackmania.UI.Property"
+#Const C_Method_GetProperty "Trackmania.UI.GetProperty"
+#Const C_Method_GetDefaultProperty "Trackmania.UI.GetDefaultProperty"
+#Const C_Method_SetProperty "Trackmania.UI.SetProperty"
+#Const C_Method_ResetProperty "Trackmania.UI.ResetProperty"
 /// Formats
 #Const C_Format_Xml	0
 #Const C_Format_Json	1
@@ -155,6 +166,7 @@ Void SetModuleVisibility(Text _ModuleName, Boolean _Display) {
 			case UI_Common::C_Module_MapInfo						: UIManager.UIAll.OverlayHideMapInfo = True;
 			//case UI_Common::C_Module_LiveInfo				:
 			case UI_Common::C_Module_SpectatorInfo			: UIManager.UIAll.OverlayHideSpectatorInfos = True;
+			//case UI_Common::ViewersCount							:
 		}
 		UI_Server::UpdateSetting(_ModuleName^"_Display", TL::ToText(_Display));
 	} else {
@@ -172,6 +184,7 @@ Void SetModuleVisibility(Text _ModuleName, Boolean _Display) {
 			case UI_Common::C_Module_MapInfo						: UIManager.UIAll.OverlayHideMapInfo = !_Display;
 			//case UI_Common::C_Module_LiveInfo				: 
 			case UI_Common::C_Module_SpectatorInfo			: UIManager.UIAll.OverlayHideSpectatorInfos = !_Display;
+			//case UI_Common::C_Module_ViewersCount		:
 		}
 	}
 	G_LibUI_ModuleVisibility[_ModuleName] = _Display;
@@ -203,6 +216,7 @@ Boolean GetModuleVisibility(Text _ModuleName) {
 		case UI_Common::C_Module_MapInfo						: return !UIManager.UIAll.OverlayHideMapInfo;
 		case UI_Common::C_Module_LiveInfo					: return False;
 		case UI_Common::C_Module_SpectatorInfo			: return !UIManager.UIAll.OverlayHideSpectatorInfos;
+		//case UI_Common::C_Module_ViewersCount		:
 	}
 	
 	return False;
@@ -234,19 +248,20 @@ Vec3 GetModulePosition(Text _ModuleName) {
 	}
 	
 	switch (_ModuleName) {
-		case UI_Common::C_Module_PrevBestTime			: return C_LibUI_PrevBestTimePos;
-		case UI_Common::C_Module_TimeGap						: return C_LibUI_TimeGapPos;
-		case UI_Common::C_Module_SmallScoresTable	: return C_LibUI_SmallScoresTablePos;
-		case UI_Common::C_Module_Chrono						: return C_LibUI_ChronoPos;
-		case UI_Common::C_Module_CheckpointTime		: return C_LibUI_CheckpointTimePos;
-		case UI_Common::C_Module_SpeedAndDistance	: return C_LibUI_SpeedAndDistancePos;
-		case UI_Common::C_Module_Countdown					: return C_LibUI_CountdownPos;
-		case UI_Common::C_Module_Laps							: return C_LibUI_LapsPos;
-		case UI_Common::C_Module_MapRanking				: return C_LibUI_MapRankingPos;
-		case UI_Common::C_Module_CheckpointRanking	: return C_LibUI_CheckpointRankingPos;
-		case UI_Common::C_Module_MapInfo						: return C_LibUI_MapInfoPos;
-		case UI_Common::C_Module_LiveInfo					: return C_LibUI_LiveInfoPos;
-		case UI_Common::C_Module_SpectatorInfo			: return C_LibUI_SpectatorInfoPos;
+		case UI_Common::C_Module_PrevBestTime			: return UI_Common::C_Position_PrevBestTime;
+		case UI_Common::C_Module_TimeGap						: return UI_Common::C_Position_TimeGap;
+		case UI_Common::C_Module_SmallScoresTable	: return UI_Common::C_Position_SmallScoresTable;
+		case UI_Common::C_Module_Chrono						: return UI_Common::C_Position_Chrono;
+		case UI_Common::C_Module_CheckpointTime		: return UI_Common::C_Position_CheckpointTime;
+		case UI_Common::C_Module_SpeedAndDistance	: return UI_Common::C_Position_SpeedAndDistance;
+		case UI_Common::C_Module_Countdown					: return UI_Common::C_Position_Countdown;
+		case UI_Common::C_Module_Laps							: return UI_Common::C_Position_Laps;
+		case UI_Common::C_Module_MapRanking				: return UI_Common::C_Position_MapRanking;
+		case UI_Common::C_Module_CheckpointRanking	: return UI_Common::C_Position_CheckpointRanking;
+		case UI_Common::C_Module_MapInfo						: return UI_Common::C_Position_MapInfo;
+		case UI_Common::C_Module_LiveInfo					: return UI_Common::C_Position_LiveInfo;
+		case UI_Common::C_Module_SpectatorInfo			: return UI_Common::C_Position_SpectatorInfo;
+		case UI_Common::C_Module_ViewersCount			: return UI_Common::C_Position_ViewersCount;
 	}
 	
 	return <0., 0., 0.>;
@@ -383,29 +398,30 @@ Void Private_SetVisibility(Text _Name, Text _Visible) {
 	if (_Visible == "False" || _Visible == "false" || _Visible == "0") Hide = True;
 	
 	switch (_Name) {
-		case "map_info" 							: SetModuleVisibility(UI_Common::C_Module_MapInfo, !Hide);
-		case "live_info" 							: SetModuleVisibility(UI_Common::C_Module_LiveInfo, !Hide);
-		case "spectator_info" 				: SetModuleVisibility(UI_Common::C_Module_SpectatorInfo, !Hide);
-		case "opponents_info" 				: UIManager.UIAll.OverlayHideOpponentsInfo = Hide;
-		case "chat"										: UIManager.UIAll.OverlayHideChat = Hide;
-		case "countdown"							: SetModuleVisibility(UI_Common::C_Module_Countdown, !Hide);
-		case "go"											: UIManager.UIAll.OverlayHide321Go = Hide;
-		case "speed_and_distance"		: SetModuleVisibility(UI_Common::C_Module_SpeedAndDistance, !Hide);
-		case "position"								: SetModuleVisibility(UI_Common::C_Module_MapRanking, !Hide);
-		case "chat_avatar"						: UIManager.UIAll.OverlayChatHideAvatar = Hide;
-		case "checkpoint_list"				: SetModuleVisibility(UI_Common::C_Module_TimeGap, !Hide);
-		case "round_scores"					: SetModuleVisibility(UI_Common::C_Module_SmallScoresTable, !Hide);
-		case "chrono"									: SetModuleVisibility(UI_Common::C_Module_Chrono, !Hide);
-		case "checkpoint_time"				: SetModuleVisibility(UI_Common::C_Module_CheckpointTime, !Hide);
-		case "personal_best_and_rank": SetModuleVisibility(UI_Common::C_Module_PrevBestTime, !Hide);
-		case "warmup"									: WarmUp::SetUIVisibility(!Hide);
-		case "endmap_ladder_recap"		: UIManager.UIAll.OverlayHideEndMapLadderRecap = Hide;
-		case "multilap_info"					: SetModuleVisibility(UI_Common::C_Module_Laps, !Hide);
-		case "checkpoint_ranking"		: SetModuleVisibility(UI_Common::C_Module_CheckpointRanking, !Hide);
-		case "scorestable_alt"				: {
+		case UI_Common::C_ModuleXmlRpc_MapInfo 					: SetModuleVisibility(UI_Common::C_Module_MapInfo, !Hide);
+		case UI_Common::C_ModuleXmlRpc_LiveInfo  				: SetModuleVisibility(UI_Common::C_Module_LiveInfo, !Hide);
+		case UI_Common::C_ModuleXmlRpc_SpectatorInfo 		: SetModuleVisibility(UI_Common::C_Module_SpectatorInfo, !Hide);
+		case UI_Common::C_ModuleXmlRpc_OpponentsInfo 		: UIManager.UIAll.OverlayHideOpponentsInfo = Hide;
+		case UI_Common::C_ModuleXmlRpc_Chat							: UIManager.UIAll.OverlayHideChat = Hide;
+		case UI_Common::C_ModuleXmlRpc_Countdown					: SetModuleVisibility(UI_Common::C_Module_Countdown, !Hide);
+		case UI_Common::C_ModuleXmlRpc_Go								: UIManager.UIAll.OverlayHide321Go = Hide;
+		case UI_Common::C_ModuleXmlRpc_SpeedAndDistance	: SetModuleVisibility(UI_Common::C_Module_SpeedAndDistance, !Hide);
+		case UI_Common::C_ModuleXmlRpc_MapRanking				: SetModuleVisibility(UI_Common::C_Module_MapRanking, !Hide);
+		case UI_Common::C_ModuleXmlRpc_ChatAvatar				: UIManager.UIAll.OverlayChatHideAvatar = Hide;
+		case UI_Common::C_ModuleXmlRpc_TimeGap						: SetModuleVisibility(UI_Common::C_Module_TimeGap, !Hide);
+		case UI_Common::C_ModuleXmlRpc_SmallScoresTable	: SetModuleVisibility(UI_Common::C_Module_SmallScoresTable, !Hide);
+		case UI_Common::C_ModuleXmlRpc_Chrono						: SetModuleVisibility(UI_Common::C_Module_Chrono, !Hide);
+		case UI_Common::C_ModuleXmlRpc_CheckpointTime		: SetModuleVisibility(UI_Common::C_Module_CheckpointTime, !Hide);
+		case UI_Common::C_ModuleXmlRpc_PrevBestTime			: SetModuleVisibility(UI_Common::C_Module_PrevBestTime, !Hide);
+		case UI_Common::C_ModuleXmlRpc_WarmUp						: WarmUp::SetUIVisibility(!Hide);
+		case UI_Common::C_ModuleXmlRpc_LadderRecap				: UIManager.UIAll.OverlayHideEndMapLadderRecap = Hide;
+		case UI_Common::C_ModuleXmlRpc_Laps							: SetModuleVisibility(UI_Common::C_Module_Laps, !Hide);
+		case UI_Common::C_ModuleXmlRpc_CheckpointRanking	: SetModuleVisibility(UI_Common::C_Module_CheckpointRanking, !Hide);
+		case UI_Common::C_ModuleXmlRpc_ScoresTable		: {
 			UIManager.UIAll.AltMenuNoDefaultScores = Hide;
 			UIManager.UIAll.AltMenuNoCustomScores = Hide;
 		}
+		case UI_Common::C_ModuleXmlRpc_ViewersCount			: SetModuleVisibility(UI_Common::C_Module_ViewersCount, !Hide);
 	}
 }
 
@@ -425,22 +441,636 @@ Void Private_SetPosition(Text _Name, Text _Position) {
 	if (PositionSplit.existskey(2)) Position.Z = TL::ToReal(PositionSplit[2]);
 	
 	switch (_Name) {
-		case "checkpoint_list"				: SetModulePosition(UI_Common::C_Module_TimeGap, Position);
-		case "round_scores"					: SetModulePosition(UI_Common::C_Module_SmallScoresTable, Position);
-		case "chrono"									: SetModulePosition(UI_Common::C_Module_Chrono, Position);
-		case "personal_best_and_rank": SetModulePosition(UI_Common::C_Module_PrevBestTime, Position);
-		case "checkpoint_time"				: SetModulePosition(UI_Common::C_Module_CheckpointTime, Position);
-		case "speed_and_distance"		: SetModulePosition(UI_Common::C_Module_SpeedAndDistance, Position);
-		case "chat"										: UIManager.UIAll.OverlayChatOffset = <Position.X, Position.Y>;
-		case "countdown"							: SetModulePosition(UI_Common::C_Module_Countdown, Position);
-		case "warmup"									: WarmUp::SetUIPosition(Position);
-		case "multilap_info"					: SetModulePosition(UI_Common::C_Module_Laps, Position);
-		case "position"								: SetModulePosition(UI_Common::C_Module_MapRanking, Position);
-		case "checkpoint_ranking"		: SetModulePosition(UI_Common::C_Module_CheckpointRanking, Position);
-		case "map_info" 							: SetModulePosition(UI_Common::C_Module_MapInfo, Position);
-		case "live_info" 							: SetModulePosition(UI_Common::C_Module_LiveInfo, Position);
-		case "spectator_info" 				: SetModulePosition(UI_Common::C_Module_SpectatorInfo, Position);
+		case UI_Common::C_ModuleXmlRpc_TimeGap						: SetModulePosition(UI_Common::C_Module_TimeGap, Position);
+		case UI_Common::C_ModuleXmlRpc_SmallScoresTable	: SetModulePosition(UI_Common::C_Module_SmallScoresTable, Position);
+		case UI_Common::C_ModuleXmlRpc_Chrono						: SetModulePosition(UI_Common::C_Module_Chrono, Position);
+		case UI_Common::C_ModuleXmlRpc_PrevBestTime			: SetModulePosition(UI_Common::C_Module_PrevBestTime, Position);
+		case UI_Common::C_ModuleXmlRpc_CheckpointTime		: SetModulePosition(UI_Common::C_Module_CheckpointTime, Position);
+		case UI_Common::C_ModuleXmlRpc_SpeedAndDistance	: SetModulePosition(UI_Common::C_Module_SpeedAndDistance, Position);
+		case UI_Common::C_ModuleXmlRpc_Chat							: UIManager.UIAll.OverlayChatOffset = <Position.X, Position.Y>;
+		case UI_Common::C_ModuleXmlRpc_Countdown					: SetModulePosition(UI_Common::C_Module_Countdown, Position);
+		case UI_Common::C_ModuleXmlRpc_WarmUp						: WarmUp::SetUIPosition(Position);
+		case UI_Common::C_ModuleXmlRpc_Laps							: SetModulePosition(UI_Common::C_Module_Laps, Position);
+		case UI_Common::C_ModuleXmlRpc_MapRanking				: SetModulePosition(UI_Common::C_Module_MapRanking, Position);
+		case UI_Common::C_ModuleXmlRpc_CheckpointRanking	: SetModulePosition(UI_Common::C_Module_CheckpointRanking, Position);
+		case UI_Common::C_ModuleXmlRpc_MapInfo 					: SetModulePosition(UI_Common::C_Module_MapInfo, Position);
+		case UI_Common::C_ModuleXmlRpc_LiveInfo 					: SetModulePosition(UI_Common::C_Module_LiveInfo, Position);
+		case UI_Common::C_ModuleXmlRpc_SpectatorInfo 		: SetModulePosition(UI_Common::C_Module_SpectatorInfo, Position);
+		case UI_Common::C_ModuleXmlRpc_ViewersCount			: SetModulePosition(UI_Common::C_Module_ViewersCount, Position);
 	}
+}
+
+// ---------------------------------- //
+/** Get the current UI properties
+ *	in the specified format
+ *
+ *	@param	_Format										The format of the properties
+ *
+ *	@return		The UI properties
+ */
+Text Private_GetProperties(Integer _Format) {
+	if (_Format == C_Format_Json) {
+		declare Append = "";
+		if (Semver::Compare(XmlRpc::GetApiVersion(), ">=", "2.3.0")) {
+			Append ^= """,
+	"{{{UI_Common::C_ModuleXmlRpc_ViewersCount}}}": {
+		"visible": {{{XmlRpc::JsonGetBoolean(GetModuleVisibility(UI_Common::C_Module_ViewersCount))}}},
+		"pos": {{{XmlRpc::JsonGetVec3(GetModulePosition(UI_Common::C_Module_ViewersCount))}}}
+	}""";
+		}
+		
+		return """{
+	"{{{UI_Common::C_ModuleXmlRpc_MapInfo}}}": {
+		"visible": {{{XmlRpc::JsonGetBoolean(GetModuleVisibility(UI_Common::C_Module_MapInfo))}}},
+		"pos": {{{XmlRpc::JsonGetVec3(GetModulePosition(UI_Common::C_Module_MapInfo))}}}
+	},
+	"{{{UI_Common::C_ModuleXmlRpc_LiveInfo}}}": {
+		"visible": {{{XmlRpc::JsonGetBoolean(GetModuleVisibility(UI_Common::C_Module_LiveInfo))}}},
+		"pos": {{{XmlRpc::JsonGetVec3(GetModulePosition(UI_Common::C_Module_LiveInfo))}}}
+	},
+	"{{{UI_Common::C_ModuleXmlRpc_SpectatorInfo}}}": {
+		"visible": {{{XmlRpc::JsonGetBoolean(GetModuleVisibility(UI_Common::C_Module_SpectatorInfo))}}},
+		"pos": {{{XmlRpc::JsonGetVec3(GetModulePosition(UI_Common::C_Module_SpectatorInfo))}}}
+	},
+	"{{{UI_Common::C_ModuleXmlRpc_OpponentsInfo}}}": {
+		"visible": {{{XmlRpc::JsonGetBoolean(!UIManager.UIAll.OverlayHideOpponentsInfo)}}}
+	},
+	"{{{UI_Common::C_ModuleXmlRpc_Chat}}}": {
+		"visible": {{{XmlRpc::JsonGetBoolean(!UIManager.UIAll.OverlayHideChat)}}},
+		"offset": {{{XmlRpc::JsonGetVec2(UIManager.UIAll.OverlayChatOffset)}}},
+		"linecount": {{{XmlRpc::JsonGetInteger(GetChatLineCount())}}}
+	},
+	"{{{UI_Common::C_ModuleXmlRpc_TimeGap}}}": {
+		"visible": {{{XmlRpc::JsonGetBoolean(GetModuleVisibility(UI_Common::C_Module_TimeGap))}}},
+		"pos": {{{XmlRpc::JsonGetVec3(GetModulePosition(UI_Common::C_Module_TimeGap))}}}
+	},
+	"{{{UI_Common::C_ModuleXmlRpc_SmallScoresTable}}}": {
+		"visible": {{{XmlRpc::JsonGetBoolean(GetModuleVisibility(UI_Common::C_Module_SmallScoresTable))}}},
+		"pos": {{{XmlRpc::JsonGetVec3(GetModulePosition(UI_Common::C_Module_SmallScoresTable))}}}
+	},
+	"{{{UI_Common::C_ModuleXmlRpc_Countdown}}}": {
+		"visible": {{{XmlRpc::JsonGetBoolean(GetModuleVisibility(UI_Common::C_Module_Countdown))}}},
+		"pos": {{{XmlRpc::JsonGetVec3(GetModulePosition(UI_Common::C_Module_Countdown))}}}
+	},
+	"{{{UI_Common::C_ModuleXmlRpc_Go}}}": {
+		"visible": {{{XmlRpc::JsonGetBoolean(!UIManager.UIAll.OverlayHide321Go)}}}
+	},
+	"{{{UI_Common::C_ModuleXmlRpc_Chrono}}}": {
+		"visible": {{{XmlRpc::JsonGetBoolean(GetModuleVisibility(UI_Common::C_Module_Chrono))}}},
+		"pos": {{{XmlRpc::JsonGetVec3(GetModulePosition(UI_Common::C_Module_Chrono))}}}
+	},
+	"{{{UI_Common::C_ModuleXmlRpc_SpeedAndDistance}}}": {
+		"visible": {{{XmlRpc::JsonGetBoolean(GetModuleVisibility(UI_Common::C_Module_SpeedAndDistance))}}},
+		"pos": {{{XmlRpc::JsonGetVec3(GetModulePosition(UI_Common::C_Module_SpeedAndDistance))}}}
+	},
+	"{{{UI_Common::C_ModuleXmlRpc_PrevBestTime}}}": {
+		"visible": {{{XmlRpc::JsonGetBoolean(GetModuleVisibility(UI_Common::C_Module_PrevBestTime))}}},
+		"pos": {{{XmlRpc::JsonGetVec3(GetModulePosition(UI_Common::C_Module_PrevBestTime))}}}
+	},
+	"{{{UI_Common::C_ModuleXmlRpc_MapRanking}}}": {
+		"visible": {{{XmlRpc::JsonGetBoolean(GetModuleVisibility(UI_Common::C_Module_MapRanking))}}},
+		"pos": {{{XmlRpc::JsonGetVec3(GetModulePosition(UI_Common::C_Module_MapRanking))}}}
+	},
+	"{{{UI_Common::C_ModuleXmlRpc_CheckpointTime}}}": {
+		"visible": {{{XmlRpc::JsonGetBoolean(GetModuleVisibility(UI_Common::C_Module_CheckpointTime))}}},
+		"pos": {{{XmlRpc::JsonGetVec3(GetModulePosition(UI_Common::C_Module_CheckpointTime))}}}
+	},
+	"{{{UI_Common::C_ModuleXmlRpc_ChatAvatar}}}": {
+		"visible": {{{XmlRpc::JsonGetBoolean(!UIManager.UIAll.OverlayChatHideAvatar)}}}
+	},
+	"{{{UI_Common::C_ModuleXmlRpc_WarmUp}}}": {
+		"visible": {{{XmlRpc::JsonGetBoolean(WarmUp::GetUIVisibility())}}},
+		"pos": {{{XmlRpc::JsonGetVec3(WarmUp::GetUIPosition())}}}
+	},
+	"{{{UI_Common::C_ModuleXmlRpc_LadderRecap}}}": {
+		"visible": {{{XmlRpc::JsonGetBoolean(!UIManager.UIAll.OverlayHideEndMapLadderRecap)}}}
+	},
+	"{{{UI_Common::C_ModuleXmlRpc_Laps}}}": {
+		"visible": {{{XmlRpc::JsonGetBoolean(GetModuleVisibility(UI_Common::C_Module_Laps))}}},
+		"pos": {{{XmlRpc::JsonGetVec3(GetModulePosition(UI_Common::C_Module_Laps))}}}
+	},
+	"{{{UI_Common::C_ModuleXmlRpc_CheckpointRanking}}}": {
+		"visible": {{{XmlRpc::JsonGetBoolean(GetModuleVisibility(UI_Common::C_Module_CheckpointRanking))}}},
+		"pos": {{{XmlRpc::JsonGetVec3(GetModulePosition(UI_Common::C_Module_CheckpointRanking))}}}
+	},
+	"{{{UI_Common::C_ModuleXmlRpc_ScoresTable}}}": {
+		"alt_visible": {{{XmlRpc::JsonGetBoolean(!UIManager.UIAll.AltMenuNoDefaultScores)}}}
+	}{{{Append}}}
+}""";
+	}
+	
+	declare Append = "";
+	if (Semver::Compare(XmlRpc::GetApiVersion(), ">=", "2.3.0")) {
+		Append ^= """
+	<{{{UI_Common::C_ModuleXmlRpc_ViewersCount}}} visible="{{{Private_BooleanToText(GetModuleVisibility(UI_Common::C_Module_ViewersCount))}}}" pos="{{{Private_Vec3ToText(GetModulePosition(UI_Common::C_Module_ViewersCount))}}}" />""";
+	}
+	
+	return """
+<ui_properties>
+	<{{{UI_Common::C_ModuleXmlRpc_MapInfo}}} visible="{{{Private_BooleanToText(GetModuleVisibility(UI_Common::C_Module_MapInfo))}}}" pos="{{{Private_Vec3ToText(GetModulePosition(UI_Common::C_Module_MapInfo))}}}" />
+	<{{{UI_Common::C_ModuleXmlRpc_LiveInfo}}} visible="{{{Private_BooleanToText(GetModuleVisibility(UI_Common::C_Module_LiveInfo))}}}" pos="{{{Private_Vec3ToText(GetModulePosition(UI_Common::C_Module_LiveInfo))}}}" />
+	<{{{UI_Common::C_ModuleXmlRpc_SpectatorInfo}}} visible="{{{Private_BooleanToText(GetModuleVisibility(UI_Common::C_Module_SpectatorInfo))}}}" pos="{{{Private_Vec3ToText(GetModulePosition(UI_Common::C_Module_SpectatorInfo))}}}" />
+	<{{{UI_Common::C_ModuleXmlRpc_OpponentsInfo}}} visible="{{{Private_BooleanToText(!UIManager.UIAll.OverlayHideOpponentsInfo)}}}" />
+	<{{{UI_Common::C_ModuleXmlRpc_Chat}}} visible="{{{Private_BooleanToText(!UIManager.UIAll.OverlayHideChat)}}}" offset="{{{Private_Vec2ToText(UIManager.UIAll.OverlayChatOffset)}}}" linecount="{{{GetChatLineCount()}}}" />
+	<{{{UI_Common::C_ModuleXmlRpc_TimeGap}}} visible="{{{Private_BooleanToText(GetModuleVisibility(UI_Common::C_Module_TimeGap))}}}" pos="{{{Private_Vec3ToText(GetModulePosition(UI_Common::C_Module_TimeGap))}}}" />
+	<{{{UI_Common::C_ModuleXmlRpc_SmallScoresTable}}} visible="{{{Private_BooleanToText(GetModuleVisibility(UI_Common::C_Module_SmallScoresTable))}}}" pos="{{{Private_Vec3ToText(GetModulePosition(UI_Common::C_Module_SmallScoresTable))}}}" />
+	<{{{UI_Common::C_ModuleXmlRpc_Countdown}}} visible="{{{Private_BooleanToText(GetModuleVisibility(UI_Common::C_Module_Countdown))}}}" pos="{{{Private_Vec3ToText(GetModulePosition(UI_Common::C_Module_Countdown))}}}" />
+	<{{{UI_Common::C_ModuleXmlRpc_Go}}} visible="{{{Private_BooleanToText(!UIManager.UIAll.OverlayHide321Go)}}}" />
+	<{{{UI_Common::C_ModuleXmlRpc_Chrono}}} visible="{{{Private_BooleanToText(GetModuleVisibility(UI_Common::C_Module_Chrono))}}}" pos="{{{Private_Vec3ToText(GetModulePosition(UI_Common::C_Module_Chrono))}}}" />
+	<{{{UI_Common::C_ModuleXmlRpc_SpeedAndDistance}}} visible="{{{Private_BooleanToText(GetModuleVisibility(UI_Common::C_Module_SpeedAndDistance))}}}" pos="{{{Private_Vec3ToText(GetModulePosition(UI_Common::C_Module_SpeedAndDistance))}}}" />
+	<{{{UI_Common::C_ModuleXmlRpc_PrevBestTime}}} visible="{{{Private_BooleanToText(GetModuleVisibility(UI_Common::C_Module_PrevBestTime))}}}" pos="{{{Private_Vec3ToText(GetModulePosition(UI_Common::C_Module_PrevBestTime))}}}" />
+	<{{{UI_Common::C_ModuleXmlRpc_MapRanking}}} visible="{{{Private_BooleanToText(GetModuleVisibility(UI_Common::C_Module_MapRanking))}}}" pos="{{{Private_Vec3ToText(GetModulePosition(UI_Common::C_Module_MapRanking))}}}" />
+	<{{{UI_Common::C_ModuleXmlRpc_CheckpointTime}}} visible="{{{Private_BooleanToText(GetModuleVisibility(UI_Common::C_Module_CheckpointTime))}}}" pos="{{{Private_Vec3ToText(GetModulePosition(UI_Common::C_Module_CheckpointTime))}}}" />
+	<{{{UI_Common::C_ModuleXmlRpc_ChatAvatar}}} visible="{{{Private_BooleanToText(!UIManager.UIAll.OverlayChatHideAvatar)}}}" />
+	<{{{UI_Common::C_ModuleXmlRpc_WarmUp}}} visible="{{{Private_BooleanToText(WarmUp::GetUIVisibility())}}}" pos="{{{Private_Vec3ToText(WarmUp::GetUIPosition())}}}" />
+	<{{{UI_Common::C_ModuleXmlRpc_LadderRecap}}} visible="{{{Private_BooleanToText(!UIManager.UIAll.OverlayHideEndMapLadderRecap)}}}" />
+	<{{{UI_Common::C_ModuleXmlRpc_Laps}}} visible="{{{Private_BooleanToText(GetModuleVisibility(UI_Common::C_Module_Laps))}}}" pos="{{{Private_Vec3ToText(GetModulePosition(UI_Common::C_Module_Laps))}}}" />
+	<{{{UI_Common::C_ModuleXmlRpc_CheckpointRanking}}} visible="{{{Private_BooleanToText(GetModuleVisibility(UI_Common::C_Module_CheckpointRanking))}}}" pos="{{{Private_Vec3ToText(GetModulePosition(UI_Common::C_Module_CheckpointRanking))}}}" />
+	<{{{UI_Common::C_ModuleXmlRpc_ScoresTable}}} alt_visible="{{{Private_BooleanToText(!UIManager.UIAll.AltMenuNoDefaultScores)}}}" />{{{Append}}}
+</ui_properties>""";
+}
+
+// ---------------------------------- //
+/** Get the default UI properties
+ *	in the specified format
+ *
+ *	@param	_Format										The format of the properties
+ *
+ *	@return		The default UI properties
+ */
+Text Private_GetDefaultProperties(Integer _Format) {
+	if (_Format == C_Format_Json) {
+		declare Append = "";
+		/*
+		if (Semver::Compare(XmlRpc::GetApiVersion(), ">=", "2.3.0")) {
+			Append ^= """""";
+		}
+		*/
+		
+		return """{
+	"{{{UI_Common::C_ModuleXmlRpc_MapInfo}}}": {
+		"visible": {{{XmlRpc::JsonGetBoolean(True)}}},
+		"pos": {{{XmlRpc::JsonGetVec3(UI_Common::C_Position_MapInfo)}}}
+	},
+	"{{{UI_Common::C_ModuleXmlRpc_LiveInfo}}}": {
+		"visible": {{{XmlRpc::JsonGetBoolean(True)}}},
+		"pos": {{{XmlRpc::JsonGetVec3(UI_Common::C_Position_LiveInfo)}}}
+	},
+	"{{{UI_Common::C_ModuleXmlRpc_SpectatorInfo}}}": {
+		"visible": {{{XmlRpc::JsonGetBoolean(True)}}},
+		"pos": {{{XmlRpc::JsonGetVec3(UI_Common::C_Position_SpectatorInfo)}}}
+	},
+	"{{{UI_Common::C_ModuleXmlRpc_OpponentsInfo}}}": {
+		"visible": {{{XmlRpc::JsonGetBoolean(True)}}}
+	},
+	"{{{UI_Common::C_ModuleXmlRpc_Chat}}}": {
+		"visible": {{{XmlRpc::JsonGetBoolean(True)}}},
+		"offset": {{{XmlRpc::JsonGetVec2(UI_Common::C_Position_Chat)}}},
+		"linecount": {{{XmlRpc::JsonGetInteger(0)}}}
+	},
+	"{{{UI_Common::C_ModuleXmlRpc_TimeGap}}}": {
+		"visible": {{{XmlRpc::JsonGetBoolean(True)}}},
+		"pos": {{{XmlRpc::JsonGetVec3(UI_Common::C_Position_TimeGap)}}}
+	},
+	"{{{UI_Common::C_ModuleXmlRpc_SmallScoresTable}}}": {
+		"visible": {{{XmlRpc::JsonGetBoolean(True)}}},
+		"pos": {{{XmlRpc::JsonGetVec3(UI_Common::C_Position_SmallScoresTable)}}}
+	},
+	"{{{UI_Common::C_ModuleXmlRpc_Countdown}}}": {
+		"visible": {{{XmlRpc::JsonGetBoolean(True)}}},
+		"pos": {{{XmlRpc::JsonGetVec3(UI_Common::C_Position_Countdown)}}}
+	},
+	"{{{UI_Common::C_ModuleXmlRpc_Go}}}": {
+		"visible": {{{XmlRpc::JsonGetBoolean(True)}}}
+	},
+	"{{{UI_Common::C_ModuleXmlRpc_Chrono}}}": {
+		"visible": {{{XmlRpc::JsonGetBoolean(True)}}},
+		"pos": {{{XmlRpc::JsonGetVec3(UI_Common::C_Position_Chrono)}}}
+	},
+	"{{{UI_Common::C_ModuleXmlRpc_SpeedAndDistance}}}": {
+		"visible": {{{XmlRpc::JsonGetBoolean(True)}}},
+		"pos": {{{XmlRpc::JsonGetVec3(UI_Common::C_Position_SpeedAndDistance)}}}
+	},
+	"{{{UI_Common::C_ModuleXmlRpc_PrevBestTime}}}": {
+		"visible": {{{XmlRpc::JsonGetBoolean(True)}}},
+		"pos": {{{XmlRpc::JsonGetVec3(UI_Common::C_Position_PrevBestTime)}}}
+	},
+	"{{{UI_Common::C_ModuleXmlRpc_MapRanking}}}": {
+		"visible": {{{XmlRpc::JsonGetBoolean(True)}}},
+		"pos": {{{XmlRpc::JsonGetVec3(UI_Common::C_Position_MapRanking)}}}
+	},
+	"{{{UI_Common::C_ModuleXmlRpc_CheckpointTime}}}": {
+		"visible": {{{XmlRpc::JsonGetBoolean(True)}}},
+		"pos": {{{XmlRpc::JsonGetVec3(UI_Common::C_Position_CheckpointTime)}}}
+	},
+	"{{{UI_Common::C_ModuleXmlRpc_ChatAvatar}}}": {
+		"visible": {{{XmlRpc::JsonGetBoolean(True)}}}
+	},
+	"{{{UI_Common::C_ModuleXmlRpc_WarmUp}}}": {
+		"visible": {{{XmlRpc::JsonGetBoolean(True)}}},
+		"pos": {{{XmlRpc::JsonGetVec3(WarmUp::C_LibWU3_LayerPosition)}}}
+	},
+	"{{{UI_Common::C_ModuleXmlRpc_LadderRecap}}}": {
+		"visible": {{{XmlRpc::JsonGetBoolean(True)}}}
+	},
+	"{{{UI_Common::C_ModuleXmlRpc_Laps}}}": {
+		"visible": {{{XmlRpc::JsonGetBoolean(True)}}},
+		"pos": {{{XmlRpc::JsonGetVec3(UI_Common::C_Position_Laps)}}}
+	},
+	"{{{UI_Common::C_ModuleXmlRpc_CheckpointRanking}}}": {
+		"visible": {{{XmlRpc::JsonGetBoolean(True)}}},
+		"pos": {{{XmlRpc::JsonGetVec3(UI_Common::C_Position_CheckpointRanking)}}}
+	},
+	"{{{UI_Common::C_ModuleXmlRpc_ScoresTable}}}": {
+		"alt_visible": {{{XmlRpc::JsonGetBoolean(True)}}}
+	},
+	"{{{UI_Common::C_ModuleXmlRpc_ViewersCount}}}": {
+		"visible": {{{XmlRpc::JsonGetBoolean(True)}}},
+		"pos": {{{XmlRpc::JsonGetVec3(UI_Common::C_Position_ViewersCount)}}}
+	}{{{Append}}}
+}""";
+	}
+	
+	declare Append = "";
+	if (Semver::Compare(XmlRpc::GetApiVersion(), ">=", "2.3.0")) {
+		Append ^= """
+	<{{{UI_Common::C_ModuleXmlRpc_ViewersCount}}} visible="{{{Private_BooleanToText(GetModuleVisibility(UI_Common::C_Module_ViewersCount))}}}" pos="{{{Private_Vec3ToText(GetModulePosition(UI_Common::C_Module_ViewersCount))}}}" />""";
+	}
+	
+	return """
+<ui_properties>
+	<{{{UI_Common::C_ModuleXmlRpc_MapInfo}}} visible="{{{Private_BooleanToText(True)}}}" pos="{{{Private_Vec3ToText(UI_Common::C_Position_MapInfo)}}}" />
+	<{{{UI_Common::C_ModuleXmlRpc_LiveInfo}}} visible="{{{Private_BooleanToText(True)}}}" pos="{{{Private_Vec3ToText(UI_Common::C_Position_LiveInfo)}}}" />
+	<{{{UI_Common::C_ModuleXmlRpc_SpectatorInfo}}} visible="{{{Private_BooleanToText(True)}}}" pos="{{{Private_Vec3ToText(UI_Common::C_Position_SpectatorInfo)}}}" />
+	<{{{UI_Common::C_ModuleXmlRpc_OpponentsInfo}}} visible="{{{Private_BooleanToText(True)}}}" />
+	<{{{UI_Common::C_ModuleXmlRpc_Chat}}} visible="{{{Private_BooleanToText(True)}}}" offset="{{{Private_Vec2ToText(UI_Common::C_Position_Chat)}}}" linecount="0" />
+	<{{{UI_Common::C_ModuleXmlRpc_TimeGap}}} visible="{{{Private_BooleanToText(True)}}}" pos="{{{Private_Vec3ToText(UI_Common::C_Position_TimeGap)}}}" />
+	<{{{UI_Common::C_ModuleXmlRpc_SmallScoresTable}}} visible="{{{Private_BooleanToText(True)}}}" pos="{{{Private_Vec3ToText(UI_Common::C_Position_SmallScoresTable)}}}" />
+	<{{{UI_Common::C_ModuleXmlRpc_Countdown}}} visible="{{{Private_BooleanToText(True)}}}" pos="{{{Private_Vec3ToText(UI_Common::C_Position_Countdown)}}}" />
+	<{{{UI_Common::C_ModuleXmlRpc_Go}}} visible="{{{Private_BooleanToText(True)}}}" />
+	<{{{UI_Common::C_ModuleXmlRpc_Chrono}}} visible="{{{Private_BooleanToText(True)}}}" pos="{{{Private_Vec3ToText(UI_Common::C_Position_Chrono)}}}" />
+	<{{{UI_Common::C_ModuleXmlRpc_SpeedAndDistance}}} visible="{{{Private_BooleanToText(True)}}}" pos="{{{Private_Vec3ToText(UI_Common::C_Position_SpeedAndDistance)}}}" />
+	<{{{UI_Common::C_ModuleXmlRpc_PrevBestTime}}} visible="{{{Private_BooleanToText(True)}}}" pos="{{{Private_Vec3ToText(UI_Common::C_Position_PrevBestTime)}}}" />
+	<{{{UI_Common::C_ModuleXmlRpc_MapRanking}}} visible="{{{Private_BooleanToText(True)}}}" pos="{{{Private_Vec3ToText(UI_Common::C_Position_MapRanking)}}}" />
+	<{{{UI_Common::C_ModuleXmlRpc_CheckpointTime}}} visible="{{{Private_BooleanToText(True)}}}" pos="{{{Private_Vec3ToText(UI_Common::C_Position_CheckpointTime)}}}" />
+	<{{{UI_Common::C_ModuleXmlRpc_ChatAvatar}}} visible="{{{Private_BooleanToText(True)}}}" />
+	<{{{UI_Common::C_ModuleXmlRpc_WarmUp}}} visible="{{{Private_BooleanToText(True)}}}" pos="{{{Private_Vec3ToText(WarmUp::C_LibWU3_LayerPosition)}}}" />
+	<{{{UI_Common::C_ModuleXmlRpc_LadderRecap}}} visible="{{{Private_BooleanToText(True)}}}" />
+	<{{{UI_Common::C_ModuleXmlRpc_Laps}}} visible="{{{Private_BooleanToText(True)}}}" pos="{{{Private_Vec3ToText(UI_Common::C_Position_Laps)}}}" />
+	<{{{UI_Common::C_ModuleXmlRpc_CheckpointRanking}}} visible="{{{Private_BooleanToText(True)}}}" pos="{{{Private_Vec3ToText(UI_Common::C_Position_CheckpointRanking)}}}" />
+	<{{{UI_Common::C_ModuleXmlRpc_ScoresTable}}} alt_visible="{{{Private_BooleanToText(True)}}}" />{{{Append}}}
+</ui_properties>""";
+}
+
+// ---------------------------------- //
+/** Get the current properties xml
+ *
+ *	@return														The properties xml
+ */
+Text Private_GetProperties() {
+	return Private_GetProperties(C_Format_Xml);
+}
+
+// ---------------------------------- //
+/** Get the value of one of the 
+ *	UI module property
+ *
+ *	@param	_Name											The name of the module
+ *	@param	_Property									The property to update
+ */
+Text Private_GetProperty(Text _Name, Text _Property) {
+	declare Value = XmlRpc::JsonGetText("");
+	
+	switch (_Name) {
+		case UI_Common::C_ModuleXmlRpc_TimeGap: {
+			if (_Property == "visible") Value = XmlRpc::JsonGetBoolean(GetModuleVisibility(UI_Common::C_Module_TimeGap));
+			else if (_Property == "pos") Value = XmlRpc::JsonGetVec3(GetModulePosition(UI_Common::C_Module_TimeGap));
+		}
+		case UI_Common::C_ModuleXmlRpc_SmallScoresTable: {
+			if (_Property == "visible") Value = XmlRpc::JsonGetBoolean(GetModuleVisibility(UI_Common::C_Module_SmallScoresTable));
+			else if (_Property == "pos") Value = XmlRpc::JsonGetVec3(GetModulePosition(UI_Common::C_Module_SmallScoresTable));
+		}
+		case UI_Common::C_ModuleXmlRpc_Chrono: {
+			if (_Property == "visible") Value = XmlRpc::JsonGetBoolean(GetModuleVisibility(UI_Common::C_Module_Chrono));
+			else if (_Property == "pos") Value = XmlRpc::JsonGetVec3(GetModulePosition(UI_Common::C_Module_Chrono));
+		}
+		case UI_Common::C_ModuleXmlRpc_CheckpointTime: {
+			if (_Property == "visible") Value = XmlRpc::JsonGetBoolean(GetModuleVisibility(UI_Common::C_Module_CheckpointTime));
+			else if (_Property == "pos") Value = XmlRpc::JsonGetVec3(GetModulePosition(UI_Common::C_Module_CheckpointTime));
+		}
+		case UI_Common::C_ModuleXmlRpc_PrevBestTime: {
+			if (_Property == "visible") Value = XmlRpc::JsonGetBoolean(GetModuleVisibility(UI_Common::C_Module_PrevBestTime));
+			else if (_Property == "pos") Value = XmlRpc::JsonGetVec3(GetModulePosition(UI_Common::C_Module_PrevBestTime));
+		}
+		case UI_Common::C_ModuleXmlRpc_SpeedAndDistance: {
+			if (_Property == "visible") Value = XmlRpc::JsonGetBoolean(GetModuleVisibility(UI_Common::C_Module_SpeedAndDistance));
+			else if (_Property == "pos") Value = XmlRpc::JsonGetVec3(GetModulePosition(UI_Common::C_Module_SpeedAndDistance));
+		}
+		case UI_Common::C_ModuleXmlRpc_Chat: {
+			if (_Property == "visible") Value = XmlRpc::JsonGetBoolean(!UIManager.UIAll.OverlayHideChat);
+			else if (_Property == "offset") Value = XmlRpc::JsonGetVec2(UIManager.UIAll.OverlayChatOffset);
+			else if (_Property == "linecount") Value = XmlRpc::JsonGetInteger(GetChatLineCount());
+		}
+		case UI_Common::C_ModuleXmlRpc_Countdown: {
+			if (_Property == "visible") Value = XmlRpc::JsonGetBoolean(GetModuleVisibility(UI_Common::C_Module_Countdown));
+			else if (_Property == "pos") Value = XmlRpc::JsonGetVec3(GetModulePosition(UI_Common::C_Module_Countdown));
+		}
+		case UI_Common::C_ModuleXmlRpc_WarmUp: {
+			if (_Property == "visible") Value = XmlRpc::JsonGetBoolean(WarmUp::GetUIVisibility());
+			else if (_Property == "pos") Value = XmlRpc::JsonGetVec3(WarmUp::GetUIPosition());
+		}
+		case UI_Common::C_ModuleXmlRpc_Laps: {
+			if (_Property == "visible") Value = XmlRpc::JsonGetBoolean(GetModuleVisibility(UI_Common::C_Module_Laps));
+			else if (_Property == "pos") Value = XmlRpc::JsonGetVec3(GetModulePosition(UI_Common::C_Module_Laps));
+		}
+		case UI_Common::C_ModuleXmlRpc_MapRanking: {
+			if (_Property == "visible") Value = XmlRpc::JsonGetBoolean(GetModuleVisibility(UI_Common::C_Module_MapRanking));
+			else if (_Property == "pos") Value = XmlRpc::JsonGetVec3(GetModulePosition(UI_Common::C_Module_MapRanking));
+		}
+		case UI_Common::C_ModuleXmlRpc_CheckpointRanking: {
+			if (_Property == "visible") Value = XmlRpc::JsonGetBoolean(GetModuleVisibility(UI_Common::C_Module_CheckpointRanking));
+			else if (_Property == "pos") Value = XmlRpc::JsonGetVec3(GetModulePosition(UI_Common::C_Module_CheckpointRanking));
+		}
+		case UI_Common::C_ModuleXmlRpc_MapInfo: {
+			if (_Property == "visible") Value = XmlRpc::JsonGetBoolean(GetModuleVisibility(UI_Common::C_Module_MapInfo));
+			else if (_Property == "pos") Value = XmlRpc::JsonGetVec3(GetModulePosition(UI_Common::C_Module_MapInfo));
+		}
+		case UI_Common::C_ModuleXmlRpc_LiveInfo: {
+			if (_Property == "visible") Value = XmlRpc::JsonGetBoolean(GetModuleVisibility(UI_Common::C_Module_LiveInfo));
+			else if (_Property == "pos") Value = XmlRpc::JsonGetVec3(GetModulePosition(UI_Common::C_Module_LiveInfo));
+		}
+		case UI_Common::C_ModuleXmlRpc_SpectatorInfo: {
+			if (_Property == "visible") Value = XmlRpc::JsonGetBoolean(GetModuleVisibility(UI_Common::C_Module_SpectatorInfo));
+			else if (_Property == "pos") Value = XmlRpc::JsonGetVec3(GetModulePosition(UI_Common::C_Module_SpectatorInfo));
+		}
+		case UI_Common::C_ModuleXmlRpc_ViewersCount: {
+			if (_Property == "visible") Value = XmlRpc::JsonGetBoolean(GetModuleVisibility(UI_Common::C_Module_ViewersCount));
+			else if (_Property == "pos") Value = XmlRpc::JsonGetVec3(GetModulePosition(UI_Common::C_Module_ViewersCount));
+		}
+		case UI_Common::C_ModuleXmlRpc_Go: {
+			if (_Property == "visible") Value = XmlRpc::JsonGetBoolean(!UIManager.UIAll.OverlayHide321Go);
+		}
+		case UI_Common::C_ModuleXmlRpc_ChatAvatar: {
+			if (_Property == "visible") Value = XmlRpc::JsonGetBoolean(!UIManager.UIAll.OverlayChatHideAvatar);
+		}
+		case UI_Common::C_ModuleXmlRpc_LadderRecap: {
+			if (_Property == "visible") Value = XmlRpc::JsonGetBoolean(!UIManager.UIAll.OverlayHideEndMapLadderRecap);
+		}
+		case UI_Common::C_ModuleXmlRpc_ScoresTable: {
+			if (_Property == "alt_visible") Value = XmlRpc::JsonGetBoolean(!UIManager.UIAll.AltMenuNoDefaultScores);
+		}
+		case UI_Common::C_ModuleXmlRpc_OpponentsInfo: {
+			if (_Property == "visible") Value = XmlRpc::JsonGetBoolean(!UIManager.UIAll.OverlayHideOpponentsInfo);
+		}
+	}
+	
+	return Value;
+}
+
+// ---------------------------------- //
+/** Get the default value of one of the 
+ *	UI module property
+ *
+ *	@param	_Name											The name of the module
+ *	@param	_Property									The property to update
+ */
+Text Private_GetDefaultProperty(Text _Name, Text _Property) {
+	declare Value = XmlRpc::JsonGetText("");
+	
+	switch (_Name) {
+		case UI_Common::C_ModuleXmlRpc_TimeGap: {
+			if (_Property == "visible") Value = XmlRpc::JsonGetBoolean(True);
+			else if (_Property == "pos") Value = XmlRpc::JsonGetVec3(UI_Common::C_Position_TimeGap);
+		}
+		case UI_Common::C_ModuleXmlRpc_SmallScoresTable: {
+			if (_Property == "visible") Value = XmlRpc::JsonGetBoolean(True);
+			else if (_Property == "pos") Value = XmlRpc::JsonGetVec3(UI_Common::C_Position_SmallScoresTable);
+		}
+		case UI_Common::C_ModuleXmlRpc_Chrono: {
+			if (_Property == "visible") Value = XmlRpc::JsonGetBoolean(True);
+			else if (_Property == "pos") Value = XmlRpc::JsonGetVec3(UI_Common::C_Position_Chrono);
+		}
+		case UI_Common::C_ModuleXmlRpc_CheckpointTime: {
+			if (_Property == "visible") Value = XmlRpc::JsonGetBoolean(True);
+			else if (_Property == "pos") Value = XmlRpc::JsonGetVec3(UI_Common::C_Position_CheckpointTime);
+		}
+		case UI_Common::C_ModuleXmlRpc_PrevBestTime: {
+			if (_Property == "visible") Value = XmlRpc::JsonGetBoolean(True);
+			else if (_Property == "pos") Value = XmlRpc::JsonGetVec3(UI_Common::C_Position_PrevBestTime);
+		}
+		case UI_Common::C_ModuleXmlRpc_SpeedAndDistance: {
+			if (_Property == "visible") Value = XmlRpc::JsonGetBoolean(True);
+			else if (_Property == "pos") Value = XmlRpc::JsonGetVec3(UI_Common::C_Position_SpeedAndDistance);
+		}
+		case UI_Common::C_ModuleXmlRpc_Chat: {
+			if (_Property == "visible") Value = XmlRpc::JsonGetBoolean(True);
+			else if (_Property == "offset") Value = XmlRpc::JsonGetVec2(UI_Common::C_Position_Chat);
+			else if (_Property == "linecount") Value = XmlRpc::JsonGetInteger(0);
+		}
+		case UI_Common::C_ModuleXmlRpc_Countdown: {
+			if (_Property == "visible") Value = XmlRpc::JsonGetBoolean(True);
+			else if (_Property == "pos") Value = XmlRpc::JsonGetVec3(UI_Common::C_Position_Countdown);
+		}
+		case UI_Common::C_ModuleXmlRpc_WarmUp: {
+			if (_Property == "visible") Value = XmlRpc::JsonGetBoolean(True);
+			else if (_Property == "pos") Value = XmlRpc::JsonGetVec3(WarmUp::C_LibWU3_LayerPosition);
+		}
+		case UI_Common::C_ModuleXmlRpc_Laps: {
+			if (_Property == "visible") Value = XmlRpc::JsonGetBoolean(True);
+			else if (_Property == "pos") Value = XmlRpc::JsonGetVec3(UI_Common::C_Position_Laps);
+		}
+		case UI_Common::C_ModuleXmlRpc_MapRanking: {
+			if (_Property == "visible") Value = XmlRpc::JsonGetBoolean(True);
+			else if (_Property == "pos") Value = XmlRpc::JsonGetVec3(UI_Common::C_Position_MapRanking);
+		}
+		case UI_Common::C_ModuleXmlRpc_CheckpointRanking: {
+			if (_Property == "visible") Value = XmlRpc::JsonGetBoolean(True);
+			else if (_Property == "pos") Value = XmlRpc::JsonGetVec3(UI_Common::C_Position_CheckpointRanking);
+		}
+		case UI_Common::C_ModuleXmlRpc_MapInfo: {
+			if (_Property == "visible") Value = XmlRpc::JsonGetBoolean(True);
+			else if (_Property == "pos") Value = XmlRpc::JsonGetVec3(UI_Common::C_Position_MapInfo);
+		}
+		case UI_Common::C_ModuleXmlRpc_LiveInfo: {
+			if (_Property == "visible") Value = XmlRpc::JsonGetBoolean(True);
+			else if (_Property == "pos") Value = XmlRpc::JsonGetVec3(UI_Common::C_Position_LiveInfo);
+		}
+		case UI_Common::C_ModuleXmlRpc_SpectatorInfo: {
+			if (_Property == "visible") Value = XmlRpc::JsonGetBoolean(True);
+			else if (_Property == "pos") Value = XmlRpc::JsonGetVec3(UI_Common::C_Position_SpectatorInfo);
+		}
+		case UI_Common::C_ModuleXmlRpc_ViewersCount: {
+			if (_Property == "visible") Value = XmlRpc::JsonGetBoolean(True);
+			else if (_Property == "pos") Value = XmlRpc::JsonGetVec3(UI_Common::C_Position_ViewersCount);
+		}
+		case UI_Common::C_ModuleXmlRpc_Go: {
+			if (_Property == "visible") Value = XmlRpc::JsonGetBoolean(True);
+		}
+		case UI_Common::C_ModuleXmlRpc_ChatAvatar: {
+			if (_Property == "visible") Value = XmlRpc::JsonGetBoolean(True);
+		}
+		case UI_Common::C_ModuleXmlRpc_LadderRecap: {
+			if (_Property == "visible") Value = XmlRpc::JsonGetBoolean(True);
+		}
+		case UI_Common::C_ModuleXmlRpc_ScoresTable: {
+			if (_Property == "alt_visible") Value = XmlRpc::JsonGetBoolean(True);
+		}
+		case UI_Common::C_ModuleXmlRpc_OpponentsInfo: {
+			if (_Property == "visible") Value = XmlRpc::JsonGetBoolean(True);
+		}
+	}
+	
+	return Value;
+}
+
+// ---------------------------------- //
+/** Set the value of one of the 
+ *	UI module property
+ *
+ *	@param	_Name											The name of the module
+ *	@param	_Property									The property to update
+ *	@param	_Value										The value of the property
+ */
+Void Private_SetProperty(Text _Name, Text _Property, Text _Value) {
+	if (_Property == "visible") Private_SetVisibility(_Name, _Value);
+	else if (_Property == "pos") Private_SetPosition(_Name, _Value);
+	if (_Name == UI_Common::C_ModuleXmlRpc_Chat) {
+		if (_Property == "linecount") SetChatLineCount(TL::ToInteger(_Value));
+		else if (_Property == "offset") Private_SetPosition(_Name, _Value);
+	} else if (_Name == UI_Common::C_ModuleXmlRpc_ScoresTable) {
+		if (_Property == "alt_visible") Private_SetVisibility(_Name, _Value);
+	}
+	
+	declare LibUI_PropertiesBackUp for This = "";
+	LibUI_PropertiesBackUp = Private_GetProperties(C_Format_Xml);
+}
+
+// ---------------------------------- //
+/** Reset one property of an UI module
+ *
+ *	@param	_Name											The name of the module
+ *	@param	_Property									The property to reset
+ *	@param	_UpdateSave								Update the properties save
+ */
+Void Private_ResetProperty(Text _Name, Text _Property, Boolean _UpdateSave) {
+	switch (_Name) {
+		case UI_Common::C_ModuleXmlRpc_TimeGap: {
+			if (_Property == "visible") SetModuleVisibility(UI_Common::C_Module_TimeGap, True);
+			else if (_Property == "pos") SetModulePosition(UI_Common::C_Module_TimeGap, UI_Common::C_Position_TimeGap);
+		}
+		case UI_Common::C_ModuleXmlRpc_SmallScoresTable: {
+			if (_Property == "visible") SetModuleVisibility(UI_Common::C_Module_SmallScoresTable, True);
+			else if (_Property == "pos") SetModulePosition(UI_Common::C_Module_SmallScoresTable, UI_Common::C_Position_SmallScoresTable);
+		}
+		case UI_Common::C_ModuleXmlRpc_Chrono: {
+			if (_Property == "visible") SetModuleVisibility(UI_Common::C_Module_Chrono, True);
+			else if (_Property == "pos") SetModulePosition(UI_Common::C_Module_Chrono, UI_Common::C_Position_Chrono);
+		}
+		case UI_Common::C_ModuleXmlRpc_CheckpointTime: {
+			if (_Property == "visible") SetModuleVisibility(UI_Common::C_Module_CheckpointTime, True);
+			else if (_Property == "pos") SetModulePosition(UI_Common::C_Module_CheckpointTime, UI_Common::C_Position_CheckpointTime);
+		}
+		case UI_Common::C_ModuleXmlRpc_PrevBestTime: {
+			if (_Property == "visible") SetModuleVisibility(UI_Common::C_Module_PrevBestTime, True);
+			else if (_Property == "pos") SetModulePosition(UI_Common::C_Module_PrevBestTime, UI_Common::C_Position_PrevBestTime);
+		}
+		case UI_Common::C_ModuleXmlRpc_SpeedAndDistance: {
+			if (_Property == "visible") SetModuleVisibility(UI_Common::C_Module_SpeedAndDistance, True);
+			else if (_Property == "pos") SetModulePosition(UI_Common::C_Module_SpeedAndDistance, UI_Common::C_Position_SpeedAndDistance);
+		}
+		case UI_Common::C_ModuleXmlRpc_Chat: {
+			if (_Property == "visible") UIManager.UIAll.OverlayHideChat = False;
+			else if (_Property == "offset") UIManager.UIAll.OverlayChatOffset = UI_Common::C_Position_Chat;
+			else if (_Property == "linecount") SetChatLineCount(0);
+		}
+		case UI_Common::C_ModuleXmlRpc_Countdown: {
+			if (_Property == "visible") SetModuleVisibility(UI_Common::C_Module_Countdown, True);
+			else if (_Property == "pos") SetModulePosition(UI_Common::C_Module_Countdown, UI_Common::C_Position_Countdown);
+		}
+		case UI_Common::C_ModuleXmlRpc_WarmUp: {
+			if (_Property == "visible") WarmUp::SetUIVisibility(True);
+			else if (_Property == "pos") WarmUp::SetUIPosition(WarmUp::C_LibWU3_LayerPosition);
+		}
+		case UI_Common::C_ModuleXmlRpc_Laps: {
+			if (_Property == "visible") SetModuleVisibility(UI_Common::C_Module_Laps, True);
+			else if (_Property == "pos") SetModulePosition(UI_Common::C_Module_Laps, UI_Common::C_Position_Laps);
+		}
+		case UI_Common::C_ModuleXmlRpc_MapRanking: {
+			if (_Property == "visible") SetModuleVisibility(UI_Common::C_Module_MapRanking, True);
+			else if (_Property == "pos") SetModulePosition(UI_Common::C_Module_MapRanking, UI_Common::C_Position_MapRanking);
+		}
+		case UI_Common::C_ModuleXmlRpc_CheckpointRanking: {
+			if (_Property == "visible") SetModuleVisibility(UI_Common::C_Module_CheckpointRanking, True);
+			else if (_Property == "pos") SetModulePosition(UI_Common::C_Module_CheckpointRanking, UI_Common::C_Position_CheckpointRanking);
+		}
+		case UI_Common::C_ModuleXmlRpc_MapInfo: {
+			if (_Property == "visible") SetModuleVisibility(UI_Common::C_Module_MapInfo, True);
+			else if (_Property == "pos") SetModulePosition(UI_Common::C_Module_MapInfo, UI_Common::C_Position_MapInfo);
+		}
+		case UI_Common::C_ModuleXmlRpc_LiveInfo: {
+			if (_Property == "visible") SetModuleVisibility(UI_Common::C_Module_LiveInfo, True);
+			else if (_Property == "pos") SetModulePosition(UI_Common::C_Module_LiveInfo, UI_Common::C_Position_LiveInfo);
+		}
+		case UI_Common::C_ModuleXmlRpc_SpectatorInfo: {
+			if (_Property == "visible") SetModuleVisibility(UI_Common::C_Module_SpectatorInfo, True);
+			else if (_Property == "pos") SetModulePosition(UI_Common::C_Module_SpectatorInfo, UI_Common::C_Position_SpectatorInfo);
+		}
+		case UI_Common::C_ModuleXmlRpc_ViewersCount: {
+			if (_Property == "visible") SetModuleVisibility(UI_Common::C_Module_ViewersCount, True);
+			else if (_Property == "pos") SetModulePosition(UI_Common::C_Module_ViewersCount, UI_Common::C_Position_ViewersCount);
+		}
+		case UI_Common::C_ModuleXmlRpc_Go: {
+			if (_Property == "visible") UIManager.UIAll.OverlayHide321Go = False;
+		}
+		case UI_Common::C_ModuleXmlRpc_ChatAvatar: {
+			if (_Property == "visible") UIManager.UIAll.OverlayChatHideAvatar = False;
+		}
+		case UI_Common::C_ModuleXmlRpc_LadderRecap: {
+			if (_Property == "visible") UIManager.UIAll.OverlayHideEndMapLadderRecap = False;
+		}
+		case UI_Common::C_ModuleXmlRpc_ScoresTable: {
+			if (_Property == "alt_visible") {
+				UIManager.UIAll.AltMenuNoDefaultScores = False;
+				UIManager.UIAll.AltMenuNoCustomScores = False;
+			}
+		}
+		case UI_Common::C_ModuleXmlRpc_OpponentsInfo: {
+			if (_Property == "visible") UIManager.UIAll.OverlayHideOpponentsInfo = False;
+		}
+	}
+	
+	if (_UpdateSave) {
+		declare LibUI_PropertiesBackUp for This = "";
+		LibUI_PropertiesBackUp = Private_GetProperties(C_Format_Xml);
+	}
+}
+
+// ---------------------------------- //
+/** Reset one property of an UI module
+ *
+ *	@param	_Name											The name of the module
+ *	@param	_Property									The property to reset
+ */
+Void Private_ResetProperty(Text _Name, Text _Property) {
+	Private_ResetProperty(_Name, _Property, True);
+}
+
+// ---------------------------------- //
+/// Reset the value of all UI module properties
+Void Private_ResetProperties() {
+	foreach (Name in UI_Common::C_ModulesXmlRpc) {
+		Private_ResetProperty(Name, "pos", False);
+		Private_ResetProperty(Name, "visible", False);
+		if (Name == UI_Common::C_ModuleXmlRpc_Chat) {
+			Private_ResetProperty(Name, "linecount", False);
+			Private_ResetProperty(Name, "offset", False);
+		} else if (Name == UI_Common::C_ModuleXmlRpc_ScoresTable) {
+			Private_ResetProperty(Name, "alt_visible", False);
+		}
+	}
+	
+	declare LibUI_PropertiesBackUp for This = "";
+	LibUI_PropertiesBackUp = Private_GetProperties(C_Format_Xml);
 }
 
 // ---------------------------------- //
@@ -463,12 +1093,12 @@ Void Private_SetProperties(Text _Xml) {
 	foreach (Node in XmlDoc.Root.Children) {
 		Private_SetVisibility(Node.Name, Node.GetAttributeText("visible", ""));
 		Private_SetPosition(Node.Name, Node.GetAttributeText("pos", ""));
-		if (Node.Name == "chat") {
-			SetChatLineCount(Node.GetAttributeInteger("linecount", -1));
+		if (Node.Name == UI_Common::C_ModuleXmlRpc_Chat) {
+			SetChatLineCount(Node.GetAttributeInteger("linecount", 0));
 			Private_SetPosition(Node.Name, Node.GetAttributeText("offset", ""));
 		}
-		if (Node.Name == "scorestable") {
-			Private_SetVisibility("scorestable_alt", Node.GetAttributeText("alt_visible", ""));
+		if (Node.Name == UI_Common::C_ModuleXmlRpc_ScoresTable) {
+			Private_SetVisibility(UI_Common::C_ModuleXmlRpc_ScoresTable, Node.GetAttributeText("alt_visible", ""));
 		}
 	}
 	
@@ -476,130 +1106,6 @@ Void Private_SetProperties(Text _Xml) {
 	
 	declare LibUI_PropertiesBackUp for This = "";
 	LibUI_PropertiesBackUp = _Xml;
-}
-
-// ---------------------------------- //
-/** Get the current UI properties
- *	in the specified format
- *
- *	@param	_Format										The format of the properties
- *
- *	@return		The UI properties
- */
-Text Private_GetProperties(Integer _Format) {
-	if (_Format == C_Format_Json) {
-		return """{
-	"map_info": {
-		"visible": {{{XmlRpc::JsonGetBoolean(GetModuleVisibility(UI_Common::C_Module_MapInfo))}}},
-		"pos": {{{XmlRpc::JsonGetVec3(GetModulePosition(UI_Common::C_Module_MapInfo))}}}
-	},
-	"live_info": {
-		"visible": {{{XmlRpc::JsonGetBoolean(GetModuleVisibility(UI_Common::C_Module_LiveInfo))}}},
-		"pos": {{{XmlRpc::JsonGetVec3(GetModulePosition(UI_Common::C_Module_LiveInfo))}}}
-	},
-	"spectator_info": {
-		"visible": {{{XmlRpc::JsonGetBoolean(GetModuleVisibility(UI_Common::C_Module_SpectatorInfo))}}},
-		"pos": {{{XmlRpc::JsonGetVec3(GetModulePosition(UI_Common::C_Module_SpectatorInfo))}}}
-	},
-	"opponents_info": {
-		"visible": {{{XmlRpc::JsonGetBoolean(!UIManager.UIAll.OverlayHideOpponentsInfo)}}}
-	},
-	"chat": {
-		"visible": {{{XmlRpc::JsonGetBoolean(!UIManager.UIAll.OverlayHideChat)}}},
-		"offset": {{{XmlRpc::JsonGetVec2(UIManager.UIAll.OverlayChatOffset)}}},
-		"linecount": {{{XmlRpc::JsonGetInteger(GetChatLineCount())}}}
-	},
-	"checkpoint_list": {
-		"visible": {{{XmlRpc::JsonGetBoolean(GetModuleVisibility(UI_Common::C_Module_TimeGap))}}},
-		"pos": {{{XmlRpc::JsonGetVec3(GetModulePosition(UI_Common::C_Module_TimeGap))}}}
-	},
-	"round_scores": {
-		"visible": {{{XmlRpc::JsonGetBoolean(GetModuleVisibility(UI_Common::C_Module_SmallScoresTable))}}},
-		"pos": {{{XmlRpc::JsonGetVec3(GetModulePosition(UI_Common::C_Module_SmallScoresTable))}}}
-	},
-	"countdown": {
-		"visible": {{{XmlRpc::JsonGetBoolean(GetModuleVisibility(UI_Common::C_Module_Countdown))}}},
-		"pos": {{{XmlRpc::JsonGetVec3(GetModulePosition(UI_Common::C_Module_Countdown))}}}
-	},
-	"go": {
-		"visible": {{{XmlRpc::JsonGetBoolean(!UIManager.UIAll.OverlayHide321Go)}}}
-	},
-	"chrono": {
-		"visible": {{{XmlRpc::JsonGetBoolean(GetModuleVisibility(UI_Common::C_Module_Chrono))}}},
-		"pos": {{{XmlRpc::JsonGetVec3(GetModulePosition(UI_Common::C_Module_Chrono))}}}
-	},
-	"speed_and_distance": {
-		"visible": {{{XmlRpc::JsonGetBoolean(GetModuleVisibility(UI_Common::C_Module_SpeedAndDistance))}}},
-		"pos": {{{XmlRpc::JsonGetVec3(GetModulePosition(UI_Common::C_Module_SpeedAndDistance))}}}
-	},
-	"personal_best_and_rank": {
-		"visible": {{{XmlRpc::JsonGetBoolean(GetModuleVisibility(UI_Common::C_Module_PrevBestTime))}}},
-		"pos": {{{XmlRpc::JsonGetVec3(GetModulePosition(UI_Common::C_Module_PrevBestTime))}}}
-	},
-	"position": {
-		"visible": {{{XmlRpc::JsonGetBoolean(GetModuleVisibility(UI_Common::C_Module_MapRanking))}}},
-		"pos": {{{XmlRpc::JsonGetVec3(GetModulePosition(UI_Common::C_Module_MapRanking))}}}
-	},
-	"checkpoint_time": {
-		"visible": {{{XmlRpc::JsonGetBoolean(GetModuleVisibility(UI_Common::C_Module_CheckpointTime))}}},
-		"pos": {{{XmlRpc::JsonGetVec3(GetModulePosition(UI_Common::C_Module_CheckpointTime))}}}
-	},
-	"chat_avatar": {
-		"visible": {{{XmlRpc::JsonGetBoolean(!UIManager.UIAll.OverlayChatHideAvatar)}}}
-	},
-	"warmup": {
-		"visible": {{{XmlRpc::JsonGetBoolean(WarmUp::GetUIVisibility())}}},
-		"pos": {{{XmlRpc::JsonGetVec3(WarmUp::GetUIPosition())}}}
-	},
-	"endmap_ladder_recap": {
-		"visible": {{{XmlRpc::JsonGetBoolean(!UIManager.UIAll.OverlayHideEndMapLadderRecap)}}}
-	},
-	"multilap_info": {
-		"visible": {{{XmlRpc::JsonGetBoolean(GetModuleVisibility(UI_Common::C_Module_Laps))}}},
-		"pos": {{{XmlRpc::JsonGetVec3(GetModulePosition(UI_Common::C_Module_Laps))}}}
-	},
-	"checkpoint_ranking": {
-		"visible": {{{XmlRpc::JsonGetBoolean(GetModuleVisibility(UI_Common::C_Module_CheckpointRanking))}}},
-		"pos": {{{XmlRpc::JsonGetVec3(GetModulePosition(UI_Common::C_Module_CheckpointRanking))}}}
-	},
-	"scorestable": {
-		"alt_visible": {{{XmlRpc::JsonGetBoolean(!UIManager.UIAll.AltMenuNoDefaultScores)}}}
-	}
-}""";
-	}
-	
-	return """
-<ui_properties>
-	<map_info visible="{{{Private_BooleanToText(GetModuleVisibility(UI_Common::C_Module_MapInfo))}}}" pos="{{{Private_Vec3ToText(GetModulePosition(UI_Common::C_Module_MapInfo))}}}" />
-	<live_info visible="{{{Private_BooleanToText(GetModuleVisibility(UI_Common::C_Module_LiveInfo))}}}" pos="{{{Private_Vec3ToText(GetModulePosition(UI_Common::C_Module_LiveInfo))}}}" />
-	<spectator_info visible="{{{Private_BooleanToText(GetModuleVisibility(UI_Common::C_Module_SpectatorInfo))}}}" pos="{{{Private_Vec3ToText(GetModulePosition(UI_Common::C_Module_SpectatorInfo))}}}" />
-	<opponents_info visible="{{{Private_BooleanToText(!UIManager.UIAll.OverlayHideOpponentsInfo)}}}" />
-	<chat visible="{{{Private_BooleanToText(!UIManager.UIAll.OverlayHideChat)}}}" offset="{{{Private_Vec2ToText(UIManager.UIAll.OverlayChatOffset)}}}" linecount="{{{GetChatLineCount()}}}" />
-	<checkpoint_list visible="{{{Private_BooleanToText(GetModuleVisibility(UI_Common::C_Module_TimeGap))}}}" pos="{{{Private_Vec3ToText(GetModulePosition(UI_Common::C_Module_TimeGap))}}}" />
-	<round_scores visible="{{{Private_BooleanToText(GetModuleVisibility(UI_Common::C_Module_SmallScoresTable))}}}" pos="{{{Private_Vec3ToText(GetModulePosition(UI_Common::C_Module_SmallScoresTable))}}}" />
-	<countdown visible="{{{Private_BooleanToText(GetModuleVisibility(UI_Common::C_Module_Countdown))}}}" pos="{{{Private_Vec3ToText(GetModulePosition(UI_Common::C_Module_Countdown))}}}" />
-	<go visible="{{{Private_BooleanToText(!UIManager.UIAll.OverlayHide321Go)}}}" />
-	<chrono visible="{{{Private_BooleanToText(GetModuleVisibility(UI_Common::C_Module_Chrono))}}}" pos="{{{Private_Vec3ToText(GetModulePosition(UI_Common::C_Module_Chrono))}}}" />
-	<speed_and_distance visible="{{{Private_BooleanToText(GetModuleVisibility(UI_Common::C_Module_SpeedAndDistance))}}}" pos="{{{Private_Vec3ToText(GetModulePosition(UI_Common::C_Module_SpeedAndDistance))}}}" />
-	<personal_best_and_rank visible="{{{Private_BooleanToText(GetModuleVisibility(UI_Common::C_Module_PrevBestTime))}}}" pos="{{{Private_Vec3ToText(GetModulePosition(UI_Common::C_Module_PrevBestTime))}}}" />
-	<position visible="{{{Private_BooleanToText(GetModuleVisibility(UI_Common::C_Module_MapRanking))}}}" pos="{{{Private_Vec3ToText(GetModulePosition(UI_Common::C_Module_MapRanking))}}}" />
-	<checkpoint_time visible="{{{Private_BooleanToText(GetModuleVisibility(UI_Common::C_Module_CheckpointTime))}}}" pos="{{{Private_Vec3ToText(GetModulePosition(UI_Common::C_Module_CheckpointTime))}}}" />
-	<chat_avatar visible="{{{Private_BooleanToText(!UIManager.UIAll.OverlayChatHideAvatar)}}}" />
-	<warmup visible="{{{Private_BooleanToText(WarmUp::GetUIVisibility())}}}" pos="{{{Private_Vec3ToText(WarmUp::GetUIPosition())}}}" />
-	<endmap_ladder_recap visible="{{{Private_BooleanToText(!UIManager.UIAll.OverlayHideEndMapLadderRecap)}}}" />
-	<multilap_info visible="{{{Private_BooleanToText(GetModuleVisibility(UI_Common::C_Module_Laps))}}}" pos="{{{Private_Vec3ToText(GetModulePosition(UI_Common::C_Module_Laps))}}}" />
-	<checkpoint_ranking visible="{{{Private_BooleanToText(GetModuleVisibility(UI_Common::C_Module_CheckpointRanking))}}}" pos="{{{Private_Vec3ToText(GetModulePosition(UI_Common::C_Module_CheckpointRanking))}}}" />
-	<scorestable alt_visible="{{{Private_BooleanToText(!UIManager.UIAll.AltMenuNoDefaultScores)}}}" />
-</ui_properties>""";
-}
-
-// ---------------------------------- //
-/** Get the current properties xml
- *
- *	@return														The properties xml
- */
-Text Private_GetProperties() {
-	return Private_GetProperties(C_Format_Xml);
 }
 
 // ---------------------------------- //
@@ -615,6 +1121,61 @@ Void XmlRpc_SendUIProperties(Text _ResponseId) {
 	declare PropsJson = Private_GetProperties(C_Format_Json);
 
 	XmlRpc::SendCallback(C_Callback_Properties, [Json, PropsXml, PropsJson]);
+}
+
+// ---------------------------------- //
+/** Send default ui properties
+ *
+ *	@param	_ResponseId								Id to insert in the response callback
+ */
+Void XmlRpc_SendDefaultUIProperties(Text _ResponseId) {
+	declare Json = """{
+	"responseid": {{{dump(_ResponseId)}}}
+}""";
+	declare PropsXml = Private_GetDefaultProperties(C_Format_Xml);
+	declare PropsJson = Private_GetDefaultProperties(C_Format_Json);
+
+	XmlRpc::SendCallback(C_Callback_Properties, [Json, PropsXml, PropsJson]);
+}
+
+// ---------------------------------- //
+/** Send ui property
+ *
+ *	@param	_ModuleId									The UI module to check
+ *	@param	_Property									The property to get
+ *	@param	_ResponseId								Id to insert in the response callback
+ */
+Void XmlRpc_SendUIProperty(Text _ModuleId, Text _Property, Text _ResponseId) {
+	declare Value = Private_GetProperty(_ModuleId, _Property);
+	
+	declare Json = """{
+	"responseid": {{{XmlRpc::JsonGetText(_ResponseId)}}},
+	"module": {{{XmlRpc::JsonGetText(_ModuleId)}}},
+	"property": {{{XmlRpc::JsonGetText(_Property)}}},
+	"value": {{{Value}}}
+}""";
+
+	XmlRpc::SendCallback(C_Callback_Property, [Json]);
+}
+
+// ---------------------------------- //
+/** Send default ui property
+ *
+ *	@param	_ModuleId									The UI module to check
+ *	@param	_Property									The property to get
+ *	@param	_ResponseId								Id to insert in the response callback
+ */
+Void XmlRpc_SendDefaultUIProperty(Text _ModuleId, Text _Property, Text _ResponseId) {
+	declare Value = Private_GetDefaultProperty(_ModuleId, _Property);
+	
+	declare Json = """{
+	"responseid": {{{XmlRpc::JsonGetText(_ResponseId)}}},
+	"module": {{{XmlRpc::JsonGetText(_ModuleId)}}},
+	"property": {{{XmlRpc::JsonGetText(_Property)}}},
+	"value": {{{Value}}}
+}""";
+
+	XmlRpc::SendCallback(C_Callback_Property, [Json]);
 }
 
 // ---------------------------------- //
@@ -637,6 +1198,60 @@ Void Yield() {
 					declare ResponseId = "";
 					if (Event.ParamArray2.existskey(0)) ResponseId = Event.ParamArray2[0];
 					XmlRpc_SendUIProperties(ResponseId);
+				}
+				case C_Method_GetDefaultProperties: {
+					if (Semver::Compare(XmlRpc::GetApiVersion(), ">=", "2.3.0")) {
+						declare ResponseId = "";
+						if (Event.ParamArray2.existskey(0)) ResponseId = Event.ParamArray2[0];
+						XmlRpc_SendDefaultUIProperties(ResponseId);
+					}
+				}
+				case C_Method_ResetProperties: {
+					if (Semver::Compare(XmlRpc::GetApiVersion(), ">=", "2.3.0")) {
+						Private_ResetProperties();
+					}
+				}
+				case C_Method_GetProperty: {
+					if (Semver::Compare(XmlRpc::GetApiVersion(), ">=", "2.3.0")) {
+						declare Name = "";
+						declare Property = "";
+						declare ResponseId = "";
+						if (Event.ParamArray2.existskey(0)) Name = Event.ParamArray2[0];
+						if (Event.ParamArray2.existskey(1)) Property = Event.ParamArray2[1];
+						if (Event.ParamArray2.existskey(2)) ResponseId = Event.ParamArray2[2];
+						XmlRpc_SendUIProperty(Name, Property, ResponseId);
+					}
+				}
+				case C_Method_GetDefaultProperty: {
+					if (Semver::Compare(XmlRpc::GetApiVersion(), ">=", "2.3.0")) {
+						declare Name = "";
+						declare Property = "";
+						declare ResponseId = "";
+						if (Event.ParamArray2.existskey(0)) Name = Event.ParamArray2[0];
+						if (Event.ParamArray2.existskey(1)) Property = Event.ParamArray2[1];
+						if (Event.ParamArray2.existskey(2)) ResponseId = Event.ParamArray2[2];
+						XmlRpc_SendDefaultUIProperty(Name, Property, ResponseId);
+					}
+				}
+				case C_Method_SetProperty: {
+					if (Semver::Compare(XmlRpc::GetApiVersion(), ">=", "2.3.0")) {
+						declare Name = "";
+						declare Property = "";
+						declare Value = "";
+						if (Event.ParamArray2.existskey(0)) Name = Event.ParamArray2[0];
+						if (Event.ParamArray2.existskey(1)) Property = Event.ParamArray2[1];
+						if (Event.ParamArray2.existskey(2)) Value = Event.ParamArray2[2];
+						Private_SetProperty(Name, Property, Value);
+					}
+				}
+				case C_Method_ResetProperty: {
+					if (Semver::Compare(XmlRpc::GetApiVersion(), ">=", "2.3.0")) {
+						declare Name = "";
+						declare Property = "";
+						if (Event.ParamArray2.existskey(0)) Name = Event.ParamArray2[0];
+						if (Event.ParamArray2.existskey(1)) Property = Event.ParamArray2[1];
+						Private_ResetProperty(Name, Property);
+					}
 				}
 			}
 		}
@@ -683,17 +1298,17 @@ Void LoadModule(Text _ModuleId) {
 			UI_Server::LoadModule(UI_Common::C_Module_TimeGap);
 			SetTimeGapMode("CurRace");
 			SetModuleVisibility(UI_Common::C_Module_TimeGap, True);
-			SetModulePosition(UI_Common::C_Module_TimeGap, C_LibUI_TimeGapPos);
+			SetModulePosition(UI_Common::C_Module_TimeGap, UI_Common::C_Position_TimeGap);
 		}
 		case UI_Common::C_Module_SmallScoresTable: {
 			UI_Server::LoadModule(UI_Common::C_Module_SmallScoresTable);
 			SetModuleVisibility(UI_Common::C_Module_SmallScoresTable, True);
-			SetModulePosition(UI_Common::C_Module_SmallScoresTable, C_LibUI_SmallScoresTablePos);
+			SetModulePosition(UI_Common::C_Module_SmallScoresTable, UI_Common::C_Position_SmallScoresTable);
 		}
 		case UI_Common::C_Module_Chrono: {
 			UI_Server::LoadModule(UI_Common::C_Module_Chrono);
 			SetModuleVisibility(UI_Common::C_Module_Chrono, True);
-			SetModulePosition(UI_Common::C_Module_Chrono, C_LibUI_ChronoPos);
+			SetModulePosition(UI_Common::C_Module_Chrono, UI_Common::C_Position_Chrono);
 		}
 		case UI_Common::C_Module_CheckpointTime: {
 			UI_Server::LoadModule(UI_Common::C_Module_CheckpointTime);
@@ -701,53 +1316,58 @@ Void LoadModule(Text _ModuleId) {
 			DisplayTimeDiff(True);
 			DisplayLapTimeDiff(True);
 			SetModuleVisibility(UI_Common::C_Module_CheckpointTime, True);
-			SetModulePosition(UI_Common::C_Module_CheckpointTime, C_LibUI_CheckpointTimePos);
+			SetModulePosition(UI_Common::C_Module_CheckpointTime, UI_Common::C_Position_CheckpointTime);
 		}
 		case UI_Common::C_Module_PrevBestTime: {
 			UI_Server::LoadModule(UI_Common::C_Module_PrevBestTime);
 			SetModuleVisibility(UI_Common::C_Module_PrevBestTime, True);
-			SetModulePosition(UI_Common::C_Module_PrevBestTime, C_LibUI_PrevBestTimePos);
+			SetModulePosition(UI_Common::C_Module_PrevBestTime, UI_Common::C_Position_PrevBestTime);
 		}
 		case UI_Common::C_Module_SpeedAndDistance: {
 			UI_Server::LoadModule(UI_Common::C_Module_SpeedAndDistance);
 			SetModuleVisibility(UI_Common::C_Module_SpeedAndDistance, True);
-			SetModulePosition(UI_Common::C_Module_SpeedAndDistance, C_LibUI_SpeedAndDistancePos);
+			SetModulePosition(UI_Common::C_Module_SpeedAndDistance, UI_Common::C_Position_SpeedAndDistance);
 			DisplaySpeedGauge(False);
 		}
 		case UI_Common::C_Module_Countdown: {
 			UI_Server::LoadModule(UI_Common::C_Module_Countdown);
 			SetModuleVisibility(UI_Common::C_Module_Countdown, True);
-			SetModulePosition(UI_Common::C_Module_Countdown, C_LibUI_CountdownPos);
+			SetModulePosition(UI_Common::C_Module_Countdown, UI_Common::C_Position_Countdown);
 		}
 		case UI_Common::C_Module_Laps: {
 			UI_Server::LoadModule(UI_Common::C_Module_Laps);
 			SetModuleVisibility(UI_Common::C_Module_Laps, True);
-			SetModulePosition(UI_Common::C_Module_Laps, C_LibUI_LapsPos);
+			SetModulePosition(UI_Common::C_Module_Laps, UI_Common::C_Position_Laps);
 		}
 		case UI_Common::C_Module_MapRanking: {
 			UI_Server::LoadModule(UI_Common::C_Module_MapRanking);
 			SetModuleVisibility(UI_Common::C_Module_MapRanking, True);
-			SetModulePosition(UI_Common::C_Module_MapRanking, C_LibUI_MapRankingPos);
+			SetModulePosition(UI_Common::C_Module_MapRanking, UI_Common::C_Position_MapRanking);
 		}
 		case UI_Common::C_Module_CheckpointRanking: {
 			UI_Server::LoadModule(UI_Common::C_Module_CheckpointRanking);
 			SetModuleVisibility(UI_Common::C_Module_CheckpointRanking, True);
-			SetModulePosition(UI_Common::C_Module_CheckpointRanking, C_LibUI_CheckpointRankingPos);
+			SetModulePosition(UI_Common::C_Module_CheckpointRanking, UI_Common::C_Position_CheckpointRanking);
 		}
 		case UI_Common::C_Module_MapInfo: {
 			UI_Server::LoadModule(UI_Common::C_Module_MapInfo);
 			SetModuleVisibility(UI_Common::C_Module_MapInfo, True);
-			SetModulePosition(UI_Common::C_Module_MapInfo, C_LibUI_MapInfoPos);
+			SetModulePosition(UI_Common::C_Module_MapInfo, UI_Common::C_Position_MapInfo);
 		}
 		case UI_Common::C_Module_LiveInfo: {
 			UI_Server::LoadModule(UI_Common::C_Module_LiveInfo);
 			SetModuleVisibility(UI_Common::C_Module_LiveInfo, True);
-			SetModulePosition(UI_Common::C_Module_LiveInfo, C_LibUI_LiveInfoPos);
+			SetModulePosition(UI_Common::C_Module_LiveInfo, UI_Common::C_Position_LiveInfo);
 		}
 		case UI_Common::C_Module_SpectatorInfo: {
 			UI_Server::LoadModule(UI_Common::C_Module_SpectatorInfo);
 			SetModuleVisibility(UI_Common::C_Module_SpectatorInfo, True);
-			SetModulePosition(UI_Common::C_Module_SpectatorInfo, C_LibUI_SpectatorInfoPos);
+			SetModulePosition(UI_Common::C_Module_SpectatorInfo, UI_Common::C_Position_SpectatorInfo);
+		}
+		case UI_Common::C_Module_ViewersCount: {
+			UI_Server::LoadModule(UI_Common::C_Module_ViewersCount);
+			SetModuleVisibility(UI_Common::C_Module_ViewersCount, True);
+			SetModulePosition(UI_Common::C_Module_ViewersCount, UI_Common::C_Position_ViewersCount);
 		}
 	}
 	
@@ -796,8 +1416,15 @@ Void Unload() {
 	G_LibUI_PrevCutOffTimeLimit = -1;
 	
 	XmlRpc::UnregisterCallback(C_Callback_Properties);
+	XmlRpc::UnregisterCallback(C_Callback_Property);
 	XmlRpc::UnregisterMethod(C_Method_SetProperties);
 	XmlRpc::UnregisterMethod(C_Method_GetProperties);
+	XmlRpc::UnregisterMethod(C_Method_GetDefaultProperties);
+	XmlRpc::UnregisterMethod(C_Method_ResetProperties);
+	XmlRpc::UnregisterMethod(C_Method_GetProperty);
+	XmlRpc::UnregisterMethod(C_Method_GetDefaultProperty);
+	XmlRpc::UnregisterMethod(C_Method_SetProperty);
+	XmlRpc::UnregisterMethod(C_Method_ResetProperty);
 	
 	UI_Server::Unload();
 }
@@ -823,133 +1450,173 @@ Void Load() {
 	```
 	[
 		"{
-			"responseid": "xyz", //< Facultative id passed by a script event
+			"responseid": "xyz" //< Facultative id passed by a script event
 		}",
 		"
 		<ui_properties>
 			<!-- The map name and author displayed in the top right of the screen when viewing the scores table -->
-			<map_info visible="true" pos="-160. 80. 150." />
+			<{{{UI_Common::C_ModuleXmlRpc_MapInfo}}} visible="true" pos="-160. 80. 150." />
 			<!-- Information about live envent displayed in the top right of the screen -->
-			<live_info visible="true" pos="-159. 84. 5." />
+			<{{{UI_Common::C_ModuleXmlRpc_LiveInfo}}} visible="true" pos="-159. 84. 5." />
 			<!-- Information about the spectated player displayed in the bottom of the screen -->
-			<spectator_info visible="true" pos="0. -68. 5." />
+			<{{{UI_Common::C_ModuleXmlRpc_SpectatorInfo}}} visible="true" pos="0. -68. 5." />
 			<!-- Only visible in solo modes, it hides the medal/ghost selection UI -->
-			<opponents_info visible="true" />
+			<{{{UI_Common::C_ModuleXmlRpc_OpponentsInfo}}} visible="true" />
 			<!--
-				The server chat displayed on the bottom right of the screen
+				The server chat displayed on the bottom left of the screen
 				The offset values range from 0. to -3.2 for x and from 0. to 1.8 for y
 				The linecount property must be between 0 and 40
 			-->
-			<chat visible="true" offset="0. 0." linecount="7" />
+			<{{{UI_Common::C_ModuleXmlRpc_Chat}}} visible="true" offset="0. 0." linecount="7" />
 			<!-- Time of the players at the current checkpoint displayed at the bottom of the screen -->
-			<checkpoint_list visible="true" pos="48. -52. 5." />
+			<{{{UI_Common::C_ModuleXmlRpc_TimeGap}}} visible="true" pos="48. -52. 5." />
 			<!-- Small scores table displayed at the end of race of the round based modes (Rounds, Cup, ...) on the right of the screen -->
-			<round_scores visible="true" pos="-158.5 40. 150." />
+			<{{{UI_Common::C_ModuleXmlRpc_SmallScoresTable}}} visible="true" pos="-158.5 40. 150." />
 			<!-- Race time left displayed at the bottom right of the screen -->
-			<countdown visible="true" pos="153. -7. 5." />
+			<{{{UI_Common::C_ModuleXmlRpc_Countdown}}} visible="true" pos="153. -7. 5." />
 			<!-- 3, 2, 1, Go! message displayed on the middle of the screen when spawning -->
-			<go visible="true" />
+			<{{{UI_Common::C_ModuleXmlRpc_Go}}} visible="true" />
 			<!-- Current race chrono displayed at the bottom center of the screen -->
-			<chrono visible="true" pos="0. -80. -5." />
+			<{{{UI_Common::C_ModuleXmlRpc_Chrono}}} visible="true" pos="0. -80. -5." />
 			<!-- Speed and distance raced displayed in the bottom right of the screen -->
-			<speed_and_distance visible="true" pos="137. -69. 5." />
+			<{{{UI_Common::C_ModuleXmlRpc_SpeedAndDistance}}} visible="true" pos="137. -69. 5." />
 			<!-- Previous and best times displayed at the bottom right of the screen -->
-			<personal_best_and_rank visible="true" pos="157. -24. 5." />
+			<{{{UI_Common::C_ModuleXmlRpc_PrevBestTime}}} visible="true" pos="157. -24. 5." />
 			<!-- Current position in the map ranking displayed at the bottom right of the screen -->
-			<position visible="true" pos="150.5 -28. 5." />
+			<{{{UI_Common::C_ModuleXmlRpc_MapRanking}}} visible="true" pos="150.5 -28. 5." />
 			<!-- Checkpoint time information displayed in the middle of the screen when crossing a checkpoint -->
-			<checkpoint_time visible="true" pos="0. 3. -10." />
+			<{{{UI_Common::C_ModuleXmlRpc_CheckpointTime}}} visible="true" pos="0. 3. -10." />
 			<!-- The avatar of the last player speaking in the chat displayed above the chat -->
-			<chat_avatar visible="true" />
+			<{{{UI_Common::C_ModuleXmlRpc_ChatAvatar}}} visible="true" />
 			<!-- Warm-up progression displayed on the right of the screen during warm-up -->
-			<warmup visible="true" pos="153. 13. 0." />
+			<{{{UI_Common::C_ModuleXmlRpc_WarmUp}}} visible="true" pos="153. 13. 0." />
 			<!-- Ladder progression box displayed on the top of the screen at the end of the map -->
-			<endmap_ladder_recap visible="true" />
+			<{{{UI_Common::C_ModuleXmlRpc_LadderRecap}}} visible="true" />
 			<!-- Laps count displayed on the right of the screen on multilaps map -->
-			<multilap_info visible="true" pos="140. 84. 5." />
+			<{{{UI_Common::C_ModuleXmlRpc_Laps}}} visible="true" pos="140. 84. 5." />
 			<!-- Player's ranking at the latest checkpoint -->
-			<checkpoint_ranking visible="false" pos="0. 84. 5." />
+			<{{{UI_Common::C_ModuleXmlRpc_CheckpointRanking}}} visible="false" pos="0. 84. 5." />
 			<!-- Scores table displayed in the middle of the screen -->
-			<scorestable alt_visible="true" />
+			<{{{UI_Common::C_ModuleXmlRpc_ScoresTable}}} alt_visible="true" />
 		</ui_properties>
 		",
 		"{
-			"map_info": { //< The map name and author displayed in the top right of the screen when viewing the scores table
+			"{{{UI_Common::C_ModuleXmlRpc_MapInfo}}}": { //< The map name and author displayed in the top right of the screen when viewing the scores table
 				"visible": true,
 				"pos": { "x": -160.0, "y": 80.0, "z": 150.0 }
 			},
-			"live_info": { //< Information about live envent displayed in the top right of the screen
+			"{{{UI_Common::C_ModuleXmlRpc_LiveInfo}}}": { //< Information about live envent displayed in the top right of the screen
 				"visible": true,
 				"pos": { "x": -159.0, "y": 84.0, "z": 5.0 }
 			},
-			"spectator_info": { //< Information about the spectated player displayed in the bottom of the screen
+			"{{{UI_Common::C_ModuleXmlRpc_SpectatorInfo}}}": { //< Information about the spectated player displayed in the bottom of the screen
 				"visible": true,
 				"pos": { "x": 0.0, "y": -68.0, "z": 5.0 }
 			},
-			"opponents_info": { //< Only visible in solo modes, it hides the medal/ghost selection UI
+			"{{{UI_Common::C_ModuleXmlRpc_OpponentsInfo}}}": { //< Only visible in solo modes, it hides the medal/ghost selection UI
 				"visible": true
 			},
-			"chat": { //< The server chat displayed on the bottom right of the screen
+			"{{{UI_Common::C_ModuleXmlRpc_Chat}}}": { //< The server chat displayed on the bottom left of the screen
 				"visible": true,
 				"offset": { "x": 0.0, "y": 0.0 }, //< The offset values range from 0. to -3.2 for x and from 0. to 1.8 for y
 				"linecount": 7 //< The linecount property must be between 0 and 40
 			},
-			"checkpoint_list": { //< Time of the players at the current checkpoint displayed at the bottom of the screen
+			"{{{UI_Common::C_ModuleXmlRpc_TimeGap}}}": { //< Time of the players at the current checkpoint displayed at the bottom of the screen
 				"visible": true,
 				"pos": { "x": 48.0, "y": -52.0, "z": 5.0 }
 			},
-			"round_scores": { //< Small scores table displayed at the end of race of the round based modes (Rounds, Cup, ...) on the right of the screen
+			"{{{UI_Common::C_ModuleXmlRpc_SmallScoresTable}}}": { //< Small scores table displayed at the end of race of the round based modes (Rounds, Cup, ...) on the right of the screen
 				"visible": true,
 				"pos": { "x": -158.5, "y": 40.0, "z": 150.0 }
 			},
-			"countdown": { //< Race time left displayed at the bottom right of the screen
+			"{{{UI_Common::C_ModuleXmlRpc_Countdown}}}": { //< Race time left displayed at the bottom right of the screen
 				"visible": true,
 				"pos": { "x": 153.0, "y": -7.0, "z": 5.0 }
 			},
-			"go": { //< 3, 2, 1, Go! message displayed on the middle of the screen when spawning
+			"{{{UI_Common::C_ModuleXmlRpc_Go}}}": { //< 3, 2, 1, Go! message displayed on the middle of the screen when spawning
 				"visible": true
 			},
-			"chrono": { //< Current race chrono displayed at the bottom center of the screen
+			"{{{UI_Common::C_ModuleXmlRpc_Chrono}}}": { //< Current race chrono displayed at the bottom center of the screen
 				"visible": true,
 				"pos": { "x": 0.0, "y": -80.0, "z": -5.0 }
 			},
-			"speed_and_distance": { //< Speed and distance raced displayed in the bottom right of the screen
+			"{{{UI_Common::C_ModuleXmlRpc_SpeedAndDistance}}}": { //< Speed and distance raced displayed in the bottom right of the screen
 				"visible": true,
 				"pos": { "x": 137.0, "y": -69.0, "z": 5.0 }
 			},
-			"personal_best_and_rank": { //< Previous and best times displayed at the bottom right of the screen
+			"{{{UI_Common::C_ModuleXmlRpc_PrevBestTime}}}": { //< Previous and best times displayed at the bottom right of the screen
 				"visible": true,
 				"pos": { "x": 157.0, "y": -24.0, "z": 5.0 }
 			},
-			"position": { //< Current position in the map ranking displayed at the bottom right of the screen
+			"{{{UI_Common::C_ModuleXmlRpc_MapRanking}}}": { //< Current position in the map ranking displayed at the bottom right of the screen
 				"visible": true,
 				"pos": { "x": 150.5, "y": -28.0, "z": 5.0 }
 			},
-			"checkpoint_time": { //< Checkpoint time information displayed in the middle of the screen when crossing a checkpoint
+			"{{{UI_Common::C_ModuleXmlRpc_CheckpointTime}}}": { //< Checkpoint time information displayed in the middle of the screen when crossing a checkpoint
 				"visible": true,
 				"pos": { "x": 0.0, "y": 3.0, "z": -10.0 }
 			},
-			"chat_avatar": { //< The avatar of the last player speaking in the chat displayed above the chat
+			"{{{UI_Common::C_ModuleXmlRpc_ChatAvatar}}}": { //< The avatar of the last player speaking in the chat displayed above the chat
 				"visible": true
 			},
-			"warmup": { //< Warm-up progression displayed on the right of the screen during warm-up
+			"{{{UI_Common::C_ModuleXmlRpc_WarmUp}}}": { //< Warm-up progression displayed on the right of the screen during warm-up
 				"visible": true,
 				"pos": { "x": 153.0, "y": 13.0, "z": 0.0 }
 			},
-			"endmap_ladder_recap": { //< Ladder progression box displayed on the top of the screen at the end of the map
+			"{{{UI_Common::C_ModuleXmlRpc_LadderRecap}}}": { //< Ladder progression box displayed on the top of the screen at the end of the map
 				"visible": true
 			},
-			"multilap_info": { //< Laps count displayed on the right of the screen on multilaps map
+			"{{{UI_Common::C_ModuleXmlRpc_Laps}}}": { //< Laps count displayed on the right of the screen on multilaps map
 				"visible": true,
 				"pos": { "x": 140.0, "y": 84.0, "z": 5.0 }
 			},
-			"checkpoint_ranking": { //< Player's ranking at the latest checkpoint
+			"{{{UI_Common::C_ModuleXmlRpc_CheckpointRanking}}}": { //< Player's ranking at the latest checkpoint
 				"visible": true,
 				"pos": { "x": 0.0, "y": 84.0, "z": 5.0 }
 			},
-			"scorestable": { //< Scores table displayed in the middle of the screen
+			"{{{UI_Common::C_ModuleXmlRpc_ScoresTable}}}": { //< Scores table displayed in the middle of the screen
 				"alt_visible": true
 			}
+		}"
+	]
+	```
+	- Version >=2.3.0: 
+	A new module "{{{UI_Common::C_ModuleXmlRpc_ViewersCount}}}" is available.
+	```
+	[
+		"{
+			"responseid": "xyz" //< Facultative id passed by a script event
+		}",
+		"
+		<ui_properties>
+			...
+			<!-- Number of players spectating us displayed at the bottom right of the screen -->
+			<{{{UI_Common::C_ModuleXmlRpc_ViewersCount}}} visible="true" pos="157. -40. 5." />
+		</ui_properties>
+		",
+		"{
+			...
+			"{{{UI_Common::C_ModuleXmlRpc_ViewersCount}}}": { //< Number of players spectating us displayed at the bottom right of the screen
+				"visible": true,
+				"pos": { "x": 157.0, "y": -40.0, "z": 5.0 }
+			}
+		}"
+	]
+	```
+	""");
+	XmlRpc::RegisterCallback(C_Callback_Property, """
+* Name: {{{C_Callback_Property}}}
+* Type: CallbackArray
+* Description: Value of one property of a UI module.
+* Data:
+	- Version >=2.3.0: 
+	```
+	[
+		"{
+			"responseid": "xyz", //< Facultative id passed by a script event
+			"module": "{{{UI_Common::C_ModuleXmlRpc_MapInfo}}}", //< The module
+			"property": "visible", //< The name of the property
+			"value": true //< The value of the property. Its type can change depending on the property.
 		}"
 	]
 	```
@@ -962,6 +1629,18 @@ Void Load() {
 * Description: Request the current ui properties. This method will trigger the "{{{C_Callback_Properties}}}" callback.
 * Data:
 	- Version >=2.0.0:
+	```
+	[
+		"responseid" //< Facultative id that will be passed to the "{{{C_Callback_Properties}}}" callback.
+	]
+	```
+	""");
+	XmlRpc::RegisterMethod(C_Method_GetDefaultProperties, """
+* Name: {{{C_Method_GetDefaultProperties}}}
+* Type: TriggerModeScriptEventArray
+* Description: Request the default ui properties. This method will trigger the "{{{C_Callback_Properties}}}" callback.
+* Data:
+	- Version >=2.3.0:
 	```
 	[
 		"responseid" //< Facultative id that will be passed to the "{{{C_Callback_Properties}}}" callback.
@@ -983,51 +1662,133 @@ Void Load() {
 		-->
 		<ui_properties>
 			<!-- The map name and author displayed in the top right of the screen when viewing the scores table -->
-			<map_info visible="true" pos="-160. 80. 150." />
+			<{{{UI_Common::C_ModuleXmlRpc_MapInfo}}} visible="true" pos="-160. 80. 150." />
 			<!-- Information about live envent displayed in the top right of the screen -->
-			<live_info visible="true" pos="-159. 84. 5." />
+			<{{{UI_Common::C_ModuleXmlRpc_LiveInfo}}} visible="true" pos="-159. 84. 5." />
 			<!-- Information about the spectated player displayed in the bottom of the screen -->
-			<spectator_info visible="true" pos="0. -68. 5." />
+			<{{{UI_Common::C_ModuleXmlRpc_SpectatorInfo}}} visible="true" pos="0. -68. 5." />
 			<!-- Only visible in solo modes, it hides the medal/ghost selection UI -->
-			<opponents_info visible="true" />
+			<{{{UI_Common::C_ModuleXmlRpc_OpponentsInfo}}} visible="true" />
 			<!--
-				The server chat displayed on the bottom right of the screen
+				The server chat displayed on the bottom left of the screen
 				The offset values range from 0. to -3.2 for x and from 0. to 1.8 for y
 				The linecount property must be between 0 and 40
 			-->
-			<chat visible="true" offset="0. 0." linecount="7" />
+			<{{{UI_Common::C_ModuleXmlRpc_Chat}}} visible="true" offset="0. 0." linecount="7" />
 			<!-- Time of the players at the current checkpoint displayed at the bottom of the screen -->
-			<checkpoint_list visible="true" pos="48. -52. 5." />
+			<{{{UI_Common::C_ModuleXmlRpc_TimeGap}}} visible="true" pos="48. -52. 5." />
 			<!-- Small scores table displayed at the end of race of the round based modes (Rounds, Cup, ...) on the right of the screen -->
-			<round_scores visible="true" pos="-158.5 40. 150." />
+			<{{{UI_Common::C_ModuleXmlRpc_SmallScoresTable}}} visible="true" pos="-158.5 40. 150." />
 			<!-- Race time left displayed at the bottom right of the screen -->
-			<countdown visible="true" pos="153. -7. 5." />
+			<{{{UI_Common::C_ModuleXmlRpc_Countdown}}} visible="true" pos="153. -7. 5." />
 			<!-- 3, 2, 1, Go! message displayed on the middle of the screen when spawning -->
-			<go visible="true" />
+			<{{{UI_Common::C_ModuleXmlRpc_Go}}} visible="true" />
 			<!-- Current race chrono displayed at the bottom center of the screen -->
-			<chrono visible="true" pos="0. -80. -5." />
+			<{{{UI_Common::C_ModuleXmlRpc_Chrono}}} visible="true" pos="0. -80. -5." />
 			<!-- Speed and distance raced displayed in the bottom right of the screen -->
-			<speed_and_distance visible="true" pos="137. -69. 5." />
+			<{{{UI_Common::C_ModuleXmlRpc_SpeedAndDistance}}} visible="true" pos="137. -69. 5." />
 			<!-- Previous and best times displayed at the bottom right of the screen -->
-			<personal_best_and_rank visible="true" pos="157. -24. 5." />
+			<{{{UI_Common::C_ModuleXmlRpc_PrevBestTime}}} visible="true" pos="157. -24. 5." />
 			<!-- Current position in the map ranking displayed at the bottom right of the screen -->
-			<position visible="true" pos="150.5 -28. 5." />
+			<{{{UI_Common::C_ModuleXmlRpc_MapRanking}}} visible="true" pos="150.5 -28. 5." />
 			<!-- Checkpoint time information displayed in the middle of the screen when crossing a checkpoint -->
-			<checkpoint_time visible="true" pos="0. 3. -10." />
+			<{{{UI_Common::C_ModuleXmlRpc_CheckpointTime}}} visible="true" pos="0. 3. -10." />
 			<!-- The avatar of the last player speaking in the chat displayed above the chat -->
-			<chat_avatar visible="true" />
+			<{{{UI_Common::C_ModuleXmlRpc_ChatAvatar}}} visible="true" />
 			<!-- Warm-up progression displayed on the right of the screen during warm-up -->
-			<warmup visible="true" pos="153. 13. 0." />
+			<{{{UI_Common::C_ModuleXmlRpc_WarmUp}}} visible="true" pos="153. 13. 0." />
 			<!-- Ladder progression box displayed on the top of the screen at the end of the map -->
-			<endmap_ladder_recap visible="true" />
+			<{{{UI_Common::C_ModuleXmlRpc_LadderRecap}}} visible="true" />
 			<!-- Laps count displayed on the right of the screen on multilaps map -->
-			<multilap_info visible="true" pos="140. 84. 5." />
+			<{{{UI_Common::C_ModuleXmlRpc_Laps}}} visible="true" pos="140. 84. 5." />
 			<!-- Player's ranking at the latest checkpoint -->
-			<checkpoint_ranking visible="false" pos="0. 84. 5." />
+			<{{{UI_Common::C_ModuleXmlRpc_CheckpointRanking}}} visible="false" pos="0. 84. 5." />
 			<!-- Scores table displayed in the middle of the screen -->
-			<scorestable alt_visible="true" />
+			<{{{UI_Common::C_ModuleXmlRpc_ScoresTable}}} alt_visible="true" />
 		</ui_properties>
 		"
+	]
+	```
+	- Version >=2.3.0:
+	A new module "{{{UI_Common::C_ModuleXmlRpc_ViewersCount}}}" is available.
+	```
+	[
+		"
+		<!--
+		  Each node is optional and can be omitted.
+		  If it's the case then the previous value will be kept.
+		-->
+		<ui_properties>
+			...
+			<!-- Number of players spectating us displayed at the bottom right of the screen -->
+			<{{{UI_Common::C_ModuleXmlRpc_ViewersCount}}} visible="true" pos="157. -40. 5." />
+		</ui_properties>
+		"
+	]
+	```
+	""");
+	XmlRpc::RegisterMethod(C_Method_ResetProperties, """
+* Name: {{{C_Method_ResetProperties}}}
+* Type: TriggerModeScriptEventArray
+* Description: Reset the ui properties to their default value.
+* Data:
+	- Version >=2.3.0:
+	```
+	[]
+	```
+	""");
+	XmlRpc::RegisterMethod(C_Method_GetProperty, """
+* Name: {{{C_Method_GetProperty}}}
+* Type: TriggerModeScriptEventArray
+* Description: Request the value of a module property. This method will trigger the "{{{C_Callback_Property}}}" callback.
+* Data:
+	- Version >=2.3.0:
+	```
+	[
+		"{{{UI_Common::C_ModuleXmlRpc_MapInfo}}}", //< The name of the module
+		"visible", //< The name of the property
+		"responseid" //< Facultative id that will be passed to the "{{{C_Callback_Property}}}" callback.
+	]
+	```
+	""");
+	XmlRpc::RegisterMethod(C_Method_GetDefaultProperty, """
+* Name: {{{C_Method_GetDefaultProperty}}}
+* Type: TriggerModeScriptEventArray
+* Description: Request the default value of a module property. This method will trigger the "{{{C_Callback_Property}}}" callback.
+* Data:
+	- Version >=2.3.0:
+	```
+	[
+		"{{{UI_Common::C_ModuleXmlRpc_MapInfo}}}", //< The name of the module
+		"visible", //< The name of the property
+		"responseid" //< Facultative id that will be passed to the "{{{C_Callback_Property}}}" callback.
+	]
+	```
+	""");
+	XmlRpc::RegisterMethod(C_Method_SetProperty, """
+* Name: {{{C_Method_SetProperty}}}
+* Type: TriggerModeScriptEventArray
+* Description: Set the value of a module property.
+* Data:
+	- Version >=2.3.0:
+	```
+	[
+		"{{{UI_Common::C_ModuleXmlRpc_MapInfo}}}", //< The name of the module
+		"visible", //< The name of the property
+		"true" //< The value of the property
+	]
+	```
+	""");
+	XmlRpc::RegisterMethod(C_Method_ResetProperty, """
+* Name: {{{C_Method_ResetProperty}}}
+* Type: TriggerModeScriptEventArray
+* Description: Reset a module property to its default value.
+* Data:
+	- Version >=2.3.0:
+	```
+	[
+		"{{{UI_Common::C_ModuleXmlRpc_MapInfo}}}", //< The name of the module
+		"visible" //< The name of the property
 	]
 	```
 	""");

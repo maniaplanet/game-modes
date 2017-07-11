@@ -2,13 +2,14 @@
  *	Scores library
  *	Manage players and teams scores
  */
-#Const	Version			"2017-06-14"
+#Const	Version			"2017-06-28"
 #Const	ScriptName	"Libs/Nadeo/ShootMania/Scores.Script.txt"
 
 // ---------------------------------- //
 // Libraries
 // ---------------------------------- //
 #Include "TextLib" as TL
+#Include "Libs/Nadeo/Semver.Script.txt" as Semver
 #Include "Libs/Nadeo/ShootMania/SM3.Script.txt" as SM
 #Include "Libs/Nadeo/XmlRpc2.Script.txt" as XmlRpc
 
@@ -47,8 +48,10 @@
 #Const C_Section_EndMap "EndMap"
 #Const C_Section_EndMatch "EndMatch"
 ///XmlRpc
-#Const C_Callback_Scores	"Shootmania.Scores"
-#Const C_Method_GetScores	"Shootmania.GetScores"
+#Const C_Callback_Scores "Shootmania.Scores"
+#Const C_Method_GetScores "Shootmania.GetScores"
+#Const C_Method_SetPlayerPoints "Shootmania.SetPlayerPoints"
+#Const C_Method_SetTeamPoints "Shootmania.SetTeamPoints"
 /// Default scores
 #Const C_DefaultClansContribution [1 => 0, 2 => 0]
 #Const C_DefaultClansScores_RoundPoints [1 => 0, 2 => 0]
@@ -1212,6 +1215,47 @@ Void Yield() {
 					if (Event.ParamArray2.existskey(0)) ResponseId = Event.ParamArray2[0];
 					XmlRpc_SendScores(C_Section_Null, ResponseId);
 				}
+				case C_Method_SetPlayerPoints: {
+					if (Semver::Compare(XmlRpc::GetApiVersion(), ">=", "2.3.0")) {
+						declare Login = "";
+						if (Event.ParamArray2.existskey(0)) Login = Event.ParamArray2[0];
+						
+						foreach (Score in Scores) {
+							if (Score.User.Login == Login) {
+								if (Event.ParamArray2.existskey(1) && Event.ParamArray2[1] != "") {
+									SetPlayerRoundPoints(Score, TL::ToInteger(Event.ParamArray2[1]));
+								}
+								if (Event.ParamArray2.existskey(2)) {
+									SetPlayerMapPoints(Score, TL::ToInteger(Event.ParamArray2[2]));
+								}
+								if (Event.ParamArray2.existskey(3)) {
+									SetPlayerMatchPoints(Score, TL::ToInteger(Event.ParamArray2[3]));
+								}
+								
+								break;
+							}
+						}
+					}
+				}
+				case C_Method_SetTeamPoints: {
+					if (Semver::Compare(XmlRpc::GetApiVersion(), ">=", "2.3.0")) {
+						declare Clan = 0;
+						if (Event.ParamArray2.existskey(0)) Clan = TL::ToInteger(Event.ParamArray2[0]);
+						
+						// We get a team id of 0 or 1, convert it to a clan id of 1 or 2
+						Clan += 1;
+						
+						if (Event.ParamArray2.existskey(1) && Event.ParamArray2[1] != "") {
+							SetClanRoundPoints(Clan, TL::ToInteger(Event.ParamArray2[1]));
+						}
+						if (Event.ParamArray2.existskey(2)) {
+							SetClanMapPoints(Clan, TL::ToInteger(Event.ParamArray2[2]));
+						}
+						if (Event.ParamArray2.existskey(3)) {
+							SetClanMatchPoints(Clan, TL::ToInteger(Event.ParamArray2[3]));
+						}
+					}
+				}
 			}
 		}
 	}
@@ -1243,6 +1287,8 @@ Void Unload() {
 	XmlRpc::UnregisterCallback(C_Callback_Scores);
 	// Unregister methods
 	XmlRpc::UnregisterMethod(C_Method_GetScores);
+	XmlRpc::UnregisterMethod(C_Method_SetPlayerPoints);
+	XmlRpc::UnregisterMethod(C_Method_SetTeamPoints);
 }
 
 // ---------------------------------- //
@@ -1324,6 +1370,36 @@ Void Load() {
 	```
 	[
 		"responseid" //< Facultative id that will be passed to the "{{{C_Callback_Scores}}}" callback.
+	]
+	```
+	""");
+XmlRpc::RegisterMethod(C_Method_SetPlayerPoints, """
+* Name: {{{C_Method_SetPlayerPoints}}}
+* Type: TriggerModeScriptEventArray
+* Description: Set the points of the player. It overrides its current points. Different game modes will use different types of points.
+* Data:
+	- Version >=2.3.0:
+	```
+	[
+		"PlayerLogin", //< Login of the player to update
+		"10", //< The round points, use an empty string to not update.
+		"96", //< The map points, use an empty string to not update.
+		"2" //< The match points, use an empty string to not update.
+	]
+	```
+	""");
+XmlRpc::RegisterMethod(C_Method_SetTeamPoints, """
+* Name: {{{C_Method_SetTeamPoints}}}
+* Type: TriggerModeScriptEventArray
+* Description: Set the points of a team. It overrides their current points. Different game modes will use different types of points.
+* Data:
+	- Version >=2.3.0:
+	```
+	[
+		"0", //< Id of the team. Can be 0 or 1.
+		"5", //< The round points, use an empty string to not update.
+		"70", //< The map points, use an empty string to not update.
+		"2" //< The match points, use an empty string to not update.
 	]
 	```
 	""");

@@ -1,22 +1,59 @@
 /**
  *	UI Lib
  */
-#Const	Version		"2017-04-18"
+#Const	Version		"2017-07-07"
 #Const	ScriptName	"Libs/Nadeo/UI.Script.txt"
 
 #Include "TextLib" as TL
 #Include "Libs/Nadeo/XmlRpc2.Script.txt" as XmlRpc
+#Include "Libs/Nadeo/Semver.Script.txt" as Semver
 
 // ---------------------------------- //
 // Constants
 // ---------------------------------- //
 ///XmlRpc
-#Const C_Callback_Properties	"Shootmania.UI.Properties"
-#Const C_Method_GetProperties	"Shootmania.UI.GetProperties"
-#Const C_Method_SetProperties	"Shootmania.UI.SetProperties"
+#Const C_Callback_Properties "Shootmania.UI.Properties"
+#Const C_Method_GetProperties "Shootmania.UI.GetProperties"
+#Const C_Method_GetDefaultProperties "Shootmania.UI.GetDefaultProperties"
+#Const C_Method_SetProperties "Shootmania.UI.SetProperties"
+#Const C_Method_ResetProperties "Shootmania.UI.ResetProperties"
+#Const C_Callback_Property "Shootmania.UI.Property"
+#Const C_Method_GetProperty "Shootmania.UI.GetProperty"
+#Const C_Method_GetDefaultProperty "Shootmania.UI.GetDefaultProperty"
+#Const C_Method_SetProperty "Shootmania.UI.SetProperty"
+#Const C_Method_ResetProperty "Shootmania.UI.ResetProperty"
 /// Formats
 #Const C_Format_Xml	0
 #Const C_Format_Json	1
+// Modules
+#Const C_Module_Notices "notices"
+#Const C_Module_MapInfo "map_info"
+#Const C_Module_Chat "chat"
+#Const C_Module_Countdown "countdown"
+#Const C_Module_Crosshair "crosshair"
+#Const C_Module_Gauges "gauges"
+#Const C_Module_Consumables "consumables"
+#Const C_Module_Go "go"
+#Const C_Module_ChatAvatar "chat_avatar"
+#Const C_Module_LadderRecap "endmap_ladder_recap"
+#Const C_Module_ScoresTable "scorestable"
+#Const C_Modules [
+	"notices",
+	"map_info",
+	"chat",
+	"countdown",
+	"crosshair",
+	"gauges",
+	"consumables",
+	"go",
+	"chat_avatar",
+	"endmap_ladder_recap",
+	"scorestable"
+]
+
+// Positions
+#Const C_Position_Chat <-1000., -1000.>
+#Const C_Position_Countdown <-1000., -1000.>
 
 // ---------------------------------- //
 // Functions
@@ -112,17 +149,17 @@ Void Private_SetVisibility(Text _Name, Text _Visible) {
 	if (_Visible == "False" || _Visible == "false" || _Visible == "0") Hide = True;
 	
 	switch (_Name) {
-		case "notices"						: UIManager.UIAll.OverlayHideNotices = Hide;
-		case "map_info" 					: UIManager.UIAll.OverlayHideMapInfo = Hide;
-		case "chat"								: UIManager.UIAll.OverlayHideChat = Hide;
-		case "countdown"					: UIManager.UIAll.OverlayHideCountdown = Hide;
-		case "crosshair"					: UIManager.UIAll.OverlayHideCrosshair = Hide;
-		case "gauges"							: UIManager.UIAll.OverlayHideGauges = Hide;
-		case "consumables"				: UIManager.UIAll.OverlayHideConsumables = Hide;
-		case "go"									: UIManager.UIAll.OverlayHide321Go = Hide;
-		case "chat_avatar"				: UIManager.UIAll.OverlayChatHideAvatar = Hide;
-		case "endmap_ladder_recap": UIManager.UIAll.OverlayHideEndMapLadderRecap = Hide;
-		case "scorestable_alt"		: {
+		case C_Module_Notices			: UIManager.UIAll.OverlayHideNotices = Hide;
+		case C_Module_MapInfo 			: UIManager.UIAll.OverlayHideMapInfo = Hide;
+		case C_Module_Chat					: UIManager.UIAll.OverlayHideChat = Hide;
+		case C_Module_Countdown		: UIManager.UIAll.OverlayHideCountdown = Hide;
+		case C_Module_Crosshair		: UIManager.UIAll.OverlayHideCrosshair = Hide;
+		case C_Module_Gauges				: UIManager.UIAll.OverlayHideGauges = Hide;
+		case C_Module_Consumables	: UIManager.UIAll.OverlayHideConsumables = Hide;
+		case C_Module_Go						: UIManager.UIAll.OverlayHide321Go = Hide;
+		case C_Module_ChatAvatar		: UIManager.UIAll.OverlayChatHideAvatar = Hide;
+		case C_Module_LadderRecap	: UIManager.UIAll.OverlayHideEndMapLadderRecap = Hide;
+		case C_Module_ScoresTable	: {
 			UIManager.UIAll.AltMenuNoDefaultScores = Hide;
 			UIManager.UIAll.AltMenuNoCustomScores = Hide;
 		}
@@ -145,9 +182,256 @@ Void Private_SetPosition(Text _Name, Text _Position) {
 	if (PositionSplit.existskey(2)) Position.Z = TL::ToReal(PositionSplit[2]);
 	
 	switch (_Name) {
-		case "chat"			: UIManager.UIAll.OverlayChatOffset = <Position.X, Position.Y>;
-		case "countdown": UIManager.UIAll.CountdownCoord = <Position.X, Position.Y>;
+		case C_Module_Chat			: UIManager.UIAll.OverlayChatOffset = <Position.X, Position.Y>;
+		case C_Module_Countdown: UIManager.UIAll.CountdownCoord = <Position.X, Position.Y>;
 	}
+}
+
+// ---------------------------------- //
+/** Get the current UI properties
+ *	in the specified format
+ *
+ *	@param	_Format										The format of the properties
+ *
+ *	@return		The UI properties
+ */
+Text Private_GetProperties(Integer _Format) {
+	if (_Format == C_Format_Json) {
+		return """{
+	"{{{C_Module_Notices}}}": {
+		"visible": {{{XmlRpc::JsonGetBoolean(!UIManager.UIAll.OverlayHideNotices)}}}
+	},
+	"{{{C_Module_MapInfo}}}": {
+		"visible": {{{XmlRpc::JsonGetBoolean(!UIManager.UIAll.OverlayHideMapInfo)}}}
+	},
+	"{{{C_Module_Chat}}}": {
+		"visible": {{{XmlRpc::JsonGetBoolean(!UIManager.UIAll.OverlayHideChat)}}},
+		"offset": {{{XmlRpc::JsonGetVec2(UIManager.UIAll.OverlayChatOffset)}}},
+		"linecount": {{{XmlRpc::JsonGetInteger(GetChatLineCount())}}}
+	},
+	"{{{C_Module_Countdown}}}": {
+		"visible": {{{XmlRpc::JsonGetBoolean(!UIManager.UIAll.OverlayHideCountdown)}}},
+		"pos": {{{XmlRpc::JsonGetVec2(UIManager.UIAll.CountdownCoord)}}}
+	},
+	"{{{C_Module_Crosshair}}}": {
+		"visible": {{{XmlRpc::JsonGetBoolean(!UIManager.UIAll.OverlayHideCrosshair)}}}
+	},
+	"{{{C_Module_Gauges}}}": {
+		"visible": {{{XmlRpc::JsonGetBoolean(!UIManager.UIAll.OverlayHideGauges)}}}
+	},
+	"{{{C_Module_Consumables}}}": {
+		"visible": {{{XmlRpc::JsonGetBoolean(!UIManager.UIAll.OverlayHideConsumables)}}}
+	},
+	"{{{C_Module_Go}}}": {
+		"visible": {{{XmlRpc::JsonGetBoolean(!UIManager.UIAll.OverlayHide321Go)}}}
+	},
+	"{{{C_Module_ChatAvatar}}}": {
+		"visible": {{{XmlRpc::JsonGetBoolean(!UIManager.UIAll.OverlayChatHideAvatar)}}}
+	},
+	"{{{C_Module_LadderRecap}}}": {
+		"visible": {{{XmlRpc::JsonGetBoolean(!UIManager.UIAll.OverlayHideEndMapLadderRecap)}}}
+	},
+	"{{{C_Module_ScoresTable}}}": {
+		"alt_visible": {{{XmlRpc::JsonGetBoolean(!UIManager.UIAll.AltMenuNoDefaultScores)}}}
+	}
+}""";
+	}
+	
+	return """
+<ui_properties>
+	<{{{C_Module_Notices}}} visible="{{{Private_BooleanToText(!UIManager.UIAll.OverlayHideNotices)}}}" />
+	<{{{C_Module_MapInfo}}} visible="{{{Private_BooleanToText(!UIManager.UIAll.OverlayHideMapInfo)}}}" />
+	<{{{C_Module_Chat}}} visible="{{{Private_BooleanToText(!UIManager.UIAll.OverlayHideChat)}}}" offset="{{{Private_Vec2ToText(UIManager.UIAll.OverlayChatOffset)}}}" linecount="{{{GetChatLineCount()}}}" />
+	<{{{C_Module_Countdown}}} visible="{{{Private_BooleanToText(!UIManager.UIAll.OverlayHideCountdown)}}}" pos="{{{Private_Vec2ToText(UIManager.UIAll.CountdownCoord)}}}" />
+	<{{{C_Module_Crosshair}}} visible="{{{Private_BooleanToText(!UIManager.UIAll.OverlayHideCrosshair)}}}" />
+	<{{{C_Module_Gauges}}} visible="{{{Private_BooleanToText(!UIManager.UIAll.OverlayHideGauges)}}}" />
+	<{{{C_Module_Consumables}}} visible="{{{Private_BooleanToText(!UIManager.UIAll.OverlayHideConsumables)}}}" />
+	<{{{C_Module_Go}}} visible="{{{Private_BooleanToText(!UIManager.UIAll.OverlayHide321Go)}}}" />
+	<{{{C_Module_ChatAvatar}}} visible="{{{Private_BooleanToText(!UIManager.UIAll.OverlayChatHideAvatar)}}}" />
+	<{{{C_Module_LadderRecap}}} visible="{{{Private_BooleanToText(!UIManager.UIAll.OverlayHideEndMapLadderRecap)}}}" />
+	<{{{C_Module_ScoresTable}}} alt_visible="{{{Private_BooleanToText(!UIManager.UIAll.AltMenuNoDefaultScores)}}}" />
+</ui_properties>""";
+}
+
+// ---------------------------------- //
+/** Get the current UI properties xml
+ *
+ *	@return		The UI properties xml
+ */
+Text Private_GetProperties() {
+	return Private_GetProperties(C_Format_Xml);
+}
+
+// ---------------------------------- //
+/** Get the default UI properties
+ *	in the specified format
+ *
+ *	@param	_Format										The format of the properties
+ *
+ *	@return		The UI properties
+ */
+Text Private_GetDefaultProperties(Integer _Format) {
+	if (_Format == C_Format_Json) {
+		return """{
+	"{{{C_Module_Notices}}}": {
+		"visible": {{{XmlRpc::JsonGetBoolean(True)}}}
+	},
+	"{{{C_Module_MapInfo}}}": {
+		"visible": {{{XmlRpc::JsonGetBoolean(True)}}}
+	},
+	"{{{C_Module_Chat}}}": {
+		"visible": {{{XmlRpc::JsonGetBoolean(True)}}},
+		"offset": {{{XmlRpc::JsonGetVec2(C_Position_Chat)}}},
+		"linecount": {{{XmlRpc::JsonGetInteger(0)}}}
+	},
+	"{{{C_Module_Countdown}}}": {
+		"visible": {{{XmlRpc::JsonGetBoolean(True)}}},
+		"pos": {{{XmlRpc::JsonGetVec2(C_Position_Countdown)}}}
+	},
+	"{{{C_Module_Crosshair}}}": {
+		"visible": {{{XmlRpc::JsonGetBoolean(True)}}}
+	},
+	"{{{C_Module_Gauges}}}": {
+		"visible": {{{XmlRpc::JsonGetBoolean(True)}}}
+	},
+	"{{{C_Module_Consumables}}}": {
+		"visible": {{{XmlRpc::JsonGetBoolean(True)}}}
+	},
+	"{{{C_Module_Go}}}": {
+		"visible": {{{XmlRpc::JsonGetBoolean(True)}}}
+	},
+	"{{{C_Module_ChatAvatar}}}": {
+		"visible": {{{XmlRpc::JsonGetBoolean(True)}}}
+	},
+	"{{{C_Module_LadderRecap}}}": {
+		"visible": {{{XmlRpc::JsonGetBoolean(True)}}}
+	},
+	"{{{C_Module_ScoresTable}}}": {
+		"alt_visible": {{{XmlRpc::JsonGetBoolean(True)}}}
+	}
+}""";
+	}
+	
+	return """
+<ui_properties>
+	<{{{C_Module_Notices}}} visible="{{{Private_BooleanToText(True)}}}" />
+	<{{{C_Module_MapInfo}}} visible="{{{Private_BooleanToText(True)}}}" />
+	<{{{C_Module_Chat}}} visible="{{{Private_BooleanToText(True)}}}" offset="{{{Private_Vec2ToText(C_Position_Chat)}}}" linecount="{{{GetChatLineCount()}}}" />
+	<{{{C_Module_Countdown}}} visible="{{{Private_BooleanToText(True)}}}" pos="{{{Private_Vec2ToText(C_Position_Countdown)}}}" />
+	<{{{C_Module_Crosshair}}} visible="{{{Private_BooleanToText(True)}}}" />
+	<{{{C_Module_Gauges}}} visible="{{{Private_BooleanToText(True)}}}" />
+	<{{{C_Module_Consumables}}} visible="{{{Private_BooleanToText(True)}}}" />
+	<{{{C_Module_Go}}} visible="{{{Private_BooleanToText(True)}}}" />
+	<{{{C_Module_ChatAvatar}}} visible="{{{Private_BooleanToText(True)}}}" />
+	<{{{C_Module_LadderRecap}}} visible="{{{Private_BooleanToText(True)}}}" />
+	<{{{C_Module_ScoresTable}}} alt_visible="{{{Private_BooleanToText(True)}}}" />
+</ui_properties>""";
+}
+
+// ---------------------------------- //
+/** Set the value of one of the 
+ *	UI module property
+ *
+ *	@param	_Name											The name of the module
+ *	@param	_Property									The property to update
+ *	@param	_Value										The value of the property
+ */
+Void Private_SetProperty(Text _Name, Text _Property, Text _Value) {
+	if (_Property == "visible") Private_SetVisibility(_Name, _Value);
+	else if (_Property == "pos") Private_SetPosition(_Name, _Value);
+	if (_Name == C_Module_Chat) {
+		if (_Property == "linecount") SetChatLineCount(TL::ToInteger(_Value));
+		else if (_Property == "offset") Private_SetPosition(_Name, _Value);
+	} else if (_Name == C_Module_ScoresTable) {
+		if (_Property == "alt_visible") Private_SetVisibility(_Name, _Value);
+	}
+	
+	declare LibUI_PropertiesBackUp for This = "";
+	LibUI_PropertiesBackUp = Private_GetProperties(C_Format_Xml);
+}
+
+// ---------------------------------- //
+/** Reset one property of an UI module
+ *
+ *	@param	_Name											The name of the module
+ *	@param	_Property									The property to reset
+ *	@param	_UpdateSave								Update the properties save
+ */
+Void Private_ResetProperty(Text _Name, Text _Property, Boolean _UpdateSave) {
+	switch (_Name) {
+		case C_Module_Notices: {
+			if (_Property == "visible") UIManager.UIAll.OverlayHideNotices = False;
+		}
+		case C_Module_MapInfo: {
+			if (_Property == "visible") UIManager.UIAll.OverlayHideMapInfo = False;
+		}
+		case C_Module_Chat: {
+			if (_Property == "visible") UIManager.UIAll.OverlayHideChat = False;
+			else if (_Property == "offset") UIManager.UIAll.OverlayChatOffset = C_Position_Chat;
+			else if (_Property == "linecount") SetChatLineCount(0);
+		}
+		case C_Module_Countdown: {
+			if (_Property == "visible") UIManager.UIAll.OverlayHideCountdown = False;
+			else if (_Property == "pos") UIManager.UIAll.CountdownCoord = C_Position_Countdown;
+		}
+		case C_Module_Crosshair: {
+			if (_Property == "visible") UIManager.UIAll.OverlayHideCrosshair = False;
+		}
+		case C_Module_Gauges: {
+			if (_Property == "visible") UIManager.UIAll.OverlayHideGauges = False;
+		}
+		case C_Module_Consumables: {
+			if (_Property == "visible") UIManager.UIAll.OverlayHideConsumables = False;
+		}
+		case C_Module_Go: {
+			if (_Property == "visible") UIManager.UIAll.OverlayHide321Go = False;
+		}
+		case C_Module_ChatAvatar: {
+			if (_Property == "visible") UIManager.UIAll.OverlayChatHideAvatar = False;
+		}
+		case C_Module_LadderRecap: {
+			if (_Property == "visible") UIManager.UIAll.OverlayHideEndMapLadderRecap = False;
+		}
+		case C_Module_ScoresTable: {
+			if (_Property == "alt_visible") {
+				UIManager.UIAll.AltMenuNoDefaultScores = False;
+				UIManager.UIAll.AltMenuNoCustomScores = False;
+			}
+		}
+	}
+	
+	if (_UpdateSave) {
+		declare LibUI_PropertiesBackUp for This = "";
+		LibUI_PropertiesBackUp = Private_GetProperties(C_Format_Xml);
+	}
+}
+
+// ---------------------------------- //
+/** Reset one property of an UI module
+ *
+ *	@param	_Name											The name of the module
+ *	@param	_Property									The property to reset
+ */
+Void Private_ResetProperty(Text _Name, Text _Property) {
+	Private_ResetProperty(_Name, _Property, True);
+}
+
+// ---------------------------------- //
+/// Reset the value of all UI module properties
+Void Private_ResetProperties() {
+	foreach (Name in C_Modules) {
+		Private_ResetProperty(Name, "pos", False);
+		Private_ResetProperty(Name, "visible", False);
+		if (Name == C_Module_Chat) {
+			Private_ResetProperty(Name, "linecount", False);
+			Private_ResetProperty(Name, "offset", False);
+		} else if (Name == C_Module_ScoresTable) {
+			Private_ResetProperty(Name, "alt_visible", False);
+		}
+	}
+	
+	declare LibUI_PropertiesBackUp for This = "";
+	LibUI_PropertiesBackUp = Private_GetProperties(C_Format_Xml);
 }
 
 // ---------------------------------- //
@@ -166,12 +450,12 @@ Void Private_SetProperties(Text _Xml) {
 	foreach (Node in XmlDoc.Root.Children) {
 		Private_SetVisibility(Node.Name, Node.GetAttributeText("visible", ""));
 		Private_SetPosition(Node.Name, Node.GetAttributeText("pos", ""));
-		if (Node.Name == "chat") {
+		if (Node.Name == C_Module_Chat) {
 			SetChatLineCount(Node.GetAttributeInteger("linecount", -1));
 			Private_SetPosition(Node.Name, Node.GetAttributeText("offset", ""));
 		}
-		if (Node.Name == "scorestable") {
-			Private_SetVisibility("scorestable_alt", Node.GetAttributeText("alt_visible", ""));
+		if (Node.Name == C_Module_ScoresTable) {
+			Private_SetVisibility(C_Module_ScoresTable, Node.GetAttributeText("alt_visible", ""));
 		}
 	}
 	
@@ -182,78 +466,107 @@ Void Private_SetProperties(Text _Xml) {
 }
 
 // ---------------------------------- //
-/** Get the current UI properties
- *	in the specified format
+/** Get the value of one of the 
+ *	UI module property
  *
- *	@param	_Format										The format of the properties
- *
- *	@return		The UI properties
+ *	@param	_Name											The name of the module
+ *	@param	_Property									The property to update
  */
-Text Private_GetProperties(Integer _Format) {
-	if (_Format == C_Format_Json) {
-		return """{
-	"notices": {
-		"visible": {{{XmlRpc::JsonGetBoolean(!UIManager.UIAll.OverlayHideNotices)}}}
-	},
-	"map_info": {
-		"visible": {{{XmlRpc::JsonGetBoolean(!UIManager.UIAll.OverlayHideMapInfo)}}}
-	},
-	"chat": {
-		"visible": {{{XmlRpc::JsonGetBoolean(!UIManager.UIAll.OverlayHideChat)}}},
-		"offset": {{{XmlRpc::JsonGetVec2(UIManager.UIAll.OverlayChatOffset)}}},
-		"linecount": {{{XmlRpc::JsonGetInteger(GetChatLineCount())}}}
-	},
-	"countdown": {
-		"visible": {{{XmlRpc::JsonGetBoolean(!UIManager.UIAll.OverlayHideCountdown)}}},
-		"pos": {{{XmlRpc::JsonGetVec2(UIManager.UIAll.CountdownCoord)}}}
-	},
-	"crosshair": {
-		"visible": {{{XmlRpc::JsonGetBoolean(!UIManager.UIAll.OverlayHideCrosshair)}}}
-	},
-	"gauges": {
-		"visible": {{{XmlRpc::JsonGetBoolean(!UIManager.UIAll.OverlayHideGauges)}}}
-	},
-	"consumables": {
-		"visible": {{{XmlRpc::JsonGetBoolean(!UIManager.UIAll.OverlayHideConsumables)}}}
-	},
-	"go": {
-		"visible": {{{XmlRpc::JsonGetBoolean(!UIManager.UIAll.OverlayHide321Go)}}}
-	},
-	"chat_avatar": {
-		"visible": {{{XmlRpc::JsonGetBoolean(!UIManager.UIAll.OverlayChatHideAvatar)}}}
-	},
-	"endmap_ladder_recap": {
-		"visible": {{{XmlRpc::JsonGetBoolean(!UIManager.UIAll.OverlayHideEndMapLadderRecap)}}}
-	},
-	"scorestable": {
-		"alt_visible": {{{XmlRpc::JsonGetBoolean(!UIManager.UIAll.AltMenuNoDefaultScores)}}}
-	}
-}""";
+Text Private_GetProperty(Text _Name, Text _Property) {
+	declare Value = XmlRpc::JsonGetText("");
+	
+	switch (_Name) {
+		case C_Module_Notices: {
+			if (_Property == "visible") Value = XmlRpc::JsonGetBoolean(!UIManager.UIAll.OverlayHideNotices);
+		}
+		case C_Module_MapInfo: {
+			if (_Property == "visible") Value = XmlRpc::JsonGetBoolean(!UIManager.UIAll.OverlayHideMapInfo);
+		}
+		case C_Module_Chat: {
+			if (_Property == "visible") Value = XmlRpc::JsonGetBoolean(!UIManager.UIAll.OverlayHideChat);
+			else if (_Property == "offset") Value = XmlRpc::JsonGetVec2(UIManager.UIAll.OverlayChatOffset);
+			else if (_Property == "linecount") Value = XmlRpc::JsonGetInteger(GetChatLineCount());
+		}
+		case C_Module_Countdown: {
+			if (_Property == "visible") Value = XmlRpc::JsonGetBoolean(!UIManager.UIAll.OverlayHideCountdown);
+			else if (_Property == "pos") Value = XmlRpc::JsonGetVec2(UIManager.UIAll.CountdownCoord);
+		}
+		case C_Module_Crosshair: {
+			if (_Property == "visible") Value = XmlRpc::JsonGetBoolean(!UIManager.UIAll.OverlayHideCrosshair);
+		}
+		case C_Module_Gauges: {
+			if (_Property == "visible") Value = XmlRpc::JsonGetBoolean(!UIManager.UIAll.OverlayHideGauges);
+		}
+		case C_Module_Consumables: {
+			if (_Property == "visible") Value = XmlRpc::JsonGetBoolean(!UIManager.UIAll.OverlayHideConsumables);
+		}
+		case C_Module_Go: {
+			if (_Property == "visible") Value = XmlRpc::JsonGetBoolean(!UIManager.UIAll.OverlayHide321Go);
+		}
+		case C_Module_ChatAvatar: {
+			if (_Property == "visible") Value = XmlRpc::JsonGetBoolean(!UIManager.UIAll.OverlayChatHideAvatar);
+		}
+		case C_Module_LadderRecap: {
+			if (_Property == "visible") Value = XmlRpc::JsonGetBoolean(!UIManager.UIAll.OverlayHideEndMapLadderRecap);
+		}
+		case C_Module_ScoresTable: {
+			if (_Property == "alt_visible") Value = XmlRpc::JsonGetBoolean(!UIManager.UIAll.AltMenuNoDefaultScores);
+		}
 	}
 	
-	return """
-<ui_properties>
-	<notices visible="{{{Private_BooleanToText(!UIManager.UIAll.OverlayHideNotices)}}}" />
-	<map_info visible="{{{Private_BooleanToText(!UIManager.UIAll.OverlayHideMapInfo)}}}" />
-	<chat visible="{{{Private_BooleanToText(!UIManager.UIAll.OverlayHideChat)}}}" offset="{{{Private_Vec2ToText(UIManager.UIAll.OverlayChatOffset)}}}" linecount="{{{GetChatLineCount()}}}" />
-	<countdown visible="{{{Private_BooleanToText(!UIManager.UIAll.OverlayHideCountdown)}}}" pos="{{{Private_Vec2ToText(UIManager.UIAll.CountdownCoord)}}}" />
-	<crosshair visible="{{{Private_BooleanToText(!UIManager.UIAll.OverlayHideCrosshair)}}}" />
-	<gauges visible="{{{Private_BooleanToText(!UIManager.UIAll.OverlayHideGauges)}}}" />
-	<consumables visible="{{{Private_BooleanToText(!UIManager.UIAll.OverlayHideConsumables)}}}" />
-	<go visible="{{{Private_BooleanToText(!UIManager.UIAll.OverlayHide321Go)}}}" />
-	<chat_avatar visible="{{{Private_BooleanToText(!UIManager.UIAll.OverlayChatHideAvatar)}}}" />
-	<endmap_ladder_recap visible="{{{Private_BooleanToText(!UIManager.UIAll.OverlayHideEndMapLadderRecap)}}}" />
-	<scorestable alt_visible="{{{Private_BooleanToText(!UIManager.UIAll.AltMenuNoDefaultScores)}}}" />
-</ui_properties>""";
+	return Value;
 }
 
 // ---------------------------------- //
-/** Get the current UI properties xml
+/** Get the default value of one of the 
+ *	UI module property
  *
- *	@return		The UI properties xml
+ *	@param	_Name											The name of the module
+ *	@param	_Property									The property to update
  */
-Text Private_GetProperties() {
-	return Private_GetProperties(C_Format_Xml);
+Text Private_GetDefaultProperty(Text _Name, Text _Property) {
+	declare Value = XmlRpc::JsonGetText("");
+	
+	switch (_Name) {
+		case C_Module_Notices: {
+			if (_Property == "visible") Value = XmlRpc::JsonGetBoolean(True);
+		}
+		case C_Module_MapInfo: {
+			if (_Property == "visible") Value = XmlRpc::JsonGetBoolean(True);
+		}
+		case C_Module_Chat: {
+			if (_Property == "visible") Value = XmlRpc::JsonGetBoolean(True);
+			else if (_Property == "offset") Value = XmlRpc::JsonGetVec2(C_Position_Chat);
+			else if (_Property == "linecount") Value = XmlRpc::JsonGetInteger(0);
+		}
+		case C_Module_Countdown: {
+			if (_Property == "visible") Value = XmlRpc::JsonGetBoolean(True);
+			else if (_Property == "pos") Value = XmlRpc::JsonGetVec2(C_Position_Countdown);
+		}
+		case C_Module_Crosshair: {
+			if (_Property == "visible") Value = XmlRpc::JsonGetBoolean(True);
+		}
+		case C_Module_Gauges: {
+			if (_Property == "visible") Value = XmlRpc::JsonGetBoolean(True);
+		}
+		case C_Module_Consumables: {
+			if (_Property == "visible") Value = XmlRpc::JsonGetBoolean(True);
+		}
+		case C_Module_Go: {
+			if (_Property == "visible") Value = XmlRpc::JsonGetBoolean(True);
+		}
+		case C_Module_ChatAvatar: {
+			if (_Property == "visible") Value = XmlRpc::JsonGetBoolean(True);
+		}
+		case C_Module_LadderRecap: {
+			if (_Property == "visible") Value = XmlRpc::JsonGetBoolean(True);
+		}
+		case C_Module_ScoresTable: {
+			if (_Property == "alt_visible") Value = XmlRpc::JsonGetBoolean(True);
+		}
+	}
+	
+	return Value;
 }
 
 // ---------------------------------- //
@@ -272,6 +585,61 @@ Void XmlRpc_SendUIProperties(Text _ResponseId) {
 }
 
 // ---------------------------------- //
+/** Send default ui properties
+ *
+ *	@param	_ResponseId								Id to insert in the response callback
+ */
+Void XmlRpc_SendDefaultUIProperties(Text _ResponseId) {
+	declare Json = """{
+	"responseid": {{{dump(_ResponseId)}}}
+}""";
+	declare PropsXml = Private_GetDefaultProperties(C_Format_Xml);
+	declare PropsJson = Private_GetDefaultProperties(C_Format_Json);
+
+	XmlRpc::SendCallback(C_Callback_Properties, [Json, PropsXml, PropsJson]);
+}
+
+// ---------------------------------- //
+/** Send ui property
+ *
+ *	@param	_ModuleId									The UI module to check
+ *	@param	_Property									The property to get
+ *	@param	_ResponseId								Id to insert in the response callback
+ */
+Void XmlRpc_SendUIProperty(Text _ModuleId, Text _Property, Text _ResponseId) {
+	declare Value = Private_GetProperty(_ModuleId, _Property);
+	
+	declare Json = """{
+	"responseid": {{{XmlRpc::JsonGetText(_ResponseId)}}},
+	"module": {{{XmlRpc::JsonGetText(_ModuleId)}}},
+	"property": {{{XmlRpc::JsonGetText(_Property)}}},
+	"value": {{{Value}}}
+}""";
+
+	XmlRpc::SendCallback(C_Callback_Property, [Json]);
+}
+
+// ---------------------------------- //
+/** Send default ui property
+ *
+ *	@param	_ModuleId									The UI module to check
+ *	@param	_Property									The property to get
+ *	@param	_ResponseId								Id to insert in the response callback
+ */
+Void XmlRpc_SendDefaultUIProperty(Text _ModuleId, Text _Property, Text _ResponseId) {
+	declare Value = Private_GetDefaultProperty(_ModuleId, _Property);
+	
+	declare Json = """{
+	"responseid": {{{XmlRpc::JsonGetText(_ResponseId)}}},
+	"module": {{{XmlRpc::JsonGetText(_ModuleId)}}},
+	"property": {{{XmlRpc::JsonGetText(_Property)}}},
+	"value": {{{Value}}}
+}""";
+
+	XmlRpc::SendCallback(C_Callback_Property, [Json]);
+}
+
+// ---------------------------------- //
 /// Update the library
 Void Yield() {
 	foreach (Event in XmlRpc.PendingEvents) {
@@ -287,6 +655,60 @@ Void Yield() {
 					if (Event.ParamArray2.existskey(0)) ResponseId = Event.ParamArray2[0];
 					XmlRpc_SendUIProperties(ResponseId);
 				}
+				case C_Method_ResetProperties: {
+					if (Semver::Compare(XmlRpc::GetApiVersion(), ">=", "2.3.0")) {
+						Private_ResetProperties();
+					}
+				}
+				case C_Method_GetDefaultProperties: {
+					if (Semver::Compare(XmlRpc::GetApiVersion(), ">=", "2.3.0")) {
+						declare ResponseId = "";
+						if (Event.ParamArray2.existskey(0)) ResponseId = Event.ParamArray2[0];
+						XmlRpc_SendDefaultUIProperties(ResponseId);
+					}
+				}
+				case C_Method_GetProperty: {
+					if (Semver::Compare(XmlRpc::GetApiVersion(), ">=", "2.3.0")) {
+						declare Name = "";
+						declare Property = "";
+						declare ResponseId = "";
+						if (Event.ParamArray2.existskey(0)) Name = Event.ParamArray2[0];
+						if (Event.ParamArray2.existskey(1)) Property = Event.ParamArray2[1];
+						if (Event.ParamArray2.existskey(2)) ResponseId = Event.ParamArray2[2];
+						XmlRpc_SendUIProperty(Name, Property, ResponseId);
+					}
+				}
+				case C_Method_GetDefaultProperty: {
+					if (Semver::Compare(XmlRpc::GetApiVersion(), ">=", "2.3.0")) {
+						declare Name = "";
+						declare Property = "";
+						declare ResponseId = "";
+						if (Event.ParamArray2.existskey(0)) Name = Event.ParamArray2[0];
+						if (Event.ParamArray2.existskey(1)) Property = Event.ParamArray2[1];
+						if (Event.ParamArray2.existskey(2)) ResponseId = Event.ParamArray2[2];
+						XmlRpc_SendDefaultUIProperty(Name, Property, ResponseId);
+					}
+				}
+				case C_Method_SetProperty: {
+					if (Semver::Compare(XmlRpc::GetApiVersion(), ">=", "2.3.0")) {
+						declare Name = "";
+						declare Property = "";
+						declare Value = "";
+						if (Event.ParamArray2.existskey(0)) Name = Event.ParamArray2[0];
+						if (Event.ParamArray2.existskey(1)) Property = Event.ParamArray2[1];
+						if (Event.ParamArray2.existskey(2)) Value = Event.ParamArray2[2];
+						Private_SetProperty(Name, Property, Value);
+					}
+				}
+				case C_Method_ResetProperty: {
+					if (Semver::Compare(XmlRpc::GetApiVersion(), ">=", "2.3.0")) {
+						declare Name = "";
+						declare Property = "";
+						if (Event.ParamArray2.existskey(0)) Name = Event.ParamArray2[0];
+						if (Event.ParamArray2.existskey(1)) Property = Event.ParamArray2[1];
+						Private_ResetProperty(Name, Property);
+					}
+				}
 			}
 		}
 	}
@@ -296,8 +718,15 @@ Void Yield() {
 /// Unload the library
 Void Unload() {
 	XmlRpc::UnregisterCallback(C_Callback_Properties);
+	XmlRpc::UnregisterCallback(C_Callback_Property);
 	XmlRpc::UnregisterMethod(C_Method_SetProperties);
+	XmlRpc::UnregisterMethod(C_Method_ResetProperties);
 	XmlRpc::UnregisterMethod(C_Method_GetProperties);
+	XmlRpc::UnregisterMethod(C_Method_GetDefaultProperties);
+	XmlRpc::UnregisterMethod(C_Method_GetProperty);
+	XmlRpc::UnregisterMethod(C_Method_GetDefaultProperty);
+	XmlRpc::UnregisterMethod(C_Method_SetProperty);
+	XmlRpc::UnregisterMethod(C_Method_ResetProperty);
 }
 
 // ---------------------------------- //
@@ -319,75 +748,92 @@ Void Load() {
 	```
 	[
 		"{
-			"responseid": "xyz", //< Facultative id passed by a script event
+			"responseid": "xyz" //< Facultative id passed by a script event
 		}",
 		"
 		<ui_properties>
 		  <!-- Notifications displayed on the left of the screen -->
-		  <notices visible="true" />
+		  <{{{C_Module_Notices}}} visible="true" />
 		  <!-- The map name and author displayed on the top right of the screen when viewing the scores table -->
-		  <map_info visible="true" />
+		  <{{{C_Module_MapInfo}}} visible="true" />
 		  <!--
 		    The server chat displayed on the bottom right of the screen
 		    The offset values range from 0. to -3.2 for x and from 0. to 1.8 for y
 		    The linecount property must be between 0 and 40
 		  -->
-		  <chat visible="true" offset="0. 0." linecount="5" />
+		  <{{{C_Module_Chat}}} visible="true" offset="0. 0." linecount="5" />
 		  <!-- Countdown displayed on the top of the screen -->
-		  <countdown visible="true" pos="0. 85." />
+		  <{{{C_Module_Countdown}}} visible="true" pos="0. 85." />
 		  <!-- Crosshair displayed on the center of the screen -->
-		  <crosshair visible="true" />
+		  <{{{C_Module_Crosshair}}} visible="true" />
 		  <!-- Gauges displayed on the bottom of the screen -->
-		  <gauges visible="true" />
+		  <{{{C_Module_Gauges}}} visible="true" />
 		  <!-- Consumables displayed on the bottom of the screen -->
-		  <consumables visible="true" />
+		  <{{{C_Module_Consumables}}} visible="true" />
 		  <!-- 3, 2, 1, Go! message displayed on the middle of the screen when spawning -->
-		  <go visible="true" />
+		  <{{{C_Module_Go}}} visible="true" />
 		  <!-- The avatar of the last player speaking in the chat displayed above the chat -->
-		  <chat_avatar visible="true" />
+		  <{{{C_Module_ChatAvatar}}} visible="true" />
 		  <!-- Ladder progression box displayed on the top of the screen at the end of the map -->
-		  <endmap_ladder_recap visible="true" />
+		  <{{{C_Module_LadderRecap}}} visible="true" />
 		  <!-- Scores table displayed in the middle of the screen -->
-			<scorestable alt_visible="true" />
+			<{{{C_Module_ScoresTable}}} alt_visible="true" />
 		</ui_properties>
 		",
 		"{
-			"notices": { //< Notifications displayed on the left of the screen
+			"{{{C_Module_Notices}}}": { //< Notifications displayed on the left of the screen
 				"visible": true
 			},
-			"map_info": { //< The map name and author displayed on the top right of the screen when viewing the scores table
+			"{{{C_Module_MapInfo}}}": { //< The map name and author displayed on the top right of the screen when viewing the scores table
 				"visible": true
 			},
-			"chat": { //< The server chat displayed on the bottom right of the screen
+			"{{{C_Module_Chat}}}": { //< The server chat displayed on the bottom right of the screen
 				"visible": true,
 				"offset": { "x": 0.0, "y": 0.0 }, //< The offset values range from 0. to -3.2 for x and from 0. to 1.8 for y
 				"linecount": 5 //< The linecount property must be between 0 and 40
 			},
-			"countdown": { //< Countdown displayed on the top of the screen
+			"{{{C_Module_Countdown}}}": { //< Countdown displayed on the top of the screen
 				"visible": true,
 				"pos": { "x": 0.0, "y": 85.0 }
 			},
-			"crosshair": { //< Crosshair displayed on the center of the screen
+			"{{{C_Module_Crosshair}}}": { //< Crosshair displayed on the center of the screen
 				"visible": true
 			},
-			"gauges": { //< Gauges displayed on the bottom of the screen
+			"{{{C_Module_Gauges}}}": { //< Gauges displayed on the bottom of the screen
 				"visible": true
 			},
-			"consumables": { //< Consumables displayed on the bottom of the screen
+			"{{{C_Module_Consumables}}}": { //< Consumables displayed on the bottom of the screen
 				"visible": true
 			},
-			"go": { //< 3, 2, 1, Go! message displayed on the middle of the screen when spawning
+			"{{{C_Module_Go}}}": { //< 3, 2, 1, Go! message displayed on the middle of the screen when spawning
 				"visible": true
 			},
-			"chat_avatar": { //< The avatar of the last player speaking in the chat displayed above the chat
+			"{{{C_Module_ChatAvatar}}}": { //< The avatar of the last player speaking in the chat displayed above the chat
 				"visible": true
 			},
-			"endmap_ladder_recap": { //< Ladder progression box displayed on the top of the screen at the end of the map
+			"{{{C_Module_LadderRecap}}}": { //< Ladder progression box displayed on the top of the screen at the end of the map
 				"visible": true
 			},
-			"scorestable": { //< Scores table displayed in the middle of the screen
+			"{{{C_Module_ScoresTable}}}": { //< Scores table displayed in the middle of the screen
 				"alt_visible": true
 			}
+		}"
+	]
+	```
+	""");
+	XmlRpc::RegisterCallback(C_Callback_Property, """
+* Name: {{{C_Callback_Property}}}
+* Type: CallbackArray
+* Description: Value of one property of a UI module.
+* Data:
+	- Version >=2.3.0: 
+	```
+	[
+		"{
+			"responseid": "xyz", //< Facultative id passed by a script event
+			"module": "{{{C_Module_MapInfo}}}", //< The module
+			"property": "visible", //< The name of the property
+			"value": true //< The value of the property. Its type can change depending on the property.
 		}"
 	]
 	```
@@ -398,6 +844,18 @@ Void Load() {
 * Name: {{{C_Method_GetProperties}}}
 * Type: TriggerModeScriptEventArray
 * Description: Request the current ui properties. This method will trigger the "{{{C_Callback_Properties}}}" callback.
+* Data:
+	- Version >=2.0.0:
+	```
+	[
+		"responseid" //< Facultative id that will be passed to the "{{{C_Callback_Properties}}}" callback.
+	]
+	```
+	""");
+	XmlRpc::RegisterMethod(C_Method_GetDefaultProperties, """
+* Name: {{{C_Method_GetDefaultProperties}}}
+* Type: TriggerModeScriptEventArray
+* Description: Request the default ui properties. This method will trigger the "{{{C_Callback_Properties}}}" callback.
 * Data:
 	- Version >=2.0.0:
 	```
@@ -421,33 +879,98 @@ Void Load() {
 		-->
 		<ui_properties>
 		  <!-- Notifications displayed on the left of the screen -->
-		  <notices visible="true" />
+		  <{{{C_Module_Notices}}} visible="true" />
 		  <!-- The map name and author displayed on the top right of the screen when viewing the scores table -->
-		  <map_info visible="true" />
+		  <{{{C_Module_MapInfo}}} visible="true" />
 		  <!--
 		    The server chat displayed on the bottom right of the screen
 		    The offset values range from 0. to -3.2 for x and from 0. to 1.8 for y
 		    The linecount property must be between 0 and 40
 		  -->
-		  <chat visible="true" offset="0. 0." linecount="5" />
+		  <{{{C_Module_Chat}}} visible="true" offset="0. 0." linecount="5" />
 		  <!-- Countdown displayed on the top of the screen -->
-		  <countdown visible="true" pos="0. 85." />
+		  <{{{C_Module_Countdown}}} visible="true" pos="0. 85." />
 		  <!-- Crosshair displayed on the center of the screen -->
-		  <crosshair visible="true" />
+		  <{{{C_Module_Crosshair}}} visible="true" />
 		  <!-- Gauges displayed on the bottom of the screen -->
-		  <gauges visible="true" />
+		  <{{{C_Module_Gauges}}} visible="true" />
 		  <!-- Consumables displayed on the bottom of the screen -->
-		  <consumables visible="true" />
+		  <{{{C_Module_Consumables}}} visible="true" />
 		  <!-- 3, 2, 1, Go! message displayed on the middle of the screen when spawning -->
-		  <go visible="true" />
+		  <{{{C_Module_Go}}} visible="true" />
 		  <!-- The avatar of the last player speaking in the chat displayed above the chat -->
-		  <chat_avatar visible="true" />
+		  <{{{C_Module_ChatAvatar}}} visible="true" />
 		  <!-- Ladder progression box displayed on the top of the screen at the end of the map -->
-		  <endmap_ladder_recap visible="true" />
+		  <{{{C_Module_LadderRecap}}} visible="true" />
 		  <!-- Scores table displayed in the middle of the screen -->
-			<scorestable alt_visible="true" />
+			<{{{C_Module_ScoresTable}}} alt_visible="true" />
 		</ui_properties>
 		"
+	]
+	```
+	""");
+	XmlRpc::RegisterMethod(C_Method_ResetProperties, """
+* Name: {{{C_Method_ResetProperties}}}
+* Type: TriggerModeScriptEventArray
+* Description: Reset the ui properties to their default value.
+* Data:
+	- Version >=2.3.0:
+	```
+	[]
+	```
+	""");
+	XmlRpc::RegisterMethod(C_Method_GetProperty, """
+* Name: {{{C_Method_GetProperty}}}
+* Type: TriggerModeScriptEventArray
+* Description: Request the value of a module property. This method will trigger the "{{{C_Callback_Property}}}" callback.
+* Data:
+	- Version >=2.3.0:
+	```
+	[
+		"{{{C_Module_MapInfo}}}", //< The name of the module
+		"visible", //< The name of the property
+		"responseid" //< Facultative id that will be passed to the "{{{C_Callback_Property}}}" callback.
+	]
+	```
+	""");
+	XmlRpc::RegisterMethod(C_Method_GetDefaultProperty, """
+* Name: {{{C_Method_GetDefaultProperty}}}
+* Type: TriggerModeScriptEventArray
+* Description: Request the default value of a module property. This method will trigger the "{{{C_Callback_Property}}}" callback.
+* Data:
+	- Version >=2.3.0:
+	```
+	[
+		"{{{C_Module_MapInfo}}}", //< The name of the module
+		"visible", //< The name of the property
+		"responseid" //< Facultative id that will be passed to the "{{{C_Callback_Property}}}" callback.
+	]
+	```
+	""");
+	XmlRpc::RegisterMethod(C_Method_SetProperty, """
+* Name: {{{C_Method_SetProperty}}}
+* Type: TriggerModeScriptEventArray
+* Description: Set the value of a module property.
+* Data:
+	- Version >=2.3.0:
+	```
+	[
+		"{{{C_Module_MapInfo}}}", //< The name of the module
+		"visible", //< The name of the property
+		"true" //< The value of the property
+	]
+	```
+	""");
+	XmlRpc::RegisterMethod(C_Method_ResetProperty, """
+* Name: {{{C_Method_ResetProperty}}}
+* Type: TriggerModeScriptEventArray
+* Description: Reset a module property to its default value.
+* Data:
+	- Version >=2.3.0:
+	```
+	[
+		"{{{C_Module_MapInfo}}}", //< The name of the module
+		"visible" //< The name of the property
 	]
 	```
 	""");

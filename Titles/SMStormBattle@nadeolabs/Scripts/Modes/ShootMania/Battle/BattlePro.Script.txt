@@ -4,7 +4,7 @@
 #Extends "Modes/ShootMania/Battle/BattleBase.Script.txt"
 
 #Const CompatibleMapTypes	"BattleArena,LobbyArena"
-#Const Version							"2017-06-02"
+#Const Version							"2017-07-10"
 #Const ScriptName						"Modes/ShootMania/Battle/BattlePro.Script.txt"
 
 // ---------------------------------- //
@@ -154,6 +154,7 @@ WarmUp2::Unload();
 MB_Settings_UseDefaultHud = False;
 MB_Settings_UseDefaultClansScoresUI = False;
 MB_Settings_UseDefaultTimer = False;
+MB_Settings_UseDefaultUIManagement = False;
 ***
 
 ***Match_Rules***
@@ -252,6 +253,7 @@ Scores::SetClanMapPoints(2, 0);
 ***Match_InitMap***
 ***
 declare Integer CaptureMaxValue;
+declare Integer MapWinner;
 ***
 
 ***Match_StartMap***
@@ -462,6 +464,7 @@ CurrentRoundIndex += 1;
 
 UIManager.UIAll.UISequence = CUIConfig::EUISequence::Playing;
 UIManager.UIAll.ScoreTableVisibility = CUIConfig::EVisibility::Normal;
+MB_EnablePlayMode(True);
 
 SM::SetupDefaultVisibility();
 
@@ -1361,7 +1364,7 @@ foreach(Player in Players) {
 UpdateMapRunnersRanking();
 UpdatePlayersScores(CaptureMaxValue);
 
-StartTime = -1;
+//StartTime = -1;
 EndTime = -1;
 UIManager.UIAll.OverlayHideCountdown = False;
 for (Clan, 1, 2) {
@@ -1370,7 +1373,16 @@ for (Clan, 1, 2) {
 	}
 }
 
-MB_Sleep(1700);
+// Win time!
+declare WinTime = Now + 1700;
+while (Now < WinTime) {
+	MB_Yield();
+	foreach (Event in PendingEvents) {
+		Events::Invalid(Event);
+	}
+}
+MB_EnablePlayMode(False);
+StartTime = -1;
 
 UIManager.UIAll.BigMessageSound = CUIConfig::EUISound::EndRound;
 if (TouchdownUserId != NullId && Users.existskey(TouchdownUserId)) {
@@ -1467,7 +1479,7 @@ if(C_BattleWaves) {
 
 ***Match_EndMap***
 ***
-declare MapWinner = Scores::GetClanWinner();
+MapWinner = Scores::GetClanWinner();
 if (MapWinner > 0) {
 	Scores::AddClanMatchPoints(MapWinner, 1);
 	if (Scores::GetClanMatchPoints(1) >= S_MapsToWin || Scores::GetClanMatchPoints(2) >= S_MapsToWin) {
@@ -1491,6 +1503,28 @@ Interface::DestroySlider();
 
 ***Match_BeforeCloseLadder***
 ***
+// Sort players by team for the ladder ranking
+foreach (Score in Scores) {
+	declare Battle_PrevMapPoints for Score = 0;
+	Battle_PrevMapPoints = Scores::GetPlayerMapPoints(Score);
+	
+	if (MapWinner == 1 || MapWinner == 2) {
+		if (Score.TeamNum == MapWinner) {
+			Scores::SetPlayerMapPoints(Score, 2);
+		} else if (Score.TeamNum == 3 - MapWinner) {
+			Scores::SetPlayerMapPoints(Score, 1);
+		} else {
+			Scores::SetPlayerMapPoints(Score, 0);
+		}
+	} else {
+		if (Score.TeamNum == 1 || Score.TeamNum == 2) {
+			Scores::SetPlayerMapPoints(Score, 1);
+		} else {
+			Scores::SetPlayerMapPoints(Score, 0);
+		}
+	}
+}
+
 if (ChannelProgression::IsEnabled()) {
 	declare RoundCount = MB_GetRoundCount();
 	declare ReferencePoints = C_ReferenceMinPoints * RoundCount;
@@ -1508,6 +1542,14 @@ if (ChannelProgression::IsEnabled()) {
 		
 		ChannelProgression::SetPlayerPerformance(Score, Performance);
 	}
+}
+***
+
+***Match_AfterCloseLadder***
+***
+foreach (Score in Scores) {
+	declare Battle_PrevMapPoints for Score = 0;
+	Scores::SetPlayerMapPoints(Score, Battle_PrevMapPoints);
 }
 ***
 

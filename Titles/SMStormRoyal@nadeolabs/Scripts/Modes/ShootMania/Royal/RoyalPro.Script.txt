@@ -4,7 +4,7 @@
 #Extends "Modes/ShootMania/Royal/RoyalBase.Script.txt"
 
 #Const CompatibleMapTypes	"RoyalArena,LobbyArena"
-#Const Version							"2017-06-02"
+#Const Version							"2017-07-10"
 #Const ScriptName						"Modes/ShootMania/Royal/RoyalPro.Script.txt"
 
 // ---------------------------------- //
@@ -147,6 +147,7 @@ Log::RegisterScript(MultiClans::GetScriptName(), MultiClans::GetScriptVersion())
 MB_Settings_UseDefaultHud = False;
 MB_Settings_UseDefaultTimer = False;
 MB_Settings_UseDefaultSounds = False;
+MB_Settings_UseDefaultUIManagement = False;
 ***
 
 ***Match_Rules***
@@ -372,6 +373,7 @@ declare FirstElimId = NullId; ///< Id of the first eliminated user
 declare UpdateMarkers = False; ///< The Markers need an update
 declare OffZoneStartingRadiusSpeed = 1.; ///< Starting speed of the OffZone
 declare EarlyRespawnPool = CSmMapLandmark[]; ///< Pool of available spawns for early respawn
+declare SpawnOrderMax = -1; ///< Highest order of the spawns used during the initial spawning phase
 declare PoleCapturedByAPlayer = True;
 declare UseMultiClans = False;
 
@@ -478,6 +480,7 @@ StartTime = Now;
 EndTime = -1;
 UIManager.UIAll.CountdownEndTime = -1;
 
+MB_EnablePlayMode(True);
 UIManager.UIAll.UISequence = CUIConfig::EUISequence::Playing;
 UIManager.UIAll.BigMessageSound = CUIConfig::EUISound::Silence;
 UIManager.UIAll.SendNotice(
@@ -670,7 +673,7 @@ switch (GameplaySequence) {
 									//Top::IncrementPlayerPoints("Survival", Player, 1);
 								} else PlayersAlive[Player.Id] = NullId;
 								PlayerSpawned = True;
-								//break;
+								SpawnOrderMax = I;
 							}
 						}
 						if (PlayerSpawned) break;
@@ -794,29 +797,56 @@ if (S_UseEarlyRespawn && EarlyRespawnAllowed) {
 		declare CanEarlyRespawn for Player = False;
 		if (CanEarlyRespawn && Player.SpawnStatus == CSmPlayer::ESpawnStatus::NotSpawned && MM_PlayerIsAllowedToPlay(Player)) {
 			declare RandomPlayerSpawn <=> CSmMapLandmark;
+			declare OldestPlayerSpawn <=> CSmMapLandmark;
+			declare OldestSpawnTime = -1;
 			if (EarlyRespawnPool.count <= 0) {
 				EarlyRespawnPool.clear();
+				// Find spawns that have not been used for at least 10s
 				foreach (MapLandmark in MapLandmarks_PlayerSpawn) {
-					EarlyRespawnPool.add(MapLandmark);
+					declare Royal_LastSpawnTime for MapLandmark = -1;
+					if (Royal_LastSpawnTime < 0 || Now - Royal_LastSpawnTime > 10000) {
+						if (SpawnOrderMax <= 0 || MapLandmark.Order <= SpawnOrderMax) { //< Do not spawn in disabled spawners
+							EarlyRespawnPool.add(MapLandmark);
+						}
+					}
+					if (OldestSpawnTime < 0 || Royal_LastSpawnTime < OldestSpawnTime) {
+						if (SpawnOrderMax <= 0 || MapLandmark.Order <= SpawnOrderMax) { //< Do not spawn in disabled spawners
+							OldestSpawnTime = Royal_LastSpawnTime;
+							OldestPlayerSpawn <=> MapLandmark;
+						}
+					}
+					Log::Log("""> Spawn {{{MapLandmark.Id}}} > SpawnOrderMax : {{{SpawnOrderMax}}} | MapLandmark.Order : {{{MapLandmark.Order}}} | Royal_LastSpawnTime : {{{Royal_LastSpawnTime}}}""");
+				}
+				// If all spawns were used recently, use the oldest one
+				if (EarlyRespawnPool.count <= 0) {
+					EarlyRespawnPool.add(OldestPlayerSpawn);
 				}
 			}
-			RandomPlayerSpawn <=> EarlyRespawnPool[ML::Rand(0, EarlyRespawnPool.count - 1)];
-			declare Removed = EarlyRespawnPool.remove(RandomPlayerSpawn);
+			
+			Log::Log("""> EarlyRespawnPool : {{{EarlyRespawnPool}}}""");
+			
+			if (EarlyRespawnPool.count > 0) {
+				RandomPlayerSpawn <=> EarlyRespawnPool[ML::Rand(0, EarlyRespawnPool.count - 1)];
+				declare Removed = EarlyRespawnPool.remove(RandomPlayerSpawn);
 
-			declare LastLocationSpawn for Player <=> CSmMapLandmark;
-			if (LastLocationSpawn == Null || (C_RandomEarlyRespawn && !UseMultiClans)) {
-				LastLocationSpawn <=> MapLandmarks_PlayerSpawn[ML::Rand(0, MapLandmarks_PlayerSpawn.count - 1)];
+				declare LastLocationSpawn for Player <=> CSmMapLandmark;
+				if (LastLocationSpawn == Null || (C_RandomEarlyRespawn && !UseMultiClans)) {
+					LastLocationSpawn <=> RandomPlayerSpawn;
+				}
+				
+				declare Royal_LastSpawnTime for LastLocationSpawn = -1;
+				Royal_LastSpawnTime = Now;
+				
+				declare CaptureSpeedBonus for Player = 1.;
+				Player.AmmoGain = GetAmmoGain(Player);
+				CaptureSpeedBonus = C_CaptureSpeedBonus;
+				
+				Player.ArmorMax = C_ArmorRespawn;
+				SM::Spawn(Player, 0, Player.ArmorMax, LastLocationSpawn.PlayerSpawn, Now);
+				SendCallbackPlayerSpawn(Player, True);
+				
+				Slider::HideSlider(Player, 5000);
 			}
-			
-			declare CaptureSpeedBonus for Player = 1.;
-			Player.AmmoGain = GetAmmoGain(Player);
-			CaptureSpeedBonus = C_CaptureSpeedBonus;
-			
-			Player.ArmorMax = C_ArmorRespawn;
-			SM::Spawn(Player, 0, Player.ArmorMax, LastLocationSpawn.PlayerSpawn, Now);
-			SendCallbackPlayerSpawn(Player, True);
-			
-			Slider::HideSlider(Player, 5000);
 		}
 	}
 }
@@ -1288,6 +1318,7 @@ foreach(Player in AllPlayers) {
 // Display the name of the round winner
 DisplayWinnerName("Round", RoundWinnerPlayer);
 MB_Sleep(1500);
+MB_EnablePlayMode(False);
 
 // ---------------------------------- //
 // Show round results
@@ -1359,9 +1390,19 @@ if (ChannelProgression::IsEnabled()) {
 		declare MapSurvivalNb for Score = 0;
 		declare MapPoleNb for Score = 0;
 		
-		declare Performance = ((MapSurvivalNb / (RoundCount * 1.)) * 0.5) + ((MapPoleNb / (RoundCount * 1.)) * 0.1) + ((MapHitNb / (ReferenceHitNb * 1.)) * 0.4);
+		declare SurvivalPerf = 0.;
+		declare PolePerf = 0.;
+		declare HitPerf = 0.;
+		if (RoundCount != 0) {
+			SurvivalPerf = ((MapSurvivalNb / (RoundCount * 1.)) * 0.5);
+			PolePerf = ((MapPoleNb / (RoundCount * 1.)) * 0.1);
+		}
+		if (ReferenceHitNb != 0) {
+			HitPerf = ((MapHitNb / (ReferenceHitNb * 1.)) * 0.4);
+		}
+		declare Performance = SurvivalPerf + PolePerf + HitPerf;
 		
-		Log::Log("""[TimeAttack] Performance > {{{Score.User.Login}}} > RoundCount : {{{RoundCount}}} | MapSurvivalNb : {{{MapSurvivalNb}}} | MapPoleNb : {{{MapPoleNb}}} | MapHitNb : {{{MapHitNb}}} | ReferenceHitNb : {{{ReferenceHitNb}}} | SurvivorPerf : {{{((MapSurvivalNb / (RoundCount * 1.)) * 0.5)}}} | PolePerf : {{{((MapPoleNb / (RoundCount * 1.)) * 0.1)}}} | HitPerf : {{{((MapHitNb / (ReferenceHitNb * 1.)) * 0.4)}}} | Performance: {{{Performance}}}""");
+		Log::Log("""[TimeAttack] Performance > {{{Score.User.Login}}} > RoundCount : {{{RoundCount}}} | MapSurvivalNb : {{{MapSurvivalNb}}} | MapPoleNb : {{{MapPoleNb}}} | MapHitNb : {{{MapHitNb}}} | ReferenceHitNb : {{{ReferenceHitNb}}} | SurvivorPerf : {{{SurvivalPerf}}} | PolePerf : {{{PolePerf}}} | HitPerf : {{{HitPerf}}} | Performance: {{{Performance}}}""");
 		
 		ChannelProgression::SetPlayerPerformance(Score, Performance);
 	}

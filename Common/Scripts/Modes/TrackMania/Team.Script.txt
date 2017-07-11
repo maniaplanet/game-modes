@@ -4,7 +4,7 @@
 #Extends "Modes/TrackMania/Base/RoundsBase2.Script.txt"
 
 #Const CompatibleMapTypes	"Race"
-#Const Version							"2017-06-14"
+#Const Version							"2017-06-21"
 #Const ScriptName						"Modes/TrackMania/Team/Team.Script.txt"
 
 // ---------------------------------- //
@@ -83,7 +83,7 @@ ModeInfo::SetStatusMessage("");
 ***
 ClientManiaAppUrl = C_ManiaAppUrl;
 Hud_Load(C_HudModulePath);
-MB_SortScores(CTmMode::ETmScoreSortOrder::BestRace_Time);
+MB_SortScores(CTmMode::ETmScoreSortOrder::TotalPoints);
 ***
 
 ***Match_StartServer***
@@ -208,8 +208,8 @@ if (ForceEndRound) {
 		if (
 			PrevRaceTime > 0 &&
 			ReferenceTime > 0 &&
-			PrevRaceTime <= Map.MapInfo.TMObjective_BronzeTime &&
-			ReferenceTime <= Map.MapInfo.TMObjective_BronzeTime
+			PrevRaceTime < Map.MapInfo.TMObjective_BronzeTime &&
+			ReferenceTime < Map.MapInfo.TMObjective_BronzeTime
 		) {
 			declare A = (Map.MapInfo.TMObjective_BronzeTime - PrevRaceTime) * 1.;
 			declare B = Map.MapInfo.TMObjective_BronzeTime - ReferenceTime;
@@ -280,12 +280,35 @@ if (Hud != Null && Hud.ScoresTable != Null) {
 	Hud.ScoresTable.SetColumnVisibility(CModulePlaygroundScoresTable::EColumnType::TMPrevRaceDeltaPoints, False);
 }
 SetFooterText();
-MB_SortScores(CTmMode::ETmScoreSortOrder::BestRace_Time);
-Scores::SetDefaultLadderSort(Scores::C_Sort_BestRaceTime);
+MB_SortScores(CTmMode::ETmScoreSortOrder::TotalPoints);
+Scores::SetDefaultLadderSort(Scores::C_Sort_MapPoints);
 ***
 
 ***Match_BeforeCloseLadder***
 ***
+// Sort players by team for the ladder ranking
+declare ClanWinner = Scores::GetClanWinner();
+foreach (Score in Scores) {
+	declare Team_PrevMapPoints for Score = 0;
+	Team_PrevMapPoints = Scores::GetPlayerMapPoints(Score);
+	
+	if (ClanWinner == 1 || ClanWinner == 2) {
+		if (Score.TeamNum == ClanWinner) {
+			Scores::SetPlayerMapPoints(Score, 2);
+		} else if (Score.TeamNum == 3 - ClanWinner) {
+			Scores::SetPlayerMapPoints(Score, 1);
+		} else {
+			Scores::SetPlayerMapPoints(Score, 0);
+		}
+	} else {
+		if (Score.TeamNum == 1 || Score.TeamNum == 2) {
+			Scores::SetPlayerMapPoints(Score, 1);
+		} else {
+			Scores::SetPlayerMapPoints(Score, 0);
+		}
+	}
+}
+
 if (ChannelProgression::IsEnabled()) {
 	declare RoundsCount = MB_GetRoundCount();
 	foreach (Score in Scores) {
@@ -302,6 +325,14 @@ if (ChannelProgression::IsEnabled()) {
 		
 		ChannelProgression::SetPlayerPerformance(Score, RoundsPerformance);
 	}
+}
+***
+
+***Match_AfterCloseLadder***
+***
+foreach (Score in Scores) {
+	declare Team_PrevMapPoints for Score = 0;
+	Scores::SetPlayerMapPoints(Score, Team_PrevMapPoints);
 }
 ***
 

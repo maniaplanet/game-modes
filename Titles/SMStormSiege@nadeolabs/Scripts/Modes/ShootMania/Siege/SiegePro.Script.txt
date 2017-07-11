@@ -4,7 +4,7 @@
 #Extends "Modes/ShootMania/Siege/SiegeBase.Script.txt"
 
 #Const CompatibleMapTypes	"SiegeV2Arena,LobbyArena"
-#Const Version							"2017-06-08"
+#Const Version							"2017-07-10"
 #Const ScriptName						"Modes/ShootMania/Siege/SiegePro.Script.txt"
 
 // ---------------------------------- //
@@ -165,6 +165,7 @@ MB_Settings_UseDefaultHud = False;
 MB_Settings_UseDefaultClansScoresUI = False;
 MB_Settings_UseDefaultTimer = False;
 MB_Settings_UseDefaultBaseIllumination = False;
+MB_Settings_UseDefaultUIManagement = False;
 ***
 
 ***Match_Rules***
@@ -473,6 +474,7 @@ Layers::Attach("Markers");
 if (!S_UseOldCaptureMode) Layers::Show("Checkpoint");
 UpdateMarkers(G_DefSpawns, G_Capturables, G_CurrentCheckpointIndex, CapturingClan);
 UpdateCheckpoint(G_Capturables, G_CurrentCheckpointIndex);
+MB_EnablePlayMode(True);
 
 // ---------------------------------- //
 // Init spectator mode
@@ -934,7 +936,9 @@ if (G_Capturables.count > 0) {
 }
 if (DefRefScore < PerformanceConstant) DefRefScore = PerformanceConstant;
 
-Log::Log("""[Siege] AtkRefScore : {{{PerformanceConstant}}} * {{{G_Capturables.count}}} = {{{AtkRefScore}}} | TmpDefRefScore : ({{{TotalAtkArmors}}} / 100.) * ({{{CurrentCheckpoint}}} / {{{(G_Capturables.count * 1.)}}}) = {{{(TotalAtkArmors / 100.) * (CurrentCheckpoint / (G_Capturables.count * 1.))}}} | DefRefScore : {{{DefRefScore}}}""");
+if (G_Capturables.count > 0) {
+	Log::Log("""[Siege] AtkRefScore : {{{PerformanceConstant}}} * {{{G_Capturables.count}}} = {{{AtkRefScore}}} | TmpDefRefScore : ({{{TotalAtkArmors}}} / 100.) * ({{{CurrentCheckpoint}}} / {{{(G_Capturables.count * 1.)}}}) = {{{(TotalAtkArmors / 100.) * (CurrentCheckpoint / (G_Capturables.count * 1.))}}} | DefRefScore : {{{DefRefScore}}}""");
+}
 
 foreach (Score in Scores) {
 	declare TurnScore for Score = 0.;
@@ -1019,6 +1023,7 @@ if (MaxMapLandmark != Null) {
 
 MB_Sleep(2000);
 SM::UnspawnAllPlayers();
+MB_EnablePlayMode(False);
 
 // ---------------------------------- //
 // Hide max gauge capture
@@ -1228,6 +1233,28 @@ InitialCapturingClan = 3 - InitialCapturingClan;
 
 ***Match_BeforeCloseLadder***
 ***
+// Sort players by team for the ladder ranking
+foreach (Score in Scores) {
+	declare Siege_PrevMapPoints for Score = 0;
+	Siege_PrevMapPoints = Scores::GetPlayerMapPoints(Score);
+	
+	if (ClanMapWinner == 1 || ClanMapWinner == 2) {
+		if (Score.TeamNum == ClanMapWinner) {
+			Scores::SetPlayerMapPoints(Score, 2);
+		} else if (Score.TeamNum == 3 - ClanMapWinner) {
+			Scores::SetPlayerMapPoints(Score, 1);
+		} else {
+			Scores::SetPlayerMapPoints(Score, 0);
+		}
+	} else {
+		if (Score.TeamNum == 1 || Score.TeamNum == 2) {
+			Scores::SetPlayerMapPoints(Score, 1);
+		} else {
+			Scores::SetPlayerMapPoints(Score, 0);
+		}
+	}
+}
+
 if (ChannelProgression::IsEnabled()) {
 	foreach (Score in Scores) {
 		declare Siege_TurnsPerformances for Score = Real[];
@@ -1243,6 +1270,14 @@ if (ChannelProgression::IsEnabled()) {
 		
 		ChannelProgression::SetPlayerPerformance(Score, TurnsPerformance);
 	}
+}
+***
+
+***Match_AfterCloseLadder***
+***
+foreach (Score in Scores) {
+	declare Siege_PrevMapPoints for Score = 0;
+	Scores::SetPlayerMapPoints(Score, Siege_PrevMapPoints);
 }
 ***
 

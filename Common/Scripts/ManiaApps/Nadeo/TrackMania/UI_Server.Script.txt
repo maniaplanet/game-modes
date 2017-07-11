@@ -1,13 +1,24 @@
 /**
  * Trackmania UI server library
  */
-#Const Version    "2017-05-08"
+#Const Version    "2017-06-20"
 #Const ScriptName "ManiaApps/Nadeo/TrackMania/Common/UI_Server.Script.txt"
 
 // ---------------------------------- //
 // Libraries
 // ---------------------------------- //
 #Include "ManiaApps/Nadeo/TrackMania/UI_Common.Script.txt" as UI_Common
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_ViewersCountUpdateInterval 1000
+
+// ---------------------------------- //
+// Globales
+// ---------------------------------- //
+declare Integer G_NextViewersCountUpdate; //< Time before the next vierwers count update
+declare Boolean G_ViewersCountReset; ///< The viewers count need a reset
 
 // ---------------------------------- //
 // Functions
@@ -111,6 +122,62 @@ Void SendLiveEvent(CPlayer _Player, Text _Message, Text _Image) {
 }
 
 // ---------------------------------- //
+/// Update the viewers count
+Void UpdateViewersCount() {
+	declare ViewersCount = Integer[Text];
+	
+	foreach (Player in AllPlayers) {
+		declare UI <=> UIManager.GetUI(Player);
+		if (UI != Null) {
+			declare netread Net_LibUI_SpectatorTarget for UI = "";
+			if (Net_LibUI_SpectatorTarget != "" && Player.User.Login != Net_LibUI_SpectatorTarget) {
+				if (ViewersCount.existskey(Net_LibUI_SpectatorTarget)) {
+					ViewersCount[Net_LibUI_SpectatorTarget] += 1;
+				} else {
+					ViewersCount[Net_LibUI_SpectatorTarget] = 1;
+				}
+			}
+		}
+	}
+	
+	if (ViewersCount.count > 0) {
+		G_ViewersCountReset = True;
+		
+		foreach (Player in Players) {
+			declare UI <=> UIManager.GetUI(Player);
+			if (UI != Null) {
+				declare netwrite Net_LibUI_ViewersCount for UI = 0;
+				
+				if (ViewersCount.existskey(Player.User.Login)) {
+					Net_LibUI_ViewersCount = ViewersCount[Player.User.Login];
+					declare Removed = ViewersCount.removekey(Player.User.Login);
+				} else {
+					Net_LibUI_ViewersCount = 0;
+				}
+			}
+		}
+	} else if (G_ViewersCountReset && ViewersCount.count <= 0) {
+		G_ViewersCountReset = False;
+		foreach (Player in AllPlayers) {
+			declare UI <=> UIManager.GetUI(Player);
+			if (UI != Null) {
+				declare netwrite Net_LibUI_ViewersCount for UI = 0;
+				Net_LibUI_ViewersCount = 0;
+			}
+		}
+	}
+}
+
+// ---------------------------------- //
+/// Update the library
+Void Yield() {
+	if (Now >= G_NextViewersCountUpdate) {
+		G_NextViewersCountUpdate = Now + C_ViewersCountUpdateInterval;
+		UpdateViewersCount();
+	}
+}
+
+// ---------------------------------- //
 /// Unload the library
 Void Unload() {
 	declare netwrite AppTMUI_ModulesUpdate for Teams[0] = -1;
@@ -122,6 +189,16 @@ Void Unload() {
 	declare netwrite Net_LibUI_Settings for Teams[0] = Text[Text];
 	Net_LibUI_SettingsUpdate = 0;
 	Net_LibUI_Settings.clear();
+	
+	foreach (Player in AllPlayers) {
+		declare UI <=> UIManager.GetUI(Player);
+		if (UI != Null) {
+			declare netwrite Net_LibUI_ViewersCount for UI = 0;
+			Net_LibUI_ViewersCount = 0;
+		}
+	}
+	
+	G_ViewersCountReset = False;
 }
 
 // ---------------------------------- //

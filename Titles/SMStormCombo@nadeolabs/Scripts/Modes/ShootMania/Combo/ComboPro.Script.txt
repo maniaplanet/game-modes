@@ -4,7 +4,7 @@
 #Extends "Modes/ShootMania/Combo/ComboBase.Script.txt"
 
 #Const CompatibleMapTypes	"ComboArena,LobbyArena"
-#Const Version							"2017-06-05"
+#Const Version							"2017-07-10"
 #Const ScriptName						"Modes/ShootMania/Combo/ComboPro.Script.txt"
 
 // ---------------------------------- //
@@ -151,6 +151,7 @@ MB_Settings_UseDefaultHud = False;
 MB_Settings_UseDefaultTimer = False;
 MB_Settings_UseDefaultObjects = False;
 MB_Settings_UseDefaultClansScoresUI = False;
+MB_Settings_UseDefaultUIManagement = False;
 ***
 
 ***Match_Rules***
@@ -489,6 +490,7 @@ declare netwrite Integer Net_Combo_ComboClan1 for Teams[0];
 declare netwrite Integer Net_Combo_ComboClan2 for Teams[0];
 Net_Combo_ComboClan1 = G_ClanComboTimeLimit[1];
 Net_Combo_ComboClan2 = G_ClanComboTimeLimit[2];
+MB_EnablePlayMode(True);
 
 // ---------------------------------- //
 // Round start invincibility
@@ -929,8 +931,9 @@ if (S_Script_PointsLimit > 0) {
 if (EndMap) {
 	MB_StopMap();
 } else {
-	MB_Sleep(500);
+	MB_Sleep(1500);
 	SM::UnspawnAllPlayers();
+	MB_EnablePlayMode(False);
 	StartTime = -1;
 	MB_Sleep(2500);
 }
@@ -939,7 +942,8 @@ if (EndMap) {
 ***Match_EndMap***
 ***
 Message::CleanAllMessages();
-MB_Sleep(500);
+MB_Sleep(1500);
+MB_EnablePlayMode(False);
 StartTime = -1;
 EndTime = -1;
 ObjectDestroyAll();
@@ -963,8 +967,31 @@ if (ChannelProgression::IsEnabled()) {
 	Ladder::SetResultsVersion(1);
 }
 
+// Sort players by team for the ladder ranking
+declare MapWinner = Scores::GetClanWinner();
 foreach (Score in Scores) {
-	if (ChannelProgression::IsEnabled()) {
+	declare Combo_PrevMapPoints for Score = 0;
+	Combo_PrevMapPoints = Scores::GetPlayerMapPoints(Score);
+	
+	if (MapWinner == 1 || MapWinner == 2) {
+		if (Score.TeamNum == MapWinner) {
+			Scores::SetPlayerMapPoints(Score, 2);
+		} else if (Score.TeamNum == 3 - MapWinner) {
+			Scores::SetPlayerMapPoints(Score, 1);
+		} else {
+			Scores::SetPlayerMapPoints(Score, 0);
+		}
+	} else {
+		if (Score.TeamNum == 1 || Score.TeamNum == 2) {
+			Scores::SetPlayerMapPoints(Score, 1);
+		} else {
+			Scores::SetPlayerMapPoints(Score, 0);
+		}
+	}
+}
+
+if (ChannelProgression::IsEnabled()) {
+	foreach (Score in Scores) {
 		declare Combo_RoundsPerformances for Score = Real[];
 		declare RoundsPerformance = 0.;
 		declare RoundsPlayed = MB_GetRoundCount();
@@ -980,6 +1007,14 @@ foreach (Score in Scores) {
 		
 		ChannelProgression::SetPlayerPerformance(Score, RoundsPerformance);
 	}
+}
+***
+
+***Match_AfterCloseLadder***
+***
+foreach (Score in Scores) {
+	declare Combo_PrevMapPoints for Score = 0;
+	Scores::SetPlayerMapPoints(Score, Combo_PrevMapPoints);
 }
 ***
 
