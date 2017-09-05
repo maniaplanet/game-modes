@@ -3,7 +3,7 @@
  *	Show the rules in the spawn screen
  */
 
-#Const Version		"2017-05-09"
+#Const Version		"2017-09-05"
 #Const ScriptName	"Libs/Nadeo/ShootMania/SpawnScreen.Script.txt"
 
 #Const DefaultModeColor	"f90"// notice : "warmup" text is "f90"
@@ -529,48 +529,42 @@ foreach (Score in Scores) {
 if (NeedSort) {
 	NeedSort = False;
 	
+	declare ScoresSort = Integer[Ident];
 	foreach (Score in Scores) {
 		ScoresSort[Score.Id] = ({{{_ScoreStyle}}}) * -1;
 	}
 	ScoresSort = ScoresSort.sort();
-	
-	declare I = 1;
+	declare SortedScores = Ident[];
 	foreach (ScoreId => ScoreValue in ScoresSort) {
-		if (!Scores.existskey(ScoreId)) continue;
-		declare Score <=> Scores[ScoreId];
-		
-		if (!Frames_Score[I].Visible) Frames_Score[I].Visible = True;
-		Labels_Name[I].Value = Score.User.Name;
-		Labels_Score[I].Value = TL::ToText({{{_ScoreStyle}}});
-			
-		I += 1;
-		if (I > 3) break;
+		SortedScores.add(ScoreId);
 	}
-	for (J, I, 3) {
-		Frames_Score[J].Visible = False;
+	
+	for (I, 1, 3) {
+		if (SortedScores.existskey(I-1) && Scores.existskey(SortedScores[I-1])) {
+			declare Score <=> Scores[SortedScores[I-1]];
+			Frames_Score[I].Visible = True;
+			Labels_Name[I].Value = Score.User.Name;
+			Labels_Score[I].Value = TL::ToText({{{_ScoreStyle}}});
+		} else {
+			Frames_Score[I].Visible = False;
+		}
 	}
 }""";
 	} 
 	// With the default score calculation
 	else {
 		ScoresDisplay = """
-declare I = 1;
-foreach (Score in Scores) {
-	declare PrevRank for Score = -1;
-	declare PrevScore for Score = -1;
-	if (PrevRank != I || PrevScore != Score.Points) {
-		PrevRank = I;
-		PrevScore = Score.Points;
-		if (!Frames_Score[I].Visible) Frames_Score[I].Visible = True;
+for (I, 1, 3) {
+	if (Scores.existskey(I-1)) {
+		declare Score <=> Scores[I-1];
+		Frames_Score[I].Visible = True;
 		Labels_Name[I].Value = Score.User.Name;
 		Labels_Score[I].Value = TL::ToText(Score.Points);
+	} else {
+		Frames_Score[I].Visible = False;
 	}
-	I += 1;
-	if (I > 3) break;
 }
-for (J, I, 3) {
-	Frames_Score[J].Visible = False;
-}""";
+""";
 	}
 	
 	return """
@@ -587,7 +581,7 @@ for (J, I, 3) {
 #Include "TextLib" as TL
 #Include "MathLib" as ML
 
-#Const C_RefreshInterval 250
+#Const C_RefreshInterval 1000
 
 main() {
 	declare NextRefresh		= 0;
@@ -596,7 +590,6 @@ main() {
 	declare Frames_Score	= CMlFrame[Integer];
 	declare Labels_Name		= CMlLabel[Integer];
 	declare Labels_Score	= CMlLabel[Integer];
-	declare ScoresSort		= Integer[Ident];
 	
 	for (J, 1, 3) {
 		Frames_Score[J]	= (Page.GetFirstChild("Frame_Score_"^J)	as CMlFrame);
