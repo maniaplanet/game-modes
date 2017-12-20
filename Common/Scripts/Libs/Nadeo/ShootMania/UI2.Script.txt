@@ -1,7 +1,7 @@
 /**
  *	UI Lib
  */
-#Const	Version		"2017-07-07"
+#Const	Version		"2017-12-20"
 #Const	ScriptName	"Libs/Nadeo/UI.Script.txt"
 
 #Include "TextLib" as TL
@@ -37,6 +37,7 @@
 #Const C_Module_ChatAvatar "chat_avatar"
 #Const C_Module_LadderRecap "endmap_ladder_recap"
 #Const C_Module_ScoresTable "scorestable"
+#Const C_Module_ScoresTableAlt "scorestablealt"
 #Const C_Modules [
 	"notices",
 	"map_info",
@@ -48,7 +49,8 @@
 	"go",
 	"chat_avatar",
 	"endmap_ladder_recap",
-	"scorestable"
+	"scorestable",
+	"scorestable_alt"
 ]
 
 // Positions
@@ -93,6 +95,44 @@ Text Private_Vec2ToText(Vec2 _Vec2) {
  */
 Text Private_Vec3ToText(Vec3 _Vec3) {
 	return _Vec3.X^" "^_Vec3.Y^" "^_Vec3.Z;
+}
+
+// ---------------------------------- //
+/** Check if the scores table module is visible
+ *
+ *	@return														The scores table module visibility if found
+ *																		True otherwise
+ */
+Boolean Private_ScoresTableModuleIsVisible() {
+	if (Hud != Null && Hud.ScoresTable != Null) {
+		//return Hud.ScoresTable.IsVisible(UIManager.UIAll);
+		declare LIbUI2_ScoreTableOnlyManialink for This = UIManager.UIAll.ScoreTableOnlyManialink;
+		return LIbUI2_ScoreTableOnlyManialink;
+	} else {
+		return !UIManager.UIAll.ScoreTableOnlyManialink;
+	}
+	return True;
+}
+
+// ---------------------------------- //
+/** Hide or show the scores table module
+ *
+ *	@param	_Visible									True to show
+ *																		False to hide
+ */
+Void Private_ScoresTableModuleSetVisibility(Boolean _Visible) {
+	if (Hud != Null && Hud.ScoresTable != Null) {
+		// Module visibility
+		if (_Visible) Hud.ScoresTable.Show();
+		else Hud.ScoresTable.Hide();
+		// Save module visibility
+		declare LIbUI2_ScoreTableOnlyManialink for This = UIManager.UIAll.ScoreTableOnlyManialink;
+		LIbUI2_ScoreTableOnlyManialink = _Visible;
+		// Force hide the default scores table
+		UIManager.UIAll.ScoreTableOnlyManialink = True;
+	} else {
+		UIManager.UIAll.ScoreTableOnlyManialink = !_Visible;
+	}
 }
 
 // ---------------------------------- //
@@ -159,7 +199,8 @@ Void Private_SetVisibility(Text _Name, Text _Visible) {
 		case C_Module_Go						: UIManager.UIAll.OverlayHide321Go = Hide;
 		case C_Module_ChatAvatar		: UIManager.UIAll.OverlayChatHideAvatar = Hide;
 		case C_Module_LadderRecap	: UIManager.UIAll.OverlayHideEndMapLadderRecap = Hide;
-		case C_Module_ScoresTable	: {
+		case C_Module_ScoresTable	: Private_ScoresTableModuleSetVisibility(!Hide);
+		case C_Module_ScoresTableAlt: {
 			UIManager.UIAll.AltMenuNoDefaultScores = Hide;
 			UIManager.UIAll.AltMenuNoCustomScores = Hide;
 		}
@@ -197,6 +238,12 @@ Void Private_SetPosition(Text _Name, Text _Position) {
  */
 Text Private_GetProperties(Integer _Format) {
 	if (_Format == C_Format_Json) {
+		declare ScoresTableVisibility = "";
+		if (Semver::Compare(XmlRpc::GetApiVersion(), ">=", "2.4.0")) {
+			ScoresTableVisibility = """,
+		"visible": {{{XmlRpc::JsonGetBoolean(Private_ScoresTableModuleIsVisible())}}}""";
+		}
+		
 		return """{
 	"{{{C_Module_Notices}}}": {
 		"visible": {{{XmlRpc::JsonGetBoolean(!UIManager.UIAll.OverlayHideNotices)}}}
@@ -232,9 +279,14 @@ Text Private_GetProperties(Integer _Format) {
 		"visible": {{{XmlRpc::JsonGetBoolean(!UIManager.UIAll.OverlayHideEndMapLadderRecap)}}}
 	},
 	"{{{C_Module_ScoresTable}}}": {
-		"alt_visible": {{{XmlRpc::JsonGetBoolean(!UIManager.UIAll.AltMenuNoDefaultScores)}}}
+		"alt_visible": {{{XmlRpc::JsonGetBoolean(!UIManager.UIAll.AltMenuNoDefaultScores)}}}{{{ScoresTableVisibility}}}
 	}
 }""";
+	}
+	
+	declare ScoresTableVisibility = "";
+	if (Semver::Compare(XmlRpc::GetApiVersion(), ">=", "2.4.0")) {
+		ScoresTableVisibility = """visible="{{{Private_BooleanToText(Private_ScoresTableModuleIsVisible())}}}" """;
 	}
 	
 	return """
@@ -249,7 +301,7 @@ Text Private_GetProperties(Integer _Format) {
 	<{{{C_Module_Go}}} visible="{{{Private_BooleanToText(!UIManager.UIAll.OverlayHide321Go)}}}" />
 	<{{{C_Module_ChatAvatar}}} visible="{{{Private_BooleanToText(!UIManager.UIAll.OverlayChatHideAvatar)}}}" />
 	<{{{C_Module_LadderRecap}}} visible="{{{Private_BooleanToText(!UIManager.UIAll.OverlayHideEndMapLadderRecap)}}}" />
-	<{{{C_Module_ScoresTable}}} alt_visible="{{{Private_BooleanToText(!UIManager.UIAll.AltMenuNoDefaultScores)}}}" />
+	<{{{C_Module_ScoresTable}}} alt_visible="{{{Private_BooleanToText(!UIManager.UIAll.AltMenuNoDefaultScores)}}}" {{{ScoresTableVisibility}}}/>
 </ui_properties>""";
 }
 
@@ -272,6 +324,12 @@ Text Private_GetProperties() {
  */
 Text Private_GetDefaultProperties(Integer _Format) {
 	if (_Format == C_Format_Json) {
+		declare ScoresTableVisibility = "";
+		if (Semver::Compare(XmlRpc::GetApiVersion(), ">=", "2.4.0")) {
+			ScoresTableVisibility = """,
+		"visible": {{{XmlRpc::JsonGetBoolean(True)}}}""";
+		}
+		
 		return """{
 	"{{{C_Module_Notices}}}": {
 		"visible": {{{XmlRpc::JsonGetBoolean(True)}}}
@@ -307,9 +365,14 @@ Text Private_GetDefaultProperties(Integer _Format) {
 		"visible": {{{XmlRpc::JsonGetBoolean(True)}}}
 	},
 	"{{{C_Module_ScoresTable}}}": {
-		"alt_visible": {{{XmlRpc::JsonGetBoolean(True)}}}
+		"alt_visible": {{{XmlRpc::JsonGetBoolean(True)}}}{{{ScoresTableVisibility}}}
 	}
 }""";
+	}
+	
+	declare ScoresTableVisibility = "";
+	if (Semver::Compare(XmlRpc::GetApiVersion(), ">=", "2.4.0")) {
+		ScoresTableVisibility = """visible="{{{Private_BooleanToText(True)}}}" """;
 	}
 	
 	return """
@@ -324,7 +387,7 @@ Text Private_GetDefaultProperties(Integer _Format) {
 	<{{{C_Module_Go}}} visible="{{{Private_BooleanToText(True)}}}" />
 	<{{{C_Module_ChatAvatar}}} visible="{{{Private_BooleanToText(True)}}}" />
 	<{{{C_Module_LadderRecap}}} visible="{{{Private_BooleanToText(True)}}}" />
-	<{{{C_Module_ScoresTable}}} alt_visible="{{{Private_BooleanToText(True)}}}" />
+	<{{{C_Module_ScoresTable}}} alt_visible="{{{Private_BooleanToText(True)}}}" {{{ScoresTableVisibility}}}/>
 </ui_properties>""";
 }
 
@@ -342,8 +405,8 @@ Void Private_SetProperty(Text _Name, Text _Property, Text _Value) {
 	if (_Name == C_Module_Chat) {
 		if (_Property == "linecount") SetChatLineCount(TL::ToInteger(_Value));
 		else if (_Property == "offset") Private_SetPosition(_Name, _Value);
-	} else if (_Name == C_Module_ScoresTable) {
-		if (_Property == "alt_visible") Private_SetVisibility(_Name, _Value);
+	} else if (_Name == C_Module_ScoresTable || _Name == C_Module_ScoresTableAlt) {
+		if (_Property == "alt_visible") Private_SetVisibility(C_Module_ScoresTableAlt, _Value);
 	}
 	
 	declare LibUI_PropertiesBackUp for This = "";
@@ -397,6 +460,13 @@ Void Private_ResetProperty(Text _Name, Text _Property, Boolean _UpdateSave) {
 				UIManager.UIAll.AltMenuNoDefaultScores = False;
 				UIManager.UIAll.AltMenuNoCustomScores = False;
 			}
+			else if (_Property == "visible") Private_ScoresTableModuleSetVisibility(True);
+		}
+		case C_Module_ScoresTableAlt: {
+			if (_Property == "alt_visible") {
+				UIManager.UIAll.AltMenuNoDefaultScores = False;
+				UIManager.UIAll.AltMenuNoCustomScores = False;
+			}
 		}
 	}
 	
@@ -425,7 +495,7 @@ Void Private_ResetProperties() {
 		if (Name == C_Module_Chat) {
 			Private_ResetProperty(Name, "linecount", False);
 			Private_ResetProperty(Name, "offset", False);
-		} else if (Name == C_Module_ScoresTable) {
+		} else if (Name == C_Module_ScoresTableAlt) {
 			Private_ResetProperty(Name, "alt_visible", False);
 		}
 	}
@@ -455,7 +525,7 @@ Void Private_SetProperties(Text _Xml) {
 			Private_SetPosition(Node.Name, Node.GetAttributeText("offset", ""));
 		}
 		if (Node.Name == C_Module_ScoresTable) {
-			Private_SetVisibility(C_Module_ScoresTable, Node.GetAttributeText("alt_visible", ""));
+			Private_SetVisibility(C_Module_ScoresTableAlt, Node.GetAttributeText("alt_visible", ""));
 		}
 	}
 	
@@ -511,6 +581,10 @@ Text Private_GetProperty(Text _Name, Text _Property) {
 		}
 		case C_Module_ScoresTable: {
 			if (_Property == "alt_visible") Value = XmlRpc::JsonGetBoolean(!UIManager.UIAll.AltMenuNoDefaultScores);
+			else if (_Property == "visible") Value = XmlRpc::JsonGetBoolean(Private_ScoresTableModuleIsVisible());
+		}
+		case C_Module_ScoresTableAlt: {
+			if (_Property == "alt_visible") Value = XmlRpc::JsonGetBoolean(!UIManager.UIAll.AltMenuNoDefaultScores);
 		}
 	}
 	
@@ -562,6 +636,10 @@ Text Private_GetDefaultProperty(Text _Name, Text _Property) {
 			if (_Property == "visible") Value = XmlRpc::JsonGetBoolean(True);
 		}
 		case C_Module_ScoresTable: {
+			if (_Property == "alt_visible") Value = XmlRpc::JsonGetBoolean(True);
+			else if (_Property == "visible") Value = XmlRpc::JsonGetBoolean(True);
+		}
+		case C_Module_ScoresTableAlt: {
 			if (_Property == "alt_visible") Value = XmlRpc::JsonGetBoolean(True);
 		}
 	}
@@ -820,6 +898,29 @@ Void Load() {
 		}"
 	]
 	```
+	- Version >=2.4.0: 
+	The scores table module has a new visible property
+	```
+	[
+		"{
+			"responseid": "xyz" //< Facultative id passed by a script event
+		}",
+		"
+		<ui_properties>
+			...
+			<!-- Scores table displayed in the middle of the screen -->
+			<{{{C_Module_ScoresTable}}} alt_visible="true" visible="true" />
+		</ui_properties>
+		",
+		"{
+			...
+			"{{{C_Module_ScoresTable}}}": { //< Scores table displayed in the middle of the screen
+				"alt_visible": true,
+				"visible": true
+			}
+		}"
+	]
+	```
 	""");
 	XmlRpc::RegisterCallback(C_Callback_Property, """
 * Name: {{{C_Callback_Property}}}
@@ -904,6 +1005,23 @@ Void Load() {
 		  <{{{C_Module_LadderRecap}}} visible="true" />
 		  <!-- Scores table displayed in the middle of the screen -->
 			<{{{C_Module_ScoresTable}}} alt_visible="true" />
+		</ui_properties>
+		"
+	]
+	```
+	- Version >=2.4.0: 
+	The scores table module has a new visible property
+	```
+	[
+		"
+		<!--
+		  Each node is optional and can be omitted.
+		  If it's the case then the previous value will be kept.
+		-->
+		<ui_properties>
+			...
+			<!-- Scores table displayed in the middle of the screen -->
+			<{{{C_Module_ScoresTable}}} alt_visible="true" visible="true" />
 		</ui_properties>
 		"
 	]
