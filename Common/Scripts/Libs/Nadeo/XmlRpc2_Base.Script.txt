@@ -1,13 +1,14 @@
 /**
  *	XmlRpc2 base library
  */
-#Const	Version			"2017-05-04"
+#Const	Version			"2017-12-20"
 #Const	ScriptName	"Libs/Nadeo/XmlRpc2_Base.Script.txt"
 
 // ---------------------------------- //
 // Libraries
 // ---------------------------------- //
 #Include "TextLib" as TL
+#Include "Libs/Nadeo/Semver.Script.txt" as Semver
 #Include "Libs/Nadeo/XmlRpc2.Script.txt" as XmlRpc
 #Include "Libs/Nadeo/WarmUp3Common.Script.txt" as WarmUp
 
@@ -71,6 +72,7 @@
 #Const C_Method_Get_AllApiVersions					"XmlRpc.GetAllApiVersions"
 #Const C_Method_Get_UseTeams								"Maniaplanet.Mode.GetUseTeams"
 #Const C_Method_Set_AltScoresTable					"Maniaplanet.UI.SetAltScoresTableVisibility"
+#Const C_Method_Set_ScoresTableVisibility	"Maniaplanet.UI.SetScoresTableVisibility"
 
 // ---------------------------------- //
 // Functions
@@ -633,6 +635,41 @@ Void Yield() {
 						}
 					}
 				}
+				case C_Method_Set_ScoresTableVisibility: {
+					if (Semver::Compare(XmlRpc::GetApiVersion(), ">=", "2.4.0")) {
+						declare Login = "";
+						if (Event.ParamArray2.existskey(0)) Login = Event.ParamArray2[0];
+						
+						declare Visible = True;
+						declare TmpVisible = "";
+						if (Event.ParamArray2.existskey(1)) TmpVisible = Event.ParamArray2[1];
+						if (TmpVisible == "" || TL::ToLowerCase(TmpVisible) == "false") {
+							Visible = False;
+						} else {
+							Visible = True;
+						}
+						
+						if (Login != "") {
+							foreach (Player in AllPlayers) {
+								if (Player.User.Login == Login) {
+									declare UI <=> UIManager.GetUI(Player);
+									if (UI != Null) {
+										if (Hud != Null && Hud.ScoresTable != Null) {
+											// Module visibility
+											if (Visible) Hud.ScoresTable.Show(UI);
+											else Hud.ScoresTable.Hide(UI);
+											// Force hide the default scores table
+											UIManager.UIAll.ScoreTableOnlyManialink = True;
+										} else {
+											UIManager.UIAll.ScoreTableOnlyManialink = !Visible;
+										}
+									}
+									break;
+								}
+							}
+						}
+					}
+				}
 			}
 		}
 	}
@@ -699,6 +736,7 @@ Void Unload() {
 	XmlRpc::UnregisterMethod(C_Method_Get_AllApiVersions);
 	XmlRpc::UnregisterMethod(C_Method_Get_UseTeams);
 	XmlRpc::UnregisterMethod(C_Method_Set_AltScoresTable);
+	XmlRpc::UnregisterMethod(C_Method_Set_ScoresTableVisibility);
 	
 	WarmUp::UnregisterBaseXmlRpc();
 }
@@ -1503,6 +1541,19 @@ Void Load() {
 * Description: Enable or disable the scores table display with the alt key.
 * Data:
 	- Version >=2.0.0:
+	```
+	[
+		"PlayerLogin", //< The login of the player to update
+		"false" //< false to disable, true to enable
+	]
+	```
+""");
+	XmlRpc::RegisterMethod(C_Method_Set_ScoresTableVisibility, """
+* Name: {{{C_Method_Set_ScoresTableVisibility}}}
+* Type: TriggerModeScriptEventArray
+* Description: Enable or disable the scores table.
+* Data:
+	- Version >=2.4.0:
 	```
 	[
 		"PlayerLogin", //< The login of the player to update
