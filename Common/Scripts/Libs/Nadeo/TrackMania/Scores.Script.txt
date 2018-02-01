@@ -2,7 +2,7 @@
  *	Scores library
  *	Manage players and teams scores
  */
-#Const	Version			"2017-06-28"
+#Const	Version			"2018-01-02"
 #Const	ScriptName	"Libs/Nadeo/TrackMania/Scores.Script.txt"
 
 // ---------------------------------- //
@@ -1222,6 +1222,36 @@ Void SetupLadder(CTmScore _Score, Integer _LadderRank, Integer _LadderClan, Real
  */
 Void ComputeLadder(Integer _SortCriteria, Integer _Order) {
 	Log::Log("""[Scores] Compute ladder with the following sort criteria : {{{_SortCriteria}}} and order: {{{_Order}}}""");
+	
+	// Special computation with two criterias for best race checkpoints
+	if (_SortCriteria == C_Sort_BestRaceCheckpointsProgress) {
+		declare DoubleRanking = Integer[CTmScore][Integer];
+		foreach (Score in Scores) {
+			declare Points = GetPlayerBestRaceCheckpointsProgress(Score);
+			declare Time = -Private_GetPlayerLastCheckpointTime(Score.BestRace);
+			
+			if (!DoubleRanking.existskey(Points)) {
+				DoubleRanking[Points] = Integer[CTmScore];
+			}
+			DoubleRanking[Points][Score] = Time;
+		}
+		DoubleRanking = DoubleRanking.sortkey();
+		
+		declare Rank = 1;
+		foreach (Points => Times in DoubleRanking) {
+			declare SortedTimes = Times.sort();
+			foreach (Score => Time in SortedTimes) {
+				declare LibScores_BestRaceCheckpointsProgressPoints for Score = 0;
+				if (Points <= 0 || Time > 0) { //< The player did not start the race (check time > 0 because we inversed its value in the previous step)
+					LibScores_BestRaceCheckpointsProgressPoints = 0;
+				} else {
+					LibScores_BestRaceCheckpointsProgressPoints = Rank;
+				}
+				Rank += 1;
+			}
+		}
+	}
+	
 	foreach (Score in Scores) {
 		declare Points = 0;
 		declare Time = -1;
@@ -1248,7 +1278,8 @@ Void ComputeLadder(Integer _SortCriteria, Integer _Order) {
 				Points = GetPlayerBestRaceNbRespawns(Score);
 			}
 			case C_Sort_BestRaceCheckpointsProgress: {
-				Points = GetPlayerBestRaceCheckpointsProgress(Score);
+				declare LibScores_BestRaceCheckpointsProgressPoints for Score = 0;
+				Points = LibScores_BestRaceCheckpointsProgressPoints;
 				Time = Private_GetPlayerLastCheckpointTime(Score.BestRace);
 			}
 			case C_Sort_PrevRaceTime: {
