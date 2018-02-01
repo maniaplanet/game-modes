@@ -1,0 +1,348 @@
+/** 
+ *	Common Chase functions
+ */
+#Const Version		"2017-11-29"
+#Const ScriptName	"Libs/Nadeo/TrackMania/Chase/Chase.Script.txt"
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Libraries
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+#Include "MathLib" as ML
+#Include "Libs/Nadeo/Log.Script.txt" as Log
+#Include "Libs/Nadeo/Message.Script.txt" as Message
+#Include "Libs/Nadeo/TrackMania/Scores.Script.txt" as Scores
+#Include "ManiaApps/Nadeo/TrackMania/Chase_Server.Script.txt" as ChaseUI
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Functions
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Public
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/** Get the minimum number of players in a team
+ *
+ *	@param	_TeamPlayersNb						The value of the setting
+ *
+ *	@return														The minimum number of players in a team
+ */
+Integer GetMinPlayersNb(Integer _TeamPlayersNb) {
+	if (_TeamPlayersNb  >= 2) return _TeamPlayersNb;
+	return 2;
+}
+
+// ---------------------------------- //
+/** Get the time left to the players to
+ *	finish the map after the first player
+ *
+ *	@param	_FinishTimeout						The value of the timeout setting
+ *
+ *	@return 				The time left in ms
+ */
+Integer GetFinishTimeout(Integer _FinishTimeout) {
+	declare FinishTimeout = 0;
+	
+	if (_FinishTimeout >= 0) {
+		FinishTimeout = _FinishTimeout * 1000;
+	} else {
+		declare ObjectiveNbLaps = Map.TMObjective_NbLaps;
+		if (ObjectiveNbLaps <= 0 || !Map.TMObjective_IsLapRace) ObjectiveNbLaps = 1;
+		FinishTimeout = 5000 + (((Map.TMObjective_AuthorTime / ObjectiveNbLaps) * NbLaps) / 6);
+	}
+	
+	return Now + FinishTimeout;
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/** Get a unique event id
+ *
+ *	@return														The unique event id
+ */
+Text GetUniqueEventId() {
+	declare Chase_UniqueId_PrevNow for This = 0;
+	declare Chase_UniqueId_Count for This = 0;
+	
+	if (Chase_UniqueId_PrevNow != Now) {
+		Chase_UniqueId_Count = 0;
+	} else {
+		Chase_UniqueId_Count += 1;
+	}
+	Chase_UniqueId_PrevNow = Now;
+	
+	return Chase_UniqueId_PrevNow^Chase_UniqueId_Count;
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/** Set the name of the next checkpoint player
+ *
+ *	@param	_NoNameCheckpoint					Name displayed when no one corssed the checkpoint yet
+ *	@param	_User											User of the player
+ *	@param	_Clan											Clan of the player
+ *	@param	_Name											Name of the player
+ *	@param	_CheckpointNb							Number of the checkpoint
+ *	@param	_RaceTime									Race time if the player
+ *	@param	_RelayStartTime						Start time of the relay for each team
+ */
+Integer[Integer] SetNextCheckpointPlayer(Text _NoNameCheckpoint, CUser _User, Integer _Clan, Text _Name, Integer _CheckpointNb, Integer _RaceTime, Integer[Integer] _RelayStartTime) {
+	declare netwrite Integer Net_Chase_NextPlayerUpdate for Teams[0];
+	declare netwrite Text[Integer] Net_Chase_NextPlayer for Teams[0];
+	declare netwrite Integer[Integer] Net_Chase_NextCheckpoint for Teams[0];
+	declare netwrite Integer[Integer] Net_Chase_RelayTime for Teams[0];
+	Net_Chase_NextPlayer[_Clan] = _Name;
+	if (_CheckpointNb >= 0) Net_Chase_NextCheckpoint[_Clan] = _CheckpointNb;
+	Net_Chase_NextPlayerUpdate = Now;
+	
+	declare RelayStartTime = _RelayStartTime;
+	
+	// Save relay duration
+	if (_Name == _NoNameCheckpoint) {
+		if (_RaceTime >= 0) RelayStartTime[_Clan] = _RaceTime;
+		Net_Chase_RelayTime[_Clan] = -1;
+	} else if (RelayStartTime.existskey(_Clan)) {
+		Net_Chase_RelayTime[_Clan] = _RaceTime - RelayStartTime[_Clan];
+		RelayStartTime[_Clan] = -1;
+	}
+	
+	declare Login = "";
+	if (_User != Null) Login = _User.Login;
+	ChaseUI::SetRelayPlayer(_Clan, Login);
+	
+	return RelayStartTime;
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/** Get the ids of the players of a clan
+ *	that crossed the current checkpoint
+ *
+ *	@param	_CurrentCheckpoint				The array containing the info
+ *																		about the current checkpoint
+ *	@param	_Clan											The clan to get
+ *
+ *	@return														An array with the ids of the players of the given clan
+ *																		that crossed the current checkpoint
+ */
+Ident[] GetCurrentCheckpointPlayers(Ident[][Ident][Integer][Integer] _CurrentCheckpoint, Integer _Clan) {
+	foreach (Clan => Laps in _CurrentCheckpoint) {
+		if (Clan != _Clan) continue;
+		foreach (Lap => CheckpointsIds in Laps) {
+			foreach (CheckpointId => PlayersIds in CheckpointsIds) {
+				return PlayersIds;
+			}
+		}
+	}
+	
+	return Ident[];
+}
+
+// ---------------------------------- //
+/** Get the checkpoint score
+ *
+ *	@param	_CheckpointScoreMax			Maximum score value
+ *	@param	_LeaderTime								Time at the checkpoint of the first player
+ *	@param	_LeaderSpeed							Speed at the checkpoint of the first player
+ *	@param	_PlayerTime								Time at the checkpoint of the scoring player
+ *	@param	_PlayerSpeed							Speed at the checkpoint of the scoring player
+ *
+ *	@return														The points scored by the player at the checkpoints
+ */
+Integer GetCheckpointScore(Integer _CheckpointScoreMax, Integer _LeaderTime, Real _LeaderSpeed, Integer _PlayerTime, Real _PlayerSpeed) {
+	declare MaxPenalty = 2000.;
+	declare PlayerSpeed = _PlayerSpeed;
+	declare LeaderSpeed = _LeaderSpeed * 0.9;
+	if (PlayerSpeed > LeaderSpeed) PlayerSpeed = LeaderSpeed;
+	declare Penalty = 0;
+	if (LeaderSpeed != 0.) Penalty = ML::NearestInteger(MaxPenalty - ((MaxPenalty * PlayerSpeed) / LeaderSpeed));
+	declare X = ML::Max(0, _PlayerTime - _LeaderTime) + Penalty;
+	declare Score = 0;
+	if (X > 0) {
+		Score = ML::NearestInteger((ML::Pow(X * 0.0477, -0.887) * 0.2) * 100000);
+	} else if (X == 0) {
+		Score = _CheckpointScoreMax;
+	}
+	
+	declare ClampedScore = Score;
+	if (ClampedScore < 1) ClampedScore = 1;
+	else if (ClampedScore > _CheckpointScoreMax) ClampedScore = _CheckpointScoreMax;
+	
+	Log::Log("""[Chase] Checkpoint score > _LeaderTime : {{{_LeaderTime}}} | _PlayerTime : {{{_PlayerTime}}} | _LeaderSpeed : {{{_LeaderSpeed}}} | _PlayerSpeed : {{{_PlayerSpeed}}} | LeaderSpeed : {{{LeaderSpeed}}} | PlayerSpeed : {{{PlayerSpeed}}} | Penalty = {{{Penalty}}} | X : {{{X}}} | Score : {{{Score}}} | ClampedScore : {{{ClampedScore}}}""");
+	
+	return ClampedScore;
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/** Update the best checkpoint score
+ *
+ *	@param	_Score										The player's score to update
+ *	@param	_Points										The number of points at the checkpoint
+ */
+Void UpdateBestCheckpoint(CTmScore _Score, Integer _Points) {
+	if (_Score == Null) return;
+	
+	declare Chase_BestCheckpoint for _Score = 0;
+	if (_Points > Chase_BestCheckpoint) {
+		Chase_BestCheckpoint = _Points;
+		
+		if (Hud != Null && Hud.ScoresTable != Null) {
+			Hud.ScoresTable.SetColumnValue(_Score, "BestCheckpoint", Chase_BestCheckpoint);
+		}
+	}
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/** Update the number of legendary checkpoint
+ *
+ *	@param	_Score										The player's score
+ *	@param	_IsLegendary							Is the checkpoint legendary?
+ */
+Void UpdateBestLegendary(CTmScore _Score, Boolean _IsLegendary) {
+	if (_Score == Null) return;
+	
+	declare Chase_LegendaryNb for _Score = 0;
+	if (_IsLegendary) Chase_LegendaryNb += 1;
+		
+	if (Hud != Null && Hud.ScoresTable != Null) {
+		Hud.ScoresTable.SetColumnValue(_Score, "Legendary", Chase_LegendaryNb);
+	}
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/** Update the best number of combo
+ *
+ *	@param	_Score										The player's score
+ *	@param	_Combo										The current combo number
+ */
+Void UpdateBestCombo(CTmScore _Score, Integer _Combo) {
+	if (_Score == Null) return;
+	
+	declare Chase_BestCombo for _Score = 0;
+	if (_Combo > Chase_BestCombo) {
+		Chase_BestCombo = _Combo;
+		
+		if (Hud != Null && Hud.ScoresTable != Null) {
+			Hud.ScoresTable.SetColumnValue(_Score, "Combo", Chase_BestCombo);
+		}
+	}
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/** Compute the checkpoint grade of a player
+ *
+ *	@param	_CheckpointScores					The scores of each grade
+ *	@param	_CheckpointGrades					Grades names
+ *	@param	_CheckpointColors					Grades color
+ *	@param	_CheckpointRelayGrade		Relay grade name
+ *	@param	_CheckpointRelayColor		Relay grade color
+ *	@param	_PerfLow
+ *	@param	_PrefHigh
+ *	@param	_Player										The recipient
+ *	@param	_RelaySuccess							Was the relay successful at this checkpoint?
+ *	@param	_IsRelayer								This player is the relayer
+ *	@param	_Score										The score of the player at the checkpoint
+ */
+Void ComputeCheckpointGrade(
+	Integer[] _CheckpointScores,
+	Text[] _CheckpointGrades,
+	Vec3[] _CheckpointColors,
+	Text _CheckpointRelayGrade,
+	Vec3 _CheckpointRelayColor,
+	Integer _PerfLow,
+	Integer _PerfHigh,
+	CTmPlayer _Player,
+	Boolean _RelaySuccess,
+	Boolean _IsRelayer,
+	Integer _Score
+) {
+	if (_Player == Null) return;
+	
+	// Find grade if relay is a success
+	declare ScoreKey = -1;
+	if (_RelaySuccess) {
+		foreach (Key => Score in _CheckpointScores) {
+			if (_Score >= Score) {
+				ScoreKey = Key;
+				break;
+			}
+		}
+		
+		declare Score = ML::Max(0, _Score);
+		declare Chase_PerfLow for _Player.Score = 0;
+		declare Chase_PerfHigh for _Player.Score = 0;
+		Chase_PerfLow += ML::Min(Score, _PerfLow);
+		if (Score > _PerfLow) {
+			Chase_PerfHigh += ML::Min(Score - _PerfLow, _PerfHigh);
+		}
+	}
+	
+	// Update combo counter
+	declare Chase_Combo for _Player.Score = 0;
+	if (ScoreKey >= 0 && ScoreKey <= 3) {
+		Chase_Combo += 1;
+	} else {
+		Chase_Combo = 0;
+	}
+	
+	// Send grade to player
+	if (ScoreKey >= 0) {
+		ChaseUI::SendCheckpointGrade(_Player, _CheckpointGrades[ScoreKey], _CheckpointColors[ScoreKey], Chase_Combo, _Score);
+	} else if (_IsRelayer) {
+		ChaseUI::SendCheckpointGrade(_Player, _CheckpointRelayGrade, _CheckpointRelayColor, Chase_Combo, _Score);
+	}
+	
+	UpdateBestCheckpoint(_Player.Score, _Score);
+	UpdateBestCombo(_Player.Score, Chase_Combo);
+	UpdateBestLegendary(_Player.Score, ScoreKey == 0);
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/** Compute the relay score of a clan
+ *
+ *	@param	_CheckpointsScores
+ *	@param	_ValidRelay
+ *	@param	_Clan
+ *	@param	_NbLaps
+ *	@param	_BlockId
+ */
+Void ComputeRelayScore(
+	Integer[Ident][Ident][Integer][Integer] _CheckpointsScores,
+	Boolean[Ident][Integer][Integer] _ValidRelay,
+	Integer _Clan,
+	Integer _NbLaps,
+	Ident _BlockId
+) {
+	if (!_CheckpointsScores.existskey(_Clan)) return;
+	if (!_CheckpointsScores[_Clan].existskey(_NbLaps)) return;
+	if (!_CheckpointsScores[_Clan][_NbLaps].existskey(_BlockId)) return;
+	
+	// Do not give points if the relay is failed
+	if (!_ValidRelay.existskey(_Clan)) return;
+	if (!_ValidRelay[_Clan].existskey(_NbLaps)) return;
+	if (!_ValidRelay[_Clan][_NbLaps].existskey(_BlockId)) return;
+	if (!_ValidRelay[_Clan][_NbLaps][_BlockId]) return;
+	
+	Log::Log("""[Chase] Compute relay score for clan {{{_Clan}}} on laps {{{_NbLaps}}} and checkpoint {{{_BlockId}}}""");
+	
+	declare Count = 0;
+	declare CheckpointScores = _CheckpointsScores[_Clan][_NbLaps][_BlockId].sort();
+	Log::Log("""[Chase] Scores at the checkpoints : {{{CheckpointScores}}}""");
+	
+	foreach (ScoreId => CheckpointScore in CheckpointScores) {
+		if (CheckpointScore <= 0) continue;
+		if (Scores.existskey(ScoreId)) {
+			Scores::AddPlayerRoundPoints(Scores[ScoreId], Count);
+			Log::Log("""[Chase] {{{Scores[ScoreId].User.Login}}} > {{{Count}}} points""");
+		}
+		Count += 1;
+	}
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/// Unload the library
+Void Unload() {
+	
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/// Load the library
+Void Load() {
+	Unload();
+}
