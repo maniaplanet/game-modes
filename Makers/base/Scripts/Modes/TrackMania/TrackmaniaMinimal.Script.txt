@@ -1,0 +1,101 @@
+/**
+ *	Time Attack mode
+ */
+
+#Extends "Modes/TrackMania/ModeBase.Script.txt"
+
+#Const	CompatibleMapTypes	"Race"
+#Const	Version		"2016-11-24"
+#Const	ScriptName	"TimeAttack.Script.txt"
+
+declare CTaskResult G_TaskNewRecord;
+
+// ---------------------------------- //
+// Extend
+// ---------------------------------- //
+***StartMap***
+***
+UIManager.UIAll.UISequence = CUIConfig::EUISequence::Playing;
+UIManager.HoldLoadingScreen = False;
+LoadGhostPlayer();
+
+// ---------------------------------- //
+// Spawn players for the race
+foreach (Player in Players) {
+	StartRace(Player);
+}
+***
+
+***PlayLoop***
+***
+// ---------------------------------- //
+// Manage events
+foreach (Event in PendingEvents) {
+	PassOn(Event);
+	// ---------------------------------- //
+	// Waypoint
+	if (Event.Type == CTmModeEvent::EType::WayPoint) {
+		if (Event.IsEndRace) {
+			StartRace(Event.Player);
+			SetNewRecord();
+		}
+	}
+	// ---------------------------------- //
+	// GiveUp
+	else if (Event.Type == CTmModeEvent::EType::GiveUp) {
+		StartRace(Event.Player);
+	}
+}
+
+***
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+Void StartRace(CTmPlayer _Player) {
+	if (_Player == Null) return;
+	_Player.IsSpawned 				= True;
+	_Player.RaceStartTime 			= Now + 3000;
+}
+
+
+Void SetNewRecord() {
+	declare CGhost MyNewGhost = ScoreMgr.Playground_GetPlayerGhost(Players[0]);
+	G_TaskNewRecord = ScoreMgr.Map_SetNewRecord(Players[0].Id, Map.MapInfo.MapUid, "", MyNewGhost);
+	
+	while(G_TaskNewRecord.IsProcessing) yield;
+
+	if(G_TaskNewRecord.HasSucceeded)
+	{
+		log("["^Now^"]SetNewRecord - HasSucceeded");
+		ScoreMgr.TaskResult_Release(G_TaskNewRecord.Id);
+	}
+	else
+	{
+		log("["^Now^"]SetNewRecord - HasFailed");
+	}
+}
+
+Void LoadGhostPlayer() {
+	declare CGhost GhostPlayer;
+	declare Ident MyUserID for Players[0].User;
+	declare CTaskResult_Ghost TaskRecordGhost = ScoreMgr.Map_GetRecordGhost(MyUserID, Map.MapInfo.MapUid, "");
+	while(TaskRecordGhost.IsProcessing) yield;
+
+	if(TaskRecordGhost.HasSucceeded)
+	{
+		GhostPlayer <=> TaskRecordGhost.Ghost;
+		log("["^Now^"]LoadGhostPlayer - HasSucceeded");
+	}
+	else
+	{
+		log("["^Now^"]LoadGhostPlayer - HasFailed");
+		log("TaskRecordGhost.ErrorType       : " ^ TaskRecordGhost.ErrorType);
+		log("TaskRecordGhost.ErrorCode       : " ^ TaskRecordGhost.ErrorCode);
+		log("TaskRecordGhost.ErrorDescription: " ^ TaskRecordGhost.ErrorDescription);
+	}
+
+	log("GhostPlayer: "^ GhostPlayer);
+	if(GhostPlayer != Null) RaceGhost_Add(GhostPlayer, True);
+}
+

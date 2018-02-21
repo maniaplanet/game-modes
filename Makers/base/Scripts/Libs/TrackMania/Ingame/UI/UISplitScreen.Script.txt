@@ -1,0 +1,527 @@
+/** 
+ *	In-Game UI library
+ */
+
+#Const Version		"2014-06-30"
+#Const ScriptName	"UIHotSeat.Script.txt"
+
+#Include "TextLib" as TL
+
+#Include "Libs/Nadeo/Common/Ingame/IngameLayers.Script.txt" 										as Layers
+#Include "Libs/Nadeo/Common/ManialinkTools/UIPadButtons.Script.txt"									as UIButtons
+#Include "Libs/Nadeo/MP4/Common/ManialinkTools/FontManager.Script.txt" 								as Font
+#Include "Libs/Nadeo/MP4/Common/Colors.Script.txt" 									as Colors
+#Include "Libs/Trackmania/Ingame/UI/UIButtonNamesPopup.Script.txt"				as UIButtonNamesPopup
+#Include "Libs/Trackmania/Ingame/UI/SplitScreenLibManialinkCoef.Script.txt"		as SplitScreenLibManialinkCoef
+
+#Include "Libs/Trackmania/Ingame/UI/Layers/LB_SelectNbPlayers.Script.txt"		as LB_SelectNbPlayers
+#Include "Libs/Trackmania/Ingame/UI/Layers/LB_MenuStatus.Script.txt"			as LB_MenuStatus
+#Include "Libs/Trackmania/Ingame/UI/Layers/LB_Test.Script.txt"					as LB_Test
+#Include "Libs/Trackmania/Ingame/UI/Layers/LB_MenuStart.Script.txt"				as LB_MenuStart
+
+#Const ImgPath						"file://Media/Images/TMConsole/Ingame/"
+#Const IMGPATH						"file://Media/Images/TMConsole/Ingame/"
+#Const ImgSplitscreen				"mode-splitscreen.png"
+#Const IMG_FG						"slot-medium-fg.dds"
+#Const IMG_BG						"slot-medium-bg.dds"
+#Const IMG_BG_COLOR					"slot-medium-bg-color.dds"
+#Const IMG_BG_LINE					"menu-bg-1.dds"
+#Const C_TEXT_DEFAUTSIZE 			3
+
+
+#Const C_LAYERNAME_SELECNBPLAYERS 	"Layer_TMC_SelecNbPlayers"
+#Const C_LAYERNAME_SEPARATOR	 	"Layer_TMC_Separator"
+#Const C_LAYERNAME_MENUSTATUS 		"Layer_TMC_MenuStatus"
+#Const C_LAYERNAME_SCORERANKING		"Layer_TMC_ScoreRanking"
+#Const C_LAYERNAME_RESTARTGAME		"Layer_TMC_RestartGame"
+#Const C_LAYERNAME_CURRENTRANK	 	"Layer_TMC_CurrentRank"
+
+#Const C_PLAYERCHOICE_QUIT		0
+#Const C_PLAYERCHOICE_RESTART	1
+
+#Const C_LayerPosition				<0., 0., 41.>
+// #Const C_LAYERNAME_MENUSTATUS 		"Layer_TMC_MenuStatus"
+
+#Const MODE_COLORID_MULTIPLAYER		1
+
+#Const C_RATIO 								12.962
+
+#Const C_CHEAT_UNIQUE_CAMERA_BLINK_SPEED	0.004
+
+//////////////////////////////////////////
+// ALIGN
+#Const vT 	""" valign="top" """
+#Const vB 	""" valign="bottom" """
+#Const vC 	""" valign="center" """
+#Const hC 	""" halign="center" """
+#Const hR 	""" halign="right" """
+
+declare Integer G_NbPlayer;
+declare Text 	G_FontChrono;
+declare Text 	G_FontMain;
+declare Text 	G_FontMainSmall;
+declare Text 	G_FontNumberBig;
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+Void LoadFonts()
+{
+	G_FontChrono 				= Font::GetFontName("Chrono");
+	G_FontMain					= Font::GetFontName("Main");
+	G_FontMainSmall				= Font::GetFontName("MainSmall");
+	G_FontNumberBig				= Font::GetFontName("NumberBig");
+}
+
+Void ConstructSeparatorLayer(Boolean _CheatUniqueCamera) {
+	declare Real StartScale = 180.;
+	declare QuadStyleBg					= """ size="25. 10." image="{{{IMGPATH^IMG_BG_LINE}}}" """;
+	declare ChronoPosY = 0.;
+	if(_CheatUniqueCamera)
+		ChronoPosY = 75.;
+	declare CTitleFlow::ESplitScreenLayout SplitScreenLayout for Users[0];
+	//log("SplitScreenLayout:" ^ SplitScreenLayout);
+
+	//HACK - Dehack la Frame Principale! (pour remettre les lignes de s�paration)
+	declare Text MLText = 
+	"""
+		<frame hidden="1">
+			<frame id="Frame_SplitscreenLines" pos="0. 0. 27." scale="{{{StartScale}}}">
+				<quad id="Quad_HorizontalLine" pos="0. 0. 0." size="320. 1." bgcolor="000" halign="center" valign="center"/>
+				<quad id="Quad_VerticalLine" pos="0. 0. 0." size="1. 180" bgcolor="000" halign="center" valign="center"/>
+			</frame>
+			
+			<quad id="Quad_Bg1" pos="0. {{{ChronoPosY}}} 30.1"  {{{QuadStyleBg}}} halign="center" valign="center" hidden="1"/>
+			
+			<frame id="Frame_SplitscreenChrono">
+				<quad pos="0. {{{ChronoPosY}}} 30." size="23 7.5" 	halign="center" valign="center" bgcolor="000" />
+				<frame id="Frame_Chrono" pos="0. {{{ChronoPosY}}} 30.2">
+					<label id="Label_Chrono" halign="center" valign="center" textfont="{{{G_FontChrono}}}"  textsize="{{{C_TEXT_DEFAUTSIZE}}}" text="--:--.--" />
+				</frame>
+				<quad pos="0. {{{ChronoPosY}}} 32." size="25 10" 	halign="center" valign="center" image="{{{IMGPATH^IMG_FG}}}" hidden="1"/>
+			</frame>
+		</frame>
+		<script><!--
+		#Include "TextLib" as TL
+		#Include "MathLib" as ML
+		
+		Text GetTimeToText(Integer _Time)
+		{
+			declare TimeText = TL::TimeToText(_Time, True);
+			if(_Time < 600000) TimeText = "0"^TimeText;
+			return TimeText;
+		}
+		
+		main()
+		{
+			declare Label_Chrono 					<=> (Page.GetFirstChild("Label_Chrono") 				as CMlLabel);
+			declare Frame_SplitscreenChrono 		<=> (Page.GetFirstChild("Frame_SplitscreenChrono") 		as CMlFrame);
+			declare Quad_HorizontalLine 			<=> (Page.GetFirstChild("Quad_HorizontalLine") 			as CMlQuad);
+			declare Quad_VerticalLine 				<=> (Page.GetFirstChild("Quad_VerticalLine") 			as CMlQuad);
+			declare Frame_SplitscreenLines			<=> (Page.GetFirstChild("Frame_SplitscreenLines") 		as CMlQuad);
+			
+			declare netwrite Integer Net_NbPlayerChosen for UI;
+			declare netread Integer Net_StartScaleDown for UI;
+			declare M_StartScaleDown = Net_StartScaleDown;
+			declare M_NbPlayerChosen = Net_NbPlayerChosen;
+
+			// Quad_HorizontalLine.Hide();
+			declare M_IsOnePlayerRunning = True;
+			declare CTmMlPlayer TheRunningPlayer;
+			
+			declare netread Integer Net_SplitscreenMode for UI;
+			
+			if({{{_CheatUniqueCamera}}} || Net_SplitscreenMode == 2) {
+				Quad_HorizontalLine.Hide();
+			} else {
+				Quad_HorizontalLine.Show();
+			}
+			
+			if({{{_CheatUniqueCamera}}})
+			{
+				Quad_VerticalLine.Hide();
+			}
+			
+			declare Integer TimerChangeScale 	= 0;
+			declare Integer TimerMaxChangeScale = 4;
+			declare Real 	Scale = {{{StartScale}}};
+
+			while(True) {
+				yield;
+				if(Players[0] == Null) continue;
+				
+				M_IsOnePlayerRunning = False;
+				foreach(Player in Players) {
+					if(Player.RaceState == CTmMlPlayer::ERaceState::Running) {
+						M_IsOnePlayerRunning = True;
+						TheRunningPlayer <=> Player;
+					}
+				}
+
+				if(M_IsOnePlayerRunning && TheRunningPlayer != Null) {
+					Frame_SplitscreenChrono.Visible = True;
+					Label_Chrono.Value 	= GetTimeToText(TheRunningPlayer.CurRace.Time);
+				} else {
+					Frame_SplitscreenChrono.Visible = False;
+				}
+				
+				if(M_NbPlayerChosen != Net_NbPlayerChosen && Net_NbPlayerChosen > 0) {
+					M_NbPlayerChosen = Net_NbPlayerChosen;
+				}
+				
+				if(Net_StartScaleDown != M_StartScaleDown) {
+					if(Scale > 1.) {
+						TimerChangeScale += Period;
+						if(TimerChangeScale >= TimerMaxChangeScale) {
+							Scale -= 4.;
+							TimerChangeScale = 0;
+							if(Scale < 1.) {
+								Scale = 1.;
+								M_StartScaleDown = Net_StartScaleDown;
+							}
+							Frame_SplitscreenLines.Scale = Scale;
+						}
+					}
+				}
+			}
+		}
+		--></script>
+	""";
+	Layers::Create(C_LAYERNAME_SEPARATOR, MLText);
+	Layers::Attach(C_LAYERNAME_SEPARATOR);
+}
+
+Void ShowScoreTable(Boolean _Visible) {
+	Layers::SetVisibility(C_LAYERNAME_SCORERANKING, _Visible);
+}
+
+Void ConstructScoreRankingLayer() {
+	if (Players.count == 0)
+		return;
+	declare UI <=> UIManager.GetUI(Players[0]);
+	declare netwrite Text[] 	Net_Layer_TMC_ScoreRankingInputs 			for UI;
+	declare netwrite Integer[] 	Net_Layer_TMC_ScoreRankingRanks				for UI;
+	declare netwrite Text[] 	Net_Layer_TMC_ScoreRankingName 				for UI;
+	declare netwrite Integer[] 	Net_Layer_TMC_ScoreRankingScore				for UI;
+	declare netwrite Integer[] 	Net_Layer_TMC_ScoreRankingMedal 			for UI;
+	declare netwrite Vec3[] 	Net_Layer_TMC_ScoreRankingColor 			for UI;
+	declare netwrite Integer 	Net_Layer_TMC_ScoreRankingSelectedPlayer	for UI;
+	declare netwrite Text 		Net_Layer_TMC_MenuStatus					for UI;
+	declare netwrite Text 		Net_Layer_TMC_MenuStatus_Subtitle			for UI;
+	declare netwrite Text[] 	Net_MenuFinalInputs							for UI;
+	declare Integer Platform               = UIButtons::GetPlatform();
+	declare IMGSelect 		= UIButtons::GetImage(Platform, CManiaAppEvent::EMenuNavAction::Select);
+	declare TXTSelect 		= UIButtonNamesPopup::GetSelectText();
+	Net_Layer_TMC_MenuStatus_Subtitle = _("Time to fight!");
+	Net_MenuFinalInputs 	= [IMGSelect, TXTSelect];
+	Net_Layer_TMC_ScoreRankingSelectedPlayer = 0;
+	Net_Layer_TMC_MenuStatus = ImgPath^ImgSplitscreen;
+	
+	Net_Layer_TMC_ScoreRankingRanks.clear();
+	Net_Layer_TMC_ScoreRankingName.clear();
+	Net_Layer_TMC_ScoreRankingScore.clear();
+	Net_Layer_TMC_ScoreRankingMedal.clear();
+	Net_Layer_TMC_ScoreRankingColor.clear();
+	
+	for(I, 0, G_NbPlayer-1)  {
+		Net_Layer_TMC_ScoreRankingRanks	.add(I + 1);
+		Net_Layer_TMC_ScoreRankingName	.add("Player"^I);
+		Net_Layer_TMC_ScoreRankingScore	.add(I);
+		Net_Layer_TMC_ScoreRankingMedal	.add(4);
+		Net_Layer_TMC_ScoreRankingColor	.add(<1.0, 0.0, 0.0>);
+	}
+
+	ShowScoreTable(False);
+}
+
+Void ConstructSelectNbPlayersPopup() {
+	if (Players.count == 0)
+		return;
+	declare UI <=> UIManager.GetUI(Players[0]);
+	declare netwrite Text[] 	Net_MenuNbPlayersInputs		for UI;
+	declare netwrite Text 		Net_MenuStatusTitle			for UI;
+	declare netwrite Text 		Net_MenuStatusSubtitle		for UI;
+	
+	declare Integer Platform               = UIButtons::GetPlatform();
+	declare IMGSelect 		= UIButtons::GetImage(Platform, CManiaAppEvent::EMenuNavAction::Select);
+	declare TXTSelect 		= UIButtonNamesPopup::GetSelectText();
+	Net_MenuNbPlayersInputs = [IMGSelect, TXTSelect];
+	
+	declare ColorMode 		= Colors::GetModeColorName(MODE_COLORID_MULTIPLAYER);
+	declare TitleParam		= "ColorText "^ColorMode;
+	
+	Net_MenuStatusTitle 	= ImgPath^ImgSplitscreen;
+	//L16N Slogan for splitscreen mode
+	Net_MenuStatusSubtitle 	= "";
+
+	declare Text MLText = LB_SelectNbPlayers::Build();
+	Layers::Create(C_LAYERNAME_SELECNBPLAYERS, MLText);
+	Layers::Attach(C_LAYERNAME_SELECNBPLAYERS);
+
+	Layers::SetVisibility(C_LAYERNAME_SELECNBPLAYERS, False);
+}
+
+Integer GetNbPlayers() {
+	if (Players.count == 0)
+		return 0;
+	declare UI <=> UIManager.GetUI(Players[0]);
+	declare netread Integer Net_NbPlayerChosen for UI;
+	return Net_NbPlayerChosen;
+}
+
+Void SetNbPlayersLayerVisibility(Boolean _Visibility)  {
+	log("_");
+	Layers::SetVisibility(C_LAYERNAME_SELECNBPLAYERS, _Visibility);
+}
+
+Void ConstructPauseMenuPopup() 
+{
+	declare Text MLText = LB_MenuStart::Build();
+	Layers::Create("Menu", MLText);
+	Layers::SetType("Menu", CUILayer::EUILayerType::InGameMenu);
+	Layers::Attach("Menu");
+}
+
+Void ConstructPopupLayer() 
+{
+	declare Text MLText = LB_MenuStart::Build();
+	Layers::Create(C_LAYERNAME_MENUSTATUS, MLText);
+	Layers::Attach(C_LAYERNAME_MENUSTATUS);
+
+	Layers::SetVisibility(C_LAYERNAME_MENUSTATUS, False);
+}
+
+Void SetNbPlayers(Integer _NbPlayers) {
+	G_NbPlayer = _NbPlayers;
+}
+
+Boolean PlayerWantsToQuit() {
+	if (Players.count == 0)
+		return True;
+	declare UI <=> UIManager.GetUI(Players[0]);
+	declare netread Integer 	Net_PlayerWantsToQuitUpdate for UI;
+	declare netwrite Integer 	Pre_PlayerWantsToQuitUpdate for UI;
+		
+	if(Pre_PlayerWantsToQuitUpdate != Net_PlayerWantsToQuitUpdate) {
+		Pre_PlayerWantsToQuitUpdate = Net_PlayerWantsToQuitUpdate;
+		return True;
+	}
+	return False;
+}
+
+Void UpdateScoreTable(Text[] PlayersName, Integer[] PlayersScore, Vec3[] PlayerColors, Boolean _IsFinalRace) {
+	if (Players.count == 0)
+		return;
+	declare UI <=> UIManager.GetUI(Players[0]);
+	declare netwrite Text[] 	Net_Layer_TMC_ScoreRankingName 				for UI;
+	declare netwrite Integer[] 	Net_Layer_TMC_ScoreRankingScore 			for UI;
+	declare netwrite Integer 	Net_Layer_TMC_ScoreRankingSelectedPlayer	for UI;
+	declare netwrite Vec3[] 	Net_Layer_TMC_ScoreRankingColor 			for UI;
+	
+	Net_Layer_TMC_ScoreRankingName.clear();
+	Net_Layer_TMC_ScoreRankingScore.clear();
+	Net_Layer_TMC_ScoreRankingColor.clear();
+	for(I, 0, G_NbPlayer-1) {
+		Net_Layer_TMC_ScoreRankingName.add(PlayersName[I]);
+		Net_Layer_TMC_ScoreRankingScore.add(PlayersScore[I]);
+		Net_Layer_TMC_ScoreRankingColor.add(PlayerColors[I]);
+	}
+}
+
+Boolean GetFinalAnswerRanking()
+{
+	if (Players.count == 0)
+		return True;
+	declare UI <=> UIManager.GetUI(Players[0]);
+	declare netread Boolean Net_Layer_TMC_ScoreRanking_PopupChoice 	for UI;
+	declare netread Integer Net_Layer_TMC_ScoreRanking_PopupUpdate 	for UI;
+	declare 		Integer Prev_Layer_TMC_ScoreRanking_PopupUpdate for UI;
+	if(Prev_Layer_TMC_ScoreRanking_PopupUpdate != Net_Layer_TMC_ScoreRanking_PopupUpdate)
+	{
+		Prev_Layer_TMC_ScoreRanking_PopupUpdate = Net_Layer_TMC_ScoreRanking_PopupUpdate;
+		Layers::SetVisibility(C_LAYERNAME_SCORERANKING, False);
+		return True;
+	}
+	return False;
+}
+
+Boolean GetPopUpAnswer()
+{
+	if (Players.count == 0)
+		return True;
+	declare UI <=> UIManager.GetUI(Players[0]);
+	declare netread Boolean Net_Layer_TMC_MenuStatus_PopupChoice 	for UI;
+	declare netread Integer Net_Layer_TMC_MenuStatus_PopupUpdate 	for UI;
+	declare 		Integer Prev_Layer_TMC_MenuStatus_PopupUpdate 	for UI;
+	if(Prev_Layer_TMC_MenuStatus_PopupUpdate != Net_Layer_TMC_MenuStatus_PopupUpdate)
+	{
+		Prev_Layer_TMC_MenuStatus_PopupUpdate = Net_Layer_TMC_MenuStatus_PopupUpdate;
+		Layers::SetVisibility(C_LAYERNAME_MENUSTATUS, False);
+		return True;
+	}
+	return False;
+}
+
+Void ShowPopup(Text _Title, Text _Subtitle, Text _Message1, Text _Message2, Text[] _Inputs)
+{
+	if (Players.count == 0)
+		return;
+	declare UI <=> UIManager.GetUI(Players[0]);
+	declare netwrite Text 		Net_MenuStatusTitle			for UI;
+	declare netwrite Text 		Net_MenuStatusSubtitle		for UI;
+	declare netwrite Text 		Net_MenuStatusMessage1		for UI;
+	declare netwrite Text 		Net_MenuStatusMessage2		for UI;
+	declare netwrite Text[] 	Net_MenuStatusInputs		for UI;
+	
+	Net_MenuStatusTitle 		= _Title;
+	Net_MenuStatusSubtitle 		= _Subtitle;
+	Net_MenuStatusMessage1 		= _Message1;
+	Net_MenuStatusMessage2 		= _Message2;
+	Net_MenuStatusInputs 		= _Inputs;
+
+	Layers::SetVisibility(C_LAYERNAME_MENUSTATUS, True);
+}
+
+Integer GetRestartGameChoice() {
+	declare UI <=> UIManager.GetUI(Players[0]);
+	declare netread Integer Net_PlayerRestartChoice for UI;
+	return Net_PlayerRestartChoice;
+}
+
+Void SetRestartGameVisibility(Boolean _Visibility) {
+	Layers::SetVisibility(C_LAYERNAME_RESTARTGAME, _Visibility);
+}
+
+Void ConstructRestartGamePopup() {
+	declare UI <=> UIManager.GetUI(Players[0]);
+	declare netwrite Text[] 	Net_MenuNbPlayersInputs		for UI;
+	
+	declare Integer Platform               = UIButtons::GetPlatform();
+	declare IMGSelect 		= UIButtons::GetImage(Platform, CManiaAppEvent::EMenuNavAction::Select);
+	declare TXTSelect 		= UIButtonNamesPopup::GetSelectText();
+	Net_MenuNbPlayersInputs = [IMGSelect, TXTSelect];
+
+	declare Text MLText = LB_Test::Build();
+	Layers::Create(C_LAYERNAME_RESTARTGAME, MLText);
+	Layers::Attach(C_LAYERNAME_RESTARTGAME);
+
+	Layers::SetVisibility(C_LAYERNAME_RESTARTGAME, False);
+}
+
+Void ShowPopup(Text _Title, Text _Subtitle, Text _Message1, Text _Message2, Text _InputText)
+{
+	declare Integer Platform               = UIButtons::GetPlatform();
+	declare IMGSelect = UIButtons::GetImage(Platform, CManiaAppEvent::EMenuNavAction::Select);
+	ShowPopup(_Title, _Subtitle, _Message1, _Message2, [IMGSelect, _InputText]);
+}
+
+
+Void Unload() {
+	Layers::Destroy(C_LAYERNAME_SELECNBPLAYERS);
+	Layers::Destroy(C_LAYERNAME_SEPARATOR);
+	Layers::Destroy(C_LAYERNAME_MENUSTATUS);
+	Layers::Destroy(C_LAYERNAME_SCORERANKING);
+	Layers::Destroy(C_LAYERNAME_RESTARTGAME);
+	Layers::Destroy(C_LAYERNAME_CURRENTRANK);	// may not have been created
+}
+
+Void Load(){
+	Unload();
+	UIButtons::Load();
+
+	// declare Player 	<=> Players[0];
+	// declare UI 		<=> UIManager.GetUI(Player);
+}
+
+Void ConstructPlayerCurrentRank_Create()
+{
+	declare Scale = SplitScreenLibManialinkCoef::GetScaleFromPlayerCount(G_NbPlayer);
+	declare PosRatio = SplitScreenLibManialinkCoef::GetCoefPosFromPlayerCount(G_NbPlayer);
+	declare SpecialScale = SplitScreenLibManialinkCoef::GetSpecialScaleFromPlayerCount(G_NbPlayer);
+	
+	declare CurrentRank_LineSizeX			= 70.;	// = C_RACE_MAPNAME_SIZE_X in UI.Script.txt									// FIXME : factoriser avec UI.Script.txt
+	declare CurrentRank_LineSizeY			= CurrentRank_LineSizeX / C_RATIO;	// = MapNameSizeY in UI.Script.txt				// FIXME : factoriser avec UI.Script.txt
+	declare CurrentRank_LineSizeX_Clipped	= CurrentRank_LineSizeX * 12. / 15.;	// 12 circles displayed instead of 15
+	declare CurrentRank_SizeX				= CurrentRank_LineSizeX_Clipped * 10. / 12.;
+	declare CurrentRank_SizeY				= CurrentRank_LineSizeY * 5.;
+	declare CurrentRank_SlashPosX			= CurrentRank_SizeX * 0.65;
+	declare CurrentRank_TextPosY			= -CurrentRank_SizeY * 0.85;
+	declare CurrentRank_CenterPosY			= 56.6982;			// = LapsToGoCenterY in UI.Script.txt							// FIXME : factoriser avec UI.Script.txt
+	
+	declare CurrentRank_LineStyle			= """ size="{{{CurrentRank_LineSizeX}}} {{{CurrentRank_LineSizeY}}}" image="{{{IMGPATH^IMG_BG_LINE}}}" """;
+	
+	declare Text MLText = 
+	"""
+		<frame scale="{{{Scale}}}">
+			<frame scale="{{{SpecialScale}}}"	pos="{{{160 * PosRatio.X}}} {{{CurrentRank_CenterPosY}}}">
+				<frame id="Frame_CurrentRank"	pos="{{{-CurrentRank_LineSizeX_Clipped}}} {{{CurrentRank_LineSizeY*2.5}}}" hidden="1">
+					<frame clip="True" 		clipposn="{{{CurrentRank_LineSizeX_Clipped / 2.}}} {{{-CurrentRank_LineSizeY * 2.5}}}"	clipsizen="{{{CurrentRank_LineSizeX_Clipped}}} {{{CurrentRank_LineSizeY * 5.}}}">
+						<quad	id="Quad_CurrentRankLine1"		pos="0. 0. 								0." {{{vT}}}	{{{CurrentRank_LineStyle}}} />
+						<quad	id="Quad_CurrentRankLine2"		pos="0. {{{-CurrentRank_LineSizeY}}}		0." {{{vT}}}	{{{CurrentRank_LineStyle}}} />
+						<quad	id="Quad_CurrentRankLine3"		pos="0. {{{-CurrentRank_LineSizeY*2.}}}	0." {{{vT}}}	{{{CurrentRank_LineStyle}}} />
+						<quad	id="Quad_CurrentRankLine4"		pos="0. {{{-CurrentRank_LineSizeY*3.}}}	0." {{{vT}}}	{{{CurrentRank_LineStyle}}} />
+						<quad	id="Quad_CurrentRankLine5"		pos="0. {{{-CurrentRank_LineSizeY*4.}}}	0." {{{vT}}}	{{{CurrentRank_LineStyle}}} />
+						<quad	id="Quad_CurrentRankBg"			pos="0. 0.									1." {{{vT}}}	size="{{{CurrentRank_SizeX}}} {{{CurrentRank_SizeY}}}" 	bgcolor="000" />
+						<quad	id="Quad_CurrentRankFg"			pos="0. 0.									3." {{{vT}}}	size="{{{CurrentRank_SizeX}}} {{{CurrentRank_SizeY}}}" 	image="{{{IMGPATH^IMG_FG}}}" />
+						<label 	id="Label_CurrentRank"			pos="{{{CurrentRank_SlashPosX}}}	{{{CurrentRank_TextPosY-2.}}}	2."	{{{hR^vB}}}	textfont="{{{G_FontNumberBig}}}"	textsize="20." text="-" />
+						<label 	id="Label_CurrentRankSuffix"	pos="{{{CurrentRank_SlashPosX}}}		{{{CurrentRank_TextPosY-1.}}}		2."	{{{vB}}}	textfont="{{{G_FontMain}}}"			textsize="7." text="th" />
+					</frame>
+				</frame>
+			</frame>
+		</frame>
+		<script><!--
+		#Include "TextLib" as TL
+		#Include "MathLib" as ML
+		#Const C_RANK_SUFFIXES	[
+			//L16N [SplitScreen] Written just after a big "1" to show the ranking of the player in the current race. 3 letters max
+			_("|Suffix of 1st|st"),
+			//L16N [SplitScreen] Written just after a big "2" to show the ranking of the player in the current race. 3 letters max
+			_("|Suffix of 2nd|nd"),
+			//L16N [SplitScreen] Written just after a big "3" to show the ranking of the player in the current race. 3 letters max
+			_("|Suffix of 3rd|rd"),
+			//L16N [SplitScreen] Written just after a big "4" to show the ranking of the player in the current race. 3 letters max
+			_("|Suffix of 4th|th")
+			]
+		
+		main()
+		{
+			while(True)
+			{
+				yield;
+				declare Frame_CurrentRank				<=> (Page				.GetFirstChild("Frame_CurrentRank") 		as CMlFrame);
+				declare Label_CurrentRank				<=> (Frame_CurrentRank	.GetFirstChild("Label_CurrentRank") 		as CMlLabel);
+				declare Label_CurrentRankSuffix			<=> (Frame_CurrentRank	.GetFirstChild("Label_CurrentRankSuffix") 	as CMlLabel);
+				
+				declare Rank = -1;
+				if(GUIPlayer != Null)	// anti runtime error (repro : finir un round de split screen duel)
+					Rank = GUIPlayer.CurRaceContinuousRank;
+				if(Rank > 0 && Rank <= {{{G_NbPlayer}}})
+				{
+					Frame_CurrentRank.Visible = True;
+					Label_CurrentRank.Value = "" ^ Rank;
+					Label_CurrentRankSuffix.Value = C_RANK_SUFFIXES[Rank - 1];
+				}
+				else
+					Frame_CurrentRank.Visible = False;
+			}
+		}
+		--></script>
+	""";
+	Layers::Create(C_LAYERNAME_CURRENTRANK, MLText);
+	/*
+	UIManager.UILayerDestroyAll();
+	foreach(IndexPlayer => Player in Players) 
+	{
+		declare UI          <=> UIManager.GetUI(Player);
+		declare CurrentRank <=> UIManager.UILayerCreate();
+		CurrentRank		.ManialinkPage = MLText;
+		UI.UILayers.add(CurrentRank);
+	}
+	*/
+}
+
+Void ConstructPlayerCurrentRank_Attach(CTmPlayer _Player)
+{
+	Layers::Attach(C_LAYERNAME_CURRENTRANK, _Player);
+}

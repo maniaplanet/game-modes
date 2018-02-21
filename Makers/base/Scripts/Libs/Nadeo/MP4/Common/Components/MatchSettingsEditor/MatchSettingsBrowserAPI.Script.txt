@@ -1,0 +1,711 @@
+#Include "TextLib"																as TextLib
+#Include "TimeLib"																as TimeLib
+#Include "Libs/Nadeo/Common/Core/Logger.Script.txt"									as Logger
+
+// APIs
+#Include "Libs/Nadeo/MP4/Common/Components/TrackBrowser/TrackBrowserAPI.Script.txt"	as TrackBrowserAPI
+#Include "Libs/Nadeo/Common/ManiascriptTools/Sort.Script.txt"								as SortTools
+#Include "Libs/Nadeo/MP4/Common/Components/FileBrowser/FileBrowserAPI.Script.txt"	as FileBrowserAPI
+
+#Const C_MapsPerPage	15
+#Const C_ImgTrack		"file://Media/MEDIABROWSER_HiddenResources/Common/Images/TrackBrowser/"
+
+#Const C_BasePath		"Maps\\MatchSettings\\"
+#Const C_FilePrefix		""
+#Const C_BrowserName	"MatchSettingsBrowser"
+#Const C_MediaType		CDataFileMgr::EMediaType::MatchSettings
+#Const C_ThumbnailType	"NoThumbnail"
+
+// PARTIE EDITOR :
+declare CMatchSettings			G_CurrentMatchSettings;
+declare Text[]					G_ExtraSettingsTypes;
+declare Text[]					G_ExtraSettingsNames;
+declare Text[]					G_ExtraSettingsInstances;
+declare Text[]					G_AuthorizedModes;
+
+declare Boolean					G_HasFinishedHardFetchMetadata;
+declare Text					G_BaseName;
+declare Text					G_CurrentName;
+declare Text[]					G_CurrentTracklist;
+declare Text[Text]				G_CurrentMode;
+declare Text					G_ForcedModeName;
+declare Integer					G_Track_CurrentPageIndex;
+declare Integer					G_Track_MaxPages;
+
+Boolean CanChangeMode()
+{
+	return (G_ForcedModeName == "");
+}
+
+Boolean AreModesCompatible(Text _Mode)
+{
+	return (CanChangeMode() || (G_ForcedModeName == _Mode || _Mode == ""));
+}
+
+Boolean HasNoMaps()
+{
+	foreach (MapPath in G_CurrentTracklist) {
+		declare Text[Text] Metadata = TrackBrowserAPI::HardPullMetadata(MapPath);
+		if (Metadata.existskey("Name")) {
+			return False;
+		}
+	}
+	return True;
+}
+
+// Path needs to be with the ".txt"
+CMatchSettings GetMatchSettingsFromPath(Text _Path)
+{
+	declare ShortMatchSettingsPath	= TextLib::SubString(_Path, 0, TextLib::Length(_Path) - 4);
+	declare SplitSubFolder			= TextLib::Split("\\/", ShortMatchSettingsPath);
+	if (SplitSubFolder.count != 0) {
+		ShortMatchSettingsPath = SplitSubFolder[SplitSubFolder.count - 1];
+	}
+	foreach (MatchSettingsUnit in MatchSettingsManager.MatchSettings) {
+		if (MatchSettingsUnit.Name == ShortMatchSettingsPath && AreModesCompatible(MatchSettingsUnit.ScriptModeName)) {
+			return MatchSettingsUnit;
+		}
+	}
+	return Null;
+}
+
+Text FullPath(Text _Path)
+{
+	return FileBrowserAPI::FullPath(C_BrowserName, _Path);
+}
+
+Void FetchData(Text _Path)
+{
+	FileBrowserAPI::FetchData(C_BrowserName, _Path);
+}
+
+Text FolderParentPath()
+{
+	return FileBrowserAPI::FolderParentPath(C_BrowserName);
+}
+
+Void SwitchFlatten()
+{
+	FileBrowserAPI::SwitchFlatten(C_BrowserName);
+}
+
+Void SwitchSortOrder()
+{
+	FileBrowserAPI::SwitchSortOrder(C_BrowserName);
+}
+
+Void SwitchSortCriterion()
+{
+	FileBrowserAPI::SwitchSortCriterion(C_BrowserName);
+}
+
+Text[Text] GetMetadataFromFile(Text _File)
+{
+	return FileBrowserAPI::GetMetadataFromFile(C_BrowserName, _File);
+}
+
+Text[] GetAllSortedFiles(Boolean _IsSortingFromDateRatherThanName, Boolean _IsSortingFromDescendingOrder)
+{
+	return FileBrowserAPI::GetAllSortedFiles(C_BrowserName, _IsSortingFromDateRatherThanName, _IsSortingFromDescendingOrder);
+}
+
+Text[] GetAllSortedFolders(Boolean _IsSortingFromDateRatherThanName, Boolean _IsSortingFromDescendingOrder)
+{
+	return FileBrowserAPI::GetAllSortedFolders(C_BrowserName, _IsSortingFromDateRatherThanName, _IsSortingFromDescendingOrder);
+}
+
+Text[Text] GetMetadata(Text _Path)
+{
+	return FileBrowserAPI::GetMetadata(C_BrowserName, _Path);
+}
+
+Void UpdateMainData()
+{
+	declare Integer[] AllPages;
+	declare CTaskResult_FileList TaskResult <=> FileBrowserAPI::GetTaskResult(C_BrowserName);
+	declare Integer ElemsPerPage	= FileBrowserAPI::GetElemsPerPage(C_BrowserName);
+	declare Integer NbElems = 0;
+	AllPages.add(0);
+	//declare Text[] RequestedSubFolders = GetAllSortedFolders(G_IsSortingFromDateRatherThanName[_BrowserName], G_IsSortingFromDescendingOrder[_BrowserName]);
+	// TODO : Attendre les fonctions de Falguiere et ne pas faire ça tout seul
+	foreach(SubFolder in TaskResult.SubFolders) {
+		if (SubFolder == "Font\\" || SubFolder == "MEDIABROWSER_HiddenResources\\") {
+			continue;
+		}
+		NbElems += 1;
+		if (NbElems % ElemsPerPage == 0) {
+			AllPages.add(0);
+		}
+	}
+	//declare Text[] RequestedFiles = GetAllSortedFiles(G_IsSortingFromDateRatherThanName[_BrowserName], G_IsSortingFromDescendingOrder[_BrowserName]);
+	declare Boolean IsEndPage = False;
+	declare UnfilteredMediaIndex = 0;
+	foreach(File in TaskResult.Files) {
+		UnfilteredMediaIndex += 1;
+		declare CMatchSettings MatchSettingsUnit <=> GetMatchSettingsFromPath(File);
+		if (MatchSettingsUnit == Null || !AreModesCompatible(MatchSettingsUnit.ScriptModeName)) {
+			continue;
+		}
+		IsEndPage = False;
+		NbElems += 1;
+		if (NbElems % ElemsPerPage == 0) {
+			AllPages.add(UnfilteredMediaIndex);
+			IsEndPage = True;
+		}
+	}
+	if (IsEndPage) {
+		if (!AllPages.remove(UnfilteredMediaIndex)) {
+			Logger::Warn("MatchSettingsBrowserAPI : AllPages malfunction : " ^ UnfilteredMediaIndex);
+		}
+	}
+	FileBrowserAPI::SetAllPages(C_BrowserName, AllPages);
+}
+
+Text[Text][] GetMainData()
+{
+	declare Text[Text][] Result;
+	declare CTaskResult_FileList TaskResult <=> FileBrowserAPI::GetTaskResult(C_BrowserName);
+	declare Integer CurrentPage		= FileBrowserAPI::GetCurrentPageIndex(C_BrowserName) - 1;
+	declare Integer ElemsPerPage	= FileBrowserAPI::GetElemsPerPage(C_BrowserName);
+	//declare Text[] RequestedSubFolders = GetAllSortedFolders(G_IsSortingFromDateRatherThanName[_BrowserName], G_IsSortingFromDescendingOrder[_BrowserName]);
+	// TODO : Attendre les fonctions de Falguiere et ne pas faire ça tout seul
+	for (FolderIndex, CurrentPage * ElemsPerPage, (CurrentPage + 1) * ElemsPerPage - 1) {
+		if (!TaskResult.SubFolders.existskey(FolderIndex)) {
+			break;
+		}
+		declare SubFolder = TaskResult.SubFolders[FolderIndex];
+		if (SubFolder == "Font\\" || SubFolder == "MEDIABROWSER_HiddenResources\\") {
+			continue;
+		}
+		declare SplitSubFolder = TextLib::Split("\\", SubFolder);
+		Result.add([	"CardType"		=> "Folder",
+			"Name"			=> SplitSubFolder[SplitSubFolder.count - 1],
+			"Path"			=> SubFolder,
+			"SecondThumbnailImage" => "Folder",
+			"Thumbnail1"	=> "", // ??
+			"Thumbnail2"	=> "", // ??
+			"Thumbnail3"	=> "", // ??
+			"State"			=> "Available"]);
+	}
+	//declare Text[] RequestedFiles = GetAllSortedFiles(G_IsSortingFromDateRatherThanName[_BrowserName], G_IsSortingFromDescendingOrder[_BrowserName]);
+	declare MediaIndex = FileBrowserAPI::GetStartingIndexForPage(C_BrowserName, CurrentPage);
+	declare UnfilteredMediaIndex = MediaIndex;
+	while(Result.count < ElemsPerPage) {
+		if (!TaskResult.Files.existskey(UnfilteredMediaIndex)) {
+			break;
+		}
+		declare Text File = TaskResult.Files[UnfilteredMediaIndex];
+		declare CMatchSettings MatchSettingsUnit <=> GetMatchSettingsFromPath(File);
+		UnfilteredMediaIndex += 1;
+		if (MatchSettingsUnit == Null || !AreModesCompatible(MatchSettingsUnit.ScriptModeName)) {
+			continue;
+		}
+		MediaIndex += 1;
+		Result.add(GetMetadataFromFile(File));
+	}
+
+	return Result;
+}
+
+Boolean HasFetched()
+{
+	return FileBrowserAPI::HasFetched(C_BrowserName);
+}
+
+
+Void InputPageUp()
+{
+	FileBrowserAPI::InputPageUp(C_BrowserName);
+}
+
+Void InputPageDown()
+{
+	FileBrowserAPI::InputPageDown(C_BrowserName);
+}
+
+Integer GetCurrentPageIndex()
+{
+	return FileBrowserAPI::GetCurrentPageIndex(C_BrowserName);
+}
+
+Integer GetMaxPages()
+{
+	return FileBrowserAPI::GetMaxPages(C_BrowserName);
+}
+
+// PARTIE EDITOR
+
+Integer GetTrack_CurrentPageIndex()
+{
+	return G_Track_CurrentPageIndex + 1;
+}
+
+Integer GetTrack_MaxPages()
+{
+	return G_Track_MaxPages + 1;
+}
+
+Void Input_TrackPageUp()
+{
+	if (G_Track_CurrentPageIndex > 0) {
+		G_Track_CurrentPageIndex += -1;
+	}
+}
+
+Void Input_TrackPageDown()
+{
+	if (G_Track_CurrentPageIndex < G_Track_MaxPages) {
+		G_Track_CurrentPageIndex += 1;
+	}
+}
+
+Integer GetTrack_AbsoluteIndex(Integer _RelativeIndex)
+{
+	return _RelativeIndex + G_Track_CurrentPageIndex * C_MapsPerPage;
+}
+
+Void CheckCurrentTracklist()
+{
+	declare Text[] MatchSettingCurrentTrackList	for LocalUser;
+	MatchSettingCurrentTrackList = G_CurrentTracklist;
+	G_Track_MaxPages = G_CurrentTracklist.count / C_MapsPerPage;
+	if (G_Track_CurrentPageIndex > G_Track_MaxPages) {
+		G_Track_CurrentPageIndex = 0;
+	}
+}
+
+Void ResetData(Text _Mode)
+{
+	declare Text[] SplitDate = TextLib::Split("/", TimeLib::FormatDate(TimeLib::GetCurrent(), TimeLib::EDateFormats::DateShort));
+	foreach(DateIndex => DateBit in TextLib::Split("/", TimeLib::FormatDate(TimeLib::GetCurrent(), TimeLib::EDateFormats::DateShort))) {
+		SplitDate[SplitDate.count - 1 - DateIndex] = DateBit;
+	}
+	foreach(TimeBit in TextLib::Split(":", TimeLib::FormatDate(TimeLib::GetCurrent(), TimeLib::EDateFormats::TimeShort))) {
+		SplitDate.add(TimeBit);
+	}
+	declare Text TextPrefix = "MatchSetting";
+	if (_Mode != "") {
+		declare Text[] SplitMode = TextLib::Split("/", _Mode);
+		if (SplitMode.count == 0) {
+			TextPrefix = _Mode;
+		} else {
+			TextPrefix = SplitMode[SplitMode.count - 1];
+		}
+	}
+	G_HasFinishedHardFetchMetadata = False;
+	G_BaseName			= TextPrefix ^ "_" ^ LocalUser.Login ^ "_" ^ TextLib::Join("_", SplitDate);
+	G_CurrentName		= G_BaseName;
+	G_CurrentTracklist	= Text[];
+	G_CurrentMode		= Text[Text];
+	G_CurrentMatchSettings <=> MatchSettingsManager.MatchSettings_Create("Temp");
+	CheckCurrentTracklist();
+}
+
+Void SetModeSettings(Text _Mode)
+{
+}
+
+Void SetMode(Text _Mode)
+{
+	G_CurrentMode.clear();
+	G_CurrentMatchSettings.ScriptModeName = _Mode;
+	SetModeSettings(_Mode);
+}
+
+Void NewSettings(Text _Mode)
+{
+	G_ForcedModeName = _Mode;
+	ResetData(_Mode);
+	SetMode(_Mode);
+}
+
+Boolean CanSave()
+{
+	if (HasNoMaps() || G_CurrentMatchSettings.ScriptModeName == "") {
+		return False;
+	}
+	return True;
+}
+
+Boolean SaveMatchSettings()
+{
+	declare Boolean IsOk = True;
+	while(G_CurrentMatchSettings.Playlist.count != 0) {
+		G_CurrentMatchSettings.Playlist_Remove(0);
+	}
+	foreach(ListItem in G_CurrentTracklist) {
+		G_CurrentMatchSettings.Playlist_Add(ListItem);
+	}
+	if (G_CurrentName == "") {
+		G_CurrentName = G_BaseName;
+		IsOk = False;
+	}
+	wait(!MatchSettingsManager.MatchSettings_EditScriptSettings_Ongoing);
+	MatchSettingsManager.MatchSettings_SaveAs(G_CurrentName, G_CurrentMatchSettings);
+	declare CMatchSettings CurrentMatchSettings for LocalUser;
+	CurrentMatchSettings <=> G_CurrentMatchSettings;
+	CheckCurrentTracklist();
+	return IsOk;
+}
+
+Void CheckMatchSettings()
+{
+	wait(!MatchSettingsManager.MatchSettings_EditScriptSettings_Ongoing);
+	foreach (SingleMatchSettings in MatchSettingsManager.MatchSettings) {
+		if (SingleMatchSettings.Name == G_CurrentName && G_CurrentName != "Temp") {
+			if (SaveMatchSettings()) {
+				// Is ok
+			}
+			return;
+		}
+	}
+	G_CurrentName = "Temp";
+	if (SaveMatchSettings()) {
+		// Is ok
+	}
+}
+
+CMatchSettings GetMatchSettings()
+{
+	CheckMatchSettings();
+	return G_CurrentMatchSettings;
+}
+
+Text GetMatchSettingsPath()
+{
+	CheckMatchSettings();
+	return G_CurrentName;
+}
+
+Text[] GetTrackListFromMatchSettings()
+{
+	declare Text[] Result;
+	foreach (Map in G_CurrentTracklist) {
+		Result.add(Map);
+	}
+	return Result;
+}
+
+Void LoadSettings(Text _MatchSettingsPath)
+{
+	G_Track_CurrentPageIndex = 0;
+	declare CMatchSettings MatchSettingsToLoad <=> GetMatchSettingsFromPath(_MatchSettingsPath);
+	if (MatchSettingsToLoad == Null) {
+		Logger::Warn("LoadSettings did not record : " ^ _MatchSettingsPath);
+		return;
+	}
+	G_CurrentMatchSettings <=> MatchSettingsToLoad;
+	declare CMatchSettings CurrentMatchSettings for LocalUser;
+	CurrentMatchSettings <=> G_CurrentMatchSettings;
+	G_CurrentName = G_CurrentMatchSettings.Name;
+	if (G_CurrentMatchSettings.ScriptModeName == "" && G_ForcedModeName != "") {
+		G_CurrentMatchSettings.ScriptModeName = G_ForcedModeName;
+	}
+	G_CurrentTracklist.clear();
+	foreach (Element in MatchSettingsToLoad.Playlist) {
+		G_CurrentTracklist.add(Element.Name);
+	}
+	CheckCurrentTracklist();
+}
+
+Void HardFetchMaps()
+{
+	G_HasFinishedHardFetchMetadata = False;
+	TrackBrowserAPI::HardFetchMetadata();
+}
+
+Void Refresh()
+{
+	// MatchSettingsManager.MatchSettings_Refresh();
+}
+
+Boolean IsFinishedUpdating()
+{
+	if (G_HasFinishedHardFetchMetadata) {
+		return False;
+	}
+	if (TrackBrowserAPI::IsInHardFetchMetadata() && TrackBrowserAPI::HasAlreadyFetched()) {
+		G_HasFinishedHardFetchMetadata = True;
+	}
+	return TrackBrowserAPI::IsInHardFetchMetadata() && TrackBrowserAPI::HasAlreadyFetched();
+}
+
+Text Private_GetTime(Integer _TrackIndex)
+{
+	if (!G_CurrentTracklist.existskey(_TrackIndex) || G_CurrentTracklist[_TrackIndex] == "") {
+		return "";
+	}
+	declare Text MapPath = G_CurrentTracklist[_TrackIndex];
+	declare Text[Text] Metadata = TrackBrowserAPI::HardPullMetadata(MapPath);
+	if (!Metadata.existskey("Time")) {
+		return "";
+	}
+	return Metadata["Time"];
+}
+
+Text Private_GetCoppers(Integer _TrackIndex)
+{
+	if (!G_CurrentTracklist.existskey(_TrackIndex) || G_CurrentTracklist[_TrackIndex] == "") {
+		return "";
+	}
+	declare Text MapPath = G_CurrentTracklist[_TrackIndex];
+	declare Text[Text] Metadata = TrackBrowserAPI::HardPullMetadata(MapPath);
+	if (!Metadata.existskey("Coppers")) {
+		return "???C";
+	}
+	return Metadata["Coppers"];
+}
+
+Text Private_GetMapState(Integer _TrackIndex)
+{
+	if (!G_CurrentTracklist.existskey(_TrackIndex) || G_CurrentTracklist[_TrackIndex] == "") {
+		return "NonExistent";
+	}
+	return "Available";
+}
+
+Text[Text][] GetSectionMainData()
+{
+	declare Text[Text][] Result;
+	for (MapIndex, G_Track_CurrentPageIndex * C_MapsPerPage, (G_Track_CurrentPageIndex + 1) * C_MapsPerPage - 1) {
+		if (!G_CurrentTracklist.existskey(MapIndex)) {
+			break;
+		}
+		declare MapPath = G_CurrentTracklist[MapIndex];
+		declare Text[Text] MetadataBit	= TrackBrowserAPI::HardPullMetadata(MapPath);
+		MetadataBit["State"]		= Private_GetMapState(MapIndex);
+		Result.add(MetadataBit);
+	}
+	return Result;
+}
+
+Integer[] GetNewTrackPatterns()
+{
+	declare Integer[] Result;
+	declare Integer NbElems = 0;
+	for (MapIndex, G_Track_CurrentPageIndex * C_MapsPerPage, (G_Track_CurrentPageIndex + 1) * C_MapsPerPage - 1) {
+		if (!G_CurrentTracklist.existskey(MapIndex)) {
+			Result.add(NbElems);
+			break;
+		}
+		NbElems += 1;
+		declare MapPath = G_CurrentTracklist[MapIndex];
+		if (MapPath == "") {
+			Logger::Warn("GetNewTrackPatterns : Trou dans la tracklist");
+			Result.add(MapIndex);
+		}
+	}
+	return Result;
+}
+
+Text[][][] GetSectionLineData()
+{
+	declare Text[][][] Result;
+	declare Text[] MapsPath = G_CurrentTracklist;
+	for (MapIndex, G_Track_CurrentPageIndex * C_MapsPerPage, (G_Track_CurrentPageIndex + 1) * C_MapsPerPage - 1) {
+		if (!G_CurrentTracklist.existskey(MapIndex)) {
+			break;
+		}
+		declare MapPath = MapsPath[MapIndex];
+		if (MapPath == "") {
+			Logger::Warn("GetSectionLineData : Trou dans la tracklist");
+			Result.add(Text[][]);
+			continue;
+		}
+		declare Text CourseTime		= Private_GetTime(MapIndex);
+
+		declare Text ProjectEnviro for LocalUser;
+		if (ProjectEnviro != "Storm") {
+			Result.add([[TextLib::GetTranslatedText("Validation time : ") ^ CourseTime]
+				//L16N Noun, plural, specific term used to represent the amount of polygons in a map
+						, [TextLib::GetTranslatedText("Coppers : ") ^ Private_GetCoppers(MapIndex)]]);
+		} else {
+			//L16N Noun, plural, specific term used to represent the amount of polygons in a map
+			Result.add([[TextLib::GetTranslatedText("Coppers : ") ^ Private_GetCoppers(MapIndex)]]);
+		}
+	}
+	return Result;
+}
+
+Text[][] GetSectionLineLogos()
+{
+	declare Text IMGTime	= C_ImgTrack ^ "LastTime.dds";
+	declare Text IMGTrack	= C_ImgTrack ^ "TrackType.dds";
+	declare Text IMGValid	= C_ImgTrack ^ "Validated.dds";
+	declare Text[][] Result;
+	declare Text[] MapsPath = G_CurrentTracklist;
+	for (MapIndex, G_Track_CurrentPageIndex * C_MapsPerPage, (G_Track_CurrentPageIndex + 1) * C_MapsPerPage - 1) {
+		if (!G_CurrentTracklist.existskey(MapIndex)) {
+			break;
+		}
+		declare MapPath = MapsPath[MapIndex];
+		if (MapPath == "") {
+			Logger::Warn("GetSectionLineData : Trou dans la tracklist");
+			Result.add(Text[]);
+			continue;
+		}
+
+		declare Text ProjectEnviro for LocalUser;
+		if (ProjectEnviro != "Storm") {
+			Result.add([IMGTime, IMGTrack]);
+		} else {
+			Result.add([IMGTrack]);
+		}
+	}
+	return Result;
+}
+
+Integer Get_MapIndex(Text _Path)
+{
+	if (G_CurrentTracklist.exists(_Path)) {
+		return G_CurrentTracklist.keyof(_Path);
+	}
+	Logger::Warn("Map not found within the section");
+	return 0;
+}
+
+Void RemoveMap(Integer _TrackIndex)
+{
+	if (!G_CurrentTracklist.removekey(_TrackIndex)) {
+		Logger::Warn("RemoveMap n'a pas fonctionné correctement");
+	}
+	CheckCurrentTracklist();
+}
+
+Void PlaceMap(Text _Path, Integer _TrackIndex)
+{
+	if (_TrackIndex == G_CurrentTracklist.count)
+	{
+		G_CurrentTracklist.add(_Path);
+	} else if (_TrackIndex > G_CurrentTracklist.count) {
+		Logger::Warn("PlaceMap : On ajoute une map trop loin : " ^ _TrackIndex ^ " au lieu de " ^ G_CurrentTracklist.count ^ ".");
+		G_CurrentTracklist.add(_Path);
+	} else {
+		G_CurrentTracklist[_TrackIndex] = _Path;
+	}
+	CheckCurrentTracklist();
+}
+
+Void MoveMaps(Integer _MovingStartIndex, Integer _MovingDestinationIndex)
+{
+	if (!G_CurrentTracklist.existskey(_MovingDestinationIndex)) {
+		return;
+	}
+	while (!G_CurrentTracklist.existskey(_MovingDestinationIndex)) {
+		G_CurrentTracklist.add("");
+	}
+	declare Text TempPath = G_CurrentTracklist[_MovingDestinationIndex];
+	G_CurrentTracklist[_MovingDestinationIndex]	= G_CurrentTracklist[_MovingStartIndex];
+	G_CurrentTracklist[_MovingStartIndex]		= TempPath;
+	CheckCurrentTracklist();
+}
+
+Void SetScriptName(Text _ScriptName)
+{
+	G_CurrentMode["Name"] = _ScriptName;
+}
+
+Void MatchSettings_EditScriptSettings()
+{
+	if (G_CurrentMatchSettings.ScriptModeName != "") {
+		wait(!MatchSettingsManager.MatchSettings_EditScriptSettings_Ongoing);
+		MatchSettingsManager.MatchSettings_EditScriptSettings(G_CurrentMatchSettings);
+	}
+}
+
+Void SetAuthorizedModes(Text[] _AuthorizedModes)
+{
+	G_AuthorizedModes = _AuthorizedModes;
+}
+
+Void SetScriptType(Text _ScriptType)
+{
+	// TODO : Décommenter quand les APIs plus fournies arriveront
+	/*G_ExtraSettingsNames.clear();
+	G_ExtraSettingsTypes.clear();
+	G_CurrentMode["Id"] = _ScriptType;
+	if (C_ModeMetadatas.existskey(G_CurrentMode["Id"])) {
+		G_ExtraSettingsNames = C_ModeMetadatas[G_CurrentMode["Id"]];
+		G_ExtraSettingsTypes = C_ModeMetadataTypes[G_CurrentMode["Id"]];
+		G_ExtraSettingsInstances.clear();
+	}*/
+	G_CurrentMatchSettings.ScriptModeName = _ScriptType;
+	declare CMatchSettings CurrentMatchSettings for LocalUser;
+	CurrentMatchSettings <=> G_CurrentMatchSettings;
+}
+
+Void SetName(Text _SettingsName)
+{
+	if (_SettingsName != "") {
+		G_CurrentName = _SettingsName;
+	} else {
+		G_CurrentName = G_BaseName;
+	}
+}
+
+Void SetValue(Integer _Id, Text _Value)
+{
+	if (_Id == 0) {
+		SetScriptType(_Value);
+	} else if (_Id == 1) {
+		SetName(_Value);
+	}
+}
+
+Text[][] GetChunkAttributeTypes()
+{
+	declare Text ExtraScript = "";
+	if (G_AuthorizedModes.count == 0) {
+		return [["Event", "Entry", ExtraScript], G_ExtraSettingsTypes];
+	}
+	return [["ExpandingField", "Entry", ExtraScript], G_ExtraSettingsTypes];
+}
+
+Text[][][] GetExtraParams()
+{
+	return [[G_AuthorizedModes]];
+}
+
+Text[][] GetChunkAttributeNames()
+{
+	declare Text ExtraScript = "";
+	return [["Mode", "Name", ExtraScript], G_ExtraSettingsNames];
+}
+
+Integer GetFormCurrentPage()
+{
+	return 1;
+}
+
+Integer GetFormMaxPages()
+{
+	return 1;
+}
+
+Text[][] GetChunkSettingValues()
+{
+	declare Text[][] Result;
+	Result.add([G_CurrentMatchSettings.ScriptModeName, G_CurrentName, ""]);
+	Result.add(Text[]);
+	foreach(ExtraSetting in G_ExtraSettingsInstances) {
+		Result[1].add(ExtraSetting);
+	}
+	return Result;
+}
+
+Void Hack_EditSettings()
+{
+	wait(!MatchSettingsManager.MatchSettings_EditScriptSettings_Ongoing);
+	MatchSettingsManager.MatchSettings_EditScriptSettings(G_CurrentMatchSettings);
+	wait(!MatchSettingsManager.MatchSettings_EditScriptSettings_Ongoing);
+}
+
+Void Load()
+{
+	ResetData("");
+	Refresh();
+	FileBrowserAPI::Load(C_BrowserName, C_BasePath, C_MediaType, C_ThumbnailType, C_FilePrefix);
+	G_CurrentTracklist					= Text[];
+	G_CurrentMode						= Text[Text];
+	CheckCurrentTracklist();
+}

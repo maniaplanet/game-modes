@@ -1,0 +1,244 @@
+#Const Version 		"2014-07-25"
+#Const ScriptName	"PagesShift.Script.txt"
+
+#Include "TextLib"																				as TextLib
+#Include "Libs/Nadeo/Common/Core/MenuLayers.Script.txt"												as Layers
+#Include "Libs/Nadeo/Common/Core/Logger.Script.txt"													as Logger
+#Include "Libs/Nadeo/Common/Core/CustomEvents.Script.txt"											as CEvents
+
+#Const C_GOTONEXTPAGE		0
+#Const C_GOTOPREVIOUSPAGE	1
+#Const C_GOTOHOMEPAGE		2
+
+declare Text[][Text] G_Pages;
+declare Text[] G_NavigatedPages;
+declare Text G_ActiveLayer;
+declare Text G_PrevActiveLayer;
+
+Text GetScriptVersion() {return Version;}
+Text GetScriptName() {return ScriptName;}
+
+Text Includes()
+{
+	return """
+#Const C_Pages_GOTONEXTPAGE		{{{C_GOTONEXTPAGE}}}
+#Const C_Pages_GOTOPREVIOUSPAGE	{{{C_GOTOPREVIOUSPAGE}}}
+#Const C_Pages_GOTOHOMEPAGE		{{{C_GOTOHOMEPAGE}}}
+""";
+}
+
+Text[] GetLayers(Text _PageName) {
+	declare Text[] EmptyTable;
+	if(! G_Pages.existskey(_PageName)) return EmptyTable;
+	return G_Pages[_PageName];
+}
+
+
+Text GetCurrentPageName() {
+	declare Integer NavPages = G_NavigatedPages.count;
+	if(NavPages <= 0) return "";
+	declare Integer LastPageIndex = NavPages-1;
+	
+	return G_NavigatedPages[LastPageIndex];
+}
+
+Text GetPreviousPage(){
+	declare Integer NavPages = G_NavigatedPages.count;
+	if(NavPages <= 1) return "";
+	declare Integer PrevPageIndex = NavPages - 2;
+	declare Text 	PrevPageName	= G_NavigatedPages[PrevPageIndex];
+	return PrevPageName;
+}
+
+
+Void SetActiveLayer(Text _ActiveLayerName) {
+	declare Text CurrentPage = GetCurrentPageName();
+	declare Text[] CurrentLayers = GetLayers(CurrentPage);
+	if(!CurrentLayers.exists(_ActiveLayerName)) {
+		Logger::Warn("[Pages.SetActiveLayer] bad layer name: "^_ActiveLayerName);
+		return;
+	}
+
+	declare CUILayer NextLayer <=> Layers::Get(_ActiveLayerName);
+	if(NextLayer == Null) return;
+
+	LayerCustomEvent(NextLayer, "ActiveLayer", [""]);
+	//LayerCustomEvent(NextLayer, "DesactiveLayer", [""]);
+	
+	G_ActiveLayer = _ActiveLayerName;
+}
+
+Void DesactiveLayer() {
+	if(G_PrevActiveLayer == "")
+	{
+		G_PrevActiveLayer = G_ActiveLayer;
+		G_ActiveLayer     = "";
+	}
+}
+
+Void ReactiveLayer() {
+	if(G_PrevActiveLayer != "")
+	{
+		G_ActiveLayer     = G_PrevActiveLayer;
+		G_PrevActiveLayer = "";
+	}
+}
+
+
+Void DetachPage(Text _PageLayerName)
+{
+	Layers::Detach(_PageLayerName);
+}
+
+Void Private_GotoPage(Text _NextPageName, Integer _PageNavigationType) {
+	// Hide current
+	declare Text CurrentPageName = GetCurrentPageName();
+	declare Text[] NextLayers = GetLayers(_NextPageName);
+	
+	if(CurrentPageName != "") {
+		declare Text[] CurrentLayers = GetLayers(CurrentPageName);
+
+		foreach(LayerName in CurrentLayers) {
+			declare CUILayer CurrentLayer <=> Layers::Get(LayerName);
+			if(CurrentLayer == Null) continue;
+			//TODO - Vérifier que la layer n'est pas dans la composition de la page suivante pour ne pas lancer l'event Hide
+			if(!NextLayers.exists(LayerName))
+			{
+				LayerCustomEvent(CurrentLayer, "Hide", [TextLib::ToText(_PageNavigationType), _NextPageName]);
+			}
+		}
+	}
+	// Show next
+	foreach(Index => LayerName in NextLayers) {
+		declare CUILayer NextLayer <=> Layers::Get(LayerName);
+		declare Boolean NextLayerVisibility = Layers::IsLayerVisible(LayerName);
+		if(NextLayer == Null || (NextLayerVisibility && Index != 0)) continue;
+		Layers::Attach(LayerName);
+
+		LayerCustomEvent(NextLayer, "Show", [TextLib::ToText(_PageNavigationType), CurrentPageName]);
+	}
+	
+	if(_PageNavigationType == C_GOTONEXTPAGE) {
+		G_NavigatedPages.add(_NextPageName);
+	} else {
+		while (G_NavigatedPages.count != 0 && G_NavigatedPages[G_NavigatedPages.count - 1] != _NextPageName) {
+			if (!G_NavigatedPages.removekey(G_NavigatedPages.count - 1)) {
+				Logger::Warn("G_NavigatedPages.removekey(G_NavigatedPages.count-1) did not work (G_NavigatedPages == " ^ G_NavigatedPages ^ ")");
+			}
+		}
+	}
+	
+	if(NextLayers.count <= 0) 	SetActiveLayer("");
+	else 						SetActiveLayer(NextLayers[0]);
+
+	//BackgroundController::UpdateBackground(_NextPageName);
+}
+
+Void ReshowCurrentPage() {
+	declare Text CurrentPageName = GetCurrentPageName();
+
+	if(CurrentPageName != "") {
+		declare Text[] CurrentLayers = GetLayers(CurrentPageName);
+		foreach(LayerName in CurrentLayers) {
+			declare CUILayer CurrentLayer <=> Layers::Get(LayerName);
+
+
+			LayerCustomEvent(CurrentLayer, "Show", [CurrentPageName]);
+			return; // EG : WTF ? on ne reshow que la première layer trouvée ?
+		}
+	}
+}
+
+Void DeleteMap(Text _MapPath) {
+	//DataMgr.DeleteFile(_MapPath);
+	ReshowCurrentPage();
+}
+
+Void GotoNext(Text _NextPageName) {
+	Private_GotoPage(_NextPageName, C_GOTONEXTPAGE);
+}
+
+Void GotoPrevious() {
+	Audio.PlaySoundEvent(CAudioManager::ELibSound::ShowMenu, 0, 0.0);
+	declare Integer NavPages = G_NavigatedPages.count;
+	if(NavPages <= 1) return;
+	declare Integer PrevPageIndex = NavPages-2;
+	
+	declare Text 	PrevPageName	= G_NavigatedPages[PrevPageIndex];
+	Private_GotoPage(PrevPageName, C_GOTOPREVIOUSPAGE);
+}
+
+Void GotoHome() {
+	Audio.PlaySoundEvent(CAudioManager::ELibSound::ShowMenu, 0, 0.0);
+	declare Integer NavPages = G_NavigatedPages.count;
+	if(NavPages <= 1) return;
+	declare Text FirstPage = G_NavigatedPages[0];
+	Private_GotoPage(FirstPage, C_GOTOHOMEPAGE);
+	G_NavigatedPages = [FirstPage];
+}
+
+Void GotoHome(Text _HomePageName)
+{
+	declare Text[] NewNavigatedPages;
+	foreach(NavigatedPage in G_NavigatedPages) {
+		NewNavigatedPages.add(NavigatedPage);
+		if (NavigatedPage == _HomePageName) {
+			Private_GotoPage(NavigatedPage, C_GOTOHOMEPAGE);
+			G_NavigatedPages = NewNavigatedPages;
+			return;
+		}
+	}
+}
+
+// manage pages events
+Void Loop() {
+	declare Text CurrentPage = GetCurrentPageName();
+	declare Text[] CurrentLayers = GetLayers(CurrentPage);
+	declare Integer NbLayers = CurrentLayers.count;
+	if(NbLayers <= 0) return;
+	
+	foreach(Event in PendingEvents) {
+		if(Event.Type != CManiaAppEvent::EType::LayerCustomEvent) 		continue;
+		
+		declare CUILayer EventLayer <=> Event.CustomEventLayer;
+		if(EventLayer == Null) 										continue;
+		
+		declare Text LayerName = Layers::GetName(EventLayer);
+		if(G_ActiveLayer != "" && G_ActiveLayer != LayerName) 		continue;
+		if(!CurrentLayers.exists(LayerName)) 						continue;
+		
+		
+		declare Text 	EventType = Event.CustomEventType;
+		declare Integer DataCount = Event.CustomEventData.count;
+		switch(EventType) {
+			case CEvents::GOTO_PREV(): {
+				GotoPrevious();
+			}
+			case CEvents::GOTO_NEXT(): {
+				if(DataCount <= 0) 									continue;
+				declare Text NextPageName = Event.CustomEventData[0];
+				GotoNext(NextPageName);
+			}
+			case CEvents::SET_ACTIVE(): {
+				if(DataCount <= 0) 									continue;
+				
+				declare Text ActiveLayerName = Event.CustomEventData[0];
+				if(!CurrentLayers.exists(ActiveLayerName)) {
+					Logger::Warn("[Pages.Loop] Event: "^CEvents::SET_ACTIVE()^", bad layer name: "^ActiveLayerName);
+																	continue;
+				}
+				
+				SetActiveLayer(ActiveLayerName);
+			}
+			default: {
+				// Do nothing
+			}
+		}
+	}
+}
+
+
+
+Void Compose(Text _PageName, Text[] _Layers) {
+	G_Pages[_PageName] = _Layers;
+}

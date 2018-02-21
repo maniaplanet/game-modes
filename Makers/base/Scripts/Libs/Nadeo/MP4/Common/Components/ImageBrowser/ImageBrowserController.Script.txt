@@ -1,0 +1,185 @@
+#Include "Libs/Nadeo/Common/Core/MenuLayers.Script.txt"												as Layers
+#Include "Libs/Nadeo/Common/Core/Pages.Script.txt"													as Pages
+#Include "Libs/Nadeo/Common/Core/Logger.Script.txt"													as Logger
+#Include "TextLib"																				as TextLib
+
+// APIs
+#Include "Libs/Nadeo/MP4/Common/Components/ImageBrowser/ImageBrowserAPI.Script.txt"					as ImageBrowserAPI
+#Include "Libs/Nadeo/MP4/Common/Components/MediaBrowser/MediaBrowserController.Script.txt"			as MediaBrowserController
+#Include "Libs/Nadeo/Common/Core/LBController.Script.txt"										as LBController
+
+//Layers
+#Include "Libs/Nadeo/MP4/Common/Components/ImageBrowser/LBImageBrowser.Script.txt"					as LBImageBrowser
+#Include "Libs/Nadeo/MP4/Common/Components/ImageBrowser/LBImagePreview.Script.txt"					as LBImagePreview
+
+#Const C_BrowserName	"ImageBrowser"
+#Const C_PageName		"BrowseImages"
+#Const C_MediaTitle		_("Images")
+
+#Const C_Context1		"MakerCampaign"
+#Const C_Context2		"MatchSettingsEditor"
+#Const C_Context3		"LocalPlaySingleMap"
+#Const C_Context4		"EditorsClassicMapEditor"
+#Const C_Context5		"GhostEditor"
+#Const C_Context6		"CustomEditor"
+
+declare Text G_FolderPath;
+declare Text G_Context;
+
+Void Preview(Text _MediaPath)
+{
+	LayerCustomEvent(Layers::Get("ImagePreview"), "Show", [_MediaPath]);
+}
+
+Void StopPreview()
+{
+	LayerCustomEvent(Layers::Get("ImagePreview"), "Hide", Text[]);
+}
+
+Void Load() {
+	MediaBrowserController::Load(LBImageBrowser::Build(), C_PageName, C_BrowserName, C_MediaTitle);
+	ImageBrowserAPI::Load();
+	LBController::Build("ImagePreview", LBImagePreview::Build(), True);
+}
+
+Void OpenCurrentFolder()
+{
+	ImageBrowserAPI::FetchData(G_FolderPath);
+}
+
+Void OpenInExplorer()
+{
+	if (!OpenFileInExplorer(ImageBrowserAPI::FullPath(G_FolderPath))) {
+		Logger::Warn(C_BrowserName ^ " : OpenFileInExplorer did not function");
+	}
+}
+
+Boolean IsRunning()
+{
+	return MediaBrowserController::IsRunning(C_BrowserName);
+}
+
+Void Show(Text _EventNamePrefix, Text[] _ButtonNames, Text _MediaTitle, Text[] _SecondaryButtonNames, Text _Context)
+{
+	if (G_Context != _Context) {
+		G_Context = _Context;
+		G_FolderPath = "";
+	}
+	ImageBrowserAPI::FetchData(G_FolderPath);
+	MediaBrowserController::Show(C_BrowserName, C_PageName, _EventNamePrefix, _ButtonNames, _MediaTitle, _SecondaryButtonNames);
+}
+
+Void Show(Text _EventNamePrefix, Text[] _ButtonNames, Text _MediaTitle, Text[] _SecondaryButtonNames)
+{
+	Show(_EventNamePrefix, _ButtonNames, _MediaTitle, _SecondaryButtonNames, C_Context1);
+}
+
+Void Show(Text _EventNamePrefix, Text[] _ButtonNames, Text _MediaTitle)
+{
+	Show(_EventNamePrefix, _ButtonNames, _MediaTitle, Text[]);
+}
+
+Void Hide()
+{
+	StopPreview();
+	MediaBrowserController::Hide(C_BrowserName);
+}
+
+Void ForceHide()
+{
+	StopPreview();
+	MediaBrowserController::ForceHide(C_BrowserName);
+}
+
+Text[][] LineDataFromContext(Text _Context, Text[Text] _Metadata)
+{
+	declare Text[Text] YesNoArray = ["no" => "$233$<$t" ^ TextLib::GetTranslatedText("|There is none/There are none|No") ^ "$>",
+	"yes" => "<$t" ^ TextLib::GetTranslatedText("|There is/There are|Yes") ^ "$>"];
+	switch(_Context) {
+		case "MakerCampaign" : {
+			return		Text[][];
+		}
+		case "MatchSettingsEditor" : {
+			
+		}
+		case "LocalPlaySingleMap" : {
+			
+		}
+		case "EditorsClassicMapEditor" : {
+			
+		}
+		case "GhostEditor" : {
+			
+		}
+		case "CustomEditor" : {
+			
+		}
+	}
+	return Text[][];
+}
+
+Text[][][] GetLineData(Text _Context)
+{
+	declare Text[][][] Result;
+	declare Text[Text][] MainData = ImageBrowserAPI::GetMainData();
+	foreach (Metadata in MainData) {
+		if (Metadata.existskey("CardType") && Metadata["CardType"] == "Folder") {
+			Result.add(Text[][]);
+		} else {
+			Result.add(LineDataFromContext(_Context, Metadata));
+		}
+	}
+	return Result;
+}
+
+Text[][][] GetLineData()
+{
+	return GetLineData(G_Context);
+}
+
+Void Loop() {
+	if (ImageBrowserAPI::HasFetched()) {
+		ImageBrowserAPI::UpdateMainData();
+		MediaBrowserController::UpdateData(C_BrowserName, ImageBrowserAPI::FullPath(G_FolderPath), ImageBrowserAPI::GetMainData(), GetLineData(), ImageBrowserAPI::GetCurrentPageIndex(), ImageBrowserAPI::GetMaxPages());
+	}
+	if (MediaBrowserController::IsRunning(C_BrowserName)) {
+		MediaBrowserController::Loop(C_BrowserName);
+	}
+	if (MediaBrowserController::IsRequestingFolderOpening(C_BrowserName)) {
+		G_FolderPath = MediaBrowserController::FolderOpeningPath(C_BrowserName);
+		OpenCurrentFolder();
+	}
+	if (MediaBrowserController::IsRequestingFolderBack(C_BrowserName)) {
+		G_FolderPath = ImageBrowserAPI::FolderParentPath();
+		OpenCurrentFolder();
+	}
+	if (MediaBrowserController::IsRequestingRefreshFolder(C_BrowserName)) {
+		OpenCurrentFolder();
+	}
+	if (MediaBrowserController::IsRequestingOpenInExplorer(C_BrowserName)) {
+		OpenInExplorer();
+	}
+	if (MediaBrowserController::IsRequestingSwitchFlatten(C_BrowserName)) {
+		ImageBrowserAPI::SwitchFlatten();
+		OpenCurrentFolder();
+	}
+	if (MediaBrowserController::IsRequestingSortByDateName(C_BrowserName)) {
+		ImageBrowserAPI::SwitchSortCriterion();
+		OpenCurrentFolder();
+	}
+	if (MediaBrowserController::IsRequestingSortAscDesc(C_BrowserName)) {
+		ImageBrowserAPI::SwitchSortOrder();
+		OpenCurrentFolder();
+	}
+	if (MediaBrowserController::IsRequestingInputPageUp(C_BrowserName)) {
+		ImageBrowserAPI::InputPageUp();
+		MediaBrowserController::UpdateData(C_BrowserName, ImageBrowserAPI::FullPath(G_FolderPath), ImageBrowserAPI::GetMainData(), GetLineData(), ImageBrowserAPI::GetCurrentPageIndex(), ImageBrowserAPI::GetMaxPages());
+	}
+	if (MediaBrowserController::IsRequestingInputPageDown(C_BrowserName)) {
+		ImageBrowserAPI::InputPageDown();
+		MediaBrowserController::UpdateData(C_BrowserName, ImageBrowserAPI::FullPath(G_FolderPath), ImageBrowserAPI::GetMainData(), GetLineData(), ImageBrowserAPI::GetCurrentPageIndex(), ImageBrowserAPI::GetMaxPages());
+	}
+	if (MediaBrowserController::IsRequestingSteamWorkshop(C_BrowserName)) {
+		TitleControl.PublishFile(ImageBrowserAPI::FullPath(MediaBrowserController::RequestingSteamWorkshopMediaName(C_BrowserName)));
+	}
+}

@@ -1,0 +1,167 @@
+#Include "Libs/Nadeo/Common/Core/MenuLayers.Script.txt"												as Layers
+#Include "Libs/Nadeo/Common/Core/Pages.Script.txt"													as Pages
+#Include "Libs/Nadeo/Common/Core/Logger.Script.txt"													as Logger
+#Include "TextLib"																				as TextLib
+
+// APIs
+#Include "Libs/Nadeo/MP4/Common/Components/ModBrowser/ModBrowserAPI.Script.txt"						as ModBrowserAPI
+#Include "Libs/Nadeo/MP4/Common/Components/MediaBrowser/MediaBrowserController.Script.txt"			as MediaBrowserController
+
+//Layers
+#Include "Libs/Nadeo/MP4/Common/Components/ModBrowser/LBModBrowser.Script.txt"						as LBModBrowser
+
+#Const C_BrowserName	"ModBrowser"
+#Const C_PageName		"BrowseMods"
+//L16N |Noun, plural| Refers to alteration of textures to give a different display to the world.
+#Const C_MediaTitle		_("Mods")
+
+#Const C_Context1		"MakerCampaign"
+
+declare Text G_FolderPath;
+
+Void Load() {
+	ModBrowserAPI::Load();
+}
+
+Void OpenCurrentFolder()
+{
+	ModBrowserAPI::FetchData(G_FolderPath);
+}
+
+Void OpenInExplorer()
+{
+	if (!OpenFileInExplorer(ModBrowserAPI::FullPath(G_FolderPath))) {
+		Logger::Warn(C_BrowserName ^ " : OpenFileInExplorer did not function");
+	}
+}
+
+Boolean IsRunning()
+{
+	return MediaBrowserController::IsRunning(C_BrowserName);
+}
+
+Void Show(Text _EventNamePrefix, Text[] _ButtonNames, Text _MediaTitle, Text[] _SecondaryButtonNames)
+{
+	G_FolderPath = "";
+	ModBrowserAPI::FetchData(G_FolderPath);
+	MediaBrowserController::Show(C_BrowserName, C_PageName, _EventNamePrefix, _ButtonNames, _MediaTitle, _SecondaryButtonNames);
+}
+
+Void Show(Text _EventNamePrefix, Text[] _ButtonNames, Text _MediaTitle)
+{
+	Show(_EventNamePrefix, _ButtonNames, _MediaTitle, Text[]);
+}
+
+Void Show()
+{
+	MediaBrowserController::Show(C_BrowserName);
+	if (Pages::GetCurrentPageName() != C_PageName) {
+		Pages::GotoHome(C_PageName);
+	}
+}
+
+Void MakeIdle()
+{
+	MediaBrowserController::MakeIdle(C_BrowserName);
+}
+
+Void Hide()
+{
+	MediaBrowserController::Hide(C_BrowserName);
+}
+
+Void ForceHide()
+{
+	MediaBrowserController::ForceHide(C_BrowserName);
+}
+
+Void FetchMods()
+{
+	ModBrowserAPI::FetchMods();
+}
+
+Boolean HasFetchedMods()
+{
+	return ModBrowserAPI::HasFetchedMods();
+}
+
+Boolean HasAMod()
+{
+	return ModBrowserAPI::HasAMod();
+}
+
+Text[][] LineDataFromContext(Text _Context, Text[Text] _Metadata)
+{
+	switch(_Context) {
+		case "MakerCampaign" : {
+			return		Text[][];
+		}
+	}
+	return Text[][];
+}
+
+Text[][][] GetLineData(Text _Context)
+{
+	declare Text[][][] Result;
+	declare Text[Text][] MainData = ModBrowserAPI::GetMainData();
+	foreach (Metadata in MainData) {
+		if (Metadata.existskey("CardType") && Metadata["CardType"] == "Folder") {
+			Result.add(Text[][]);
+		} else {
+			Result.add(LineDataFromContext(_Context, Metadata));
+		}
+	}
+	return Result;
+}
+
+Text[][][] GetLineData()
+{
+	return GetLineData(C_Context1);
+}
+
+Void Loop() {
+	if (ModBrowserAPI::HasFetched()) {
+		ModBrowserAPI::UpdateMainData();
+		MediaBrowserController::UpdateData(C_BrowserName, ModBrowserAPI::FullPath(G_FolderPath), ModBrowserAPI::GetMainData(), GetLineData(), ModBrowserAPI::GetCurrentPageIndex(), ModBrowserAPI::GetMaxPages());
+	}
+	if (MediaBrowserController::IsRunning(C_BrowserName)) {
+		MediaBrowserController::Loop(C_BrowserName);
+	}
+	if (MediaBrowserController::IsRequestingFolderOpening(C_BrowserName)) {
+		G_FolderPath = MediaBrowserController::FolderOpeningPath(C_BrowserName);
+		OpenCurrentFolder();
+	}
+	if (MediaBrowserController::IsRequestingFolderBack(C_BrowserName)) {
+		G_FolderPath = ModBrowserAPI::FolderParentPath();
+		OpenCurrentFolder();
+	}
+	if (MediaBrowserController::IsRequestingRefreshFolder(C_BrowserName)) {
+		OpenCurrentFolder();
+	}
+	if (MediaBrowserController::IsRequestingOpenInExplorer(C_BrowserName)) {
+		OpenInExplorer();
+	}
+	if (MediaBrowserController::IsRequestingSwitchFlatten(C_BrowserName)) {
+		ModBrowserAPI::SwitchFlatten();
+		OpenCurrentFolder();
+	}
+	if (MediaBrowserController::IsRequestingSortByDateName(C_BrowserName)) {
+		ModBrowserAPI::SwitchSortCriterion();
+		OpenCurrentFolder();
+	}
+	if (MediaBrowserController::IsRequestingSortAscDesc(C_BrowserName)) {
+		ModBrowserAPI::SwitchSortOrder();
+		OpenCurrentFolder();
+	}
+	if (MediaBrowserController::IsRequestingInputPageUp(C_BrowserName)) {
+		ModBrowserAPI::InputPageUp();
+		MediaBrowserController::UpdateData(C_BrowserName, ModBrowserAPI::FullPath(G_FolderPath), ModBrowserAPI::GetMainData(), GetLineData(), ModBrowserAPI::GetCurrentPageIndex(), ModBrowserAPI::GetMaxPages());
+	}
+	if (MediaBrowserController::IsRequestingInputPageDown(C_BrowserName)) {
+		ModBrowserAPI::InputPageDown();
+		MediaBrowserController::UpdateData(C_BrowserName, ModBrowserAPI::FullPath(G_FolderPath), ModBrowserAPI::GetMainData(), GetLineData(), ModBrowserAPI::GetCurrentPageIndex(), ModBrowserAPI::GetMaxPages());
+	}
+	if (MediaBrowserController::IsRequestingSteamWorkshop(C_BrowserName)) {
+		TitleControl.PublishFile(ModBrowserAPI::FullPath(MediaBrowserController::RequestingSteamWorkshopMediaName(C_BrowserName)));
+	}
+}

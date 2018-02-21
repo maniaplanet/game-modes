@@ -1,0 +1,172 @@
+#Include "Libs/Nadeo/Common/ManialinkTools/Manialink3WPrevAnims.Script.txt"			as Manialink
+#Include "Libs/Nadeo/MP4/Common/GlobalVariables.Script.txt"			as GlobalVariables
+
+#Const C_ImgBase	""
+ 
+Text Build() {
+
+	declare Integer Count_InstancesY         = 1;
+	declare Integer Count_InstancesX         = 6;
+	declare Real	PosXFirstQuad            = -135.;
+	declare Real	PosYFirstQuad            = 0.;
+	declare Real	SizeXQuad                = 45.7;
+	declare Real	SizeYQuad                = 25.7;
+	declare Real	MarginY_Button           = 4.0;
+	declare Real	MarginX_Button           = 4.0;
+
+	declare Text[Integer] IMG_Bgs			 = [GlobalVariables::LaunchContext_Maker() => "file://Media/MEDIABROWSER_HiddenResources/MakerTM/Images/Background/MakerTMBackground.webp",
+												GlobalVariables::LaunchContext_MakerSM() => "file://Media/MEDIABROWSER_HiddenResources/MakerSM/Images/Background/MakerSMBackground.webp"];
+	declare Text	IMG_Bg					 = IMG_Bgs[GlobalVariables::GetLaunchContext()];
+
+	declare Text MLText = """
+<manialink version="3" name="L_Background">
+	<frame z-index="-60">
+	<framemodel id="Frame_Button">
+		<quad id="Quad_Button" halign="center" valign="center" size="{{{SizeXQuad}}} {{{SizeYQuad}}}"  z-index="1" bgcolor="090" scriptevents="1"/>
+		<label halign="center" valign="center" style="TextButtonBig" z-index="2" id="Label_Task" textsize="3" text="" textcolor="fff"/>
+	</framemodel>
+
+
+	<frame id="Frame_All" z-index="-80">
+		
+		<quad id="Quad_Background" valign="center" halign="center" size="320 180" image="{{{IMG_Bg}}}"/>
+		<frame id="Frame_Backgrounds"  pos="0 -112.1" z-index="1">
+			<quad halign="center" valign="center" size="320 40" opacity="1." bgcolor="000" />
+		""";
+	for(I,0,Count_InstancesY-1)
+	{
+		declare Real IndexY = I*1.;
+		declare Real PosY = PosYFirstQuad - IndexY*SizeYQuad - IndexY*MarginY_Button*1.;
+		for(J,0,Count_InstancesX-1)
+		{
+			declare Real IndexX = J*1.;
+			declare Real PosX = PosXFirstQuad + IndexX*SizeXQuad + IndexX*MarginX_Button*1.;
+			MLText^="""
+				<frameinstance modelid="Frame_Button" pos="{{{PosX}}} {{{PosY}}}" z-index="5" id="Frame_MiniBG{{{I}}}{{{J}}}"/>
+			""";
+		}
+	}
+	MLText^="""
+		</frame>
+	</frame>
+	</frame>
+	
+	
+	<script><!--
+		
+		{{{Manialink::GetIncludes()}}}
+		declare Text[] BackgroundsFolder;
+		
+
+		{{{Manialink::Load()}}}
+
+
+		Void UpdateBackGround(Text _Background)
+		{
+			declare CMlQuad Quad_Background <=> (Page.GetFirstChild("Quad_Background")	as CMlQuad);
+			Quad_Background.ChangeImageUrl(_Background);
+		}
+
+		Void SetFolderPosition(Real _PosY)
+		{
+			declare CMlFrame Frame_Backgrounds <=> (Page.GetFirstChild("Frame_Backgrounds") as CMlFrame);
+			declare Real Frame_BackgroundsPosY = _PosY;
+			declare Vec2 Frame_BackgroundsPos  = <Frame_Backgrounds.RelativePosition_V3.X, Frame_BackgroundsPosY>;
+			LibManialink_SetTargetPosition(Frame_Backgrounds, Frame_BackgroundsPos);
+			LibManialink_PresetAnim(Frame_Backgrounds, 1450, "EaseOutQuint");
+		}
+
+		Void CloseBgFolder()
+		{
+			EnableMenuNavigation(True,False,Null,0);
+			SetFolderPosition(-107.1);
+		}
+
+		Void OpenBGFolder(Text[] _Backgrounds)
+		{
+			EnableMenuNavigation(True,False,Null,10);
+			for(J, 0, {{{Count_InstancesX - 1}}})
+			{
+				declare CMlFrame Frame_MiniBG <=> (Page.MainFrame.GetFirstChild("Frame_MiniBG0"^J)	as CMlFrame);
+				if(_Backgrounds.existskey(J))
+				{
+					Frame_MiniBG.Show();
+					declare CMlQuad Quad_Button     <=> (Frame_MiniBG.GetFirstChild("Quad_Button")	as CMlQuad);
+					Quad_Button.ChangeImageUrl(_Backgrounds[J]);
+				}
+				else
+				{
+					Frame_MiniBG.Hide();
+				}
+			}
+
+			SetFolderPosition(-53.7);
+		}
+
+
+		Void Init()
+		{
+			for(J, 0, {{{Count_InstancesX - 1}}})
+			{
+				declare CMlFrame Frames_Instance <=> (Page.MainFrame.GetFirstChild("Frame_MiniBG0"^J)	as CMlFrame);
+				declare CMlQuad Quad_Button     <=> (Frames_Instance.GetFirstChild("Quad_Button")	as CMlQuad);
+				declare Integer QuadId for Quad_Button;
+				QuadId = J;
+			}
+		}
+
+		main() {
+			Init();
+			
+			while(True) {
+				
+				yield;
+				if(! PageIsVisible) continue;
+				LibManialink_AnimLoop();
+				
+				foreach(Event in PendingEvents) {
+					switch(Event.Type) {
+
+						case CMlEvent::Type::MenuNavigation: {
+							switch(Event.MenuNavAction) {
+								case CMlEvent::EMenuNavAction::Select : {
+									//SendCustomEvent("GotoPage", ["StartDemo"]);
+								}
+								case CMlEvent::EMenuNavAction::Cancel : {
+									SendCustomEvent("GotoPrevious", [""]);
+								}
+							}
+						}
+						case CMlEvent::Type::MouseClick: {
+							declare Integer QuadId for Event.Control;
+							declare Text BGSelect = BackgroundsFolder[QuadId];
+							SendCustomEvent("SetBackGround", [BGSelect]);
+							CloseBgFolder();
+						}
+						case CMlEvent::Type::PluginCustomEvent: {
+							
+							switch(Event.CustomEventType) {
+								case "UpdateBackGround" : {
+									declare Text Background = Event.CustomEventData[0];
+									UpdateBackGround(Background);
+								}
+								case "OpenBGFolder" : {
+									BackgroundsFolder.clear();
+									foreach (Background in Event.CustomEventData)
+									{
+										BackgroundsFolder.add(Background);
+									}
+									OpenBGFolder(BackgroundsFolder);
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	--></script>
+</manialink>
+	""";
+	
+	return MLText;
+}

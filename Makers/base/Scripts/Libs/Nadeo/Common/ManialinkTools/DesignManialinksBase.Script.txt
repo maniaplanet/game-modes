@@ -1,0 +1,146 @@
+#Include "Libs/Nadeo/Common/ManialinkTools/Lib_ButtonImg.Script.txt" as Lib_ButtonImg
+
+declare Text[][Text]			G_AllControlIdsFromClass;
+declare Text[][Text]			G_ActionsFromControlId;
+declare Text[Text]				G_OnEventFunctionsFromClass;
+declare Text[Text][Text][Text]	G_OnClickFunctionsFromClassControlIdAction;
+declare Text[Text]				G_UpdateFunctionsFromClass;
+/*
+	Void DesignManialinks_{{{_Class}}}_{{{_ControlId}}}_{{{Action}}}_OnClick()
+	{
+	}
+
+	Void DesignManialinks_{{{_Class}}}_OnEvent(CMlControl _EventControl, CMlScriptEvent::Type _EventType)
+	{
+	}
+
+	Void DesignManialinks_{{{_Class}}}_Update(Text _ControlId, Params)
+	{
+	}
+*/
+Void Init()
+{
+	G_AllControlIdsFromClass	.clear();
+	G_ActionsFromControlId		.clear();
+}
+
+Text AddBaseItem(Text _Class, Text _ControlId, Text _Manialink, Text _Update, Text _OnEvent, Text _OnClick, Text[] _Actions)
+{
+	if (G_AllControlIdsFromClass.existskey(_Class)) {
+		G_AllControlIdsFromClass[_Class]	.add(_ControlId);
+	} else {
+		G_AllControlIdsFromClass[_Class]	= [_ControlId];
+	}
+	G_ActionsFromControlId[_ControlId]		= _Actions;
+	G_OnEventFunctionsFromClass[_Class]		= _OnEvent;
+	G_UpdateFunctionsFromClass[_Class]		= _Update;
+	foreach (Action in _Actions) {
+		G_OnClickFunctionsFromClassControlIdAction[_Class] = Text[Text][Text];
+		G_OnClickFunctionsFromClassControlIdAction[_Class][_ControlId] = Text[Text];
+		G_OnClickFunctionsFromClassControlIdAction[_Class][_ControlId][Action] = _OnClick;
+	}
+	return _Manialink;
+}
+
+Text Includes()
+{
+	return """
+	""";
+}
+
+Text FunctionDeclares()
+{
+	declare Text Result;
+	foreach (Class => OnEventFunctionDeclare in G_OnEventFunctionsFromClass) {
+		Result ^= OnEventFunctionDeclare;
+	}
+	foreach (Class => UpdateFunctionDeclare in G_UpdateFunctionsFromClass) {
+		Result ^= UpdateFunctionDeclare;
+	}
+	foreach (Action => OnClickFunctionsFromClassControlId in G_OnClickFunctionsFromClassControlIdAction) {
+		foreach (ControlId => OnClickFunctionsFromClass in OnClickFunctionsFromClassControlId) {
+			foreach (Class => OnClickFunctionDeclare in OnClickFunctionsFromClass) {
+				Result ^= OnClickFunctionDeclare;
+			}
+		}
+	}
+	return Result;
+}
+
+Text InputDeclares()
+{
+	declare Text Result;
+	foreach (ControlId => Actions in G_ActionsFromControlId) {
+		foreach (Action in Actions) {
+			Result ^= """
+	Void Input_{{{Action}}}()
+	{
+		DesignManialinks_{{{_Class}}}_{{{_ControlId}}}_{{{Action}}}_OnClick();
+	}
+""";
+		}
+	}
+}
+
+Text ClassLoopDeclare(Text _Class, Text[] _ControlIds)
+{
+	foreach (ControlId in _ControlIds) {
+		if (!G_ActionsFromControlId.existskey(ControlId)) {
+			continue;
+		}
+		foreach (Action in G_ActionsFromControlId[ControlId]) {
+			Result ^= """
+				if (Event.Type == CMlScriptEvent::Type::MouseClick && Event.ControlId == "{{{ControlId}}}_{{{Action}}}") {
+					DesignManialinks_{{{_Class}}}_{{{ControlId}}}_{{{Action}}}_OnClick();
+				}""";
+		}
+	}
+	return """
+	
+""";
+}
+
+Text AllClassesLoopDeclare()
+{
+	declare Text Result;
+	foreach (Class => ControlIds in G_AllControlIdsFromClass) {
+		Result ^= """
+			if (Event.Control.HasClass("{{{Class}}}")) {
+				DesignManialinks_{{{Class}}}_OnEvent(Event.Control, Event.Type);
+{{{ClassLoopDeclare(ControlIds)}}}
+			}
+		""";
+	}
+	return Result;
+}
+
+Text Declares()
+{
+	return """{{{FunctionDeclares()}}}
+
+	{{{InputDeclares()}}}
+
+	Void DesignManialinks_Init()
+	{
+		Lib_ButtonImg_Init();
+	}
+
+	Void DesignManialinks_Show() {
+		Lib_ButtonImg_Show();
+	}
+
+	Void DesignManialinks_Loop() {
+		Lib_ButtonImg_Loop();
+		foreach(Event in PendingEvents) {
+			if (Event.Type == CMlScriptEvent::Type::KeyPress
+				|| Event.Type == CMlScriptEvent::Type::MenuNavigation
+				|| Event.Type == CMlScriptEvent::Type::PluginCustomEvent)
+				continue;
+			if (Event.Control == Null)
+				continue;
+		}
+		{{{AllClassesLoopDeclare()}}}
+	}
+
+	""";
+}

@@ -1,0 +1,331 @@
+#Include "TextLib"																						as TextLib
+#Include "Libs/Nadeo/Common/Core/MenuLayers.Script.txt"														as Layers
+#Include "Libs/Nadeo/Common/Core/Pages.Script.txt"															as Pages
+#Include "Libs/Nadeo/Common/Core/Logger.Script.txt"															as Logger
+#Include "Libs/Nadeo/Common/Core/SectionsManager.Script.txt"													as SectionsManager
+#Include "Libs/Nadeo/MP4/Common/Components/ScriptBrowser/ScriptBrowserController.Script.txt"				as ScriptBrowserController
+#Include "Libs/Nadeo/MP4/Common/Components/TrackBrowser/TrackBrowserController.Script.txt"					as TrackBrowserController
+#Include "Libs/Nadeo/MP4/Common/Components/TrackBrowser/TrackBrowserAPI.Script.txt"							as TrackBrowserAPI
+#Include "Libs/Nadeo/MP4/Common/LoadingScreen.Script.txt"													as LoadingScreen
+#Include "Libs/Nadeo/MP4/Common/SettingsController.Script.txt"												as SettingsController
+#Include "Libs/Nadeo/MP4/Common/Components/DynamicFormDisplayer/DynamicFormDisplayerController.Script.txt"										as DynamicFormDisplayer_Menu
+
+#Include "Libs/Nadeo/MP4/TitlePackMaker/Components/Component_Campaign/CampaignAPI.Script.txt"				as CampaignAPI
+#Include "Libs/Nadeo/MP4/Common/Components/MediaDisplayer/LBMediaDisplayer.Script.txt"												as MediaCardDisplayer
+#Include "Libs/Nadeo/MP4/Common/GlobalVariables.Script.txt"													as GlobalVariables
+#Include "Libs/Nadeo/MP4/TPLagoon/Components/NewAsset/NewAssetController.Script.txt"						as NewAssetController
+
+//Layers
+#Include "Libs/Nadeo/MP4/TitlePackMaker/Components/Component_Campaign/LBCampaignCategories.Script.txt"		as CampaignCategories
+#Include "Libs/Nadeo/MP4/TitlePackMaker/Components/Component_Campaign/LBCampaignMaps.Script.txt"			as CampaignMaps
+#Include "Libs/Nadeo/MP4/TitlePackMaker/Components/Component_Campaign/LBCampaignForm.Script.txt"			as CampaignForm
+
+#Const C_ImgTrack		"file://Media/MEDIABROWSER_HiddenResources/Common/Images/TrackBrowser/"
+#Const C_CampaignForm	"CampaignForm"
+
+declare Integer G_SectionIndex;
+declare Integer G_MapIndex;
+declare Text	G_Color;
+declare Boolean G_IsActive;
+declare Integer G_RefreshMapTime;
+
+Boolean HasNoMaps()
+{
+	return CampaignAPI::HasNoMaps();
+}
+
+Boolean HasFaultyMaps()
+{
+	return CampaignAPI::HasFaultyMaps();
+}
+
+Boolean IsActive()
+{
+	return G_IsActive;
+}
+
+Boolean IsActivated()
+{
+	return CampaignAPI::IsActivated();
+}
+
+Void SetActive(Boolean _IsActive)
+{
+	G_IsActive = _IsActive;
+	CampaignAPI::SetActive(_IsActive);
+}
+
+Void Init()
+{
+	G_SectionIndex	= 0;
+	G_MapIndex		= 0;
+	G_Color			= "ff0";
+	G_IsActive		= True;
+	G_RefreshMapTime = -1;
+}
+
+Void SetColor(Text _Color)
+{
+	G_Color = _Color;
+}
+
+Text GetColor()
+{
+	return G_Color;
+}
+
+Text GenerateXML ()
+{
+	return CampaignAPI::GenerateXML(GetColor(), IsActive());
+}
+
+Boolean CanPublishXML()
+{
+	if (!IsActivated()) {
+		return True;
+	}
+	return CampaignAPI::CanPublishXML();
+}
+
+Text PublishXMLError()
+{
+	return CampaignAPI::PublishXMLError();
+}
+
+Text PublishXML()
+{
+	if (!IsActivated()) {
+		return "";
+	}
+	return CampaignAPI::PublishXML(GetColor(), IsActive());
+}
+
+Void UpdateMaps()
+{
+	declare CUILayer		MapsLayer		<=> Layers::Get("CampaignMaps");
+	declare CUILayer		CategoriesLayer	<=> Layers::Get("CampaignCategories");
+
+	declare Text[Text][]	Data			= CampaignAPI::GetSectionMainData(G_SectionIndex);
+	declare Text[][][]		LineData		= CampaignAPI::GetSectionLineData(G_SectionIndex);
+
+	declare Text IMGTime	= C_ImgTrack ^ "LastTime.dds";
+	declare Text IMGValid	= C_ImgTrack ^ "TrackType.dds";
+	declare Text[][] LineLogos;
+	foreach(Element in LineData) {
+		LineLogos.add([IMGTime, IMGValid]);
+	}
+	MediaCardDisplayer::Update("CampaignMaps", Data, LineData, LineLogos);
+
+	declare Boolean			Campaign_HasSettings		for MapsLayer.LocalPage;
+	declare Integer[]		Campaign_NewTracks			for MapsLayer.LocalPage;
+	declare Integer[]		Campaign_WarningMaps		for MapsLayer.LocalPage;
+	declare Integer[]		Campaign_WarningCategories	for CategoriesLayer.LocalPage;
+	declare Text[]			Campaign_Categories			for CategoriesLayer.LocalPage;
+	Campaign_HasSettings					= True;
+	Campaign_Categories						= CampaignAPI::GetCampaignCategories();
+	Campaign_NewTracks						= CampaignAPI::GetNewTrackPatterns(G_SectionIndex);
+	Campaign_WarningMaps					= CampaignAPI::GetAllWarningMaps(G_SectionIndex);
+	LayerCustomEvent(MapsLayer, "GiveChooseTrackQuads", Text[]);
+	LayerCustomEvent(MapsLayer, "ChangeSection", [TextLib::ToText(G_SectionIndex)]);
+	Campaign_WarningCategories				= CampaignAPI::GetWarningSections();
+	LayerCustomEvent(CategoriesLayer, "UpdateCategories", Text[]);
+}
+
+Void UpdateForm()
+{
+	DynamicFormDisplayer_Menu::UpdateAttributes(C_CampaignForm, CampaignAPI::GetChunkAttributeTypes(), CampaignAPI::GetChunkAttributeNames(),
+	CampaignAPI::GetChunkAttributeExtraParams(), CampaignAPI::GetChunkSettingValues(), CampaignAPI::GetCurrentPage(), CampaignAPI::GetMaxPages());
+}
+
+Void AnalyzeXML(Text _XML)
+{
+	Init();
+	CampaignAPI::AnalyzeXML(_XML);
+	UpdateMaps();
+	UpdateForm();
+	SetColor(CampaignAPI::GetColor());
+	SetActive(CampaignAPI::IsActive());
+}
+
+Void Build(Text _LayerName, Boolean _Attach) {
+	declare Text MLText;
+	switch(_LayerName) {
+		case "CampaignCategories" : {
+			MLText = CampaignCategories::Build();
+		}
+		case "CampaignMaps" : {
+			MLText = CampaignMaps::Build();
+		}
+		case C_CampaignForm : {
+			MLText = CampaignForm::Build();
+		}
+	}
+
+	if(MLText == "") {
+		Logger::Warn("Unknown Page: "^_LayerName);
+		return;
+	}
+
+	Layers::Create(_LayerName, MLText);
+
+	declare CUILayer Layer <=> Layers::Get(_LayerName);
+	declare Text Page_LayerName for Layer.LocalPage;
+
+	Page_LayerName = _LayerName;
+	if(_Attach) Layers::Attach(_LayerName);
+}
+
+Void Build(Text _LayerName) {
+	Build(_LayerName, False);
+
+}
+
+Void Load() {
+	// Initalizes "for LocalUser" variables
+	Init();
+	CampaignAPI::Load();
+
+	Build("CampaignCategories");
+	Build("CampaignMaps");
+	Build(C_CampaignForm);
+
+	Pages::Compose("Campaign", ["CampaignCategories", "CampaignMaps"]);
+	Pages::Compose("CampaignSettings", [C_CampaignForm]);
+	SectionsManager::AddSection("Campaign", "Campaign");
+
+	UpdateMaps();
+	UpdateForm();
+}
+
+Void Loop() {
+	if (G_RefreshMapTime != -1 && Now > G_RefreshMapTime) {
+		declare Text MapTerm = _("Tracks");
+		declare Text ProjectEnviro for LocalUser;
+		if (ProjectEnviro == "Storm") {
+			MapTerm = _("Maps");
+		}
+		TrackBrowserController::Show("TracksToCampaign", [//L16N |Infinitive| In a popup, a button to select
+					_("Choose"),
+					//L16N |Infinitive| In a popup, a button to modify the selected file
+					_("Edit")], MapTerm,
+					//L16N |Infinitive| In a popup, a button to make a new media
+					[_("Create")]);
+		G_RefreshMapTime = -1;
+	}
+	foreach(Event in PendingEvents) {
+		if(Event.Type != CManiaAppEvent::EType::LayerCustomEvent) continue;
+		switch(Event.CustomEventType) {
+			case "Campaign_SwitchCategory": {
+				declare CategoryIndex = TextLib::ToInteger(Event.CustomEventData[0]);
+				G_SectionIndex = CategoryIndex;
+				UpdateMaps();
+			}
+			case "Campaign_ChangeCategory": {
+				declare Text CategoryType = Event.CustomEventData[0];
+				CampaignAPI::ChangeCategory(G_SectionIndex, CategoryType);
+				UpdateMaps();
+			}
+			case "Campaign_Edit": {
+				declare Text Path = Event.CustomEventData[0];
+				declare Text ThumbnailPath = "";
+				LoadingScreen::SetLoadingType(0, ThumbnailPath);
+				declare Text Settings = SettingsController::GetSettingsXmlEditor();
+				TitleFlow.EditMap(Path, "", Settings);
+			}
+			case "Campaign_RecordGhost": {
+				declare Text MapPath = Event.CustomEventData[0];
+				declare Text ThumbnailPath = "";
+				LoadingScreen::SetLoadingType(0, ThumbnailPath);
+				TitleFlow.EditGhosts(MapPath);
+			}
+			case "Campaign_Move": {
+				LayerCustomEvent(Layers::Get("CampaignMaps"), "StartMovingAllCards", Text[]);
+			}
+			case "Campaign_FinishMovingCard": {
+				declare Integer MoveSecStart	= TextLib::ToInteger(Event.CustomEventData[0]);
+				declare Integer MoveSecFinish	= TextLib::ToInteger(Event.CustomEventData[1]);
+				declare Integer MoveMapStart	= TextLib::ToInteger(Event.CustomEventData[2]);
+				declare Integer MoveMapFinish	= TextLib::ToInteger(Event.CustomEventData[3]);
+				if (MoveSecFinish != G_SectionIndex) {
+					Logger::Warn("Mauvaise section de maps pour le move");
+				}
+				CampaignAPI::MoveMaps(MoveSecStart, MoveSecFinish, MoveMapStart, MoveMapFinish);
+				UpdateMaps();
+			}
+			case "Campaign_AddMap": {
+				declare Text MapIndex = Event.CustomEventData[0];
+				G_MapIndex = TextLib::ToInteger(MapIndex);
+				declare Text MapTerm = _("Tracks");
+				declare Text ProjectEnviro for LocalUser;
+				if (ProjectEnviro == "Storm") {
+					MapTerm = _("Maps");
+				}
+				TrackBrowserController::Show("TracksToCampaign", [//L16N |Infinitive| In a popup, a button to select
+					_("Choose"),
+					//L16N |Infinitive| In a popup, a button to modify the selected file
+					_("Edit")], MapTerm,
+					//L16N |Infinitive| In a popup, a button to make a new media
+					[_("Create")]);
+			}
+			case "Campaign_RemoveMap": {
+				declare Text MapIndex = Event.CustomEventData[0];
+				CampaignAPI::RemoveMap(G_SectionIndex, TextLib::ToInteger(MapIndex));
+				UpdateMaps();
+			}
+			case "Campaign_SwitchMap": {
+				declare Text MapPath = Event.CustomEventData[0];
+				G_MapIndex		= CampaignAPI::Get_MapIndex(MapPath);
+				declare Text MapTerm = _("Tracks");
+				declare Text ProjectEnviro for LocalUser;
+				if (ProjectEnviro == "Storm") {
+					MapTerm = _("Maps");
+				}
+				TrackBrowserController::Show("TracksToCampaign", [//L16N |Infinitive| In a popup, a button to select
+					_("Choose"),
+					//L16N |Infinitive| In a popup, a button to modify the selected file
+					_("Edit")], MapTerm,
+					//L16N |Infinitive| In a popup, a button to make a new media
+					[_("Create")]);
+			}
+			case "TracksToCampaign_Button_0": { // Choose
+				declare Text Path = Event.CustomEventData[0];
+				CampaignAPI::PlaceMap(Path, G_SectionIndex, G_MapIndex);
+				UpdateMaps();
+				Pages::GotoPrevious();
+			}
+			case "TracksToCampaign_Button_1": { // Editor
+				declare Text Path = Event.CustomEventData[0];
+				declare Text Settings = SettingsController::GetSettingsXmlEditor();
+				TitleFlow.EditMap(Path, "", Settings);
+			}
+			case "TracksToCampaign_SecondaryButton_0": { // Create
+				TrackBrowserController::MakeIdle();
+				NewAssetController::Show("BrowseTracks");
+			}
+			case "DynamicFormDisplayer_ValidateEntry": {
+				declare FormId = TextLib::ToInteger(Event.CustomEventData[0]);
+				declare Value = Event.CustomEventData[1];
+				CampaignAPI::SetValue(FormId, Value);
+			}
+			case "DynamicFormDisplayer_Event": {
+				ScriptBrowserController::Show("ScriptToGameModeInCampaign", [//L16N |Infinitive| In a popup, a button to select
+					_("Choose")],
+					_("|GameModes|Scripts"), 
+					//L16N |Infinitive| In a popup, a button to make a new media
+					[_("Create")]);
+			}
+			case "ScriptToGameModeInCampaign_Button_0": {
+				Pages::GotoPrevious();
+				if (Event.CustomEventData.count == 0) {
+					continue;
+				}
+				declare Text ScriptToUse = Event.CustomEventData[0];
+				CampaignAPI::SetValue(1, ScriptToUse);
+				UpdateForm();
+			}
+			case "SoloSettings": {
+				Pages::GotoNext("CampaignSettings");
+			}
+		}
+	}
+}

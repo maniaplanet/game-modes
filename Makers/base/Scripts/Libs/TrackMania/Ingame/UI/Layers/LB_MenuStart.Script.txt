@@ -1,0 +1,233 @@
+#Include "Libs/Nadeo/Common/ManialinkTools/Manialink3WPrevAnims.Script.txt"											as Manialink
+#Include "Libs/Trackmania/Ingame/UI/UIButtonNamesPopup.Script.txt"					as UIButtonNamesPopup
+#Include "Libs/Trackmania/Ingame/UI/Layers/Inject_SoloMapInfosBase.Script.txt"		as Inject_SoloMapInfosBase
+#Include "Libs/Trackmania/Ingame/UI/Layers/Inject_QuadsSelector.Script.txt"			as Inject_QuadsSelector
+
+#Const TMC_MEDAL_AUTHOR					0
+#Const TMC_MEDAL_GOLD					1
+#Const TMC_MEDAL_SILVER					2
+#Const TMC_MEDAL_BRONZE					3
+#Const TMC_MEDAL_PLAYER					4
+#Const TMC_MEDAL_NONE					5
+#Const TMC_MEDAL_ANOTHERPLAYER			6
+
+#Const TMC_PLAYERCHOICE_NEXTTRACK 		2
+
+Text Build() {
+	declare Integer Count_InstancesY         = 2;
+	declare Integer Count_InstancesX         = 1;
+	declare Real	PosXFirstQuad            = 0.;
+	declare Real	PosYFirstQuad            = 20.;
+
+	declare Real	SizeXQuad                = 77.;
+	declare Real	SizeYQuad                = 10.;
+	declare Real	MarginY_Button           = 4.0;
+	declare Real	MarginX_Button           = 4.0;
+	declare  Boolean	Solo_GiveUpIsPossible for Users[0];
+	declare  Boolean	Solo_NextTrackIsPossible for Users[0];
+	declare Integer Index_GiveUp    = -1;
+	declare Integer Index_NextTrack = -1;
+	declare Integer Index_Quit      = -1;
+	if(Solo_GiveUpIsPossible)
+	{
+		Index_GiveUp = Count_InstancesY-1;
+		Count_InstancesY += 1;
+	}
+	if(Solo_NextTrackIsPossible)
+	{
+		Index_NextTrack = Count_InstancesY-1;
+		Count_InstancesY += 1;
+	}
+	Index_Quit = Count_InstancesY-1;
+
+	declare Text MLText = """
+	
+	
+<manialink version="3" name="L_UIMedalSelection">
+	<frame id="Frame_All">
+
+		<frame id="Frame_Menu" pos="0 0" hidden="0">
+			<quad z-index="-4" pos="0. 0." size="320 180" valign="center" halign="center" style="Bgs1" substyle="BgDialogBlur" opacity="0." bluramount="0."/>
+			{{{Inject_SoloMapInfosBase::InjectInManialink()}}}
+			{{{Inject_QuadsSelector::InjectInManialink(Count_InstancesY, Count_InstancesX)}}}
+		</frame>
+		
+		
+	</frame>
+	
+	
+	<script><!--
+		#Const DebugName  "L_MenuStart"
+
+		{{{Manialink::GetIncludes()}}}
+		
+		{{{Manialink::Load()}}}
+		{{{Inject_SoloMapInfosBase::InjectInGlobal()}}}
+
+		
+		{{{Inject_QuadsSelector::InjectInFunction()}}}
+		{{{Inject_SoloMapInfosBase::InjectInFunction()}}}
+
+		Void ClearChoose()
+		{
+			//declare netwrite Integer Net_MedalChosen 		for UI;
+			//Net_MedalChosen = -1;
+		}
+
+		Void Init()
+		{
+			declare Boolean	Solo_NextTrackIsPossible 	for LocalUser;
+			declare Boolean Solo_GiveUpIsPossible		for LocalUser;
+
+			declare Integer 	Net_HideIngameUI 			for Teams[0];
+			declare Integer 	Net_ShowIngameUI 			for Teams[0];
+			declare netwrite Integer 	Net_PlayerRestartChoice 			for UI;
+			Net_PlayerRestartChoice = -1;
+			Net_HideIngameUI = -1;
+			Net_ShowIngameUI = -1;
+
+			ClearChoose();
+			declare Text[] LabelMedals;
+			LabelMedals.add("{{{_("Resume")}}}");
+			if(Solo_GiveUpIsPossible) LabelMedals.add("{{{UIButtonNamesPopup::GetGiveUpText()}}}");
+			if(Solo_NextTrackIsPossible) LabelMedals.add("{{{_("Next Track")}}}");
+			LabelMedals.add("{{{_("Quit")}}}");
+
+			SetButtons(LabelMedals);
+
+		}
+
+		
+		Void ShowPage()
+		{
+			EnableMenuNavigation(True,False,Null,50);
+			declare Integer 	Net_HideIngameUI 			for Teams[0];
+			Net_HideIngameUI = Now;
+			
+			declare netwrite Integer 	Net_PlayerRestartChoice 			for UI;
+			Net_PlayerRestartChoice = -1;
+
+			AnimShow_QuadSelect();
+			AnimShow_SoloMapInfosBase();
+
+
+			ClearChoose();
+			FocusButton();
+		}
+
+		Void Button_Resume()
+		{
+			declare Integer 	Net_ShowIngameUI 			for Teams[0];
+			Net_ShowIngameUI += 1;
+			CloseInGameMenu(CMlScriptIngame::EInGameMenuResult::Resume);
+		}
+
+		Void Button_GiveUp()
+		{
+			declare netwrite Integer 	Net_PlayerHasGiveUpUpdate 			for UI;
+			Net_PlayerHasGiveUpUpdate += 1;
+			CloseInGameMenu(CMlScriptIngame::EInGameMenuResult::Resume);
+			//declare Integer 	Net_ShowIngameUI 			for Teams[0];
+			//Net_ShowIngameUI += 1;
+		}
+
+		Void Button_Quit()
+		{
+			declare netwrite Integer 	Net_PlayerWantsToQuitUpdate			for UI;
+			Net_PlayerWantsToQuitUpdate += 1;
+			CloseInGameMenu(CMlScriptIngame::EInGameMenuResult::Quit);
+			declare Integer 	Net_ShowIngameUI 			for Teams[0];
+			Net_ShowIngameUI += 1;
+		}
+
+		Void Button_NextTrack()
+		{
+			declare netread Text    Net_ModeName      for UI;
+			if(Net_ModeName == "Campaign_Solo")
+			{
+				declare  Boolean	Solo_NextTrackRequested 				for LocalUser;
+				Solo_NextTrackRequested = True;
+				CloseInGameMenu(CMlScriptIngame::EInGameMenuResult::Quit);
+			}
+			else
+			{
+				declare netwrite Integer 	Net_PlayerRestartChoice			for UI;
+				Net_PlayerRestartChoice = {{{TMC_PLAYERCHOICE_NEXTTRACK}}};
+				CloseInGameMenu(CMlScriptIngame::EInGameMenuResult::Resume);
+			}
+
+		}
+
+		Void PressSelect()
+		{
+			switch(G_ButtonFocus)
+			{
+				case 0: {
+					Button_Resume();
+				}
+				case {{{Index_GiveUp}}}: {
+					Button_GiveUp();
+				}
+				case {{{Index_Quit}}}: {
+					Button_Quit();
+				}
+				case {{{Index_NextTrack}}}: {
+					Button_NextTrack();
+				}
+			}
+
+			EnableMenuNavigation(False, False, Null, 0);
+		}
+
+		main() {
+			Init();
+
+			declare Boolean Prev_Visibility;
+			{{{Inject_SoloMapInfosBase::InjectInMain()}}}
+
+			while(True) {
+				
+				yield;
+				if(Prev_Visibility != PageIsVisible) {
+					if(PageIsVisible) ShowPage();
+					Prev_Visibility = PageIsVisible;
+				}
+				if(! PageIsVisible) continue;
+				LibManialink_AnimLoop();
+				
+
+				{{{Inject_SoloMapInfosBase::InjectInWhile()}}}
+				{{{Inject_QuadsSelector::InjectInWhile("PressSelect();")}}}
+
+				foreach(Event in PendingEvents) {
+					switch(Event.Type) {
+
+						case CMlEvent::Type::MenuNavigation: {
+							switch(Event.MenuNavAction) {
+								case CMlEvent::EMenuNavAction::Cancel : {
+									Button_Resume();
+								}
+							}
+						}
+						case CMlEvent::Type::PluginCustomEvent: {
+							
+							switch(Event.PluginCustomEventType) {
+								case "Show" : {
+									ShowPage();
+								}
+								
+								case "Hide" : {
+									//EnableMenuNavigation(True,False,Null,0);
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	--></script>
+</manialink>
+	""";
+	
+	return MLText;
+}

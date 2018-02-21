@@ -1,0 +1,168 @@
+#Include "Libs/Nadeo/Common/Core/Logger.Script.txt"	as Logger
+#Include "TextLib"								as TextLib
+#Include "Libs/Nadeo/MP4/Common/GlobalVariables.Script.txt"	as GlobalVariables
+
+#Const C_BaseFileTM		"file://Media/MEDIABROWSER_HiddenResources/MakerTM/XML/OnlineModeXMLs/BaseOnlineModes.xml"
+#Const C_BaseFileSM		"file://Media/MEDIABROWSER_HiddenResources/MakerSM/XML/OnlineModeXMLs/BaseOnlineModes.xml"
+
+declare Boolean		G_IsActive;
+declare Text		G_Color;
+declare Text[]		G_BaseIds;
+declare Text[]		G_DefaultBaseIds;
+declare Text[]		G_BaseTitleNames;
+declare Text[]		G_BaseMakerNames;
+declare Text[]		G_UGCAssets;
+declare Boolean[]	G_IsVisibleInMaker;
+declare Boolean[]	G_IsActivated;
+declare Boolean		G_SpecialParamIsActivated;
+declare Boolean		G_AllowAllAssets;
+declare Boolean		G_DisplayTitleServersOnly;
+
+Void Private_ReadBase(Text _XML)
+{
+	G_BaseIds.clear();
+	G_BaseTitleNames.clear();
+	G_BaseMakerNames.clear();
+	G_IsVisibleInMaker.clear();
+	G_IsActivated.clear();
+	G_UGCAssets.clear();
+	G_SpecialParamIsActivated	= False;
+	G_AllowAllAssets			= True;
+	G_DisplayTitleServersOnly	= True;
+	if (_XML == "") {
+		return;
+	}
+	declare Document				<=> Xml.Create(_XML);
+	declare OnlineModes				<=> Document.Root;
+	G_AllowAllAssets			= OnlineModes.GetAttributeBoolean("allowallmodes", True);
+	G_DisplayTitleServersOnly	= OnlineModes.GetAttributeBoolean("displaytitleserversonly", True);
+	foreach(OnlineMode in OnlineModes.Children) {
+		if (OnlineMode.GetAttributeBoolean("isdefault", False)) {
+			declare Text AssetId = OnlineMode.GetAttributeText("id", "");
+			if (!G_DefaultBaseIds.exists(AssetId) && G_DefaultBaseIds.count != 0) {
+				continue;
+			}
+			G_BaseIds.add(AssetId);
+			G_BaseTitleNames.add(OnlineMode.GetAttributeText("titlename", ""));
+			G_BaseMakerNames.add(OnlineMode.GetAttributeText("makername", ""));
+			G_IsVisibleInMaker.add(OnlineMode.GetAttributeBoolean("isvisibleinmaker", True));
+			G_IsActivated.add(OnlineMode.GetAttributeBoolean("isactivated", True));
+		} else {
+			G_UGCAssets.add(OnlineMode.GetAttributeText("id", ""));
+		}
+	}
+	foreach(BaseId in G_DefaultBaseIds) {
+		if (G_BaseIds.exists(BaseId)) {
+			continue;
+		}
+		G_BaseIds.add(BaseId);
+		declare SplitBaseId = TextLib::Split("/\\", BaseId);
+		declare Text FinalId = BaseId;
+		if (SplitBaseId.count != 0) {
+			FinalId = SplitBaseId[SplitBaseId.count - 1];
+		}
+		G_BaseTitleNames.add(FinalId);
+		G_BaseMakerNames.add(FinalId);
+		G_IsVisibleInMaker.add(True);
+		G_IsActivated.add(True);
+	}
+	Xml.Destroy(Document);
+}
+
+Void ReadBase(Text _XML)
+{
+	Private_ReadBase(_XML);
+}
+
+Void ReadBase()
+{
+	declare Text[Integer] BaseFiles = [GlobalVariables::LaunchContext_Maker() => C_BaseFileTM,
+										GlobalVariables::LaunchContext_MakerSM() => C_BaseFileSM];
+	declare Text BaseFile = BaseFiles[GlobalVariables::GetLaunchContext()];
+	declare GetRequest				<=> Http.CreateGet(BaseFile);
+	wait(GetRequest.IsCompleted);
+	if (GetRequest.StatusCode != 200)
+	{
+		Logger::Warn("OnlineXmlReader : le fichier n'a pas été trouvé");
+		return;
+	}
+	Private_ReadBase(GetRequest.Result);
+	G_DefaultBaseIds = G_BaseIds;
+	Http.Destroy(GetRequest);
+}
+
+Void AnalyzeXML(Text _XML)
+{
+	if (_XML == "")
+	{
+		return;
+	}
+	declare Document				<=> Xml.Create(_XML);
+	declare OnlinePlay				<=> Document.Root;
+
+	if (OnlinePlay == Null)
+	{
+		Logger::Warn("Texte mal formaté : balise OnlinePlay non trouvée");
+		Xml.Destroy(Document);
+		return;
+	}
+	G_Color = OnlinePlay.GetAttributeText("color", "0F8");
+	G_IsActive = OnlinePlay.GetAttributeBoolean("activated", True);
+	ReadBase(Document.TextContents);
+	Xml.Destroy(Document);
+}
+
+Text GetColor()
+{
+	return G_Color;
+}
+
+Boolean IsActive()
+{
+	return G_IsActive;
+}
+
+Text[] GetBaseIds()
+{
+	return G_BaseIds;
+}
+
+Text[] GetBaseTitleNames()
+{
+	return G_BaseTitleNames;
+}
+
+Text[] GetBaseMakerNames()
+{
+	return G_BaseMakerNames;
+}
+
+Text[] GetUGCAssets()
+{
+	return G_UGCAssets;
+}
+
+Boolean[] GetIsVisibleInMaker()
+{
+	return G_IsVisibleInMaker;
+}
+
+Boolean[] GetIsActivated()
+{
+	return G_IsActivated;
+}
+
+Boolean GetSpecialParamIsActivated()
+{
+	return G_SpecialParamIsActivated;
+}
+
+Boolean AllowAllAssets()
+{
+	return G_AllowAllAssets;
+}
+
+Boolean DisplayTitleServersOnly()
+{
+	return G_DisplayTitleServersOnly;
+}

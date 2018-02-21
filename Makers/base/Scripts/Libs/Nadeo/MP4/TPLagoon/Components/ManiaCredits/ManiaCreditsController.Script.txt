@@ -1,0 +1,143 @@
+#Include "Libs/Nadeo/Common/Core/MenuLayers.Script.txt"											as Layers
+#Include "Libs/Nadeo/Common/Core/Pages.Script.txt"												as Pages
+#Include "Libs/Nadeo/Common/Core/Logger.Script.txt"												as Logger
+#Include "Libs/Nadeo/Common/Core/SectionsManager.Script.txt"										as SectionsManager
+
+//Layers
+#Include "Libs/Nadeo/MP4/TPLagoon/Components/ManiaCredits/LBManiaCredits.Script.txt"					as LBManiaCredits
+
+#Const C_LayerCreditName "ManiaCredits"
+
+declare Text[]  	  G_CreditName;
+declare Text[Text]    G_CreditCountry;
+declare Text[Text]    G_CreditJob;
+declare Text[][Text]  G_CreditByJob;
+declare Boolean G_IsRunning;
+
+Boolean IsRunning()
+{
+	return G_IsRunning;
+}
+
+Void AddCredit(Text _Name, Text _Country, Text _Job)
+{
+	G_CreditName.add(_Name);
+	G_CreditCountry[_Name] = _Country;
+	G_CreditJob[_Name]     = _Job;
+	if(!G_CreditByJob.existskey(_Job)) G_CreditByJob[_Job] = Text[];
+	G_CreditByJob[_Job].add(_Name);
+}
+
+Void GetManiaCredits()
+{
+	declare FlagImg = "http://tm.maniazones.com/images/icons/leagues/";
+
+	AddCredit("JAMES CAMERON"			, ""	, "DIRECTOR");
+	AddCredit("JAMES CAMERON"			, ""	, "WRITER");
+	AddCredit("WILLIAM WISHER JR."		, ""	, "WRITER");
+	AddCredit("ARNOLD SCHWARZENEGGER"	, ""	, "CAST");
+	AddCredit("LINDA HAMILTON"			, ""	, "CAST");
+	AddCredit("EDWARD FURLONG"			, ""	, "CAST");
+	AddCredit("ROBERT PATRICK"			, ""	, "CAST");
+	AddCredit("EARL BOEN"				, ""	, "CAST");
+	AddCredit("JOE MORTON"				, ""	, "CAST");
+}
+
+Void Build(Text _LayerName, Boolean _Attach) {
+
+	declare Text MLText;
+	switch(_LayerName) {
+		case("ManiaCredits"):{
+			MLText = LBManiaCredits::Build();
+		}
+	}
+
+	if(MLText == "") {
+		Logger::Warn("Unknown Page: "^_LayerName);
+		return;
+	}
+	
+	Layers::Create(_LayerName, MLText);
+	
+	declare CUILayer Layer <=> Layers::Get(_LayerName);
+	declare Text Page_LayerName for Layer.LocalPage;
+	
+	Page_LayerName = _LayerName;
+	if(_Attach) Layers::Attach(_LayerName);
+}
+
+Void Build(Text _LayerName) {
+	Build(_LayerName, False);
+
+}
+
+Void Load() {
+	GetManiaCredits();
+
+	Build(C_LayerCreditName);
+	Pages::Compose("ManiaCreditsMain", ["ManiaCredits"]);
+	//SectionsManager::AddSection("ManiaCredits", "ManiaCreditsMain", "Statistics", <0.,0.,0.>);
+}
+
+Void SendManiaCredits(Text _LayerName) {
+	declare CUILayer LayerToSend = Layers::Get(_LayerName);
+	if(LayerToSend == Null) return;
+
+	declare Text[]  	 Page_CreditName        for LayerToSend.LocalPage;
+	declare Text[Text]   Page_CreditCountry     for LayerToSend.LocalPage;
+	declare Text[Text]   Page_CreditJob         for LayerToSend.LocalPage;
+	declare Text[][Text] Page_CreditByJob       for LayerToSend.LocalPage;
+	Page_CreditName    = G_CreditName;
+	Page_CreditCountry = G_CreditCountry;
+	Page_CreditJob     = G_CreditJob;
+	Page_CreditByJob   = G_CreditByJob;
+
+	LayerCustomEvent(LayerToSend, "SendManiaCredits", [""]);
+}
+
+Void Show() {
+	if (G_IsRunning) {
+		Logger::Warn("ManiaCredits déjà affichés, méthode Show appelée une fois de trop");
+		return;
+	}
+	G_IsRunning = True;
+	Pages::GotoNext("ManiaCreditsMain");
+}
+
+Void Hide(Boolean _ForceStop) {
+	if (!G_IsRunning) {
+		if (!_ForceStop) {
+			Logger::Warn("ManiaCredits déjà cachés, méthode Hide appelée une fois de trop");
+		}
+		return;
+	}
+	G_IsRunning = False;
+	Pages::GotoPrevious();
+}
+
+Void Hide() {
+	Hide(False);
+}
+
+Void ForceHide() {
+	Hide(True);
+}
+
+Void Loop() {
+	if (!G_IsRunning) return;
+
+	foreach(Event in PendingEvents) {
+		if(Event.Type != CManiaAppEvent::EType::LayerCustomEvent) continue;
+		switch(Event.CustomEventType) {
+			case "GetManiaCredits": {
+				SendManiaCredits(C_LayerCreditName);
+			
+			}
+		}
+	}
+}
+
+Text GenerateXML ()
+{
+	return "";
+}

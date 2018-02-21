@@ -1,0 +1,275 @@
+#Include "Libs/Nadeo/Common/ManialinkTools/Manialink3WPrevAnims.Script.txt"								as Manialink
+#Include "Libs/Trackmania/Ingame/Medals.Script.txt"									as Medals
+#Include "Libs/Nadeo/MP4/Common/Colors.Script.txt" 					            		as Colors
+#Include "Libs/Trackmania/Ingame/UI/Layers/Inject_SoloMapInfosBase.Script.txt"		as Inject_SoloMapInfosBase
+#Include "Libs/Trackmania/Ingame/UI/Layers/Inject_QuadsSelector.Script.txt"			as Inject_QuadsSelector
+
+#Const TMC_MEDAL_AUTHOR					0
+#Const TMC_MEDAL_GOLD					1
+#Const TMC_MEDAL_SILVER					2
+#Const TMC_MEDAL_BRONZE					3
+#Const TMC_MEDAL_PLAYER					4
+#Const TMC_MEDAL_NONE					5
+#Const TMC_MEDAL_ANOTHERPLAYER			6
+#Const TMC_MEDAL_WORLDRECORD			12
+
+#Const IMGPATH								"file://Media/MEDIABROWSER_HiddenResources/Common/Images/Ingame/"
+
+Text Build() {
+	declare Integer Count_InstancesY         = 4;
+	declare Integer Count_InstancesX         = 1;
+	declare Real	PosXFirstQuad            = -19.9;
+	declare Real	PosYFirstQuad            = -27.8;
+
+	declare Real	SizeXQuad                = 107.8;
+	declare Real	SizeYQuad                = 11.3;
+	declare Real	MarginY_Button           = 0.4;
+	declare Real	MarginX_Button           = 4.0;
+	declare  Boolean Solo_WorldRecordIsPossible for Users[0];
+	declare  Boolean Solo_ChallengeAuthorIsPossible for Users[0];
+ 	if(Solo_WorldRecordIsPossible) Count_InstancesY += 1;
+ 	if(Solo_ChallengeAuthorIsPossible) Count_InstancesY += 1;
+
+	declare Text MedalIcon = IMGPATH ^ "MedalButton2.dds";
+
+ 	// style="Bgs1" substyle="BgDialogBlur"
+	declare Text MLText = """
+<manialink version="3" name="L_UIMedalSelection">
+
+	<frame id="Frame_All">
+
+		<frame id="Frame_Menu"  z-index="10" hidden="0">
+			<quad z-index="-4" pos="0. 0." size="420 180" valign="center" halign="center" style="Bgs1" substyle="BgDialogBlur" opacity="0." bluramount="0."/>
+			{{{Inject_SoloMapInfosBase::InjectInManialink()}}}
+			{{{Inject_QuadsSelector::InjectInManialink(Count_InstancesY, Count_InstancesX)}}}
+			<frame pos="-34 30.0">
+			</frame>
+		</frame>
+	</frame>
+	
+	
+	<script><!--
+		#Include "TextLib" as TL
+		#Const DebugName  "L_MedalSelection"
+
+		{{{Manialink::GetIncludes()}}}
+		
+		{{{Manialink::Load()}}}
+		
+		//declare Integer G_ButtonFocus;
+		declare Vec3[Integer] G_QuadMedalImgColor;
+		{{{Inject_SoloMapInfosBase::InjectInGlobal()}}}
+		
+		{{{Inject_QuadsSelector::InjectInFunction()}}}
+		{{{Inject_SoloMapInfosBase::InjectInFunction()}}}
+
+		Void ClearChoose()
+		{
+			declare netwrite Integer Net_MedalChosen 		for UI;
+			Net_MedalChosen = -1;
+			G_ButtonFocus = 0;
+		}
+
+		Void PressSelect()
+		{
+			declare netwrite Integer Net_MedalChosen 		for UI;
+			declare Integer[] MedalChosen =[""";
+ 	if(Solo_ChallengeAuthorIsPossible)
+ 	{
+		MLText ^= """ {{{TMC_MEDAL_AUTHOR}}}, """;
+ 	}
+	MLText ^= """
+					  {{{TMC_MEDAL_GOLD}}},
+					  {{{TMC_MEDAL_SILVER}}},
+					  {{{TMC_MEDAL_BRONZE}}},
+					  {{{TMC_MEDAL_PLAYER}}},
+					  {{{TMC_MEDAL_WORLDRECORD}}}];
+			Net_MedalChosen = MedalChosen[G_ButtonFocus];
+			EnableMenuNavigation(True, False, Null, 0);
+
+			//if(G_ButtonFocus == 4) G_ButtonFocus = 11;
+			//Net_MedalChosen = G_ButtonFocus + 1;
+		}
+
+		Void SendInfo()
+		{
+			declare netread Integer[Integer] Net_TimesOnMap for UI;
+			declare netread Text BestTimePlayer for UI;
+			ClearChoose();
+			declare Integer[Integer] TimesOnMap;	
+			for(I, 0, 3)
+			{
+				if(Net_TimesOnMap.existskey(I))
+				{
+					TimesOnMap[I] = Net_TimesOnMap[I];
+				}
+				else
+				{
+					TimesOnMap[I] = 0;	
+				}
+			}
+			declare Text PlayerChooseText;
+			if(BestTimePlayer != "")
+			{
+				PlayerChooseText = "{{{Medals::GetCompletMedalName(TMC_MEDAL_PLAYER)}}}";
+			}
+			else
+			{
+				PlayerChooseText = "{{{Medals::GetCompletMedalName(TMC_MEDAL_NONE)}}}";
+			}
+
+			declare Text[] LabelMedals = [
+			""";
+ 	if(Solo_ChallengeAuthorIsPossible)
+ 	{
+		MLText ^= """ "{{{Medals::GetCompletMedalName(TMC_MEDAL_AUTHOR)}}}", """;
+ 	}
+	MLText ^= """
+			"{{{Medals::GetCompletMedalName(TMC_MEDAL_GOLD)}}}",
+										  "{{{Medals::GetCompletMedalName(TMC_MEDAL_SILVER)}}}",
+										  "{{{Medals::GetCompletMedalName(TMC_MEDAL_BRONZE)}}}",
+										  PlayerChooseText,
+										  "{{{_("World Records")}}}"];
+			
+
+			declare Text TimeAuthor = TL::TimeToText(TimesOnMap[{{{TMC_MEDAL_AUTHOR}}}]  , True);
+			declare Text TimeGold   = TL::TimeToText(TimesOnMap[{{{TMC_MEDAL_GOLD}}}]  , True);
+			declare Text TimeSilver = TL::TimeToText(TimesOnMap[{{{TMC_MEDAL_SILVER}}}], True);
+			declare Text TimeBronze = TL::TimeToText(TimesOnMap[{{{TMC_MEDAL_BRONZE}}}], True);
+			TimeAuthor ^= TL::SubText(TimesOnMap[{{{TMC_MEDAL_AUTHOR}}}]  ^"",(TL::Length(TimesOnMap[{{{TMC_MEDAL_AUTHOR}}}]^"")-1),1);
+			TimeGold   ^= TL::SubText(TimesOnMap[{{{TMC_MEDAL_GOLD}}}]  ^"",(TL::Length(TimesOnMap[{{{TMC_MEDAL_GOLD}}}]^"")-1),1);
+			TimeSilver ^= TL::SubText(TimesOnMap[{{{TMC_MEDAL_SILVER}}}]^"",(TL::Length(TimesOnMap[{{{TMC_MEDAL_SILVER}}}]^"")-1),1);
+			TimeBronze ^= TL::SubText(TimesOnMap[{{{TMC_MEDAL_BRONZE}}}]^"",(TL::Length(TimesOnMap[{{{TMC_MEDAL_BRONZE}}}]^"")-1),1);
+			declare Text[] LabelMedalsTime = [
+
+			""";
+ 	if(Solo_ChallengeAuthorIsPossible)
+ 	{
+		MLText ^= """ TimeAuthor, """;
+ 	}
+	MLText ^= """
+												TimeGold,
+										  	  TimeSilver,
+										  	  TimeBronze,
+										  	  "",
+										  	  ""];
+			declare Text[] QuadMedalImg     = [
+			""";
+ 	if(Solo_ChallengeAuthorIsPossible)
+ 	{
+		MLText ^= """  "{{{MedalIcon}}}", """;
+ 	}
+	MLText ^= """
+											  "{{{MedalIcon}}}",
+										  	  "{{{MedalIcon}}}",
+										  	  "{{{MedalIcon}}}",
+										  	  "",
+										  	  ""];
+			SetButtons(LabelMedals, LabelMedalsTime, QuadMedalImg, G_QuadMedalImgColor);
+		}
+
+		Void Init()
+		{
+			""";
+ 	if(Solo_ChallengeAuthorIsPossible)
+ 	{
+		MLText ^= """ 
+
+			G_QuadMedalImgColor = [0 => {{{Colors::GetColor("GreenMaster")}}},
+					  	           1 => {{{Colors::GetColor("GreenMaster")}}},
+					  	           2 => {{{Colors::GetColor("GoldShiny")}}},
+					  	           3 => {{{Colors::GetColor("SilverShiny")}}},
+					  	           4 => {{{Colors::GetColor("BronzeShiny")}}},
+					  	           5 => <0.,0.,0.>
+					  	           ];
+		""";
+ 	}
+ 	else
+ 	{
+
+		MLText ^= """
+
+			G_QuadMedalImgColor = [0 => {{{Colors::GetColor("GreenMaster")}}},
+					  	           1 => {{{Colors::GetColor("GoldShiny")}}},
+					  	           2 => {{{Colors::GetColor("SilverShiny")}}},
+					  	           3 => {{{Colors::GetColor("BronzeShiny")}}},
+					  	           4 => <0.,0.,0.>
+					  	           ];
+		""";
+ 	}
+	MLText ^= """
+			SendInfo();
+		}
+		Void ShowPage()
+		{
+			EnableMenuNavigation(True,False,Null,2);
+			CloseInGameMenu(CMlScriptIngame::EInGameMenuResult::Resume);
+			ClearChoose();
+			FocusButton();
+			//SendCustomEvent("Get", [""]);
+			//Update_SoloMapInfosBase();
+			SendInfo();
+
+		}
+
+
+		main() {
+			Init();
+			{{{Inject_SoloMapInfosBase::InjectInMain()}}}
+
+			declare Boolean Prev_Visibility;
+
+			while(True) {
+				
+				yield;
+				if(Prev_Visibility != PageIsVisible) {
+					if(PageIsVisible) ShowPage();
+					Prev_Visibility = PageIsVisible;
+				}
+				if(! PageIsVisible) continue;
+				LibManialink_AnimLoop();
+				
+				//log(Now^"W");
+				{{{Inject_SoloMapInfosBase::InjectInWhile()}}}
+
+				{{{Inject_QuadsSelector::InjectInWhile("PressSelect();")}}}
+				foreach(Event in PendingEvents) {
+					switch(Event.Type) {
+
+						case CMlEvent::Type::MenuNavigation: {
+							switch(Event.MenuNavAction) {
+								case CMlEvent::EMenuNavAction::Cancel : {
+									declare netwrite Integer 	Net_PlayerWantsToQuitUpdate for UI;
+									Net_PlayerWantsToQuitUpdate += 1;
+								}
+								case CMlEvent::EMenuNavAction::Action1 : {
+									//AnimShow_QuadSelect(); //Hack
+									//AnimShow_SoloMapInfosBase(); //Hack
+								}
+							}
+						}
+						case CMlEvent::Type::MouseClick: {
+							
+						}
+						case CMlEvent::Type::PluginCustomEvent: {
+							
+							switch(Event.PluginCustomEventType) {
+								case "Show" : {
+									ShowPage();
+								}
+								
+								case "Hide" : {
+									//EnableMenuNavigation(True,False,Null,0);
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	--></script>
+</manialink>
+	""";
+	
+	return MLText;
+}

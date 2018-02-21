@@ -1,0 +1,267 @@
+#Include "TextLib"														as TextLib
+#Include "MathLib" 														as MathLib
+#Include "Libs/Nadeo/Common/Core/Pages.Script.txt"							as Pages
+#Include "Libs/Nadeo/Common/Core/Logger.Script.txt"							as Logger
+#Include "Libs/Nadeo/Common/Core/SectionsManager.Script.txt"					as SectionsManager
+#Include "Libs/Nadeo/Common/Core/MenuLayers.Script.txt"						as Layers
+
+#Include "Libs/Nadeo/MP4/Common/GlobalVariables.Script.txt"					as GlobalVariables
+
+// APIs
+#Include "Libs/Nadeo/MP4/TitlePackMaker/XMLController.Script.txt"											as XMLController
+#Include "Libs/Nadeo/MP4/Common/DesignManialinks.Script.txt"												as DesignManialinks
+#Include "Libs/Nadeo/MP4/TitlePackMaker/MakerAPI.Script.txt"												as MakerAPI
+///////////////Components
+#Include "Libs/Nadeo/MP4/TPLagoon/Components/NewAsset/NewAssetController.Script.txt"						as NewAssetController
+#Include "Libs/Nadeo/MP4/TitlePackMaker/Components/SectionsSelector/SectionsSelectorController.Script.txt"	as SectionsSelectorController
+#Include "Libs/Nadeo/MP4/TitlePackMaker/Components/Background/BackgroundController.Script.txt"				as BackgroundController
+#Include "Libs/Nadeo/MP4/TitlePackMaker/Components/Header_TaskBar/TaskBarController.Script.txt"				as TaskBarController
+#Include "Libs/Nadeo/MP4/Common/Components/MediaBrowser/MediaBrowserController.Script.txt"					as MediaBrowserController
+#Include "Libs/Nadeo/MP4/Common/Components/TrackBrowser/TrackBrowserController.Script.txt"					as TrackBrowserController
+#Include "Libs/Nadeo/MP4/Common/Components/ScriptBrowser/ScriptBrowserController.Script.txt"				as ScriptBrowserController
+#Include "Libs/Nadeo/MP4/Common/Components/ImageBrowser/ImageBrowserController.Script.txt"					as ImageBrowserController
+#Include "Libs/Nadeo/MP4/Common/Components/VideoBrowser/VideoBrowserController.Script.txt"					as VideoBrowserController
+#Include "Libs/Nadeo/MP4/Common/Components/SoundBrowser/SoundBrowserController.Script.txt"					as SoundBrowserController
+#Include "Libs/Nadeo/MP4/Common/Components/ModBrowser/ModBrowserController.Script.txt"						as ModBrowserController
+#Include "Libs/Nadeo/MP4/TitlePackMaker/Components/MusicMenu/MusicMenuController.Script.txt"				as MusicMenuController
+#Include "Libs/Nadeo/MP4/Common/Components/DialogBox/DialogBoxController.Script.txt"						as DialogBoxController
+#Include "Libs/Nadeo/MP4/Common/LoadingScreen.Script.txt"													as LoadingScreen
+#Include "Libs/Nadeo/MP4/Common/Components/ReplayBrowser/ReplayBrowserController.Script.txt"				as ReplayBrowserController
+//Sections
+#Include "Libs/Nadeo/MP4/TitlePackMaker/Components/Component_Empty/MyTestController.Script.txt"				as EmptyComponent
+#Include "Libs/Nadeo/MP4/TitlePackMaker/Components/Component_Campaign/CampaignController.Script.txt"		as CampaignController
+#Include "Libs/Nadeo/MP4/TitlePackMaker/Components/Component_Style/StyleController.Script.txt"				as StyleController
+#Include "Libs/Nadeo/MP4/TitlePackMaker/Components/Component_Online/OnlineController.Script.txt"			as OnlineController
+#Include "Libs/Nadeo/MP4/TitlePackMaker/Components/Component_LocalPlay/LocalPlayController.Script.txt"		as LocalPlayController
+#Include "Libs/Nadeo/MP4/TitlePackMaker/Components/Component_Editor/EditorController.Script.txt"			as EditorController
+#Include "Libs/Nadeo/MP4/TitlePackMaker/Components/Component_Resources/ResourcesController.Script.txt"		as ResourcesController
+#Include "Libs/Nadeo/MP4/TitlePackMaker/Components/Component_DataCreation/DataCreationController.Script.txt"		as DataCreationController
+#Include "Libs/Nadeo/MP4/TitlePackMaker/Components/Component_MatchSettings/MatchSettingsController.Script.txt" as MatchSettingsController
+#Include "Libs/Nadeo/MP4/TitlePackMaker/Components/Component_Ingame/IngameController.Script.txt"			as IngameController
+#Include "Libs/Nadeo/MP4/TitlePackMaker/Components/Component_Maniacredits/ManiacreditsController.Script.txt"as ManiacreditsController
+#Include "Libs/Nadeo/MP4/Common/Components/MatchSettingsEditor/MatchSettingsEditorController.Script.txt" as MatchSettingsEditorController
+
+#Const C_FirstPageLoad		 "SectionsSelector"
+
+declare Integer G_TimeToRefresh;
+
+Void WarnNotEnoughParams(CManiaAppEvent _Event) {
+	Logger::Warn("[Menucontroller] event "^_Event.CustomEventType^": not enough params ["^_Event.CustomEventData^"]");
+}
+
+Void PreCheck()
+{
+	declare Boolean IsNewTitlePack = MakerAPI::IsNewTitlePack();
+	if (IsNewTitlePack) {
+		XMLController::AnalyzeXML("");
+		MakerAPI::SaveState(XMLController::GenerateXML());
+	} else {
+		XMLController::AnalyzeXML(MakerAPI::Load());
+	}
+}
+
+Void Refresh()
+{
+	declare Text NextPage = C_FirstPageLoad;
+	if (CampaignController::HasFaultyMaps()) {
+		DialogBoxController::ShowMessage(TextLib::GetTranslatedText("Some campaign maps might have been moved or deleted since the last save.")
+			 ^ "\n" ^ TextLib::GetTranslatedText("|them = campaign maps|We suggest adding them again from the Solo menu."));
+	}
+	SectionsManager::SetActualSection(NextPage);
+	Pages::GotoNext(NextPage);
+	G_TimeToRefresh = -1;
+}
+
+Void LoadAll() {
+	if (MakerAPI::IsInMakerSMMode()) {
+		GlobalVariables::Init(GlobalVariables::LaunchContext_MakerSM());
+	} else {
+		GlobalVariables::Init(GlobalVariables::LaunchContext_Maker());
+	}
+
+	DesignManialinks::Load();
+	SectionsSelectorController::Load();
+	BackgroundController::Load();
+	TaskBarController::Load();
+	TrackBrowserController::Load();
+	MatchSettingsEditorController::Load();
+	ScriptBrowserController::Load();
+	ImageBrowserController::Load();
+	VideoBrowserController::Load();
+	SoundBrowserController::Load();
+	ModBrowserController::Load();
+	MusicMenuController::Load();
+	DialogBoxController::Load();
+	LoadingScreen::Load();
+	ReplayBrowserController::Load();
+
+	StyleController::Load();
+	CampaignController::Load();
+	OnlineController::Load();
+	LocalPlayController::Load();
+	EditorController::Load();
+	ResourcesController::Load();
+	DataCreationController::Load();
+	//MatchSettingsController::Load();
+	//IngameController::Load();
+	PreCheck();
+	NewAssetController::Load();
+	ManiacreditsController::Load();
+	
+	declare Ident MyUserID for LocalUser;
+	MyUserID = UserMgr.MainUser.Id;
+
+	G_TimeToRefresh = Now + 5;
+}
+
+Void TaskBar_Back() {
+	if (DialogBoxController::IsShown()) {
+		DialogBoxController::HideMessage();
+		return;
+	}
+	SoundBrowserController::StopPreview();
+	Pages::GotoPrevious();
+}
+
+Void TaskBar_Home() {
+	if (DialogBoxController::IsShown()) {
+		DialogBoxController::HideMessage();
+	}
+	SoundBrowserController::StopPreview();
+	Pages::GotoHome("SectionsSelector");
+	SectionsManager::SetActualSection("SectionsSelector");
+}
+
+Void QuitAll()
+{
+	MakerAPI::SaveState(XMLController::GenerateXML());
+	Menu_Quit();
+}
+
+Void CommonLoops() {
+	if (Now > G_TimeToRefresh && G_TimeToRefresh != -1) {
+		Refresh();
+	}
+	if (SectionsSelectorController::RequestsQuit()) {
+		QuitAll();
+	}
+	foreach(Event in PendingEvents) {
+		if(Event.Type != CManiaAppEvent::EType::LayerCustomEvent) continue;
+		switch(Event.CustomEventType) {
+			case "GotoPage": {
+				if(Event.CustomEventData.count < 1) {
+					WarnNotEnoughParams(Event);
+					continue;
+				}
+				declare Text NewPage = Event.CustomEventData[0];
+				Pages::GotoNext(NewPage);
+			}
+			case "GotoPrevious" : {
+				Pages::GotoPrevious();
+				declare Text PrevPage = Pages::GetCurrentPageName();
+				if(PrevPage == "SectionsSelector") SectionsManager::SetActualSection(PrevPage);
+			}
+			case "DetachPage" : {
+				if(Event.CustomEventData.count < 1) {
+					WarnNotEnoughParams(Event);
+					continue;
+				}
+				foreach(PageLayerName in Event.CustomEventData)
+				{
+					Pages::DetachPage(PageLayerName);
+				}
+			}
+			case "TaskBar_Home" : {
+				if (SectionsManager::GetActualSection() == "SectionsSelector")
+					continue;
+				TaskBar_Home();
+			}
+			case "TaskBar_Back" : {
+				if (SectionsManager::GetActualSection() == "SectionsSelector") {
+					QuitAll();
+				}
+				TaskBar_Back();
+				declare Text PrevPage = Pages::GetCurrentPageName();
+				if(PrevPage == "SectionsSelector") SectionsManager::SetActualSection(PrevPage);
+			}
+			case "TaskBar_Save" : {
+				MakerAPI::SaveState(XMLController::GenerateXML());
+				DialogBoxController::ShowMessage(_("|Noun|Notice"), _("Save successful."));
+			}
+			case "TaskBar_Publish" : {
+				declare Text PublishResult = XMLController::CanPublishXMLResult();
+				if (PublishResult != "OK") {
+					DialogBoxController::ShowMessage(PublishResult);
+				} else {
+					declare Text PublishWarnings = XMLController::PublishXMLWarnings();
+					DialogBoxController::ShowMessage("", _("|Building game|Processing..."), Text[]);
+					MakerAPI::PrepareGeneration();
+					MakerAPI::SaveState(XMLController::GenerateXML());
+					MakerAPI::LaunchGeneration(XMLController::PublishXML());
+					DialogBoxController::HideMessage();
+					if (PublishWarnings != "") {
+						DialogBoxController::ShowMessage(PublishWarnings);
+					} else if (MakerAPI::HasWarningsMapMoved()) {
+						DialogBoxController::ShowMessage(TextLib::Compose(_("Some maps have been taken off the campaign folder.\n\tThe new folder %1 contains them."), "CampaignBin/"));
+					}
+				}
+			}
+			case "TaskBar_Hide" : {
+				TaskBarController::Hide();
+			}
+			case "TaskBar_Show" : {
+				TaskBarController::Show();
+			}
+			case "TaskBar_UpdateTitleAndLogo" : {
+				declare Visibility = (Event.CustomEventData[0] == TextLib::ToText(True));
+				TaskBarController::UpdateTitleAndLogo(Visibility);
+			}
+			case "SetBackGround" : {
+				if(Event.CustomEventData.count < 1) {
+					WarnNotEnoughParams(Event);
+					continue;
+				}
+				declare Text BGSelect = Event.CustomEventData[0];
+				declare Text ActualPage = Pages::GetCurrentPageName();
+				BackgroundController::SetBackground(ActualPage, BGSelect);
+				BackgroundController::UpdateBackground(ActualPage);
+			}
+		}
+	}
+}
+
+Void LoopAll() {
+	CommonLoops();
+	//Global
+	NewAssetController::Loop();
+	BackgroundController::Loop();
+	TaskBarController::Loop();
+	MusicMenuController::Loop();
+	MediaBrowserController::CommonLoop();
+	TrackBrowserController::Loop();
+	MatchSettingsEditorController::Loop();
+	ScriptBrowserController::Loop();
+	ImageBrowserController::Loop();
+	VideoBrowserController::Loop();
+	SoundBrowserController::Loop();
+	ModBrowserController::Loop();
+	DialogBoxController::Loop();
+	ReplayBrowserController::Loop();
+
+	//Section
+	//log("SectionsManager::GetActualSection(): "^ SectionsManager::GetActualSection());
+	switch(SectionsManager::GetActualSection()) {
+		case "SectionsSelector" : SectionsSelectorController::Loop();
+		case "Campaign"         : CampaignController::Loop();
+		case "Style"			: StyleController::Loop();
+		case "Online"			: OnlineController::Loop();
+		case "LocalPlay"		: LocalPlayController::Loop();
+		case "Editor"			: EditorController::Loop();
+		case "Resources"		: ResourcesController::Loop();
+		case "DataCreation"		: DataCreationController::Loop();
+		case "MatchSettings"	: MatchSettingsController::Loop();
+		case "Ingame"			: IngameController::Loop();
+		case "Maniacredits"		: ManiacreditsController::Loop();
+		case "Empty"            : EmptyComponent::Loop();
+	}
+}

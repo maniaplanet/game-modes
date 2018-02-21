@@ -1,0 +1,222 @@
+#Include "Libs/Nadeo/Common/Core/MenuLayers.Script.txt"											as Layers
+#Include "Libs/Nadeo/Common/Core/Pages.Script.txt"												as Pages
+#Include "Libs/Nadeo/Common/Core/Logger.Script.txt"												as Logger
+#Include "Libs/Nadeo/Common/Core/SectionsManager.Script.txt"										as SectionsManager
+
+#Include "Libs/Nadeo/MP4/TitlePackMaker/Components/Component_Editor/EditorXmlReader.Script.txt"	as EditorXmlReader
+#Include "Libs/Nadeo/MP4/Common/GlobalVariables.Script.txt"										as GlobalVariables
+
+//Layers
+#Include "Libs/Nadeo/MP4/TitlePackMaker/Components/Component_Editor/LBEditor.Script.txt"		as LBEditor
+
+//APIs
+#Include "Libs/Nadeo/MP4/Common/Components/ScriptBrowser/ScriptBrowserController.Script.txt"	as ScriptBrowserController
+#Include "TextLib" as TextLib
+
+declare Text	G_Color;
+declare Boolean	G_IsActive;
+declare Integer	G_ButtonFocus;
+
+declare Text		G_BaseFolderName;
+declare Text[]		G_BaseName;
+declare Text[]		G_CustomName;
+declare Boolean[]	G_IsActivated;
+
+Boolean IsActive()
+{
+	return G_IsActive;
+}
+
+Boolean IsActivated()
+{
+	if(!G_IsActivated.exists(True)) return False;
+	return G_IsActive;
+}
+
+Void SetActive(Boolean _IsActive)
+{
+	G_IsActive = _IsActive;
+}
+
+Void SetColor(Text _Color)
+{
+	G_Color = _Color;
+}
+
+Text GetColor()
+{
+	return G_Color;
+}
+
+Text GenerateXML ()
+{
+	declare Text Result = "";
+	foreach (DefaultAssetIndex => DefaultAssetId in G_CustomName) {
+		declare TitleName	= G_BaseName[DefaultAssetIndex];
+		declare IsActivated	= G_IsActivated[DefaultAssetIndex];
+		Result ^= """	<asset id="{{{DefaultAssetId}}}" isdefault="yes" titlename="{{{TitleName}}}" isactivated="{{{IsActivated}}}"/>
+""";
+	}
+	return """	<Editors logo="file://Media/MEDIABROWSER_HiddenResources/Common/Images/Menus/Buttons/Logo_Editor.dds" activated="{{{IsActive()}}}" color="{{{GetColor()}}}" mapeditor="{{{G_CustomName[0]}}}">
+{{{Result}}}
+	</Editors>""";
+}
+
+Void Init()
+{
+	G_BaseFolderName = "EditorPlugins\\Trackmania\\";
+	if (GlobalVariables::GetLaunchContext() == GlobalVariables::LaunchContext_MakerSM()) {
+		G_BaseFolderName = "EditorPlugins\\Shootmania\\";
+	}
+	G_Color = "48e";
+	G_IsActive = True;
+}
+
+Void InitAssets()
+{
+	G_BaseName			= ["NewMap",
+							"EditReplay",
+							"PaintCar",
+							"TitleTools"];
+	G_IsActivated		= EditorXmlReader::GetIsActivated();
+	while (!G_IsActivated.existskey(3)) {
+		G_IsActivated.add(True);
+	}
+	G_CustomName		= [EditorXmlReader::GetMapEditorScript(), "", "", ""];
+	if (GlobalVariables::GetLaunchContext() == GlobalVariables::LaunchContext_MakerSM()) {
+		G_BaseName			= ["NewMap",
+								"EditReplay",
+								"TitleTools"];
+		G_IsActivated		= EditorXmlReader::GetIsActivated();
+		while (G_IsActivated.existskey(3)) {
+			assert(G_IsActivated.removekey(3));
+		}
+		G_CustomName		= [EditorXmlReader::GetMapEditorScript(), "", ""];
+	}
+}
+
+Void AnalyzeXML(Text _XML)
+{
+	Init();
+	EditorXmlReader::AnalyzeXML(_XML);
+	if (_XML != "") {
+		SetColor(EditorXmlReader::GetColor());
+		SetActive(EditorXmlReader::IsActive());
+	} else {
+		EditorXmlReader::ReadBase();
+	}
+	InitAssets();
+}
+
+Boolean CanPublishXML()
+{
+	if (!IsActivated()) {
+		return True;
+	}
+	return True;
+}
+
+Text PublishXML ()
+{
+	if (!IsActivated()) {
+		return "";
+	}
+	declare Text Result = "";
+	foreach (DefaultAssetIndex => DefaultAssetId in G_CustomName) {
+		declare TitleName	= DefaultAssetId;
+		declare IsActivated	= G_IsActivated[DefaultAssetIndex];
+		declare BaseName	= G_BaseName[DefaultAssetIndex];
+		if (IsActivated) {
+			Result ^= """	<asset id="{{{BaseName}}}" isdefault="yes" titlename="{{{TitleName}}}"/>
+""";
+		}
+	}
+	return """	<Editors logo="file://Media/MEDIABROWSER_HiddenResources/Common/Images/Menus/Buttons/Logo_Editor.dds" activated="{{{IsActive()}}}" color="{{{GetColor()}}}" mapeditor="{{{G_CustomName[0]}}}">
+{{{Result}}}
+	</Editors>""";
+}
+
+Void Build(Text _LayerName, Boolean _Attach) {
+
+	declare Text MLText;
+	switch(_LayerName) {
+		case("Editor"):{
+			MLText = LBEditor::Build();
+		}
+	}
+
+	if(MLText == "") {
+		Logger::Warn("Unknown Page: "^_LayerName);
+		return;
+	}
+	
+	Layers::Create(_LayerName, MLText);
+	
+	declare CUILayer Layer <=> Layers::Get(_LayerName);
+	declare Text Page_LayerName for Layer.LocalPage;
+	
+	Page_LayerName = _LayerName;
+	if(_Attach) Layers::Attach(_LayerName);
+}
+
+Void Build(Text _LayerName) {
+	Build(_LayerName, False);
+
+}
+
+Void Load() {
+	Init();
+	Build("Editor");
+	Pages::Compose("Editor", ["Editor"]);
+	SectionsManager::AddSection("Editor", "Editor");
+}
+
+Void UpdateAllInfo() {
+	declare CUILayer 		LayerToSend	= Layers::Get("Editor");
+	if (LayerToSend == Null) return;
+	declare Text[]     Page_CustomName	for LayerToSend.LocalPage;
+	declare Text[]     Page_BaseName	for LayerToSend.LocalPage;
+	declare Boolean[]  Page_IsActivate	for LayerToSend.LocalPage;
+	//Page_CustomName = EditorXmlReader::GetCustomName();
+	Page_CustomName	= G_CustomName;
+	Page_BaseName	= G_BaseName;
+	Page_IsActivate	= G_IsActivated;
+	LayerCustomEvent(LayerToSend, "UpdateAllInfos", [""]);
+}
+
+Void Loop() {
+	foreach(Event in PendingEvents) {
+		if(Event.Type != CManiaAppEvent::EType::LayerCustomEvent) continue;
+		switch(Event.CustomEventType) {
+			case "LaunchMapEditorBrowser": {
+				//declare ButtonIndex = Event.CustomEventData[0];
+				G_ButtonFocus = TextLib::ToInteger(Event.CustomEventData[0]);
+				ScriptBrowserController::Show("ScriptBrowserToEditor", G_BaseFolderName, [//L16N |Infinitive| In a popup, a button to select
+					_("Choose")],
+					_("|GameModes|Scripts"),
+					Text[]);
+			}
+			case "ScriptBrowserToEditor_Button_0": {
+				Pages::GotoPrevious();
+				declare Path = Event.CustomEventData[0];
+				declare CUILayer 		LayerToSend	= Layers::Get("Editor");
+				if (LayerToSend == Null) continue;
+				G_CustomName[G_ButtonFocus] = Path;
+				UpdateAllInfo();
+			}
+			case "SetToDefault": {
+				declare Integer ButtonIndex = TextLib::ToInteger(Event.CustomEventData[0]);
+				G_CustomName[ButtonIndex] = "";
+				UpdateAllInfo();
+			}
+			case "SwitchActivate": {
+				declare Integer ButtonIndex = TextLib::ToInteger(Event.CustomEventData[0]);
+				G_IsActivated[ButtonIndex] = !G_IsActivated[ButtonIndex];
+				UpdateAllInfo();
+			}
+			case "SendInfosButtons": {
+				UpdateAllInfo();
+			}
+		}
+	}
+}

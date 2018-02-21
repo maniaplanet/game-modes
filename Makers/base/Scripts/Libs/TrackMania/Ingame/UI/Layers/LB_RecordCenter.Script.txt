@@ -1,0 +1,145 @@
+//#Include "Libs/Trackmania/Ingame/Medals.Script.txt"									as Medals
+#Include "Libs/Trackmania/Ingame/UI/UIButtonNamesPopup.Script.txt"					as UIButtonNamesPopup
+#Include "Libs/Nadeo/MP4/Common/Components/ListDisplayer/LBListDisplayer.Script.txt" 								as ListDisplayer
+
+#Const TMC_MEDAL_AUTHOR					0
+#Const TMC_MEDAL_GOLD					1
+#Const TMC_MEDAL_SILVER					2
+#Const TMC_MEDAL_BRONZE					3
+#Const TMC_MEDAL_PLAYER					4
+#Const TMC_MEDAL_NONE					5
+#Const TMC_MEDAL_ANOTHERPLAYER			6
+
+Text Build() {
+
+	ListDisplayer::Init(	["Text", "Integer", "Integer", "Date"],
+							["BUDDY", "WINS", "LOSSES", "DATE"],
+							[<-99.7, 0.>, <15.7, 0.>, <35.0, 0.>, <65.0, 0.>],
+							[<38., 8.0>, <20., 8.0>, <20., 8.0>, <28., 8.0>],
+							[//L16N |Infinitive| In a popup, a button to select
+							_("Choose")]);
+
+	declare Text MLText = """
+	
+	
+<manialink version="3" name="L_UIMedalSelection">
+	{{{ListDisplayer::ManialinkFrameModels()}}}
+	<frame id="Frame_All">
+		<frame id="Frame_Menu" pos="0 0" hidden="0">
+			<quad z-index="-4" pos="0. 0." size="320 180" valign="center" halign="center" style="Bgs1" substyle="BgDialogBlur" opacity="0." bluramount="0."/>
+			{{{ListDisplayer::ManialinkMainBody()}}}
+		</frame>
+	</frame>
+	
+	
+	<script><!--
+		#Const DebugName  "L_RecordCenter"
+		{{{ListDisplayer::Includes()}}}
+
+		
+		Void ListDisplayer_Input_Action1()
+		{
+			declare netwrite Integer Net_RecordCenterChoice 		for UI;
+			Net_RecordCenterChoice = -2;
+		}
+
+		Void ListDisplayer_Input_Select(Text[Text] _Data) {
+			//SendCustomEvent(G_EventPrefix ^ "_Button_0", [_Data["CoreInfo"]]);
+			log("_Data: "^ _Data);
+		}
+
+		{{{ListDisplayer::Declares()}}}
+		
+		Void ClearChoose()
+		{
+			declare netwrite Integer Net_RecordCenterChoice 		for UI;
+			Net_RecordCenterChoice = -1;
+		}
+
+		Void Init()
+		{
+			declare Integer 	Net_HideIngameUI 			for Teams[0];
+			declare Integer 	Net_ShowIngameUI 			for Teams[0];
+			Net_HideIngameUI = -1;
+			Net_ShowIngameUI = -1;
+
+			ClearChoose();
+		}
+
+		Void ShowPage()
+		{
+			EnableMenuNavigation(True,False,Null,50);
+			declare Integer 	Net_HideIngameUI 			for Teams[0];
+			Net_HideIngameUI = Now;
+			
+			SendCustomEvent("Test", Text[]);
+
+			ClearChoose();
+		}
+
+		main() {
+			Init();
+			ListDisplayer_Init();
+
+			declare Boolean Prev_Visibility;
+			//declare netwrite Boolean Net_ShowOutOfPlayArea for UI;
+			declare	netread Integer	UpdateListData	for UI;
+			declare	Integer Prev_UpdateListData;
+
+
+			while(True) {
+				
+				yield;
+				if(Prev_Visibility != PageIsVisible) {
+					if(PageIsVisible) ShowPage();
+					else ClearChoose();
+					Prev_Visibility = PageIsVisible;
+				}
+				if(! PageIsVisible) continue;
+				ListDisplayer_Loop();
+
+				if(UpdateListData != Prev_UpdateListData)
+				{
+					ClearChoose();
+					declare	netread Text[Text][]	NewDataList	for UI;
+					declare Text[Text][]	RequestedListData	for Page;
+					declare Boolean			ListDataLoaded		for Page;
+					RequestedListData = NewDataList;
+					ListDataLoaded = True;
+					Prev_UpdateListData = UpdateListData;
+				}
+				
+
+				foreach(Event in PendingEvents) {
+					switch(Event.Type) {
+
+						case CMlEvent::Type::MenuNavigation: {
+							switch(Event.MenuNavAction) {
+								case CMlEvent::EMenuNavAction::Cancel : {
+									declare netwrite Integer Net_RecordCenterChoice 		for UI;
+									Net_RecordCenterChoice = -3;
+								}
+							}
+						}
+						case CMlEvent::Type::PluginCustomEvent: {
+							
+							switch(Event.PluginCustomEventType) {
+								case "Show" : {
+									ShowPage();
+								}
+								
+								case "Hide" : {
+									//EnableMenuNavigation(True,False,Null,0);
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	--></script>
+</manialink>
+	""";
+	
+	return MLText;
+}

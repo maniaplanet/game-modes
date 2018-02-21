@@ -1,0 +1,433 @@
+#Include "TextLib"																			as TextLib
+#Include "Libs/Nadeo/Common/Core/MenuLayers.Script.txt"											as Layers
+#Include "Libs/Nadeo/Common/Core/Pages.Script.txt"												as Pages
+#Include "Libs/Nadeo/Common/Core/Logger.Script.txt"												as Logger
+#Include "Libs/Nadeo/Common/Core/SectionsManager.Script.txt"										as SectionsManager
+#Include "Libs/Nadeo/MP4/Common/LoadingScreen.Script.txt"										as LoadingScreen
+
+#Include "Libs/Nadeo/MP4/TPLagoon/Components/G_BarreSection/BarreSectionController.Script.txt"	as BarreSectionController
+#Include "Libs/Nadeo/MP4/Common/Components/MenuButtonsOld/LBMenuButtons.Script.txt"												as MenuButtons
+#Include "Libs/Nadeo/MP4/Common/Components/ListDisplayer/ListDisplayerController_Menu.Script.txt"						as ListDisplayerController_Menu
+
+// APIs
+#Include "Libs/Nadeo/MP4/TPLagoon/Components/LocalPlay/LocalPlayAPI.Script.txt"					as LocalPlayAPI
+#Include "Libs/Nadeo/MP4/Common/Components/DialogBox/DialogBoxController.Script.txt"			as DialogBoxController
+#Include "Libs/Nadeo/MP4/TPLagoon/XMLController.Script.txt"										as XMLController
+#Include "Libs/Nadeo/MP4/Common/Components/MatchSettingsEditor/MatchSettingsEditorController.Script.txt" as MatchSettingsEditorController
+#Include "Libs/Nadeo/MP4/Common/Components/TrackBrowser/TrackBrowserController.Script.txt"		as TrackBrowserController
+#Include "Libs/Nadeo/MP4/Common/Components/ReplayBrowser/ReplayBrowserController.Script.txt"	as ReplayBrowserController
+#Include "Libs/Nadeo/MP4/Common/Components/ReplayBrowser/ReplayBrowserAPI.Script.txt"			as ReplayBrowserAPI
+#Include "Libs/Nadeo/MP4/Common/SettingsController.Script.txt"  								as SettingsController
+#Include "Libs/Nadeo/MP4/TPLagoon/Components/Solo/SoloAPI.Script.txt"							as SoloAPI
+//Layers
+#Include "Libs/Nadeo/MP4/TPLagoon/Components/LocalPlay/LBLocalPlay.Script.txt"					as LBLocalPlay
+#Include "Libs/Nadeo/MP4/TPLagoon/Components/LocalPlay/LBLocalSplitScreen.Script.txt"			as LBLocalSplitScreen
+#Include "Libs/Nadeo/MP4/TPLagoon/Components/LocalPlay/LBLocalNetwork.Script.txt"				as LBLocalNetwork
+#Include "Libs/Nadeo/MP4/TPLagoon/Components/LocalPlay/LBLocalNetwork_InfoServer.Script.txt"	as LBLocalNetwork_InfoServer
+#Include "Libs/Nadeo/MP4/TPLagoon/Components/LocalPlay/LBLocalNetworkCreate.Script.txt"			as LBLocalNetworkCreate
+
+#Const C_MaxNumberOfLocalPlayModes 10
+#Const C_IdsToNames [
+"SingleMap" => _("Single Map"),
+"VersusReplay" => _("Versus Replay"),
+"HotSeat" => _("Hot Seat"),
+"SplitScreen" => _("Split Screen"),
+"LocalNetHack" => _("Local Network"),
+"LocalNetwork" => _("Local Network")]
+
+declare CTitleFlow::ESplitScreenLayout	G_SplitScreenLayoutType;
+declare Text[]							G_IdsToScriptPath;
+declare Boolean							G_IsFetchingReplay;
+declare Text							G_MatchSettingsFileName;
+declare Boolean							G_Server_JoinServer;
+declare Boolean							G_Server_CreateServer;
+declare Boolean							G_Server_TrySpectate;
+declare Text							G_Server_Password;
+
+Vec3 GetColor() {
+	declare Text[Text] Colors = XMLController::Get_Color_Sections();
+	if (!Colors.existskey("LocalPlay")) {
+		Logger::Warn("Couleur non trouvée dans le LocalPlay");
+		return <0.25, 0.93, 0.28>;
+	}
+	return TextLib::ToColor(Colors["LocalPlay"]);
+}
+
+Void Build(Text _LayerName, Boolean _Attach) {
+
+	declare Text MLText;
+	switch(_LayerName) {
+		case("LocalPlay"):{
+			MLText = LBLocalPlay::Build();
+		}
+		case("LocalSplitScreen"):{
+			MLText = LBLocalSplitScreen::Build();
+		}
+		case("LocalNetwork"):{
+			MLText = LBLocalNetwork::Build();
+		}
+		case("LocalNetwork_InfoServer"):{
+			MLText = LBLocalNetwork_InfoServer::Build();
+		}
+		case("LocalNetworkCreate"):{
+			MLText = LBLocalNetworkCreate::Build();
+		}
+	}
+
+	if(MLText == "") {
+		Logger::Warn("Unknown Page: " ^ _LayerName);
+		return;
+	}
+
+	Layers::Create(_LayerName, MLText);
+
+	declare CUILayer Layer <=> Layers::Get(_LayerName);
+	declare Text Page_LayerName for Layer.LocalPage;
+
+	Page_LayerName = _LayerName;
+	if(_Attach) Layers::Attach(_LayerName);
+}
+
+Void Build(Text _LayerName) {
+	Build(_LayerName, False);
+}
+
+Text[] GetNames(Text[] _Names, Text[] _Ids)
+{
+	declare Text[] Result = _Names;
+	foreach (IdIndex => Id in _Ids) {
+		if (C_IdsToNames.existskey(Id)) {
+			Result[IdIndex] = C_IdsToNames[Id];
+		}
+	}
+	return Result;
+}
+
+Void Load() {
+	LocalPlayAPI::Load();
+	declare G_SectionColor = GetColor();
+	Build("LocalPlay");
+	Build("LocalSplitScreen");
+	Build("LocalNetwork");
+	Build("LocalNetwork_InfoServer");
+	Build("LocalNetworkCreate");
+	Pages::Compose("LocalPlayMain", ["LocalPlay", "BarreSection"]);
+	Pages::Compose("LocalSplitScreen", ["LocalSplitScreen", "BarreSection"]);
+	Pages::Compose("LocalNetworkCreate", ["LocalNetworkCreate", "BarreSection"]);
+	Pages::Compose("LocalNetwork", ["LocalNetwork", "BarreSection"]);
+	Pages::Compose("LocalNetwork_InfoServer", ["LocalNetwork_InfoServer", "BarreSection"]);
+	SectionsManager::AddSection("LocalPlay", "LocalPlayMain", "Hotseat", G_SectionColor);
+	BarreSectionController::AddConfiguration("LocalPlay",
+						//L16N Name for the main menu button, means playing locally on the same screen
+						_("Local play"), Text[], Text[]);
+	BarreSectionController::AddConfiguration("LocalSplitScreen", "", Text[], Text[]);
+	BarreSectionController::AddConfiguration("LocalNetwork",
+						//L16N Name for a main title, browses all the local game rooms
+						_("Local servers"), Text[], Text[]);
+	BarreSectionController::AddConfiguration("LocalNetworkCreate", "", Text[], Text[]);
+	BarreSectionController::AddConfiguration("LocalNetwork_InfoServer", 
+						//L16N Name for a main title, browses all the local game rooms
+						_("Local servers"), Text[], Text[]);
+	MenuButtons::ChangeData("LocalPlay",	GetNames(XMLController::Buttons_GetNames("LocalPlay"), XMLController::Buttons_GetIds("LocalPlay")),
+											XMLController::Buttons_GetPositions("LocalPlay"),
+											XMLController::Buttons_GetIds("LocalPlay"),
+											G_SectionColor);
+	G_IdsToScriptPath = XMLController::Buttons_GetIdsToScriptPath("LocalPlay");
+	G_Server_JoinServer		= False;
+	G_Server_TrySpectate	= False;
+	G_Server_Password		= "";
+}
+
+CTitleFlow::ESplitScreenLayout GetSplitScreenLayoutType(Text _ButtonIndex)
+{
+	switch (_ButtonIndex) {
+		case "0": {
+			return CTitleFlow::ESplitScreenLayout::Horizontal;
+		}
+		case "1": {
+			return CTitleFlow::ESplitScreenLayout::Vertical;
+		}
+		case "2": {
+			return CTitleFlow::ESplitScreenLayout::Four;
+		}
+	}
+	return CTitleFlow::ESplitScreenLayout::Four;
+}
+
+Void CreateServerCheck()
+{
+	if (!G_Server_CreateServer || !TitleFlow.IsReady) {
+		return;
+	}
+	G_Server_CreateServer = False;
+	declare CUILayer LayerToSend = Layers::Get("LocalNetworkCreate");
+	if(LayerToSend == Null) return;
+	declare Text[] Page_SettingContents for LayerToSend.LocalPage;
+	declare Text Settings = SettingsController::GetSettingsXml("SingleMap", False);
+	declare Text ServerName            = Page_SettingContents[0];
+	declare Text Password              = Page_SettingContents[1];
+	declare Text PasswordSpectators    = Page_SettingContents[2];
+	declare Integer MaxPlayerCount     = TextLib::ToInteger(Page_SettingContents[3]);
+	if(MaxPlayerCount <= 0)  MaxPlayerCount = 1;
+	if(MaxPlayerCount > 255) MaxPlayerCount = 255;
+	declare Text ServerComment         = Page_SettingContents[4];
+	LoadingScreen::SetLoadingType(0, "");
+	TitleFlow.CreateServer(ServerName, ServerComment, MaxPlayerCount, Password, PasswordSpectators, G_MatchSettingsFileName ^ ".txt");
+	Pages::GotoHome("LocalNetwork");
+}
+
+Void CreateServerRequest()
+{
+	G_Server_CreateServer = True;
+}
+
+Void JoinServerCheck()
+{
+	if (!G_Server_JoinServer || !TitleFlow.IsReady) {
+		return;
+	}
+	G_Server_JoinServer		= False;
+	LoadingScreen::SetLoadingType(0, "");
+	TitleFlow.Join_GetServerInfo_Result(G_Server_TrySpectate, G_Server_Password);
+}
+
+Void JoinServerRequest(Boolean _TrySpectate, Text _Password)
+{
+	G_Server_JoinServer		= True;
+	G_Server_TrySpectate	= _TrySpectate;
+	G_Server_Password		= _Password;
+}
+
+Void FetchReplayCheck()
+{
+	if (G_IsFetchingReplay) {
+		if (!ReplayBrowserAPI::MapInfoFromReplay_HasFetched()) {
+			ReplayBrowserAPI::MapInfoFromReplay_Loop();
+		} else {
+			DialogBoxController::HideMessage();
+			G_IsFetchingReplay = False;
+			declare CMapInfo MapInfo <=> ReplayBrowserAPI::MapInfoFromReplay_Get();
+			if (MapInfo != Null) {
+				declare Boolean Solo_GiveUpIsPossible			for LocalUser;
+				declare Boolean Solo_ChooseOpponentIsPossible	for LocalUser;
+				Solo_GiveUpIsPossible = False;
+				Solo_ChooseOpponentIsPossible = False;
+				LoadingScreen::SetLoadingType(0, "");
+				declare Boolean IsOfficial = SoloAPI::IsOfficial(MapInfo.FileName);
+				declare Text Settings = SettingsController::GetSettingsXml("Versus", IsOfficial);
+				TitleFlow.PlayMap(MapInfo.FileName, "Modes/TrackMania/VersusReplay", Settings);
+			} else {
+				DialogBoxController::ShowMessage(_("|Bug|Error"), _("The map was not found."));
+			}
+		}
+		return;
+	}
+}
+
+Void Loop() {
+	LocalPlayAPI::Loop();
+	if (LocalPlayAPI::HasNewServerList())
+	{
+		ListDisplayerController_Menu::ChangeData("LocalNetwork", LocalPlayAPI::GetServerList(), LocalPlayAPI::GetCurrentPage(), LocalPlayAPI::Get_MaxPages());
+	}
+	if (LocalPlayAPI::HasFetched()) {
+		declare CUILayer	LayerToGet	= Layers::Get("LocalNetwork_InfoServer");
+		declare Boolean    Page_IsServerPrivate      for LayerToGet.LocalPage;
+		declare Boolean    Page_IsServerSpectPrivate for LayerToGet.LocalPage;
+		Page_IsServerPrivate			= LocalPlayAPI::ServerIsPrivate();
+		Page_IsServerSpectPrivate		= LocalPlayAPI::ServerIsPrivateForSpectator();
+		//Ask Spec or Join and Show Password
+		if(LocalPlayAPI::ServerIsDoublePrivate()) {
+			if(LayerToGet != Null) LayerCustomEvent(LayerToGet, "JoinOrSpectate", Text[]);
+			Pages::GotoNext("LocalNetwork_InfoServer");
+		} else {
+			declare Text[Text] DataServerInfo            for LayerToGet.LocalPage;
+			declare Text[]     PlayerListServerInfo      for LayerToGet.LocalPage;
+			declare Text[]     MapListServerInfo         for LayerToGet.LocalPage;
+			DataServerInfo				= LocalPlayAPI::GetDataServerInfo();
+			PlayerListServerInfo		= LocalPlayAPI::GetPlayerListServerInfo();
+			MapListServerInfo			= LocalPlayAPI::GetMapListServerInfo();
+			if(LayerToGet != Null) LayerCustomEvent(LayerToGet, "ShowServerInfo", Text[]);
+			Pages::GotoNext("LocalNetwork_InfoServer");
+		}
+	}
+
+	FetchReplayCheck();
+	JoinServerCheck();
+	CreateServerCheck();
+
+	foreach(Event in PendingEvents) {
+		if(Event.Type != CManiaAppEvent::EType::LayerCustomEvent) continue;
+		switch(Event.CustomEventType) {
+			case "SingleMap" : {
+				declare Text MapTerm = _("Tracks");
+				declare Text ProjectEnviro for LocalUser;
+				if (ProjectEnviro == "Storm") {
+					MapTerm = _("Maps");
+				}
+				TrackBrowserController::Show("PlayMapInLocalPlay", [
+				//L16N |Verb, infinitive| In a contextual menu, to start playing a game
+				_("Play")], MapTerm, Text[], "LocalPlaySingleMap");
+			}
+			case "VersusReplay" : {
+				ReplayBrowserController::Show("PlayReplayInLocalPlay", [
+				//L16N |Verb, infinitive| In a contextual menu, to start playing a game
+				_("Play")],
+				//L16N |Noun, plural| The files playing back a sequence of gameplay with customizable camera
+				_("Replays"));
+			}
+			case "HotSeat" : {
+				MatchSettingsEditorController::Show("Modes/TrackMania/HotSeat", "MatchSettingsFromHotSeat", [
+				_("Next")],
+				//L16N |Noun| Title of the section, browsing playlists of maps associated with a ruleset
+				_("Match settings"),
+				//L16N |Noun| In a popup, a button to create a new playlist of maps associated with a ruleset
+ 				[_("New match settings")]);
+			}
+			case "SplitScreen" : {
+				Pages::GotoNext("LocalSplitScreen");
+			}
+			case "LocalNetHack" : {
+				Pages::GotoNext("LocalNetwork");
+				//Menu_Local(); // TODO : Enlever ça dans un avenir lointain, quand personne n'aura LocalNetHack dans son XML
+			}
+			case "LocalNetwork" : {
+				Pages::GotoNext("LocalNetwork");
+			}
+			case "LocalNetwork_GetServers" : {
+				LocalPlayAPI::GetServers();
+			}
+			case "LocalNetwork_SelectServer" : {
+				declare Integer ServerIndex = TextLib::ToInteger(Event.CustomEventData[0]);
+				LocalPlayAPI::FetchServerInfo(ServerIndex);
+			}
+			case "ListDisplayer_Password" : {
+				declare Text ServerPassword = Event.CustomEventData[0];
+				declare Boolean TryToSpectate = Event.CustomEventData[1] == "True";
+				if(LocalPlayAPI::RequestsPassword())
+				{
+					declare CServerInfo ServerInfoSelect <=> TitleFlow.GetServerInfo_Result;
+					JoinServerRequest(TryToSpectate, ServerPassword);
+				} else {
+					JoinServerRequest(TryToSpectate, ServerPassword);
+				}
+				declare CUILayer LayerToGet = Layers::Get("LocalNetwork");
+				if(LayerToGet != Null) LayerCustomEvent(LayerToGet, "HideServerInfo", Text[]);
+			}
+			case "InfoServer_JoinServer" : {
+				declare Boolean TryToSpectate = Event.CustomEventData[0] == "True";
+				JoinServerRequest(TryToSpectate, "");
+			}
+			case "LocalNetworkCreate" : {
+				MatchSettingsEditorController::Show("MatchSettingsFromLocalNetwork", [_("Next")],
+					//L16N |Noun| Title of the section, browsing playlists of maps associated with a ruleset
+					_("Match settings"));
+			}
+			case "MatchSettingsFromLocalNetwork_Button_0" : {
+				Pages::GotoNext("LocalNetworkCreate");
+				MatchSettingsEditorController::MakeIdle();
+				G_MatchSettingsFileName = MatchSettingsEditorController::GetMatchSettingsPath();
+			}
+			case "LocalNetwork_Create" : {
+				CreateServerRequest();
+			}
+			case "PlayMapInLocalPlay_Button_0" : {
+				declare Text MapPath = Event.CustomEventData[0];
+				declare Text ThumbnailPath = Event.CustomEventData[1];
+				LoadingScreen::SetLoadingType(0, ThumbnailPath);
+				Pages::GotoPrevious();
+				declare Text Settings = SettingsController::GetSettingsXml("SingleMap", False);
+				declare Boolean Solo_GiveUpIsPossible	for LocalUser;
+				declare Boolean Solo_WorldRecordIsPossible	for LocalUser;
+				declare Boolean Solo_ChallengeAuthorIsPossible	for LocalUser;
+				declare Boolean Solo_ChooseOpponentIsPossible	for LocalUser;
+				Solo_GiveUpIsPossible = True;
+				Solo_WorldRecordIsPossible = False;
+				Solo_ChallengeAuthorIsPossible = False;
+				Solo_ChooseOpponentIsPossible = True;
+				wait(TitleFlow.IsReady);
+				TitleFlow.PlayMap(MapPath, "Modes/TrackMania/SingleMap", Settings);
+			}
+			case "PlayReplayInLocalPlay_Button_0" : {
+				declare Text ReplayPath = Event.CustomEventData[0];
+				declare Text ThumbnailPath = Event.CustomEventData[1];
+				LoadingScreen::SetLoadingType(0, ThumbnailPath);
+				declare Text VersusReplayPath for LocalUser;
+				VersusReplayPath = ReplayPath;
+				Pages::GotoPrevious();
+				//L16N Displayed on a pop-up window to make the user wait
+				DialogBoxController::ShowMessage("", _("Fetching map..."), Text[]);
+				ReplayBrowserAPI::MapInfoFromReplay_Fetch(ReplayPath);
+				G_IsFetchingReplay = True;
+			}
+			case "MatchSettingsFromHotSeat_Button_0" : {
+				LoadingScreen::SetLoadingType(0, "");
+				Pages::GotoHome("LocalPlayMain");
+				declare CMatchSettings MatchSettings <=> MatchSettingsEditorController::GetMatchSettings();
+				declare Boolean Solo_NextTrackIsPossible	for LocalUser;
+				declare Boolean Solo_GiveUpIsPossible	for LocalUser;
+				declare Boolean Solo_ChooseOpponentIsPossible	for LocalUser;
+				Solo_GiveUpIsPossible = True;
+				Solo_ChooseOpponentIsPossible = False;
+				declare Text[] MapList = MatchSettingsEditorController::GetTrackListFromMatchSettings();
+				if(MapList.count > 1) Solo_NextTrackIsPossible = True;
+				else                  Solo_NextTrackIsPossible = False;
+				wait(TitleFlow.IsReady);
+				//TitleFlow.PlaySplitScreen(CTitleFlow::ESplitScreenLayout::Horizontal, MapList, "Modes/TrackMania/LocalRounds", Settings);
+				TitleFlow.PlayMatchSettings(MatchSettings, "Modes/TrackMania/HotSeat", "");
+				
+			}
+			case "SplitScreenToMatchSettings" : {
+				G_SplitScreenLayoutType = GetSplitScreenLayoutType(Event.CustomEventData[0]);
+				MatchSettingsEditorController::Show("Modes/TrackMania/LocalRounds", "MatchSettingsFromSplitScreen", [_("Next")],
+					//L16N |Noun| Title of the section, browsing playlists of maps associated with a ruleset
+					_("Match settings"),
+					//L16N |Noun| In a popup, a button to create a new playlist of maps associated with a ruleset
+ 					[_("New match settings")]);
+			}
+			case "MatchSettingsFromSplitScreen_Button_0" : {
+				LoadingScreen::SetLoadingType(0, "");
+				Pages::GotoHome("LocalPlayMain");
+				declare CMatchSettings MatchSettings <=> MatchSettingsEditorController::GetMatchSettings();
+				wait(TitleFlow.IsReady);
+				TitleFlow.PlaySplitScreen(G_SplitScreenLayoutType, MatchSettings);
+			}
+		}
+		if (Event == Null) {
+			return;
+		}
+		for (AssetIndex, 0, C_MaxNumberOfLocalPlayModes - 1) {
+			if (Event.CustomEventType == "LocalPlay_UGCAsset-" ^ AssetIndex) {
+				if (!G_IdsToScriptPath.existskey(AssetIndex)) {
+					Logger::Warn("LocalPlay loop : Script custom n° " ^ AssetIndex ^ " ne marche pas");
+				} else {
+					//L16N |Verb, infinitive| In a contextual menu, to start playing a game
+					TrackBrowserController::Show("MatchSettingsFromCustomScript" ^ AssetIndex ^ "_", [_("Play")],
+						//L16N |Noun| Title of the section, browsing playlists of maps associated with a ruleset
+						_("Match settings"),
+						//L16N |Infinitive| In a popup, a button to make a new media
+						[_("Create")]);
+				}
+			} else if (Event.CustomEventType == "MatchSettingsFromCustomScript" ^ AssetIndex ^ "__Button_0") {
+				if (!G_IdsToScriptPath.existskey(AssetIndex)) {
+					Logger::Warn("LocalPlay loop : Script custom n° " ^ AssetIndex ^ " ne marche pas");
+				} else {
+					declare Text MatchSettingsPath = Event.CustomEventData[0];
+					LoadingScreen::SetLoadingType(0, "");
+					Pages::GotoPrevious();
+					declare Text[] MapList = [MatchSettingsPath]; // MatchSettingsEditorController::GetTrackListFromMatchSettings(); TODO: En attendant les matchsettings
+					
+					declare Boolean Solo_GiveUpIsPossible	for LocalUser;
+					Solo_GiveUpIsPossible = False;
+					wait(TitleFlow.IsReady);
+					TitleFlow.PlayMapList(MapList, G_IdsToScriptPath[AssetIndex], "");
+				}
+			}
+		}
+	}
+}
+
+Text GenerateXML ()
+{
+	return "";
+}

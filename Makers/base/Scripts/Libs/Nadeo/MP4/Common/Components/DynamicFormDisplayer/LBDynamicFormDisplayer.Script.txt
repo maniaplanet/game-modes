@@ -1,0 +1,382 @@
+// DynamicFormDisplayer.Script.txt
+
+#Include "MathLib"												as MathLib
+#Include "Libs/Nadeo/MP4/Common/DesignManialinks.Script.txt"	as DesignManialinks
+#Include "Libs/Nadeo/Common/ManialinkTools/Manialink3WPrevAnims.Script.txt"	as Manialink
+#Include "Libs/Nadeo/Common/ManiascriptTools/Dump.Script.txt"	as DumpTools
+
+#Include "Libs/Nadeo/MP4/Common/GlobalVariables.Script.txt"		as GlobalVariables
+#Include "Libs/Nadeo/MP4/Common/ManialinkTools/FontManager.Script.txt"				as Font
+
+
+#Const C_MaxSettingsPerPage		9
+#Const C_SizeY					7.
+#Const C_SizeCommentaryY		21.
+#Const C_MarginY				2.
+#Const C_ExtraMarginY			5.
+#Const C_Integer_Size			<25.8, 7.02>
+#Const C_IMG_Checkbox_Open		"file://Media/MEDIABROWSER_HiddenResources/Common/Images/Menus/Buttons/Checkbox_Open.dds"
+#Const C_IMG_Checkbox_Closed	"file://Media/MEDIABROWSER_HiddenResources/Common/Images/Menus/Buttons/Checkbox_Closed.dds"
+#Const C_IMG_ContainerSearch	"file://Media/MEDIABROWSER_HiddenResources/Common/Images/Menus/Buttons/Container_Search.dds"
+#Const C_Default_FormPosition	<0., 55.>
+#Const C_Default_FormSize		<160., 110.>
+#Const C_AttributeTypes			["ExpandingField", "Switch", "Entry", "Comment", "Integer", "Event", "ButtonSwitch", "Button"]
+
+declare Vec2						G_FormPosition;
+declare Vec2						G_FormSize;
+declare Text						G_TitleName;
+declare Text						G_ButtonName;
+declare Text[Text]					G_NameLocalizations;
+
+declare Real						G_BackgroundOpacity;
+
+declare Text						G_MainFont;
+declare Text						G_SubFont;
+
+Void Init(Text _TitleName, Text _ButtonName, Text[Text] _NameLocalizations, Vec2 _FormPosition, Vec2 _FormSize)
+{
+	G_MainFont				= Font::GetFontName("Main");
+	G_SubFont				= Font::GetFontName("SubTitle");
+	DesignManialinks::Init();
+	G_FormPosition                = _FormPosition;
+	G_FormSize                    = _FormSize;
+	G_TitleName                   = _TitleName;
+	G_ButtonName                  = _ButtonName;
+	G_NameLocalizations[""]		  = ""; // Permet d'éviter le cas où G_NameLocalizations == Text[Text] dans les constantes de la Layer
+	G_NameLocalizations			  = _NameLocalizations;
+	G_BackgroundOpacity           = 0.5;
+	if (GlobalVariables::IsInMakerMode()) {
+		G_BackgroundOpacity = 0.3;
+	}
+}
+
+Void Init(Text _TitleName, Text _ButtonName)
+{
+	Init(_TitleName, _ButtonName, Text[Text], C_Default_FormPosition, C_Default_FormSize);
+}
+
+Text ManialinkFrameModels() {
+	declare Real EntryPosX		= G_FormSize.X / 4.;
+	declare Real EntrySizeMax	= MathLib::Min(46.8, G_FormSize.X / 2. + 6.);
+	declare Real IntegerEntryPosX = EntryPosX - (EntrySizeMax - C_Integer_Size.X) / 2.;
+	declare Real SettingPosX	= MathLib::Max(- 39., - G_FormSize.X / 2. + 12.);
+	return """
+	<framemodel id="Frame_Entry">
+		{{{DesignManialinks::ManialinkQuadEntry(<EntryPosX, 0.>, <EntrySizeMax, C_SizeY>, "", "", "", "Entry")}}}
+		<label id="FormDisplayer_Label_Setting" textprefix="$t" halign="left" valign="center"  size="{{{EntrySizeMax}}}" textfont="{{{G_SubFont}}}" pos="{{{SettingPosX}}} 0.5" z-index="2" textsize="2" text="XXX ENTRY" textcolor="fff" opacity="1."/>
+	</framemodel>
+
+	<framemodel id="Frame_Comment">
+		{{{DesignManialinks::ManialinkTextEdit(<EntryPosX, - C_SizeY / 2. - 4.>, <EntrySizeMax, C_SizeCommentaryY>, "", "", "", "", "Entry")}}}
+		<label id="FormDisplayer_Label_Setting" textprefix="$t" halign="left" valign="center" textfont="{{{G_SubFont}}}" pos="{{{SettingPosX}}} 0.5" z-index="2" textsize="2" text="XXX COMMENT" textcolor="fff" opacity="1."/>
+	</framemodel>
+
+	<framemodel id="Frame_Switch">
+		<quad halign="center" valign="center" size="6 5" pos="{{{EntryPosX}}} 0" id="Quad_Switch"  scriptevents="1" opacity="0."/>
+		<quad halign="center" valign="center" size="5 5" pos="{{{EntryPosX}}} 0" id="IMG_Switch" image="{{{C_IMG_Checkbox_Open}}}"/>
+		<label id="FormDisplayer_Label_Setting" textprefix="$t" halign="left" valign="center" textfont="{{{G_SubFont}}}" pos="{{{SettingPosX}}} 0.5" z-index="2" textsize="2" text="XXX SWITCH" textcolor="fff" opacity="1."/>
+	</framemodel>
+
+	<framemodel id="Frame_Integer">
+		{{{DesignManialinks::ManialinkQuadEntry(<IntegerEntryPosX, 0.>, C_Integer_Size, "", "", "", "Entry")}}}
+		<label id="FormDisplayer_Label_Setting" textprefix="$t" halign="left" valign="center" textfont="{{{G_SubFont}}}" pos="{{{SettingPosX}}} 0.5" z-index="2" textsize="2" text="XXX INTEGER" textcolor="fff" opacity="1."/>
+	</framemodel>
+
+	<framemodel id="Frame_Event">
+		<quad  halign="center" valign="center" z-index="3" size="{{{EntrySizeMax}}} 7.02" pos="{{{EntryPosX}}} 0" opacity="1." id="Quad_EventTrigger" scriptevents="1"/>
+		{{{DesignManialinks::ManialinkQuadEntry(<EntryPosX, 0.>, <EntrySizeMax, C_SizeY>, "", "", "", "Entry")}}}
+		<label id="FormDisplayer_Label_Setting" textprefix="$t" halign="left" valign="center" textfont="{{{G_SubFont}}}" pos="{{{SettingPosX}}} 0.5" z-index="2" textsize="2" text="XXX EVENT" textcolor="fff" opacity="1."/>
+	</framemodel>
+
+	<framemodel id="Frame_ButtonSwitch">
+		<quad halign="center" valign="center" z-index="1" size="{{{EntrySizeMax/1.5}}} {{{C_SizeY}}}" pos="{{{EntryPosX}}} 0" opacity="1." image="{{{C_IMG_ContainerSearch}}}" id="Quad_ButtonSwitch" scriptevents="1"/>
+		<quad halign="center" valign="center" z-index="1" size="{{{EntrySizeMax/1.5}}} {{{C_SizeY}}}" pos="{{{EntryPosX}}} 0" opacity="1." id="Quad_ButtonSwitchBG" bgcolor="fff"/>
+		<label id="FormDisplayer_Label_Setting" textprefix="$t" halign="center" valign="center" textfont="{{{G_SubFont}}}" pos="{{{SettingPosX}}} 0" z-index="2" textsize="2" text="XXX BUTTONSWITCH" textcolor="fff" opacity="1."/>
+	</framemodel>
+
+	<framemodel id="Frame_Button">
+		<quad halign="center" valign="center" z-index="1" size="{{{EntrySizeMax/1.5}}} {{{C_SizeY}}}" pos="{{{EntryPosX}}} 0" opacity="1." image="{{{C_IMG_ContainerSearch}}}" id="Quad_Button" scriptevents="1"/>
+		<quad halign="center" valign="center" z-index="1" size="{{{EntrySizeMax/1.5}}} {{{C_SizeY}}}" pos="{{{EntryPosX}}} 0" opacity="1." id="Quad_ButtonBG" bgcolor="fff"/>
+		<label id="FormDisplayer_Label_Setting" textprefix="$t" halign="left" valign="center" textfont="{{{G_SubFont}}}" pos="{{{SettingPosX}}} 0" z-index="2" textsize="2" text="XXX BUTTON" textcolor="fff" opacity="1."/>
+	</framemodel>
+
+	<framemodel id="Frame_ExpandingField">
+		{{{DesignManialinks::ManialinkExpandingButtonFrame(<EntryPosX, 0.>, <EntrySizeMax, C_SizeY>, "", "", Text[], "Quad_ExpandingField")}}}
+		<label id="FormDisplayer_Label_Setting" textprefix="$t" halign="left" valign="center" textfont="{{{G_SubFont}}}" pos="{{{SettingPosX}}} 0.5" z-index="2" textsize="2" text="XXX EVENT" textcolor="fff" opacity="1."/>
+	</framemodel>
+
+""";
+}
+
+Text ManialinkMainBody() {
+	declare Text MLText = """
+	<frame id="Frame_Menu" pos="{{{G_FormPosition.X}}} {{{G_FormPosition.Y}}}">
+		<label id="Label_Title" halign="left" valign="bottom" textfont="{{{G_MainFont}}}" z-index="2" textsize="10" textprefix="$t" text="{{{G_TitleName}}}" textcolor="fff"/>
+		<quad id="Quad_Black" halign="center" valign="top" size="{{{G_FormSize.X}}} {{{G_FormSize.Y}}}"  z-index="-1" opacity="{{{G_BackgroundOpacity}}}" bgcolor="000"/>
+		<frame pos="-7 -10">
+""";
+	for(SettingIndex, 0, C_MaxSettingsPerPage - 1)
+	{
+		foreach(Attribute in C_AttributeTypes) {
+			MLText ^= """			<frameinstance modelid="Frame_{{{Attribute}}}"		hidden="1" z-index="5" id="Frame_Setting-{{{Attribute}}}-{{{SettingIndex}}}" class="FormDisplayer_{{{Attribute}}}"/>
+""";
+		}
+	}
+
+	MLText ^= """		</frame>
+{{{DesignManialinks::ManialinkScrollFrame(<0., -G_FormSize.Y + 25.>, "", "DynamicFormDisplayer_Scroll")}}}
+	</frame>""";
+	return MLText;
+}
+
+Text Includes() {
+	return """#Include "TextLib" as FormDisplayer_TextLib
+#Include "MathLib" as FormDisplayer_MathLib
+
+#Const C_FormDisplayer_ButtonName				{{{dump(G_ButtonName)}}}
+#Const C_FormDisplayer_SizeY					{{{C_SizeY}}}
+#Const C_FormDisplayer_MarginY					{{{C_MarginY}}}
+#Const C_FormDisplayer_ExtraMarginY 			{{{C_ExtraMarginY}}}
+#Const C_FormDisplayer_SizeCommentaryY			{{{C_SizeCommentaryY}}}
+#Const C_FormDisplayer_AttributeTypes			{{{dump(C_AttributeTypes)}}}
+#Const C_FormDisplayer_MaxSettingsPerPage		{{{C_MaxSettingsPerPage}}}
+#Const C_FormDisplayer_NameLocalizations		{{{dump(G_NameLocalizations)}}}
+{{{DesignManialinks::Includes()}}}
+{{{Manialink::GetIncludes()}}}
+""";
+}
+
+Text Declares() {
+	return """
+{{{DesignManialinks::Declares()}}}
+{{{Manialink::Load()}}}
+	declare CMlControl[][Text]	G_Frames_Setting;
+	declare CMlControl[][Text]	G_EventControls_Setting;
+	declare CMlLabel[][Text]	G_Labels_Setting;
+
+	Void Private_FormDisplayer_HideEverything()
+	{
+		foreach (Attribute in C_FormDisplayer_AttributeTypes) {
+			if (!G_Frames_Setting.existskey(Attribute)) {
+				continue;
+			}
+			foreach (Frame in G_Frames_Setting[Attribute]) {
+				Frame.Hide();
+			}
+		}
+	}
+
+	Text GetLocalizedText(Text _OriginText)
+	{
+		// TODO : Libifier ça
+		if (C_FormDisplayer_NameLocalizations.existskey(_OriginText)) {
+			return C_FormDisplayer_NameLocalizations[_OriginText];
+		} else {
+			declare Text[] SplitOriginText = FormDisplayer_TextLib::Split("\\/", _OriginText);
+			if (SplitOriginText.count == 0) {
+				return _OriginText;
+			} else {
+				return SplitOriginText[SplitOriginText.count - 1];
+			}
+		}
+		return _OriginText;
+	}
+
+	Void Private_FormDisplayer_UpdateAttributes(Real[][] _ChunkAttributeYPositions,
+												Text[][] _ChunkAttributeTypes, Text[][] _ChunkAttributeNames,
+												Text[][][] _ChunkAttributeExtraParams,
+												Text[][] _ChunkSettingValues, Integer _CurrentPage, Integer _MaxPages)
+	{
+		Private_FormDisplayer_HideEverything();
+		declare Real PositionY = 0.;
+		declare Real OldPositionY = C_FormDisplayer_SizeY + C_FormDisplayer_MarginY;
+		declare Real SpacingY;
+		declare Integer AttributeNumber = 0;
+		declare Integer[Text] SpecificAttributeNumber;
+		foreach (Attribute in C_FormDisplayer_AttributeTypes) {
+			SpecificAttributeNumber[Attribute] = 0;
+		}
+		foreach(ChunkIndex => ChunkAttribute in _ChunkAttributeTypes) {
+			foreach(AttributeIndex => Attribute in ChunkAttribute) {
+				if (AttributeNumber >= C_FormDisplayer_MaxSettingsPerPage) {
+					continue;
+				}
+				if (Attribute == "Commentary") {
+					SpacingY = C_FormDisplayer_SizeCommentaryY + C_FormDisplayer_MarginY;
+				} else {
+					SpacingY = C_FormDisplayer_SizeY + C_FormDisplayer_MarginY;
+				}
+				if (Attribute != "") {
+					declare CMlControl AttributeToGet = G_Frames_Setting[Attribute][SpecificAttributeNumber[Attribute]];
+					declare CMlControl AttributeControl = G_EventControls_Setting[Attribute][SpecificAttributeNumber[Attribute]];
+					declare CMlLabel AttributeLabel = G_Labels_Setting[Attribute][SpecificAttributeNumber[Attribute]];
+					AttributeLabel.SetText(GetLocalizedText(_ChunkAttributeNames[ChunkIndex][AttributeIndex]));
+					SpecificAttributeNumber[Attribute] += 1;
+					declare Integer FormId for AttributeControl;
+					FormId = AttributeNumber;
+					AttributeToGet.Show();
+					if (_ChunkAttributeYPositions.existskey(ChunkIndex)
+						&& _ChunkAttributeYPositions[ChunkIndex].existskey(AttributeIndex)) {
+						PositionY = _ChunkAttributeYPositions[ChunkIndex][AttributeIndex];
+						declare Real ActualSpacing = FormDisplayer_MathLib::Max(SpacingY, OldPositionY - PositionY);
+						PositionY = OldPositionY - ActualSpacing;
+					} else {
+						PositionY = OldPositionY - SpacingY;
+					}
+					AttributeToGet.RelativePosition_V3 = <0., PositionY>;
+					//AttributeToGet.ZIndex = - 1. * ChunkIndex; // TODO : Mettre ça quand ça marchera
+					AttributeNumber += 1;
+
+					declare Value = "";
+					if (_ChunkSettingValues.existskey(ChunkIndex) && _ChunkSettingValues[ChunkIndex].existskey(AttributeIndex)) {
+						Value = _ChunkSettingValues[ChunkIndex][AttributeIndex];
+					}
+					if (Attribute == "ExpandingField") {
+						if (_ChunkAttributeExtraParams.existskey(ChunkIndex) && _ChunkAttributeExtraParams[ChunkIndex].existskey(AttributeIndex)) {
+							declare Text[] PossibleValues;
+							foreach (AttributeValue in _ChunkAttributeExtraParams[ChunkIndex][AttributeIndex]) {
+								PossibleValues.add(GetLocalizedText(AttributeValue));
+							}
+							DesignManialinks_ExpandingButton_Update(AttributeControl, _ChunkAttributeExtraParams[ChunkIndex][AttributeIndex], PossibleValues); // TODO : Verifier que AttributeControl est bien setté en ExpandingField
+						}
+						Value = GetLocalizedText(Value);
+					}
+					switch(Attribute) {
+						case "Comment": {
+							declare CMlTextEdit Entry_Entry <=> (AttributeControl.Parent.GetFirstChild("Entry_TextEdit")	as CMlTextEdit);
+							Entry_Entry.Value = Value;
+						}
+						case "ExpandingField": {
+							declare CMlLabel Entry <=> (AttributeControl.Parent.Parent.GetFirstChild("Quad_ExpandingField_LabelResult") as CMlLabel);
+							Entry.SetText(Value);
+						}
+						default: {
+							declare CMlEntry Entry <=> (AttributeControl.Parent.GetFirstChild("Entry")	as CMlEntry);
+							Entry.SetText(Value, False);
+						}
+					}
+				}
+				OldPositionY = PositionY;
+				PositionY += - SpacingY;
+			}
+			SpacingY += C_FormDisplayer_ExtraMarginY;
+		}
+		if (_MaxPages == 1) {
+			Page.GetFirstChild("DynamicFormDisplayer_Scroll_Frame").Hide();
+		} else {
+			Page.GetFirstChild("DynamicFormDisplayer_Scroll_Frame").Show();
+			DesignManialinks_ScrollButtons_Update("DynamicFormDisplayer_Scroll", _CurrentPage, _MaxPages);
+		}
+	}
+
+	Void Private_FormDisplayer_ValidateEntry(Integer _QuadId, Text _Value) {
+		SendCustomEvent("DynamicFormDisplayer_ValidateEntry", [FormDisplayer_TextLib::ToText(_QuadId), _Value]);
+	}
+
+	Void Private_FormDisplayer_ClickOnEvent(Integer _SettingIndex) {
+		SendCustomEvent("DynamicFormDisplayer_Event", [FormDisplayer_TextLib::ToText(_SettingIndex)]);
+	}
+
+	Void Private_FormDisplayer_ClickOnQuad(Integer _FormId)
+	{
+		SendCustomEvent("DynamicFormDisplayer_ClickOnQuad", [FormDisplayer_TextLib::ToText(_FormId)]);
+	}
+
+	Void FormDisplayer_Init()
+	{
+		foreach(Attribute in C_FormDisplayer_AttributeTypes) {
+			Page.GetClassChildren("FormDisplayer_" ^ Attribute, Page.MainFrame, True);
+			G_Frames_Setting[Attribute] = CMlControl[];
+			G_Labels_Setting[Attribute] = CMlLabel[];
+			G_EventControls_Setting[Attribute] = CMlControl[];
+			foreach(ControlSetting in Page.GetClassChildren_Result) {
+				declare CMlFrame FrameSetting = (ControlSetting as CMlFrame);
+				G_Frames_Setting[Attribute].add(FrameSetting);
+				G_Labels_Setting[Attribute].add((FrameSetting.GetFirstChild("FormDisplayer_Label_Setting") as CMlLabel));
+				switch (Attribute) {
+					case "Comment": {
+						G_EventControls_Setting[Attribute].add(FrameSetting.GetFirstChild("Entry_TextEdit"));
+					}
+					case "Event": {
+						G_EventControls_Setting[Attribute].add(FrameSetting.GetFirstChild("Quad_EventTrigger"));
+					}
+					case "ButtonSwitch": {
+						G_EventControls_Setting[Attribute].add(FrameSetting.GetFirstChild("Quad_ButtonSwitch"));
+					}
+					case "Button": {
+						G_EventControls_Setting[Attribute].add(FrameSetting.GetFirstChild("Quad_Button"));
+					}
+					case "ExpandingField": {
+						G_EventControls_Setting[Attribute].add(FrameSetting.GetFirstChild("Quad_ExpandingField"));
+					}
+					default: {
+						G_EventControls_Setting[Attribute].add(FrameSetting.GetFirstChild("Entry"));
+					}
+				}
+			}
+		}
+	}
+
+	Void FormDisplayer_Loop() {
+		DesignManialinks_Loop();
+		LibManialink_AnimLoop();
+		foreach(Event in PendingEvents)
+		{
+			switch(Event.Type)
+			{
+				case CMlEvent::Type::EntrySubmit: {
+					declare Integer FormId for Event.Control;
+					if (Event.Control is CMlEntry) {
+						declare CMlEntry EventEntry <=> (Event.Control as CMlEntry);
+						Private_FormDisplayer_ValidateEntry(FormId, EventEntry.Value);
+					} else if (Event.Control is CMlTextEdit) {
+						declare CMlTextEdit EventTextEdit <=> (Event.Control as CMlTextEdit);
+						Private_FormDisplayer_ValidateEntry(FormId, EventTextEdit.Value);
+					}
+				}
+				case CMlEvent::Type::MouseClick: {
+					switch (Event.ControlId)
+					{
+						case "Quad_Switch" : {
+							declare Integer FormId for Event.Control;
+							Private_FormDisplayer_ClickOnQuad(FormId);
+						}
+						case "Quad_ButtonSwitch" : {
+							declare Integer FormId for Event.Control;
+							Private_FormDisplayer_ClickOnQuad(FormId);
+						}
+						case "Quad_EventTrigger" : {
+							declare Integer FormId for Event.Control;
+							Private_FormDisplayer_ClickOnEvent(FormId);
+						}
+					}
+				}
+				case CMlEvent::Type::PluginCustomEvent: {
+					switch (Event.CustomEventType) {
+						case "FormDisplayer_UpdateAttributes" : {
+							declare Real[][]	Page_FormDisplayer_ChunkAttributePositions		for Page;
+							declare Text[][]	Page_FormDisplayer_ChunkAttributeTypes			for Page;
+							declare Text[][]	Page_FormDisplayer_ChunkAttributeNames			for Page;
+							declare Text[][][]	Page_FormDisplayer_ChunkAttributeExtraParams	for Page;
+							declare Text[][]	Page_FormDisplayer_ChunkSettingValues			for Page;
+							declare Integer		Page_FormDisplayer_CurrentPage					for Page;
+							declare Integer		Page_FormDisplayer_MaxPages						for Page;
+							Private_FormDisplayer_UpdateAttributes(Page_FormDisplayer_ChunkAttributePositions
+															, Page_FormDisplayer_ChunkAttributeTypes
+															, Page_FormDisplayer_ChunkAttributeNames
+															, Page_FormDisplayer_ChunkAttributeExtraParams
+															, Page_FormDisplayer_ChunkSettingValues
+															, Page_FormDisplayer_CurrentPage
+															, Page_FormDisplayer_MaxPages);
+						}
+					}
+				}
+			}
+		}
+	}
+
+	Void FormDisplayer_Show() {
+		DesignManialinks_Show();
+	}
+""";
+}

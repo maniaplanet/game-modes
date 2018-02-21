@@ -1,0 +1,107 @@
+/**
+ *	Campaign Base
+ */
+
+#Extends "Modes/TrackMania/SingleMap.Script.txt"
+
+
+***BeforeStart***
+***
+	G_OpponentChosen = TMC_MEDAL_VERSUSREPLAY;
+	SetGamePhase(C_GAMEPHASE_PREPARATION);
+***
+
+***LoadGameLib***
+***
+Game::Load(This, "VersusReplay", True);
+***
+
+***MedalAndUnlockSequence***
+***
+	
+	if(!G_HasFinishRace) return;
+	
+	G_BestTimePlayer 			= Players[G_ThePlayerId].CurRace.Time;
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Text BestTimePlayer for UI;
+	declare netwrite Integer Net_TimeToNextMedal for UI;
+	declare netwrite Boolean Net_IsNewMedal for UI;
+	BestTimePlayer = TL::TimeToText(G_BestTimePlayer, True);
+	Net_IsNewMedal = False;
+
+	//log("G_LastTimePlayer: "^ G_LastTimePlayer);
+	declare Boolean HasWon = True;
+	declare Integer GhostIndex = G_OpponentPlayerGhost.count;
+	foreach(Ghost in G_OpponentPlayerGhost)
+	{
+		if(Ghost.Result.Time < G_LastTimePlayer)
+		{
+			HasWon = False;
+			//log("Ghost.Result.Time["^Ghost.Result.Time^"] < G_LastTimePlayer["^G_LastTimePlayer^"]");
+		}
+		else
+		{
+			GhostIndex -= 1;
+			//log("Ghost.Result.Time["^Ghost.Result.Time^"] > G_LastTimePlayer["^G_LastTimePlayer^"]");
+		}
+	}
+	if(GhostIndex <= -1) GhostIndex = 0;
+	//log("GhostIndexSelect: "^ GhostIndex);
+
+
+	//TODO - Calculer Net_TimeToNextMedal
+	Net_TimeToNextMedal = 0;
+	if(Net_TimeToNextMedal < 0) Net_TimeToNextMedal = 0;
+
+	declare Text Title 		= "";
+	declare Text Subtitle 	= "";
+	declare Text Subtitle2	= "";
+	declare Vec3 TextColor 	= <1.0, 1.0, 1.0>;
+	declare Text RewardUrl	= "";
+	declare Text Sign		= "+";
+	
+	declare	netwrite Real 		Net_AdjustSubTitle 		for UI;
+	Net_AdjustSubTitle = -2.;
+
+	declare netwrite Boolean Net_IsOfficialMap for UI;
+	declare OldMedal  = G_OldMedal;
+	declare BestMedal = G_BestMedal;
+	if(!Net_IsOfficialMap)
+	{
+		OldMedal  = 5;
+		BestMedal = 5;
+	}
+	if(HasWon) {
+		Title 		= _("You have beaten the best time");
+		//L16N. Player didn't beat his friend record. %1 is the name of the friend
+		//Subtitle 	= TL::Compose(_("You didn't beat %1's record!"), G_OpponentPlayerGhost[0].Nickname);
+		//Subtitle	= "";
+		//Subtitle	= FlavourText::GetLastRecordOfThePlayer(G_BestTimePlayer);
+		declare VersusText = GetVersusTimeText(False, GhostIndex);
+		if(VersusText != "") {
+			Subtitle2 = VersusText;
+		}
+
+
+		RewardUrl 	= RewardScreens::GetScreenOnline();
+		TextColor	= Colors::GetColor("PinkRed");
+		Game::ShowReward(Players[G_ThePlayerId], Title, Subtitle, Subtitle2, "to continue", TextColor, "-", True, True, OldMedal, BestMedal);
+	}
+	else
+	{
+		Title 		= _("End of the race");
+		//L16N. Player didn't beat his friend record. %1 is the name of the friend
+		//Subtitle 	= TL::Compose(_("You didn't beat %1's record!"), G_OpponentPlayerGhost[0].Nickname);
+		//Subtitle	= "";
+		//Subtitle	= FlavourText::GetLastRecordOfThePlayer(G_BestTimePlayer);
+		declare VersusText = GetVersusTimeText(False, GhostIndex);
+		if(VersusText != "") {
+			Subtitle2 = VersusText;
+		}
+		RewardUrl 	= RewardScreens::GetScreenOnline();
+		TextColor	= Colors::GetColor("PinkRed");
+		Game::ShowReward(Players[G_ThePlayerId], Title, Subtitle, Subtitle2, "to continue", TextColor, "-", True, True, OldMedal, BestMedal);
+	}
+	WaitRewardAnswer();
+	Game::HideTransition(Players[G_ThePlayerId]);
+***

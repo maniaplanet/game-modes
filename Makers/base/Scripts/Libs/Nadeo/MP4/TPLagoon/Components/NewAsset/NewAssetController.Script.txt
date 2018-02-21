@@ -1,0 +1,388 @@
+#Include "TextLib"																			as TextLib
+#Include "Libs/Nadeo/Common/Core/MenuLayers.Script.txt"											as Layers
+#Include "Libs/Nadeo/Common/Core/Pages.Script.txt"												as Pages
+#Include "Libs/Nadeo/Common/Core/Logger.Script.txt"												as Logger
+#Include "Libs/Nadeo/MP4/Common/Components/ModBrowser/ModBrowserController.Script.txt"			as ModBrowserController
+#Include "Libs/Nadeo/MP4/Common/Components/TrackBrowser/TrackBrowserController.Script.txt"		as TrackBrowserController
+#Include "Libs/Nadeo/MP4/TPLagoon/XMLController.Script.txt"										as XMLController
+#Include "Libs/Nadeo/MP4/Common/Components/MenuButtonsOld/LBMenuButtons.Script.txt"												as MenuButtons
+#Include "Libs/Nadeo/MP4/Common/LoadingScreen.Script.txt"										as LoadingScreen
+#Include "Libs/Nadeo/MP4/Common/SettingsController.Script.txt"  								as SettingsController
+#Include "Libs/Nadeo/Common/Core/SectionsManager.Script.txt"										as SectionsManager
+#Include "Libs/Nadeo/MP4/Common/DesignManialinks.Script.txt"									as DesignManialinks
+
+#Include "Libs/Nadeo/MP4/TPLagoon/Components/G_BarreSection/BarreSectionController.Script.txt"	as BarreSectionController
+
+//Layers
+#Include "Libs/Nadeo/MP4/TPLagoon/Components/Editor/LBNewMap.Script.txt"						as LBNewMap
+#Include "Libs/Nadeo/MP4/TPLagoon/Components/Editor/LBMoods.Script.txt"							as LBMoods
+#Include "Libs/Nadeo/MP4/TPLagoon/Components/Editor/LBFields.Script.txt"						as LBFields
+#Include "Libs/Nadeo/MP4/TPLagoon/Components/Editor/LBEnviro.Script.txt"						as LBEnviro
+
+#Const C_LoadingScreenSimpleDefault "file://Media/MEDIABROWSER_HiddenResources/Common/Images/Editors/Moods/Day.webp"
+
+Vec3 GetColor() {
+	declare Text[Text] Colors = XMLController::Get_Color_Sections();
+	declare Text CurrentSection = SectionsManager::GetActualSection();
+	if (!Colors.existskey(CurrentSection)) {
+		return TextLib::ToColor(DesignManialinks::GetColorCode_Overall());
+	}
+	return TextLib::ToColor(Colors[CurrentSection]);
+}
+
+declare Text	G_MapEditorScriptName;
+declare Boolean	G_IsRunning;
+declare Integer	G_PageNumber;
+declare Integer	G_EnviroChoose;
+declare Integer	G_EditorChoose;
+declare Integer G_FieldChoose;
+declare Text	G_PageToGoBackTo;
+declare Text	G_SettingsXml;
+declare Boolean	G_Advanced;
+
+Void Build(Text _LayerName, Boolean _Attach) {
+
+	declare Text MLText;
+	switch(_LayerName) {
+		case("NewMap"):{
+			MLText = LBNewMap::Build();
+		}
+		case("Moods"):{
+			MLText = LBMoods::Build();
+		}
+		case("Fields"):{
+			MLText = LBFields::Build();
+		}
+		case("Enviro"):{
+			MLText = LBEnviro::Build();
+		}
+	}
+
+	if(MLText == "") {
+		Logger::Warn("Unknown Page: "^_LayerName);
+		return;
+	}
+
+	Layers::Create(_LayerName, MLText);
+
+	declare CUILayer Layer <=> Layers::Get(_LayerName);
+	declare Text Page_LayerName for Layer.LocalPage;
+
+	Page_LayerName = _LayerName;
+	if(_Attach) Layers::Attach(_LayerName);
+}
+
+Void Build(Text _LayerName) {
+	Build(_LayerName, False);
+}
+
+Void Init()
+{
+	G_IsRunning		= False;
+	G_PageNumber	= 0;
+}
+
+Boolean IsRunning()
+{
+	return G_IsRunning;
+}
+
+Boolean IsAtFirstPage()
+{
+	return (G_PageNumber == 1);
+}
+
+Text Get_EnviroText(Integer _Index)
+{
+	declare Text[] Environments = ["Canyon", "Stadium", "Valley", "Lagoon"];
+	if(!Environments.existskey(_Index)) return "EnviroNotFound";
+	return Environments[_Index];
+}
+
+Integer Get_EnviroIndex(Text _Enviro)
+{
+	declare Text[] Environments = ["Canyon", "Stadium", "Valley", "Lagoon"];
+	return Environments.keyof(_Enviro);
+}
+
+Text Get_FieldText(Integer _Index)
+{
+	declare Text[] Environments = ["Land", "Water"];
+	if(!Environments.existskey(_Index)) return "FieldNotFound";
+	return Environments[_Index];
+}
+
+Text Get_PostMood(Integer _Index)
+{
+	if(_Index == 3 || _Index == 2) return "48";
+	return "";
+}
+
+Text Get_PostMood(Text _Enviro)
+{
+	if(_Enviro == "Lagoon" || _Enviro == "Valley") return Get_PostMood(3);
+	return Get_PostMood(0);
+}
+
+Void ChangeAllMenus()
+{
+	//L16N Map editor
+	MenuButtons::ChangeData("NewMap",	[_("Simple"),
+		//L16N Map editor
+		_("Advanced")],
+										[<-0.5, 12.0>,	<80.2, 12.0>],
+										["Button_Simple", "Button_Advanced"],
+										GetColor());
+	MenuButtons::ChangeData("Moods",	[_("|ArticleName|Sunrise"),	_("|ArticleName|Day"),	_("|ArticleName|Sunset"),	_("|ArticleName|Night")],
+										[<-68.5, -1.3>, <-2.9, -1.3>, <62.6, -1.3>, <128.5, -1.3>],
+										["Button_Mood0", "Button_Mood1", "Button_Mood2", "Button_Mood3"],
+										GetColor());
+	MenuButtons::ChangeData("Fields",	[_("|ArticleName|Land"),	_("|ArticleName|Water")],
+										[<-0.5, -1.3>,	<70.2, -1.3>],
+										["Button_Field0", "Button_Field1"],
+										GetColor());
+	MenuButtons::ChangeData("Enviro",	["Canyon",	"Stadium",	"Valley",	"Lagoon"],
+										[<-68.5, -1.3>, <-2.9, -1.3>, <62.6, -1.3>, <128.5, -1.3>],
+										["Button_Enviro0", "Button_Enviro1", "Button_Enviro2", "Button_Enviro3"],
+										GetColor());
+}
+
+Void Load() {
+	Init();
+	Build("NewMap");
+	Build("Moods");
+	Build("Fields");
+	Build("Enviro");
+	ChangeAllMenus();
+	Pages::Compose("NewMap",		["NewMap", "BarreSection"]);
+	Pages::Compose("Moods",			["Moods", "BarreSection"]);
+	Pages::Compose("Fields",		["Fields", "BarreSection"]);
+	Pages::Compose("Enviro",		["Enviro", "BarreSection"]);
+	G_SettingsXml     = SettingsController::GetSettingsXmlEditor();
+	declare Text ProjectEnviro for LocalUser;
+	if(ProjectEnviro != "TMAll" && ProjectEnviro != "") G_EnviroChoose = Get_EnviroIndex(ProjectEnviro);
+	G_MapEditorScriptName	= XMLController::Get_MapEditorScriptName();
+	
+}
+
+Void Hide() {
+	G_IsRunning		= False;
+	G_PageNumber	= 0;
+	ModBrowserController::ForceHide();
+	Pages::GotoHome(G_PageToGoBackTo);
+	TrackBrowserController::Show();
+}
+
+Void ForceHide() {
+	G_IsRunning		= False;
+	G_PageNumber	= 0;
+	ModBrowserController::ForceHide();
+}
+
+Void SetMoodsLock()
+{
+	declare Boolean[] ButtonLock;
+	ButtonLock = [True, True, True, True]; // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+	MenuButtons::SetButtonActive("Moods", ButtonLock);
+}
+
+Void GoToNewMap(Boolean _IsSimple)
+{
+	if(_IsSimple)
+	{
+		G_Advanced = False;
+		LoadingScreen::SetLoadingType(1, C_LoadingScreenSimpleDefault);
+
+		declare Text Enviro             = Get_EnviroText(G_EnviroChoose);
+		declare Text Deco    			= "Day" ^ Get_PostMood(G_EnviroChoose);
+		declare Text PlayerModel        = Enviro^"Car";
+		declare Text MapType            = "Race.Script.txt";
+		declare Text EditorPluginScript = G_MapEditorScriptName;
+		declare Text SettingsXml        = G_SettingsXml;
+		declare Text ProjectEnviro		for LocalUser;
+		if(ProjectEnviro == "Storm")
+		{
+			Enviro			   = "Storm";
+			PlayerModel        = "";
+			MapType            = "";
+			EditorPluginScript = "";
+			SettingsXml        = "";
+			Deco			   = "Land48x48Day";
+		}
+		Hide();
+		TitleFlow.EditNewMap(Enviro, Deco, "", PlayerModel, MapType, True, EditorPluginScript, SettingsXml);
+	}
+	else
+	{
+		G_Advanced = False;
+		G_PageNumber += 1;
+		declare Boolean IsMods = False; //ModBrowserController::HasAMod();
+		if(IsMods)
+		{
+			ModBrowserController::Show("ModsFromNewMap", [//L16N |Infinitive| In a popup, a button to select
+			_("Choose")],
+			//L16N |Noun, plural| Refers to alteration of textures to give a different display.
+			_("Mods"));
+		} else {
+			SetMoodsLock();
+			declare Text ProjectEnviro for LocalUser;
+			if(ProjectEnviro == "Storm")
+			{
+				Pages::GotoNext("Fields");
+			}
+			else if(ProjectEnviro == "TMAll")
+			{
+				Pages::GotoNext("Enviro");
+			}
+			else
+			{
+				Pages::GotoNext("Moods");
+			}
+		}
+	}
+}
+
+Void Show(Text _PageToGoBackTo) {
+	if (G_IsRunning) {
+		Logger::Warn("NewAssetController déjà en marche, methode Show() appelée deux fois");
+	}
+	G_PageNumber		= 1;
+	G_IsRunning			= True;
+	G_PageToGoBackTo	= _PageToGoBackTo;
+	ChangeAllMenus();
+
+	declare Text MapEditorMode = UserMgr.MainUser.Config.MapEditorMode^""; //En text parce que l'EMapEditorMode n'est pas encore trouvé
+	if(MapEditorMode == "::EMapEditorMode::Simple")
+	{
+		GoToNewMap(True);
+	}
+	else if(MapEditorMode == "::EMapEditorMode::Advanced")
+	{
+		GoToNewMap(False);
+	}
+	else if(MapEditorMode == "::EMapEditorMode::Ask")
+	{
+		Pages::GotoNext("NewMap");
+	}
+
+}
+
+Void LaunchEditor(Text _Mood, Text _Thumbnail)
+{
+	LoadingScreen::SetLoadingType(1, _Thumbnail);
+	declare Text Enviro   = Get_EnviroText(G_EnviroChoose);
+	declare Text Deco     = _Mood ^ Get_PostMood(G_EnviroChoose);
+
+	declare Text PlayerModel        = Enviro^"Car";
+	declare Text MapType            = ""; // "Race.Script.txt";
+	MapType = "Race.Script.txt";
+	declare Text EditorPluginScript = G_MapEditorScriptName;
+	declare Text SettingsXml        = G_SettingsXml;
+	declare Text ProjectEnviro for LocalUser;
+	if(ProjectEnviro == "Storm")
+	{
+		Enviro			   = "Storm";
+		PlayerModel        = "";
+		MapType            = "";
+		EditorPluginScript = "";
+		SettingsXml        = "";
+		Deco			   = Get_FieldText(G_FieldChoose) ^ "48x48"^_Mood;
+	}
+	Hide();
+	TitleFlow.EditNewMap(Enviro, Deco, "", PlayerModel, MapType, EditorPluginScript, SettingsXml);
+}
+
+Void Loop() {
+	if (!G_IsRunning) return;
+	if (ModBrowserController::HasFetchedMods() && G_Advanced) {
+		GoToNewMap(False);
+	}
+	foreach(Event in PendingEvents) {
+		if(Event.Type != CManiaAppEvent::EType::LayerCustomEvent) continue;
+		switch(Event.CustomEventType) {
+			case "Button_Simple" : {
+				GoToNewMap(True);
+			}
+			case "Button_Mood0" : {
+				if (Event == Null) {
+					continue;
+				}
+				LaunchEditor("Sunrise", Event.CustomEventData[0]);
+			}
+			case "Button_Mood1" : {
+				if (Event == Null) {
+					continue;
+				}
+				LaunchEditor("Day", Event.CustomEventData[0]);
+			}
+			case "Button_Mood2" : {
+				if (Event == Null) {
+					continue;
+				}
+				LaunchEditor("Sunset", Event.CustomEventData[0]);
+			}
+			case "Button_Mood3" : {
+				if (Event == Null) {
+					continue;
+				}
+				LaunchEditor("Night", Event.CustomEventData[0]);
+			}
+			case "Button_Field0" : {
+				G_FieldChoose = 0;
+				G_PageNumber += 1;
+				Pages::GotoNext("Moods");
+			}
+			case "Button_Field1" : {
+				G_FieldChoose = 1;
+				G_PageNumber += 1;
+				Pages::GotoNext("Moods");
+			}
+			case "Button_Enviro0" : {
+				G_PageNumber += 1;
+				G_EnviroChoose = 0;
+				Pages::GotoNext("Moods");
+			}
+			case "Button_Enviro1" : {
+				G_PageNumber += 1;
+				G_EnviroChoose = 1;
+				Pages::GotoNext("Moods");
+			}
+			case "Button_Enviro2" : {
+				G_PageNumber += 1;
+				G_EnviroChoose = 2;
+				Pages::GotoNext("Moods");
+			}
+			case "Button_Enviro3" : {
+				G_PageNumber += 1;
+				G_EnviroChoose = 3;
+				Pages::GotoNext("Moods");
+			}
+			case "Button_Advanced" : {
+				G_Advanced = True;
+				ModBrowserController::FetchMods();
+			}
+			case "ModsFromNewMap_Button_0" : {
+				G_PageNumber += 1;
+				declare Text ModPath = Event.CustomEventData[0];
+				declare Text ProjectEnviro for LocalUser;
+				ModBrowserController::MakeIdle();
+				SetMoodsLock();
+				if(ProjectEnviro == "Storm")
+				{
+					Pages::GotoNext("Fields");
+				}
+				else
+				{
+					Pages::GotoNext("Moods");
+				}
+
+				//G_ModSelect = ModPath;
+			}
+		}
+	}
+}
+
+Text GenerateXML ()
+{
+	return "";
+}

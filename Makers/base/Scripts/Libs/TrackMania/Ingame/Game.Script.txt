@@ -1,0 +1,1189 @@
+/** 
+ *	TM library
+ */
+
+#Const Version		"2015-09-04"
+#Const ScriptName	"Game.Script.txt"
+
+#Include "TextLib" as TL
+#Include "Libs/Nadeo/Common/Ingame/IngameLayers.Script.txt"  								as Layers
+#Include "Libs/Trackmania/Ingame/UI/UI.Script.txt" 				        as UI
+#Include "Libs/Trackmania/Ingame/UI/UIRewardScreens.Script.txt" 	    as UIRewardScreens
+#Include "Libs/Trackmania/Ingame/UI/UIPairingPads.Script.txt" 	    as UIPairingPads
+#Include "Libs/Trackmania/Ingame/UI/UIRankMessage.Script.txt" 		    as UIRankMessage
+#Include "Libs/Trackmania/Ingame/UI/UIButtonNamesPopup.Script.txt"	    as UIButtonNamesPopup
+#Include "Libs/Nadeo/MP4/Common/Colors.Script.txt" 						    as Colors
+
+// ---------------------------------- //
+// Constant
+// ---------------------------------- //
+
+#Const C_SpawnDuration				3000	///< Time before respawn (3,2,1,Go!)
+#Const C_OutroDuration				2000	///< Outro sequence duration
+#Const C_OutroScoresTableTime		2000	///< Time before the display of the scores table in the outro sequence
+
+#Const C_SpawnStatus_Racing			1	///< The player is currently racing
+#Const C_SpawnStatus_Waiting		2	///< The player is winting to be spawned
+#Const C_SpawnStatus_Outro			3	///< The player is watching the outro sequence
+
+#Const C_CheckpointTimeOutDelay		40000
+#Const C_CheckpointShowRestartDelay	20000
+
+#Const C_STORERESULT_PROCESSING		0
+#Const C_STORERESULT_SUCCEEDED		1
+#Const C_STORERESULT_FAILED			2
+#Const MODE_COLORID_MULTIPLAYER			1
+
+#Const C_CHECKRESULT_OFF				0
+#Const C_CHECKRESULT_PROCESSING			1
+#Const C_CHECKRESULT_SUCCEED			2
+#Const C_CHECKRESULT_FAILED				3
+
+#Const C_LAYERNAME_DIFFERENTPLAYER		"Popup_DifferentPlayer"
+#Const C_SAMEPLAYER_YES			0
+#Const C_SAMEPLAYER_NO			1
+
+#Const IMGPATH							"file://Media/Images/TMConsole/Ingame/"
+#Const IMG_ARCADE						"mode-arcade.png"
+
+declare CTmMode					G_Mode;
+declare Integer					G_NbPadsNeeded;
+declare Integer[Integer]		G_PadsNeeded;
+declare Integer					G_NbPlayers;
+declare Boolean					G_IsSymbiose;
+declare CTmPlayer				G_Player;
+declare Ident					G_ThePlayerId;
+declare Text					G_ModeName;
+declare Boolean					G_IsRanking;
+declare Integer					G_PlayerCheckpoint;
+declare Ident					G_OpponentIdent;
+declare Integer					G_TimerStartCheckOpponent;
+declare Integer					G_CheckpointTimeOut;
+declare Boolean					G_DespawnTimeOut;
+declare Boolean					G_RestartReminderActive;
+declare Boolean					G_IsMultiPairing;
+declare Boolean					G_IsUgcTrack;
+declare Boolean					G_HeadsetHasBeenMounted;
+declare Boolean					G_HeadsetHasBeenUnmounted;
+
+declare Integer[Integer]		G_Duo_SortSlotId;
+declare Integer[Integer]		G_Duo_SortPadPlayingId;
+
+declare Integer[Integer]		G_Map_PlayerRankAdd;
+declare Integer[Integer]		G_Map_PlayerRanking;
+declare Integer[Integer]		G_Map_PrevPlayerRanking;
+declare Integer[Integer]		G_Map_ZoneRankingCount;
+declare Integer[Integer]		G_Global_PlayerRankAdd;
+declare Integer[Integer]		G_Global_PlayerRanking;
+declare Integer[Integer]		G_Global_PrevPlayerRanking;
+declare Integer[Integer]		G_Global_ZoneRankingCount;
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+// Private
+// ---------------------------------- //
+// ---------------------------------- //
+/** Start the outro sequence for a player
+ *
+ *	@param	_Player		The player to set in outro sequence
+ */
+ 
+Text GetRankMessage(Integer _Position) {
+	return UIRankMessage::GetRankMessage(_Position);
+}
+
+Text JustRankMessage(Integer _Position, Integer _Points) {
+	return UIRankMessage::JustRankMessage(_Position, _Points);
+}
+ 
+Void Private_OutroStart(CTmPlayer _Player) {
+	if (_Player == Null) return;
+	
+	declare libTMC_OutroEndTime for _Player = -1;
+	declare libTMC_OutroScoresTableTime for _Player = -1;
+	libTMC_OutroEndTime = G_Mode.Now + C_OutroDuration;
+	libTMC_OutroScoresTableTime = G_Mode.Now + C_OutroScoresTableTime;
+}
+
+// ---------------------------------- //
+/** Display the scores table for a player during the outro sequence
+ *
+ *	@param	_Player		The player who will see the scores table
+ */
+Void Private_OutroScoresTable(CTmPlayer _Player) {
+	if (_Player == Null) return;
+	
+	declare libTMC_OutroScoresTableTime for _Player = -1;
+	libTMC_OutroScoresTableTime = -1;
+	
+	declare UI <=> UIManager.GetUI(_Player);
+	if (UI != Null) {
+		UI.ScoreTableVisibility = CUIConfig::EVisibility::ForcedVisible;
+	}
+}
+
+
+// ---------------------------------- //
+/** Stop the outro sequence for a player
+ *
+ *	@param	_Player		The player to get out of the outro sequence
+ */
+Void Private_OutroStop(CTmPlayer _Player) {
+	if (_Player == Null) return;
+	
+	declare libTMC_OutroEndTime for _Player = -1;
+	libTMC_OutroEndTime = -1;
+	
+	declare UI <=> UIManager.GetUI(_Player);
+	if (UI != Null) {
+		UI.ScoreTableVisibility = CUIConfig::EVisibility::None;
+	}
+}
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Return the version number of the script
+ *
+ *	@return		The version number of the script
+ */
+Text GetScriptVersion() {
+	return Version;
+}
+
+// ---------------------------------- //
+/** Return the name of the script
+ *
+ *	@return		The name of the script
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+////////////////////////
+// FUNCTIONS
+Void SetUIPlayerStatus(CTmPlayer _Player, Integer _Status) {
+	declare UI <=> UIManager.GetUI(_Player);
+	declare netwrite Integer Net_PlayerStatus for UI;
+	Net_PlayerStatus = _Status;
+}
+
+Boolean GetPlayerUseSpecialVision(CTmPlayer _Player) {
+	return _Player.User.StereoDisplayMode != CUser::EStereoDisplayMode::None;
+}       
+
+Integer RoundHundredthTime(Integer _Time) {
+	return _Time/10;
+}
+
+Void WaitPlayerExists() {
+	while(Players.count == 0) {
+		yield;
+	}
+}
+
+Void ShowUI()
+{
+	UI::SetVisibilityInGame(True);
+	// UI::SetChallengeFrameVisibility(True);
+}
+
+Void HideUI()
+{
+	UI::SetVisibilityInGame(False);
+}
+
+Void SetIsTrackRandom(Boolean _IsRandom) {
+	UI::SetIsTrackRandom(_IsRandom);
+}
+
+Void SetOpponent(Integer _OpponentType, Integer[] _OpponentCheckpointsTime)
+{
+	//log("_OpponentCheckpointsTime: " ^ _OpponentCheckpointsTime);
+	UI::SetOpponent(_OpponentType, _OpponentCheckpointsTime);
+}
+
+
+Void AddOpponent(Integer _OpponentType, Integer[] _OpponentCheckpointsTime)
+{
+	//log("_OpponentCheckpointsTime: " ^ _OpponentCheckpointsTime);
+	UI::AddOpponent(_OpponentType, _OpponentCheckpointsTime);
+}
+
+Void ClearOpponents() {
+	UI::ClearOpponents();
+}
+
+Void SetOpponentIdent(Ident _GhostIdent) {
+	G_OpponentIdent = _GhostIdent;
+}
+
+Void SetOpponentName(Text _OpponentName) {
+	UI::SetOpponentName(_OpponentName);
+}
+
+Void AddOpponentName(Text _OpponentName) {
+	UI::AddOpponentName(_OpponentName);
+}
+Void ClearOpponentName() {
+	UI::ClearOpponentName();
+}
+
+Void ShowPressRestart(Boolean _Show) {
+	UI::SetVisibilityPressToRestart(_Show);
+}
+
+Void SetVisiblityCampaignHelper(Boolean _Visible) {
+	UI::SetVisiblityCampaignHelper(_Visible);
+}
+
+Void ShowTimeOut(Boolean _Show) {
+	UI::SetVisibilityTimeOut(_Show);
+}
+
+Void SetDespawnTimeOut(Boolean _Despawn) {
+	G_DespawnTimeOut = _Despawn;
+}
+
+Void SetPlayerNickname(Text _PlayerNickname) {
+	UI::SetPlayerNickname(_PlayerNickname);
+}
+
+Void ShowTransition(CTmPlayer _Player) {
+	UIRewardScreens::ShowTransition(_Player);
+}
+
+Void HideTransition(CTmPlayer _Player) {
+	UIRewardScreens::HideTransition(_Player);
+}
+
+Boolean GetRewardAnswer(CTmPlayer _Player) {
+	return UIRewardScreens::GetRewardAnswer(_Player);
+}
+
+
+/*	
+Text Get_PlayerZonesText(Integer _ZoneRanking)
+{
+	declare Text[] Zones = TL::Split("|", LocalUser.ZonePath);
+	declare Text Zone;
+	declare Integer MaxZone = MathLib::Min(_ZoneRanking, Zones.count - 1);
+	for (ZoneIndex, 0, MaxZone) {
+		Zone ^= Zones[ZoneIndex];
+		if (ZoneIndex < MaxZone) {
+			Zone ^= "|";
+		}
+	}
+	return Zone;
+}
+Text[] Get_RankZone(CTmPlayer _Player)
+{
+	declare Text[] RankZone;
+	declare Text[] PlayerZone;
+	for()
+	declare Text Zone = Get_ZoneText(_ZoneRanking);
+	_Player.Zone
+	return RankZone;
+}
+*/
+
+Text[] Get_Map_PlayerRank(CTmPlayer _Player)
+{
+	declare Text[] PlayerRank;
+	declare	Text[] PlayerZones  = TL::Split("|", _Player.User.ZonePath);
+	foreach(Index => Zone in PlayerZones)
+	{
+		PlayerRank.add(G_Map_PlayerRanking[Index]^ "/" ^G_Map_ZoneRankingCount[Index]);
+	}
+	return PlayerRank;
+}
+
+Integer[] Get_Map_RankAdd(CTmPlayer _Player)
+{
+	declare Integer[] RankAdd;
+	declare	Text[] PlayerZones  = TL::Split("|", _Player.User.ZonePath);
+	foreach(Index => Zone in PlayerZones)
+	{
+		RankAdd.add(G_Map_PlayerRankAdd[Index]);
+	}
+	return RankAdd;
+}
+
+Void Update_Map_RankAdd(CTmPlayer _Player)
+{
+	declare	Text[] PlayerZones  = TL::Split("|", _Player.User.ZonePath);
+	foreach(Index => Zone in PlayerZones)
+	{
+		//G_Map_PlayerRankAdd[Index]    = G_Map_PlayerRanking[Index];
+		G_Map_PlayerRankAdd[Index]     = G_Map_PrevPlayerRanking[Index] - G_Map_PlayerRanking[Index];
+	}
+}
+
+Boolean Update_Map_Ranking(CTmPlayer _Player)
+{
+	if(ScoreMgr == Null || G_ModeName == "Trackbuilder" || !G_IsRanking) return False;
+	declare	Text[] PlayerZones  = TL::Split("|", _Player.User.ZonePath);
+	declare Text SystemZone;
+	declare Integer ZonesLoad      = 0;
+	declare Integer ZonesCountLoad = 0;
+	foreach(Index => Zone in PlayerZones)
+	{
+		G_Map_PlayerRanking[Index]    = 0;
+		G_Map_ZoneRankingCount[Index] = 0;
+
+		if(G_ModeName == "Rounds Splitscreen") continue;
+		SystemZone ^= Zone;
+		if(!G_Map_PlayerRanking.existskey(Index)) G_Map_PlayerRanking[Index] = 0;
+				
+		declare Ident MyUserID for _Player.User;
+		//PlayerRanking
+		if(G_Map_PlayerRanking[Index] != 0) {
+			ZonesLoad += 1;
+		}
+		else {
+			G_Map_PlayerRanking[Index]     = ScoreMgr.MapLeaderBoard_GetPlayerRanking(MyUserID, Map.MapInfo.MapUid, "", SystemZone);
+			if(G_Map_PlayerRanking[Index] != 0) ZonesLoad += 1;
+		}
+
+		//ZoneRanking
+		if(G_Map_ZoneRankingCount[Index] != 0) {
+			ZonesCountLoad += 1;
+		}
+		else {
+			G_Map_ZoneRankingCount[Index]  = ScoreMgr.MapLeaderBoard_GetPlayerCount(Map.MapInfo.MapUid, "", SystemZone);
+			if(G_Map_ZoneRankingCount[Index] != 0) ZonesCountLoad += 1;
+		}
+
+		SystemZone ^= "|";
+	}
+	if(ZonesLoad >= PlayerZones.count && ZonesCountLoad >= PlayerZones.count) return True;
+	return False;
+}
+
+Text[] Get_Global_PlayerRank(CTmPlayer _Player)
+{
+	declare Text[] PlayerRank;
+	declare	Text[] PlayerZones  = TL::Split("|", _Player.User.ZonePath);
+	foreach(Index => Zone in PlayerZones)
+	{
+		PlayerRank.add(G_Global_PlayerRanking[Index]^ "/" ^G_Global_ZoneRankingCount[Index]);
+	}
+	return PlayerRank;
+}
+
+Integer[] Get_Global_RankAdd(CTmPlayer _Player)
+{
+	declare Integer[] RankAdd;
+	declare	Text[] PlayerZones  = TL::Split("|", _Player.User.ZonePath);
+	foreach(Index => Zone in PlayerZones)
+	{
+		if(G_Global_PlayerRankAdd.existskey(Index))
+		{
+			RankAdd.add(G_Global_PlayerRankAdd[Index]);
+		}
+	}
+	return RankAdd;
+}
+
+Void Update_Global_RankAdd(CTmPlayer _Player)
+{
+	declare	Text[] PlayerZones  = TL::Split("|", _Player.User.ZonePath);
+	foreach(Index => Zone in PlayerZones)
+	{
+		G_Global_PlayerRankAdd[Index] = G_Global_PrevPlayerRanking[Index] - G_Global_PlayerRanking[Index];
+		/*if(G_Global_PlayerRankAdd.existskey(Index))
+		{
+			G_Global_PlayerRankAdd[Index] = G_Global_PrevPlayerRanking[Index] - G_Global_PlayerRanking[Index];
+		}*/
+	}
+}
+
+Void Update_Global_Ranking(CTmPlayer _Player)
+{
+	if(ScoreMgr == Null || G_ModeName == "Trackbuilder" || !G_IsRanking) return;
+	declare	Text[] PlayerZones  = TL::Split("|", _Player.User.ZonePath);
+	declare Text SystemZone;
+	foreach(Index => Zone in PlayerZones)
+	{
+		SystemZone ^= Zone;
+		if(!G_Global_PlayerRanking.existskey(Index)) G_Global_PlayerRanking[Index] = 0;
+
+		G_Global_PlayerRanking[Index]    = 0;
+		G_Global_ZoneRankingCount[Index] = 0;
+		if(G_ModeName == "Rounds Splitscreen") continue;
+		declare Integer Timer = Now + 500;
+		while((G_Global_PlayerRanking[Index] == 0 || G_Global_ZoneRankingCount[Index] == 0) && Timer > Now)
+		{
+			yield;
+			declare Ident MyUserID for _Player.User;
+			declare Text CampaignId for _Player.User;
+			G_Global_PlayerRanking[Index]    = ScoreMgr.CampaignLeaderBoard_GetPlayerRanking(MyUserID, CampaignId, SystemZone, True);
+			G_Global_ZoneRankingCount[Index] = ScoreMgr.CampaignLeaderBoard_GetPlayerCount(CampaignId, SystemZone, True);
+		}
+		SystemZone ^= "|";
+	}
+}
+
+Void WaitTime(Integer _Duration) {
+	if (_Duration <= 0) {
+		yield;
+		return;
+	}
+
+	// hack: si on est en solo, le jeu peut etre en pause, et du coup le temps n'avance pas.
+	// Mais clairement, l'intension de WaitTime() c'est une pause en "temps humain"  --> donc on utilise un timer qui ne pause pas.
+	if (G_Mode.Input != Null) {
+		declare EndTime = G_Mode.Input.Now + _Duration;
+		wait(G_Mode.Input.Now >= EndTime);
+	} else {
+		declare EndTime = G_Mode.Now + _Duration;
+		wait(G_Mode.Now >= EndTime);
+	}
+}
+
+Void HideReward(CTmPlayer _Player) {
+	UIRewardScreens::HideReward(_Player);
+}
+
+Void ShowReward(CTmPlayer _Player, Text _Title, Text _Title2, Text _SubTitle, Text _ButtonAction, Vec3 _TextColor, Text _Positive, Boolean _ShowContinue, Boolean _ShowMedal, Integer _PrevMedal, Integer _NewMedal) {
+	HideReward(_Player);
+	
+	declare	Text[] 	  Reward_RankZone  = TL::Split("|", _Player.User.ZonePath);
+	declare	Text[] 	  Reward_RankScoreGlobal;
+	declare	Integer[] Reward_RankAddGlobal;
+	declare	Text[] 	  Reward_RankScoreMap;
+	declare	Integer[] Reward_RankAddMap;
+	
+	WaitTime(50);
+	if(ScoreMgr != Null && G_IsRanking)
+	{
+		Update_Global_Ranking(_Player);
+		Update_Global_RankAdd(_Player);
+		Reward_RankScoreGlobal = Get_Global_PlayerRank(_Player);
+		Reward_RankAddGlobal   = Get_Global_RankAdd(_Player);
+		WaitTime(200);
+		Update_Map_Ranking(_Player);
+		Update_Map_RankAdd(_Player);
+		WaitTime(200);
+		Reward_RankScoreMap = Get_Map_PlayerRank(_Player);
+		Reward_RankAddMap   = Get_Map_RankAdd(_Player);
+	}
+
+
+	declare UI <=> UIManager.GetUI(_Player);
+	if(UI != Null)
+	{
+		declare	netwrite Text[] 	Net_Reward_RankScoreLeft        for UI;
+		declare	netwrite Text[] 	Net_Reward_RankScoreRight       for UI;
+
+		declare	netwrite Integer[Integer] 	Net_Reward_RankScore_Left       for UI;
+		declare	netwrite Integer[Integer] 	Net_Reward_RankScoreCount_Left  for UI;
+		declare	netwrite Integer[] 			Net_Reward_RankAddLeft          for UI;
+		declare	netwrite Integer[Integer] 	Net_Reward_RankScore_Right      for UI;
+		declare	netwrite Integer[Integer] 	Net_Reward_RankScoreCount_Right for UI;
+		declare	netwrite Integer[] 			Net_Reward_RankAddRight         for UI;
+		Net_Reward_RankScoreLeft  = Reward_RankScoreMap;
+		Net_Reward_RankScoreRight = Reward_RankScoreGlobal;
+		
+		Net_Reward_RankAddLeft          = Reward_RankAddMap;
+		Net_Reward_RankAddRight         = Reward_RankAddGlobal;
+		Net_Reward_RankScore_Left       = G_Map_PlayerRanking;
+		Net_Reward_RankScoreCount_Left  = G_Map_ZoneRankingCount;
+		Net_Reward_RankScore_Right      = G_Global_PlayerRanking;
+		Net_Reward_RankScoreCount_Right = G_Global_ZoneRankingCount;
+
+		//HACK
+		//Net_Reward_RankAddLeft          = [200    , 203    , 126    , 2];
+		//Net_Reward_RankScore_Left       = [0=>250 , 1=> 192, 2=> 119, 3=> 43];
+		//Net_Reward_RankScoreCount_Left  = [0=>3000, 1=> 613, 2=> 107, 3=> 49];
+		//Net_Reward_RankAddRight         = [1242   , 516    , 210    , 155];
+		//Net_Reward_RankScore_Right      = [0=>242 , 1=> 203, 2=> 126, 3=> 41];
+		//Net_Reward_RankScoreCount_Right = [0=>1779, 1=> 953, 2=> 447, 3=> 389];
+	}
+
+
+	// log(Now^"> UIRewardScreens::ShowReward");
+	UIRewardScreens::ShowReward(_Player, _Title, _Title2, _SubTitle, _ButtonAction, _TextColor, _Positive, _ShowContinue, True, _ShowMedal, Reward_RankZone, Reward_RankScoreGlobal, Reward_RankAddGlobal, Reward_RankScoreMap, Reward_RankAddMap, _PrevMedal, _NewMedal, True);
+	//UIRewardScreens::ShowReward2(_Player, _Title, _Title2, _SubTitle, _ButtonAction, _TextColor, _Positive, _ShowContinue, True, _ShowMedal, Reward_RankZone, Reward_RankScore, Reward_RankAdd);
+}
+
+Void ShowReward(CTmPlayer _Player, Text _Title, Text _Title2, Text _SubTitle, Text _ButtonAction, Vec3 _TextColor, Text _Positive, Boolean _ShowContinue) {
+	ShowReward(_Player, _Title, _Title2, _SubTitle, _ButtonAction, _TextColor, _Positive, _ShowContinue, False, 5, 5);
+}
+
+
+Void ShowRewardSplit(CTmPlayer _Player, Text _Title, Text _Title2, Text _SubTitle, Text _ButtonAction, Vec3 _TextColor, Text _Positive, Boolean _ShowContinue) {
+	UIRewardScreens::ShowRewardSplit(_Player, _Title, _Title2, _SubTitle, _ButtonAction, _TextColor, _Positive, _ShowContinue);
+}
+
+Void ShowRewardSplit(CTmPlayer _Player, Text _Title, Text _Title2, Text _SubTitle, Text _ButtonAction, Vec3 _TextColor) {
+	ShowRewardSplit(_Player, _Title, _Title2, _SubTitle, _ButtonAction, _TextColor, "", True);
+}
+
+
+Void HideRewardSplit(CTmPlayer _Player) {
+	UIRewardScreens::HideRewardSplit(_Player);
+}
+
+Void SetMapNameFrameVisibility(Boolean _Visibility){
+	UI::SetMapNameFrameVisibility(_Visibility);
+}
+
+// ---------------------------------- //
+/// Unload the library
+Void Unload() {
+	foreach (Player in AllPlayers) {
+		declare libTMC_SpawnStatus for Player = C_SpawnStatus_Waiting;
+		declare libTMC_OutroEndTime for Player = -1;
+		declare libTMC_OutroScoresTableTime for Player = -1;
+		libTMC_SpawnStatus = C_SpawnStatus_Waiting;
+		libTMC_OutroEndTime = -1;
+		libTMC_OutroScoresTableTime = -1;
+		SetUIPlayerStatus(Player, C_SpawnStatus_Waiting);
+		//if(G_IsRanking)
+		if(G_IsRanking && ScoreMgr != Null)
+		{
+			Update_Map_Ranking(Player);
+			Update_Global_Ranking(Player);
+		}
+	}
+	Layers::DestroyAll();
+}
+
+Void SetIsUgcTrack(Boolean _IsUgcTrack) {
+	declare UI <=> UIManager.GetUI(Players[0]);
+	declare netwrite Boolean Net_IsUgcTrack for UI;
+	Net_IsUgcTrack =_IsUgcTrack;
+	G_IsUgcTrack = _IsUgcTrack;
+}
+
+Void ConstructCheckPrivilegeMenuLayer() {
+	declare Text ML = 
+	"""
+	<quad pos="0. 0. 32." size="320 190" id="Quad_Bg" bgcolor="111" opacity="0.5" valign="center" halign="center" hidden="0"/>
+	
+	<script ><!--
+		main() {
+			declare CMlQuad	Quad_Bg			<=> (Page.GetFirstChild("Quad_Bg")	as CMlQuad);
+			declare netread Boolean PausePairingUpdate for UI;
+			
+			declare Boolean Pre_PausePairingUpdate;
+			Quad_Bg.Visible = False;
+			
+			while(True) {
+				yield;
+
+				if(Pre_PausePairingUpdate != PausePairingUpdate) {
+					if(PausePairingUpdate) {
+						Quad_Bg.Visible = True;
+						EnableMenuNavigation(True, False, Null, 35);
+					} else {
+						Quad_Bg.Visible = False;
+						EnableMenuNavigation(False, False, Null, 35);
+					}
+					Pre_PausePairingUpdate = PausePairingUpdate;
+				}
+			}
+		}
+	--></script>
+	""";
+	
+	Layers::Create("CheckPrivilegeMenuLayer", ML);
+	//Layers::Attach("CheckPrivilegeMenuLayer");
+}
+
+Void SetVisibilityDifferentPlayerChoice(Boolean _Visible) {
+	Layers::SetVisibility(C_LAYERNAME_DIFFERENTPLAYER, _Visible);
+}
+
+Void SetOpposingTeamLabelsVisibility(CUIConfig::ELabelsVisibility _Visibility) {
+	UIManager.UIAll.OpposingTeamLabelsVisibility = _Visibility;
+}
+
+Void SetNbPlayers(Integer _NbPlayers)  {
+	G_NbPlayers  = _NbPlayers;
+}
+
+Void SetMultiPairing(Boolean _IsOn) {
+	G_IsMultiPairing = _IsOn;
+}
+
+Void Load(CTmMode _Mode, Text _ModeName, Boolean _IsRanking)
+{
+	G_Mode 		   <=> _Mode;
+	G_ModeName		= _ModeName;
+	G_IsRanking     = _IsRanking;
+	Unload();
+	UIManager.UIAll.OpposingTeamLabelsVisibility	= CUIConfig::ELabelsVisibility::WhenVisible;
+	UI::Load(G_Mode, G_ModeName, C_SpawnDuration, _IsRanking);
+	UIRewardScreens::Load(G_ModeName);
+	UIPairingPads::Load(G_ModeName);
+	SetVisibilityDifferentPlayerChoice(False);
+
+	G_HeadsetHasBeenMounted = False;
+	HideUI();
+	G_TimerStartCheckOpponent = -1;
+	ShowPressRestart(False);
+	ShowTimeOut(False);
+	ConstructCheckPrivilegeMenuLayer();
+	G_DespawnTimeOut = False;
+	G_RestartReminderActive = True;
+	
+	// Ladder::Load(G_Mode);	
+}
+
+Void Load(CTmMode _Mode, Text _ModeName)
+{
+	Load(_Mode, _ModeName, False);
+}
+
+// ---------------------------------- //
+/** Spawn a player for a race
+ *	If this player was already spawned, he will be respawned
+ *
+ *	@param	_Player				The player to spawn
+ *	@param	_StartTime			Server time of the beginning of the race
+ *	@param	_RegisterOnLadder	Try to register the player on the ladder if he wasn't
+ *	@param	_Anim321Go			Display or not the 321Go animation
+ */
+Void StartRace(CTmPlayer _Player, Integer _StartTime, Boolean _RegisterOnLadder, Boolean _Anim321Go) {
+	if (_Player == Null) return;
+	
+	declare libTMC_SpawnStatus for _Player = C_SpawnStatus_Waiting;
+	//if(G_ModeName != "Campaign_Solo")
+	//{
+		UI::SetVisibilityInGame(True);
+	//}
+	_Player.IsSpawned 				= True;
+	_Player.RaceStartTime 			= _StartTime;
+	G_TimerStartCheckOpponent 		= _StartTime+2000;
+	G_PlayerCheckpoint 				= 0;
+	G_CheckpointTimeOut 			= C_CheckpointTimeOutDelay;
+	libTMC_SpawnStatus 				= C_SpawnStatus_Racing;
+	SetUIPlayerStatus(_Player, C_SpawnStatus_Racing);
+	if(G_IsRanking)
+	{	
+		Update_Map_Ranking(_Player);
+		G_Map_PrevPlayerRanking = G_Map_PlayerRanking;
+		Update_Global_Ranking(_Player);
+		G_Global_PrevPlayerRanking = G_Global_PlayerRanking;
+	}
+
+	if(_RegisterOnLadder && _Player.Score != Null && !_Player.Score.IsRegisteredForLadderMatch) {
+		G_Mode.Ladder_AddPlayer(_Player.Score);
+	}
+	
+	// Undo forced visible scores table when starting race
+	declare UI <=> UIManager.GetUI(_Player);
+	if (UI != Null) {
+		if (UI.ScoreTableVisibility == CUIConfig::EVisibility::ForcedVisible) {
+			UI.ScoreTableVisibility = CUIConfig::EVisibility::None;
+		}
+		if (UI.UISequence != CUIConfig::EUISequence::Playing) {
+			UI.UISequence = CUIConfig::EUISequence::Playing;
+		}
+	}
+	UI::SetVisibilityInGame(True);
+	UI::SetShowInGame(True);
+}
+
+// ---------------------------------- //
+/** Spawn a player for a race
+ *	If this player was already spawned, he will be respawned
+ *
+ *	@param	_Player				The player to spawn
+ *	@param	_StartTime			Server time of the beginning of the race
+ *	@param	_RegisterOnLadder	Try to register the player on the ladder if he wasn't
+ */
+Void StartRace(CTmPlayer _Player, Integer _StartTime, Boolean _RegisterOnLadder) {
+	StartRace(_Player, _StartTime, True, True);
+}
+
+// ---------------------------------- //
+/** Spawn a player for a race
+ *	If this player was already spawned, he will be respawned
+ *
+ *	@param	_Player			The player to spawn
+ *	@param	_StartTime		Server time of the beginning of the race
+ */
+Void StartRace(CTmPlayer _Player, Integer _StartTime) {
+	StartRace(_Player, _StartTime, True);
+}
+
+// ---------------------------------- //
+/** Spawn a player for a race
+ *	If this player was already spawned, he will be respawned
+ *
+ *	@param	_Player		The player to spawn
+ */
+Void StartRace(CTmPlayer _Player) {
+	StartRace(_Player, G_Mode.Now + C_SpawnDuration, True);
+}
+
+// ---------------------------------- //
+/** Unspawn a racing player and send him in the outro sequence
+ *
+ *	@param	_Player		The player to unspawn
+ */
+Void EndRace(CTmPlayer _Player) {
+	if (_Player == Null) return;
+	
+	declare libTMC_SpawnStatus for _Player = C_SpawnStatus_Waiting;
+	libTMC_SpawnStatus = C_SpawnStatus_Outro;
+	SetUIPlayerStatus(_Player, C_SpawnStatus_Outro);
+	// UI::SetVisibilityInGame(False);
+	Private_OutroStart(_Player);
+	G_OpponentIdent 			= NullId;
+	G_TimerStartCheckOpponent 	= -1;
+	G_CheckpointTimeOut				= C_CheckpointTimeOutDelay;
+	ShowPressRestart(False);
+	ShowTimeOut(False);
+}
+
+// ---------------------------------- //
+/** Unspawn a racing player and skip the outro sequence
+ *
+ *	@param	_Player		The player to unspawn
+ */
+Void WaitRace(CTmPlayer _Player) {
+	if (_Player == Null) return;
+	
+	declare libTMC_SpawnStatus for _Player = C_SpawnStatus_Waiting;
+	
+	declare UI <=> UIManager.GetUI(_Player);
+	if (UI != Null) UI.UISequence = CUIConfig::EUISequence::None;
+	if (libTMC_SpawnStatus == C_SpawnStatus_Outro) Private_OutroStop(_Player);
+	
+	_Player.IsSpawned = False;
+	_Player.RaceStartTime = -1;
+	libTMC_SpawnStatus = C_SpawnStatus_Waiting;
+	SetUIPlayerStatus(_Player, C_SpawnStatus_Waiting);
+	G_TimerStartCheckOpponent 	= -1;
+	// UI::SetVisibilityInGame(False);
+	ShowPressRestart(False);
+	ShowTimeOut(False);
+	// UI::CancelAnim321Go();
+}
+
+Void SetUIInGameVisibility(Boolean _Visibility)
+{
+	UI::SetVisibilityInGame(_Visibility);
+}
+
+// ---------------------------------- //
+/// Unspawn all the Players
+Void WaitRaceAll() {
+	foreach (Player in AllPlayers) {
+		WaitRace(Player);
+	}
+}
+
+// ---------------------------------- //
+/** Check if a player is racing
+ *
+ *	@param	_Player		The player to check
+ *
+ *	@return		True if the player is racing, false otherwise
+ */
+Boolean IsRacing(CTmPlayer _Player) {
+	if (_Player == Null) return False;
+	
+	declare libTMC_SpawnStatus for _Player = C_SpawnStatus_Waiting;
+	
+	return (libTMC_SpawnStatus == C_SpawnStatus_Racing);
+}
+
+// ---------------------------------- //
+/** Check if a player is waiting to be spawned
+ *
+ *	@param	_Player		The player to check
+ *
+ *	@return		True if the player is waiting to be spawned, false otherwise
+ */
+Boolean IsWaiting(CTmPlayer _Player) {
+	if (_Player == Null) return False;
+	
+	declare libTMC_SpawnStatus for _Player = C_SpawnStatus_Waiting;
+	
+	return (libTMC_SpawnStatus == C_SpawnStatus_Waiting);
+}
+
+// ---------------------------------- //
+/** Check if a player is watching the outro sequence
+ *
+ *	@param	_Player		The player to check
+ *
+ *	@return		True if the player is watching the outro, false otherwise
+ */
+Boolean IsWatchingOutro(CTmPlayer _Player) {
+	if (_Player == Null) return False;
+	
+	declare libTMC_SpawnStatus for _Player = C_SpawnStatus_Waiting;
+	
+	return (libTMC_SpawnStatus == C_SpawnStatus_Outro);
+}
+
+// ---------------------------------- //
+/** Get the current spawn status of a player
+ *
+ *	@param	_Player		The player to check
+ *
+ *	@return		The current status of the player or -1 if the player doesn't exist
+ */
+Integer GetPlayerStatus(CTmPlayer _Player) {
+	if (_Player == Null) return -1;
+	
+	declare libTMC_SpawnStatus for _Player = C_SpawnStatus_Waiting;
+	return libTMC_SpawnStatus;
+}
+
+// ---------------------------------- //
+/**	Get a player from its login
+ *
+ *	@param	_Login		Login of the player to get
+ *	
+ *	@return				The player if found, Null otherwise
+ */
+CTmPlayer GetPlayer(Text _Login) {
+	foreach (Player in AllPlayers) {
+		if (Player.Login == _Login) return Player;
+	}
+	
+	return Null;
+}
+
+// ---------------------------------- //
+/**	Get a user from its login
+ *
+ *	@param	_Login		Login of the user to get
+ *	
+ *	@return				The user if found, Null otherwise
+ */
+CUser GetUser(Text _Login) {
+	if (_Login == "") return Null;
+	
+	foreach (User in G_Mode.Users) {
+		if (User.Login == _Login) return User;
+	}
+	
+	return Null;
+}
+
+// ---------------------------------- //
+/**	Get a score from its login
+ *
+ *	@param	_Login		Login of the score to get
+ *	
+ *	@return				The score if found, Null otherwise
+ */
+CTmScore GetScore(Text _Login) {
+	if (_Login == "") return Null;
+	
+	foreach (Score in G_Mode.Scores) {
+		if (Score.User != Null && Score.User.Login == _Login) return Score;
+	}
+	
+	return Null;
+}
+
+Void SetNbLaps(Integer _NbLaps, Boolean _IsMultiLap) {
+
+	//G_IsMultiLap = _IsMultiLap;
+	UI::SetNbLaps(_NbLaps, _IsMultiLap);
+}
+
+////////////////////////////////////////
+// OTHER FUNCTIONS                      
+
+
+Void SetPlayerId(Ident _Id) {
+	G_ThePlayerId = _Id;
+}
+
+Void SetNbPadsNeeded(Integer _NbPads) {
+	G_NbPadsNeeded = _NbPads;
+}
+
+Void SetPadsNeeded(Integer[Integer] _PadsNeeded) {
+	G_PadsNeeded = _PadsNeeded;
+}
+
+Void SetIsSymbiose(Boolean _IsSymbiose) {
+	G_IsSymbiose 	= _IsSymbiose;
+}
+
+Void ConfigSymbiose(CTmPlayer _Player, Boolean _DoesCoop, Integer _NbPlayer) {
+	G_NbPlayers 	= _NbPlayer;
+	G_IsSymbiose 	= _DoesCoop;
+	G_Player 	= _Player;
+	// SetSymbiose();
+}
+
+// ---------------------------------- //
+/**	Convert a time (Integer) to a Text
+ *
+ *	@param	_Time		The time to convert
+ *	
+ *	@return				The time converted in Text
+ */
+Text TimeToText(Integer _Time) {
+	if (_Time < 0) {
+		return "???";
+	}
+	
+	declare MilliSeconds = _Time % 1000;
+	declare Seconds = (_Time / 1000) % 60;
+	declare Minutes = (_Time / 60000) % 60;
+	declare Hours = (_Time / 3600000) % 24;
+	
+	declare Time = TL::FormatInteger(Minutes, 2)^":"^TL::FormatInteger(Seconds, 2)^"."^TL::FormatInteger(MilliSeconds, 3);
+	if (Hours > 0) Time = Hours^":"^Time;
+	return Time;
+}
+
+// ---------------------------------- //
+/**	Convert a Text to a time (Integer)
+ *
+ *	@param	_Value		The Text to convert
+ *	
+ *	@return				The Text converted in time
+ */
+Integer TextToTime(Text _Value) {
+	declare Time = 0;
+	declare Split = TL::Split(":", _Value);
+	
+	// mm:ss.xxx
+	if (Split.count == 2) { 
+		Time += TL::ToInteger(Split[0]) * 60000;
+		
+		// ss.xxx
+		declare Split2 = TL::Split(".", Split[1]);
+		if (Split2.count > 1) {
+			Time += TL::ToInteger(Split2[0]) * 1000;
+			Time += TL::ToInteger(Split2[1]);
+		} else {
+			Time += TL::ToInteger(Split2[0]) * 1000;
+		}
+	} 
+	// h:mm:ss.xxx
+	else if (Split.count == 3) { 
+		Time += TL::ToInteger(Split[0]) * 3600000;
+		Time += TL::ToInteger(Split[1]) * 60000;
+		
+		// ss.xxx
+		declare Split2 = TL::Split(".", Split[2]);
+		if (Split2.count > 1) {
+			Time += TL::ToInteger(Split2[0]) * 1000;
+			Time += TL::ToInteger(Split2[1]);
+		} else {
+			Time += TL::ToInteger(Split2[0]) * 1000;
+		}
+	} 
+	// ss.xxx
+	else {
+		declare Split2 = TL::Split(".", Split[0]);
+		if (Split2.count > 1) {
+			Time += TL::ToInteger(Split2[0]) * 1000;
+			Time += TL::ToInteger(Split2[1]);
+		} else {
+			Time += TL::ToInteger(Split2[0]) * 1000;
+		}
+	}
+	
+	if (Time < 0) Time = 0;
+	return Time;
+}
+
+// ---------------------------------- //
+/**	Inject TimeToText into a ManiaLink
+ *	
+ *	@return		TimeToText() function
+ */
+Text InjectMLTimeToText() {
+	return """
+Text TimeToText(Integer _Time) {
+	if (_Time < 0) {
+		return "???";
+	}
+	
+	declare MilliSeconds = _Time % 1000;
+	declare Seconds = (_Time / 1000) % 60;
+	declare Minutes = (_Time / 60000) % 60;
+	declare Hours = (_Time / 3600000) % 24;
+	
+	declare Time = TL::FormatInteger(Minutes, 2)^":"^TL::FormatInteger(Seconds, 2)^"."^TL::FormatInteger(MilliSeconds, 3);
+	if (Hours > 0) Time = Hours^":"^Time;
+	return Time;
+}""";
+}
+
+// ---------------------------------- //
+/**	Inject TextToTime into a ManiaLink
+ *	
+ *	@return			TextToTime() function
+ */
+Text InjectMLTextToTime() {
+	return """
+Integer TextToTime(Text _Value) {
+	declare Time = 0;
+	declare Split = TL::Split(":", _Value);
+	
+	// mm:ss.xxx
+	if (Split.count == 2) { 
+		Time += TL::ToInteger(Split[0]) * 60000;
+		
+		// ss.xxx
+		declare Split2 = TL::Split(".", Split[1]);
+		if (Split2.count > 1) {
+			Time += TL::ToInteger(Split2[0]) * 1000;
+			Time += TL::ToInteger(Split2[1]);
+		} else {
+			Time += TL::ToInteger(Split2[0]) * 1000;
+		}
+	} 
+	// h:mm:ss.xxx
+	else if (Split.count == 3) { 
+		Time += TL::ToInteger(Split[0]) * 3600000;
+		Time += TL::ToInteger(Split[1]) * 60000;
+		
+		// ss.xxx
+		declare Split2 = TL::Split(".", Split[2]);
+		if (Split2.count > 1) {
+			Time += TL::ToInteger(Split2[0]) * 1000;
+			Time += TL::ToInteger(Split2[1]);
+		} else {
+			Time += TL::ToInteger(Split2[0]) * 1000;
+		}
+	} 
+	// ss.xxx
+	else {
+		declare Split2 = TL::Split(".", Split[0]);
+		if (Split2.count > 1) {
+			Time += TL::ToInteger(Split2[0]) * 1000;
+			Time += TL::ToInteger(Split2[1]);
+		} else {
+			Time += TL::ToInteger(Split2[0]) * 1000;
+		}
+	}
+	
+	if (Time < 0) Time = 0;
+	return Time;
+}""";
+}
+
+Boolean GetPlayerDespawnTimeOut() {
+	return G_CheckpointTimeOut <= -500;
+}
+
+Boolean GetMustShowTimeOutLayer() {
+	return G_CheckpointTimeOut <= 5000;
+}
+
+Boolean GetMustShowPressRestart() {
+	return G_CheckpointTimeOut <= C_CheckpointShowRestartDelay;
+}
+
+Integer GetCustomPeriod() {
+	return G_Mode.Period;
+}
+
+Void SetStandbyMusic() {
+	//IGMusic::StandbyMusic(Players[0]);
+}
+
+Void SetStopMusic() {
+	//IGMusic::StopMusic(Players[0]);
+}
+
+Void SetReplayMusic() {
+	//IGMusic::ReplayMusic(Players[0]);
+}
+
+Void PlayerHasNewMedal(Integer _Medal) {
+	// DO NOTHING
+}
+
+Void SetRespawnFeedbackActive(Boolean _Show) {
+	G_RestartReminderActive = _Show;
+}
+
+Void FlushRewardAnswer(CTmPlayer _Player) {
+	UIRewardScreens::FlushRewardAnswer(_Player);
+}
+
+Integer GetSpawnDuration() {
+	return C_SpawnDuration;
+}
+
+
+// ---------------------------------- //
+/// Update the library
+Void Loop() 
+{
+
+	foreach (Player in Players) 
+	{
+		declare libTMC_SpawnStatus for Player = C_SpawnStatus_Waiting;
+		
+		/////////////////////////////
+		// OUTRO SEQUENCE
+		if(libTMC_SpawnStatus == C_SpawnStatus_Outro) 
+		{
+			declare libTMC_OutroEndTime for Player = -1;
+			declare libTMC_OutroScoresTableTime for Player = -1;
+		}
+		
+		/////////////////////////////
+		// OTHERS                    
+		else 
+		if(libTMC_SpawnStatus != C_SpawnStatus_Waiting) 
+		{
+			if (Player.RequestsSpectate || Player.RaceStartTime <= 0) 
+			{
+				WaitRace(Player);
+			}
+		} 
+		else 
+		if(libTMC_SpawnStatus == C_SpawnStatus_Waiting) 
+		{
+			if (Player.RaceStartTime > 0) WaitRace(Player);
+		}
+	}
+	
+	foreach(Event in G_Mode.PendingEvents)
+	{
+		if (Event.Type == CTmModeEvent::EType::WayPoint) 
+		{
+			// if(Event.IsEndRace) HideUI();
+			G_PlayerCheckpoint += 1;
+			G_CheckpointTimeOut = C_CheckpointTimeOutDelay;
+		}
+		else if(Event.Type == CTmModeEvent::EType::Respawn) {
+			G_CheckpointTimeOut = C_CheckpointTimeOutDelay;
+		}
+	}
+	
+	if(G_RestartReminderActive) {
+		foreach(Player in Players) {
+			declare Integer libTMC_SpawnStatus for Player;
+			if(Player.RaceStartTime > 0 && libTMC_SpawnStatus == C_SpawnStatus_Racing) {
+				G_CheckpointTimeOut -= G_Mode.Period;
+				// log(Now^">Loop"^G_CheckpointTimeOut);
+				if(GetMustShowPressRestart() ) {
+					if(!GetPlayerUseSpecialVision(Players[0])) {
+						ShowPressRestart(True);
+					}
+				} else {
+					ShowPressRestart(False);
+				}
+			}
+		}
+	} else {
+		ShowPressRestart(False);
+	} 
+}

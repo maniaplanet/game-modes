@@ -1,0 +1,387 @@
+#Include "Libs/Nadeo/Common/Core/MenuLayers.Script.txt"													as Layers
+#Include "Libs/Nadeo/Common/Core/Pages.Script.txt"														as Pages
+#Include "Libs/Nadeo/Common/Core/Logger.Script.txt"														as Logger
+#Include "Libs/Nadeo/Common/Core/SectionsManager.Script.txt"												as SectionsManager
+#Include "TextLib"																					as TextLib
+#Include "Libs/Nadeo/MP4/TPLagoon/Components/GlobalButtons/GlobalButtonsController.Script.txt"			as GlobalButtonsController
+
+#Include "Libs/Nadeo/MP4/TPLagoon/Components/ManiaCredits/ManiaCreditsController.Script.txt"			as ManiaCreditsController
+#Include "Libs/Nadeo/MP4/Common/Components/DialogBox/DialogBoxController.Script.txt"					as DialogBoxController
+#Include "Libs/Nadeo/MP4/TPLagoon/TokenManager.Script.txt"												as TokenManager
+#Include "Libs/Nadeo/MP4/TPLagoon/XMLController.Script.txt"												as XMLController
+
+//APIs
+#Include "Libs/Nadeo/MP4/TPLagoon/Components/Solo/SoloAPI.Script.txt"									as SoloAPI
+#Include "Libs/Nadeo/MP4/TPLagoon/Components/G_RankingModule/RankingAPI.Script.txt"						as RankingAPI
+#Include "Libs/Nadeo/MP4/TPLagoon/Components/Multiplayer/MultiplayerAPI.Script.txt"						as MultiplayerAPI
+
+//Layers
+#Include "Libs/Nadeo/MP4/TPLagoon/Components/SectionsSelector/LBSectionsSelector.Script.txt"			as LBSectionsSelector
+#Include "Libs/Nadeo/MP4/TPLagoon/Components/SectionsSelector/LBNewInfo.Script.txt"						as LBNewInfo
+
+declare Text 	   			G_ImgLogo;
+declare Text[Text] 			G_Polices;
+declare Text	   			G_NewsColor;
+declare Boolean   			G_Auth_Success;
+declare Text				G_LayerNameUpdateSectionInfos;
+
+declare CHttpRequest[Text]  G_Requests;
+declare Text				G_Base_API_Url;
+declare Text[Text][]		G_News_PostList;
+//declare Text[Text][]		G_Home_Posts;
+//declare Integer				G_Home_PostsTick;
+//declare Text[Text]			G_News_Post;
+//declare Integer				G_News_PostTick;
+//declare Integer				G_News_Offset;
+//declare Integer				G_News_Length;
+
+Void WarnNotEnoughParams(CManiaAppEvent _Event) {
+	Logger::Warn("[Menucontroller] event "^_Event.CustomEventType^": not enough params ["^_Event.CustomEventData^"]");
+}
+
+Void SetLogo(Text _ImgLogo)
+{
+	G_ImgLogo = _ImgLogo;
+}
+
+Void Build(Text _LayerName, Boolean _Attach) {
+
+	declare Text MLText;
+	switch(_LayerName) {
+		case("SectionsSelector"):{
+			MLText = LBSectionsSelector::Build();
+		}
+		case("NewInfo"):{
+			MLText = LBNewInfo::Build();
+		}
+	}
+
+	if(MLText == "") {
+		Logger::Warn("Unknown Page: "^_LayerName);
+		return;
+	}
+	
+	Layers::Create(_LayerName, MLText);
+	
+	declare CUILayer Layer <=> Layers::Get(_LayerName);
+	declare Text Page_LayerName for Layer.LocalPage;
+	
+	Page_LayerName = _LayerName;
+	if(_Attach) Layers::Attach(_LayerName);
+}
+
+Void Build(Text _LayerName) {
+	Build(_LayerName, False);
+}
+
+Text Http_GetHeaders() {
+    return "Accept: application/xml";
+}
+
+CHttpRequest GetTitlePosts(Text _Uid, Integer _Length, Integer _Offset) {
+    return Http.CreateGet(
+        """{{{G_Base_API_Url}}}/flashes/+{{{_Uid}}}?length={{{_Length}}}&offset={{{_Offset}}}""",
+        False,
+        Http_GetHeaders()
+    );
+}
+
+Void Load(Text[Text] _Polices, Text _NewsColor) {
+	Build("SectionsSelector");
+	Build("NewInfo");
+	Pages::Compose("SectionsSelector", ["SectionsSelector", "NewInfo"]);
+	G_Polices = _Polices;
+	G_NewsColor = _NewsColor;
+
+    if(TextLib::SubString(ManiaAppUrl, 0, 16) == "http://127.0.0.1") {
+        G_Base_API_Url = ManiaAppBaseUrl ^ "../../app_dev.php/api/";
+    } else {
+        G_Base_API_Url = ManiaAppBaseUrl ^ "../../api/";
+    }
+	G_LayerNameUpdateSectionInfos = "";
+}
+
+Void UpdateRanking()
+{
+	declare CUILayer		LayerToSend = Layers::Get("SectionsSelector");
+	declare Text[Text]		Ranking_ZoneScores		for LayerToSend.LocalPage;
+	declare Text[][Text]	Ranking_ZoneTexts		for LayerToSend.LocalPage;
+	declare Text			Ranking_PromotionMedal	for LayerToSend.LocalPage;
+	declare Text[Text]		Ranking_RemainingPoints	for LayerToSend.LocalPage;
+	Ranking_ZoneScores["SectionsSelector"]	= RankingAPI::GetGlobalPoints();
+	Ranking_ZoneTexts["SectionsSelector"]	= RankingAPI::GetGlobalPlayerRanking();
+	Ranking_ZoneScores["Solo"]				= SoloAPI::GetSkillPoints();
+	Ranking_ZoneTexts["Solo"]				= SoloAPI::GetCampaignPlayerRanking();
+	Ranking_RemainingPoints["Solo"]			= TextLib::Compose(_("|You need xxx medals to be promoted|%1 medals left"), TextLib::ToText(SoloAPI::Get_NbMedalsToNextPromotion()));
+	Ranking_ZoneScores["Multiplayer"]		= MultiplayerAPI::GetMultiplayerEchelon();
+	Ranking_ZoneTexts["Multiplayer"]		= MultiplayerAPI::GetMultiplayerPlayerRanking();
+	Ranking_RemainingPoints["Multiplayer"]	= TextLib::Compose(_("|You need xxx Ladder Points to be promoted|%1 LP left"), TextLib::ToText(MultiplayerAPI::Get_PointsToNextPromotion()));
+	Ranking_PromotionMedal					= SoloAPI::Get_PromotionMedal();
+	LayerCustomEvent(LayerToSend, "RankingSent", Text[]);
+}
+
+//XML Parse functions
+CXmlDocument Xml_CreateDocument(Text _XmlText) {
+	declare CXmlDocument Doc <=> Xml.Create(_XmlText, True, True, False);
+	if(Doc == Null) {
+	}
+	return Doc;
+}
+
+Text Xml_NodeToText(CXmlNode _Node) {
+	if(_Node == Null) {
+		return "";
+	}
+	declare CXmlNode SubNode = _Node.GetFirstChild (_Node.Name);
+    return _Node.TextContents;
+}
+
+Text[Text] Xml_NodeToText_TextArray(CXmlNode _Node) {
+	declare Text[Text] result;
+	if(_Node == Null) {
+		return result;
+	}
+	foreach(Child in _Node.Children) {
+		//log("Child.Name: " ^ Child.Name);
+		result[Child.Name] = Xml_NodeToText(Child);
+	}
+
+	return result;
+}
+
+
+Void Xml_DestroyDocument(CXmlDocument _Doc) {
+	if (_Doc != Null)
+	{
+		Xml.Destroy(_Doc);
+	}
+}
+
+Text[Text][] Xml_NodeToText_TextArray_Array(CXmlNode _Node) {
+	declare Text[Text][] result;
+	if(_Node == Null) {
+		return result;
+	}
+	foreach(Child in _Node.Children) {
+		result.add(Xml_NodeToText_TextArray(Child));
+	}
+	return result;
+}
+
+Boolean IsPlayerLogin(Text _Url)
+{
+	declare Text[] SplitUrl = TextLib::Split("@", _Url);
+	if(SplitUrl.count <= 1) return True;
+	return False;
+}
+
+Boolean UpdateSectionInfos(Text _LayerName)
+{
+	declare CUILayer LayerToSend = Layers::Get(_LayerName);
+	if(LayerToSend == Null) {
+		Logger::Warn("UpdateSectionInfos : " ^ _LayerName ^ " == Null");
+		return False;
+	}
+	declare Text[] Sections_Name          for LayerToSend.LocalPage;
+	declare Text[] Sections_FirstPage     for LayerToSend.LocalPage;
+	declare Text[] Sections_QuadSubstyle  for LayerToSend.LocalPage;
+	declare Vec3[] Sections_Color         for LayerToSend.LocalPage;
+	declare Text[Text] LabelPolices       for LayerToSend.LocalPage;
+	declare Text[Text] Page_Logo_Sections for LayerToSend.LocalPage;
+	declare Vec3	Sections_NewsColor	  for LayerToSend.LocalPage;
+	declare Text[Text] Logo_Sections      for LocalUser;
+
+	Sections_Name         = SectionsManager::GetSections_Name();
+	Sections_FirstPage    = SectionsManager::GetSections_FirstPage();
+	Sections_QuadSubstyle = SectionsManager::GetSections_QuadSubstyle();
+	Sections_Color        = SectionsManager::GetSections_Color();
+	LabelPolices          = G_Polices;
+	Page_Logo_Sections    = Logo_Sections;
+	Sections_NewsColor    = TextLib::ToColor(G_NewsColor);
+
+	if (!LayerToSend.IsLocalPageScriptRunning) {
+		return False;
+	}
+	LayerCustomEvent(LayerToSend, "SectionInfosSent", [""]);
+	UpdateRanking();
+	return True;
+}
+
+Void Loop() {
+	if (G_LayerNameUpdateSectionInfos != "" && UpdateSectionInfos(G_LayerNameUpdateSectionInfos)) {
+		G_LayerNameUpdateSectionInfos = "";
+	}
+	foreach(Event in PendingEvents) {
+		if(Event.Type != CManiaAppEvent::EType::LayerCustomEvent) continue;
+		switch(Event.CustomEventType) {
+			case "GetSections": {
+				if(Event.CustomEventData.count < 1) {
+					WarnNotEnoughParams(Event);
+					continue;
+				}
+				declare Text LayerName = Event.CustomEventData[0];
+
+				if (!UpdateSectionInfos(LayerName)) {
+					G_LayerNameUpdateSectionInfos = LayerName;
+				}
+			}
+			case "HelpShow": {
+				declare CUILayer LayerToSend = Layers::Get("SectionsSelector");
+				LayerToSend.IsVisible = True;
+				LayerCustomEvent(LayerToSend, "ForceShow", Text[]);
+			}
+			case "SectionsSelector_UpdateRanking": {
+				UpdateRanking();
+			}
+			case "GotoSection": {
+				if(Event.CustomEventData.count < 1) {
+					WarnNotEnoughParams(Event);
+					continue;
+				}
+				declare Text[] Sections_Name         = SectionsManager::GetSections_Name();
+				declare Integer SectionId = TextLib::ToInteger(Event.CustomEventData[0]);
+
+				SectionsManager::SetActualSection(SectionId);
+				declare Text NewPage = SectionsManager::GetSection_FirstPageById(SectionId);
+				Pages::GotoNext(NewPage);
+				GlobalButtonsController::UpdateHome(True);
+				GlobalButtonsController::UpdateBack(True);
+				GlobalButtonsController::UpdateSection(Sections_Name[SectionId]);
+			}
+			case "MainMenu_ShowProfile": {
+				//SectionsManager::SetActualSection("Profil");
+				//Pages::GotoNext("ProfilMain");
+				Menu_Profile();
+			}
+			case "ManiaCreditsStart": {
+				ManiaCreditsController::Show();
+			}
+			case "SendRankingInfos": {
+				UpdateRanking();
+			}
+			case "News_Click": {
+				
+				if(Event.CustomEventData.count < 1) {
+					WarnNotEnoughParams(Event);
+					continue;
+				}
+
+				declare Integer Index = TextLib::ToInteger(Event.CustomEventData[0]);
+				declare Text UidTitle = XMLController::GetFlashUrl();
+				//UidTitle = "TMStadium@nadeo";
+				//UidTitle = "ansjh";
+				declare Text Url;
+				if(IsPlayerLogin(UidTitle))
+				{
+					Url = "https://www.maniaplanet.com/players/"^UidTitle;
+				}
+				else
+				{
+					Url = "https://www.maniaplanet.com/t/"^UidTitle^"/flashes/" ^ Index;
+
+				}
+				//flash?53
+				OpenLink(Url, CManiaApp::ELinkType::ExternalBrowser);
+			}
+			case "News_Repost": {
+				
+				if(Event.CustomEventData.count < 1) {
+					WarnNotEnoughParams(Event);
+					continue;
+				}
+
+				declare Integer Index = TextLib::ToInteger(Event.CustomEventData[0]);
+				declare Text UidTitle = XMLController::GetFlashUrl();
+				//UidTitle = "TMStadium@nadeo";
+				//https://www.maniaplanet.com/flash/manager/41/repost
+				declare Text Url = "https://www.maniaplanet.com/flash/manager/"^Index^"/repost";
+				OpenLink(Url, CManiaApp::ELinkType::ExternalBrowser);
+			}
+			case "ShowNewsInfo": {
+
+				declare Text Index = Event.CustomEventData[0];
+				declare CUILayer		LayerToSend = Layers::Get("NewInfo");
+				declare Text[Text][] News_PostList for LayerToSend.LocalPage;
+				News_PostList      = G_News_PostList;
+				LayerCustomEvent(LayerToSend, "ShowNewsInfo", [Index]);
+			}
+			case "NewsHidden": {
+				declare CUILayer		LayerToSend = Layers::Get("SectionsSelector");
+				LayerCustomEvent(LayerToSend, "NewsHidden", Text[]);
+			}
+		}
+	}
+
+	//GetNews
+	if(!G_Auth_Success && TokenManager::Is_Auth_Success())
+	{
+		G_Auth_Success = True;
+		declare Text UidTitle = XMLController::GetFlashUrl();
+		//UidTitle = "TMStadium@nadeo";
+		//UidTitle = "ansjh";
+		if(IsPlayerLogin(UidTitle))
+		{
+			UidTitle = "@"^UidTitle;
+		}
+		else
+		{
+			UidTitle = "+"^UidTitle;
+		}
+
+		declare Text Url = "https://www.maniaplanet.com/webservices/flashes/post/"^UidTitle^"?offset=0&length=3";
+		G_Requests["PostList"] = Http.CreateGet(Url, False, """Maniaplanet-Auth: Login="{{{ LocalUser.Login }}}", Token="{{{ Authentication_Token }}}" """ ^"\nAccept: application/xml");
+	}
+
+	foreach (Key => Request in G_Requests) {
+		if (!Request.IsCompleted) {
+			continue;
+		}
+		if (Request.StatusCode < 200 || Request.StatusCode >= 300) {
+			log("""ERROR Url     {{{Request.Url}}}""");
+			log("""ERROR Code    {{{Request.StatusCode}}}""");
+			log("""ERROR Content {{{Request.Result}}}""");
+		} else {
+			declare CXmlDocument XmlDoc = Xml_CreateDocument(Request.Result);
+			if(XmlDoc == Null)
+			{
+				log("XmlDoc est Null");
+				Http.Destroy(Request);
+				G_Requests.removekey(Key);
+				continue;
+			}
+			declare ResultNode = XmlDoc.GetFirstChild("response");
+			if (ResultNode != Null) {
+				switch (Key) {
+					//case "Posts": {
+					//	Home_Posts = Xml_NodeToText_TextArray_Array(ResultNode);
+					//	Home_PostsTick += 1;
+					//}
+					case "PostList": {
+						declare CUILayer		LayerToSend = Layers::Get("SectionsSelector");
+						declare Text[Text][] News_PostList for LayerToSend.LocalPage;
+						declare Integer		 News_PostListTick for LayerToSend.LocalPage;
+						G_News_PostList    = Xml_NodeToText_TextArray_Array(ResultNode);
+						News_PostList      = G_News_PostList;
+						News_PostListTick += 1;
+					}
+					//case "ServerList": {
+					//	Multiplayer_ServerList = Xml_NodeToText_TextArray_Array(ResultNode);
+					//	Multiplayer_ServerListTick += 1;
+					//}
+				}
+			} else {
+			    log("ERROR API Response is " ^ Request.Result);
+			}
+			ResultNode = Null;
+			Xml_DestroyDocument(XmlDoc);
+			XmlDoc = Null;
+		}
+		Http.Destroy(Request);
+		G_Requests.removekey(Key);
+	}
+}
+
+Text GenerateXML ()
+{
+	return "";
+}

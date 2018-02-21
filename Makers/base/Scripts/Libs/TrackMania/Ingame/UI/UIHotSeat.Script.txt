@@ -1,0 +1,556 @@
+/** 
+ *	In-Game UI library
+ */
+
+#Const Version		"2014-06-30"
+#Const ScriptName	"UIHotSeat.Script.txt"
+
+
+#Include "Libs/Nadeo/Common/Ingame/IngameLayers.Script.txt" 										as Layers
+
+#Include "Libs/Nadeo/MP4/Common/Colors.Script.txt" 								as Colors
+#Include "Libs/Nadeo/Common/ManialinkTools/UIPadButtons.Script.txt"						as UIButtons
+#Include "Libs/Trackmania/Ingame/UI/UIButtonNamesPopup.Script.txt"			as UIButtonNamesPopup
+
+#Include "Libs/Trackmania/Ingame/UI/Layers/LB_MenuStart.Script.txt"			as LB_MenuStart
+#Include "Libs/Trackmania/Ingame/UI/Layers/LB_SelectNbPlayers.Script.txt"	as LB_SelectNbPlayers
+#Include "Libs/Trackmania/Ingame/UI/Layers/LB_MenuStatus.Script.txt"		as LB_MenuStatus
+#Include "Libs/Trackmania/Ingame/UI/Layers/LB_MenuNextMap.Script.txt"		as LB_MenuNextMap
+
+#Const IMGPATH										"file://Media/Images/TMConsole/Ingame/"
+#Const IMG_HOTSEAT									"mode-hotseat.dds"
+
+#Const SOUNDPATH									"file://Media/Sounds/TMConsole/"
+#Const SOUNDPATH_VOICE								"file://Media/Sounds/TMConsole/Voices/Hotseat/"
+#Const SOUND_VOICE_TEAMSELECT						"voice-hotseat-teamselect-"
+#Const SOUND_VOICE_VICTORY							"voice-hotseat-victory-"
+#Const SOUND_VOICE_TRYAGAIN							"voice-hotseat-tryagain-"
+#Const SOUND_VOICE_OUTOFGAS							"voice-hotseat-outofgas-"
+#Const SOUND_VOICE_CONGRATS							"voice-hotseat-congrats-"
+#Const SOUND_VOICE_NEXTPLAYER_LEADER				"voice-hotseat-nextplayerleader-"
+#Const SOUND_VOICE_NEXTPLAYER_NORMAL				"voice-hotseat-nextplayernormal-"
+#Const SOUND_VOICE_NEXTPLAYER_POSITIVE				"voice-hotseat-nextplayerpositive-"
+
+#Const C_COMMENTARIES_MAXCOUNT_TRYAGAIN				20
+#Const C_COMMENTARIES_MAXCOUNT_OUTOFGAS				19
+#Const C_COMMENTARIES_MAXCOUNT_CONGRATS				17
+#Const C_COMMENTARIES_MAXCOUNT_NEXTPLAYER_LEADER	17
+#Const C_COMMENTARIES_MAXCOUNT_NEXTPLAYER_NORMAL	6
+#Const C_COMMENTARIES_MAXCOUNT_NEXTPLAYER_POSITIVE	4
+
+#Const C_COMMENTARIES_MAXCOUNT_TEAMSELECT_RED		3
+#Const C_COMMENTARIES_MAXCOUNT_TEAMSELECT_BLUE		4
+#Const C_COMMENTARIES_MAXCOUNT_TEAMSELECT_GREEN		8
+#Const C_COMMENTARIES_MAXCOUNT_TEAMSELECT_PURPLE	4
+#Const C_COMMENTARIES_MAXCOUNT_TEAMSELECT_PINK		5
+#Const C_COMMENTARIES_MAXCOUNT_TEAMSELECT_CYAN		3
+#Const C_COMMENTARIES_MAXCOUNT_TEAMSELECT_BLACK		4
+#Const C_COMMENTARIES_MAXCOUNT_TEAMSELECT_WHITE		3
+
+#Const C_COMMENTARIES_MAXCOUNT_VICTORY_RED			5
+#Const C_COMMENTARIES_MAXCOUNT_VICTORY_BLUE			3
+#Const C_COMMENTARIES_MAXCOUNT_VICTORY_GREEN		3
+#Const C_COMMENTARIES_MAXCOUNT_VICTORY_PURPLE		3
+#Const C_COMMENTARIES_MAXCOUNT_VICTORY_PINK			4
+#Const C_COMMENTARIES_MAXCOUNT_VICTORY_CYAN			3
+#Const C_COMMENTARIES_MAXCOUNT_VICTORY_BLACK		5
+#Const C_COMMENTARIES_MAXCOUNT_VICTORY_WHITE		4
+
+#Const SOUND_PLAYER_OUT	   							"hotseat-player-out.ogg"
+		
+#Const C_MAXPLAYERS_COUNT 							8
+
+#Const C_LAYERNAME_SELECNBPLAYERS 					"Layer_TMC_SelecNbPlayers"
+#Const C_LAYERNAME_MENUSTATUS 						"Layer_TMC_MenuStatus"
+#Const C_LAYERNAME_FINALRANKING						"Layer_TMC_FinalRanking"
+#Const C_LAYERNAME_DRIVERMODE						"Layer_TMC_DriverMode"
+#Const C_LAYERNAME_RESTARTGAME						"Layer_TMC_RestartGame"
+
+#Const MODE_COLORID_MULTIPLAYER						1
+
+#Const COLORS_MAXCOUNT 	8
+
+#Const COLOR_BLUE 		0
+#Const COLOR_RED 		1
+#Const COLOR_GREEN 		2
+#Const COLOR_PURPLE 	3
+#Const COLOR_PINK 		4
+#Const COLOR_CYAN 		5
+#Const COLOR_BLACK 		6
+#Const COLOR_WHITE 		7
+
+#Const C_PLAYERCHOICE_QUIT		0
+#Const C_PLAYERCHOICE_RESTART	1
+
+declare Ident G_ThePlayerId;
+
+
+Void Private_CreateLayerSounds()
+{
+	
+	declare Text MLText;
+
+	MLText ^= """
+	<script><!--
+		#Include "MathLib" as ML
+		
+		main()
+		{
+			while(True)
+			{
+				yield;
+				if(GUIPlayer == Null) continue;
+			}
+		}
+	--></script>
+
+	""";
+
+	Layers::Create("HotSeat_Sounds", MLText);
+	Layers::Attach("HotSeat_Sounds");
+}
+
+Boolean GetFinalTableAnswer() {
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netread Boolean Net_Layer_TMC_FinalRanking_PopupChoice 	for UI;
+	declare netread Integer Net_Layer_TMC_FinalRanking_PopupUpdate 	for UI;
+	declare 		Integer Prev_Layer_TMC_FinalRanking_PopupUpdate 	for UI;
+	if(Prev_Layer_TMC_FinalRanking_PopupUpdate != Net_Layer_TMC_FinalRanking_PopupUpdate) {
+		Prev_Layer_TMC_FinalRanking_PopupUpdate = Net_Layer_TMC_FinalRanking_PopupUpdate;
+		Layers::SetVisibility(C_LAYERNAME_MENUSTATUS, False);
+		return True;
+	}
+	return False;
+}
+
+Text GetPopupInput()
+{
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netread Text Net_Layer_TMC_MenuStatus_ButtonPressed 	for UI;
+	return Net_Layer_TMC_MenuStatus_ButtonPressed;
+
+}
+
+Boolean GetPopUpAnswer()
+{
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netread Boolean Net_Layer_TMC_MenuStatus_PopupChoice 	for UI;
+	declare netread Integer Net_Layer_TMC_MenuStatus_PopupUpdate 	for UI;
+	declare 		Integer Prev_Layer_TMC_MenuStatus_PopupUpdate 	for UI;
+	if(Prev_Layer_TMC_MenuStatus_PopupUpdate != Net_Layer_TMC_MenuStatus_PopupUpdate)
+	{
+		log("Is different: "^Prev_Layer_TMC_MenuStatus_PopupUpdate^" "^Net_Layer_TMC_MenuStatus_PopupUpdate);
+		Prev_Layer_TMC_MenuStatus_PopupUpdate = Net_Layer_TMC_MenuStatus_PopupUpdate;
+		Layers::SetVisibility(C_LAYERNAME_MENUSTATUS, False);
+		return True;
+	}
+	return False;
+}
+
+Void ShowPopup(Text _Title, Text _Subtitle, Text _ColorText, Vec3 _Color, Text _Message1, Text _Message2, Text[] _Inputs)
+{
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Text 		Net_MenuStatusTitle			for UI;
+	declare netwrite Text 		Net_MenuStatusSubtitle		for UI;
+	declare netwrite Text 		Net_MenuStatusColorText		for UI;
+	declare netwrite Vec3 		Net_MenuStatusColor			for UI;
+	declare netwrite Text 		Net_MenuStatusMessage1		for UI;
+	declare netwrite Text 		Net_MenuStatusMessage2		for UI;
+	declare netwrite Text[] 	Net_MenuStatusInputs		for UI;
+	
+	Net_MenuStatusTitle 		= _Title;
+	Net_MenuStatusSubtitle 		= _Subtitle;
+	Net_MenuStatusColorText 	= _ColorText;
+	Net_MenuStatusColor 		= _Color;
+	Net_MenuStatusMessage1 		= _Message1;
+	Net_MenuStatusMessage2 		= _Message2;
+	Net_MenuStatusInputs 		= _Inputs;
+
+	Layers::SetVisibility(C_LAYERNAME_MENUSTATUS, True);
+}
+
+Void ShowPopup(Text _Title, Text _Subtitle, Text _ColorText, Vec3 _Color, Text _Message1, Text _Message2, Text _InputText)
+{
+	declare IMGSelect = UIButtons::GetImage(CManiaAppEvent::EMenuNavAction::Select);
+	ShowPopup(_Title, _Subtitle, _ColorText, _Color, _Message1, _Message2, [IMGSelect, _InputText]);
+}
+
+Void HidePopup()
+{
+	Layers::SetVisibility(C_LAYERNAME_MENUSTATUS, False);
+}
+
+Void ConstructFinalRanking(Text[] PlayersName, Integer[] PlayersTime, Vec3[] PlayersColor, Integer _NbPlayer) {
+	Layers::Destroy(C_LAYERNAME_FINALRANKING);
+	
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Text[] 	Net_ScoresTableInputs 				for UI;
+	declare netwrite Integer[] 	Net_ScoresTableMenuRanks			for UI;
+	declare netwrite Text[] 	Net_ScoresTableMenuName 			for UI;
+	declare netwrite Integer[] 	Net_ScoresTableMenuTime 			for UI;
+	declare netwrite Integer[] 	Net_ScoresTableMenuMedal 			for UI;
+	declare netwrite Vec3[] 	Net_ScoresTableMenuColor 			for UI;
+	declare netwrite Integer 	Net_ScoresTableMenuSelectedPlayer	for UI;
+	declare netwrite Text[] 	Net_MenuFinalInputs					for UI;
+	declare IMGSelect 	= UIButtons::GetImage(CManiaAppEvent::EMenuNavAction::Select);
+	declare TXTSelect 		= UIButtonNamesPopup::GetSelectText();
+	Net_MenuFinalInputs 	= [IMGSelect, TXTSelect];
+	
+	Net_ScoresTableMenuSelectedPlayer = 0;
+	Net_ScoresTableMenuRanks.clear();
+	Net_ScoresTableMenuName.clear();
+	Net_ScoresTableMenuTime.clear();
+	Net_ScoresTableMenuMedal.clear();
+	Net_ScoresTableMenuColor.clear();
+	
+	for(I, 0, _NbPlayer-1)  {
+		Net_ScoresTableMenuRanks.add(I + 1);
+		Net_ScoresTableMenuName.add(PlayersName[I]);
+		Net_ScoresTableMenuTime.add(PlayersTime[I]);
+		Net_ScoresTableMenuMedal.add(4);
+		Net_ScoresTableMenuColor.add(PlayersColor[I]);
+	}
+	
+	Layers::SetVisibility(C_LAYERNAME_FINALRANKING, False);
+}
+
+Void SetFinalTableLayerVisibility(Boolean Visibility) {
+	Layers::SetVisibility(C_LAYERNAME_FINALRANKING, Visibility);
+}
+
+Void SetThePlayerId(Ident _ThePlayerId) {
+	G_ThePlayerId = _ThePlayerId;
+}
+
+Void ConstructPauseMenuPopup() 
+{
+	declare Text MLText = LB_MenuStart::Build();
+	Layers::Create("Menu", MLText);
+	Layers::SetType("Menu", CUILayer::EUILayerType::InGameMenu);
+	Layers::Attach("Menu");
+}
+
+Void ConstructCameraReInit() {
+	declare Text MLText;
+
+	MLText ^= """
+	<script><!--
+		#Include "MathLib" as ML
+		
+		main()
+		{
+			declare netread Integer Net_CurPlayerIndex for UI;
+			declare Integer Pre_CurPlayerIndex = Net_CurPlayerIndex;
+			declare Integer[Integer] CamSwitcher_PlayerCams;
+			declare Integer Pre_CurrentCamera;
+			while(True)
+			{
+				yield;
+				if(GUIPlayer == Null) continue;
+				
+				if(Pre_CurPlayerIndex != Net_CurPlayerIndex && Net_CurPlayerIndex != -1) {
+					if(!CamSwitcher_PlayerCams.existskey(Net_CurPlayerIndex)) {
+						CamSwitcher_PlayerCams[Net_CurPlayerIndex] 		= 5;
+						CurPlayerCamera 								= CamSwitcher_PlayerCams[Net_CurPlayerIndex];
+						Pre_CurrentCamera 								= CurPlayerCamera;
+					} else {
+						CurPlayerCamera 	= CamSwitcher_PlayerCams[Net_CurPlayerIndex];
+						Pre_CurrentCamera 	= CurPlayerCamera;
+						log(CamSwitcher_PlayerCams);
+					}
+					// log("restore cam " ^ Net_CurPlayerIndex ^ " = " ^ CurPlayerCamera);
+					Pre_CurPlayerIndex = Net_CurPlayerIndex;
+				}
+				
+				if(CurPlayerCamera != Pre_CurrentCamera) {
+					CamSwitcher_PlayerCams[Net_CurPlayerIndex] = CurPlayerCamera;
+					// log("save cam " ^ Net_CurPlayerIndex ^ " = " ^ CurPlayerCamera);
+					Pre_CurrentCamera = CurPlayerCamera;
+				}
+			}
+		}
+	--></script>
+
+	""";
+
+	Layers::Create("HotSeat_Camera", MLText);
+	Layers::Attach("HotSeat_Camera");
+}
+
+Void ConstructMainPopups() {
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Integer	Net_GamePhaseUIUpdate		for UI;
+	declare netwrite Integer	Net_GamePhaseUIType			for UI;
+	declare netwrite Integer 	Pre_ActionValidated 		for UI;
+	declare netwrite Integer 	Net_NbPlayerFromServer 		for UI;
+	declare netwrite Boolean 	Net_NobodyHasWon 			for UI;
+	// declare netwrite Boolean	Net_IsSymbiose				for UI;
+	declare netwrite Text[] 	Net_MenuMainInputs			for UI;
+	declare netwrite Text[] 	Net_MenuStatusInputs		for UI;
+	declare netwrite Text[] 	Net_MenuNbPlayersInputs		for UI;
+	declare netwrite Text 		Net_MenuStatusColorText		for UI;
+	declare netwrite Vec3 		Net_MenuStatusColor			for UI;
+	declare netwrite Text 		Net_MenuStatusTitle			for UI;
+	declare netwrite Text 		Net_MenuStatusSubtitle		for UI;
+	
+	declare ColorOrange			= Colors::GetColor("Orange");
+	
+	declare IMGSelect 		= UIButtons::GetImage(CManiaAppEvent::EMenuNavAction::Select);
+	declare IMGCancel 		= UIButtons::GetImage(CManiaAppEvent::EMenuNavAction::Cancel);
+	declare TXTSelect 		= UIButtonNamesPopup::GetSelectText();
+	declare TXTContinue		= UIButtonNamesPopup::GetContinueText();
+	declare TXTCancel 		= UIButtonNamesPopup::GetBackText();
+	
+	//L16N. Infinitive. Action for the player to change his nickname during game
+	declare TXTChangeName 	= _("Change Name");
+	
+	Net_MenuMainInputs 		= [IMGSelect, TXTSelect, IMGCancel, TXTCancel];
+	Net_MenuStatusInputs 	= [IMGSelect, TXTContinue, IMGCancel, TXTChangeName];
+	Net_MenuNbPlayersInputs = [IMGSelect, TXTSelect];
+	
+	Net_MenuStatusColor		= ColorOrange;
+	Net_MenuStatusColorText = "ORANGE BROS.";
+	
+	Net_MenuStatusTitle 	= IMGPATH^IMG_HOTSEAT;
+	Net_MenuStatusSubtitle 	= _("One after the other");
+	
+	Net_GamePhaseUIUpdate 	= 0;
+	Net_GamePhaseUIType		= 3;
+	Pre_ActionValidated 	= 0;
+	Net_NbPlayerFromServer 	= 0;
+	Net_NobodyHasWon 		= False;
+	
+	declare Text MLText = LB_MenuStatus::Build();
+	Layers::Create(C_LAYERNAME_MENUSTATUS, MLText);
+	Layers::Attach(C_LAYERNAME_MENUSTATUS);
+
+	Layers::SetVisibility(C_LAYERNAME_MENUSTATUS, False);
+	Private_CreateLayerSounds();
+}
+
+Void ConstructSelectNbPlayersPopup() {
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Text[] 	Net_MenuNbPlayersInputs		for UI;
+	declare netwrite Text 		Net_MenuStatusTitle			for UI;
+	declare netwrite Text 		Net_MenuStatusSubtitle		for UI;
+	
+	declare IMGSelect 		= UIButtons::GetImage(CManiaAppEvent::EMenuNavAction::Select);
+	declare TXTSelect 		= UIButtonNamesPopup::GetSelectText();
+	Net_MenuNbPlayersInputs = [IMGSelect, TXTSelect];
+	
+	declare ColorMode 		= Colors::GetModeColorName(MODE_COLORID_MULTIPLAYER);
+	declare TitleParam		= "ColorText "^ColorMode;
+	
+	Net_MenuStatusTitle 	= IMGPATH^IMG_HOTSEAT;
+	//L16N Slogan for Hotseat mode
+	Net_MenuStatusSubtitle 	= "";
+
+	declare Text MLText = LB_SelectNbPlayers::Build();
+	Layers::Create(C_LAYERNAME_SELECNBPLAYERS, MLText);
+	Layers::Attach(C_LAYERNAME_SELECNBPLAYERS);
+
+	Layers::SetVisibility(C_LAYERNAME_SELECNBPLAYERS, False);
+}
+
+Void ConstructDriverModePopup() {
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Text[] 	Net_MenuNbPlayersInputs		for UI;
+	
+	declare IMGSelect 		= UIButtons::GetImage(CManiaAppEvent::EMenuNavAction::Select);
+	declare TXTSelect 		= UIButtonNamesPopup::GetSelectText();
+	Net_MenuNbPlayersInputs = [IMGSelect, TXTSelect];
+
+	Layers::SetVisibility(C_LAYERNAME_DRIVERMODE, False);
+}
+
+Void SetHotSeatSoloButtonValable(Boolean _Show) {
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Boolean Net_HotseatSoloButtonAvailable for UI;
+	Net_HotseatSoloButtonAvailable = _Show;
+}
+
+Void SetHotseatSoloButtonContent(Text _Content) {
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Text Net_HotseatSoloButtonContent for UI;
+	Net_HotseatSoloButtonContent = _Content;
+}
+
+Void SetHotseatDDButtonContent(Text _Content) {
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Text Net_HotseatDDButtonContent for UI;
+	Net_HotseatDDButtonContent = _Content;
+}
+
+Void ConstructRestartGamePopup() {
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Text[] 	Net_MenuNbPlayersInputs		for UI;
+	
+	declare IMGSelect 		= UIButtons::GetImage(CManiaAppEvent::EMenuNavAction::Select);
+	declare TXTSelect 		= UIButtonNamesPopup::GetSelectText();
+	Net_MenuNbPlayersInputs = [IMGSelect, TXTSelect];
+
+	declare Text MLText = LB_MenuNextMap::Build();
+	Layers::Create(C_LAYERNAME_RESTARTGAME, MLText);
+	Layers::Attach(C_LAYERNAME_RESTARTGAME);
+
+	Layers::SetVisibility(C_LAYERNAME_RESTARTGAME, False);
+}
+
+Void GamePhaseUI(Integer _NotifType) {
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Integer			Net_GamePhaseUIUpdate	for UI;	
+	declare netwrite Integer			Net_GamePhaseUIType		for UI;
+	
+	Net_GamePhaseUIUpdate += 1;
+	Net_GamePhaseUIType = _NotifType;
+}
+
+Boolean PlayerHasGiveUp() {
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netread Integer 	Net_PlayerHasGiveUpUpdate for UI;
+	declare netwrite Integer 	Pre_PlayerHasGiveUpUpdate for UI;
+	if(Pre_PlayerHasGiveUpUpdate != Net_PlayerHasGiveUpUpdate) {
+		Pre_PlayerHasGiveUpUpdate = Net_PlayerHasGiveUpUpdate;
+		return True;
+	}
+	return False;
+}
+
+Boolean GetAddNewPlayer() {
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netread Integer 	Net_AddNewPlayerUpdate for UI;
+	declare netwrite Integer 	Pre_AddNewPlayerUpdate for UI;
+	if(Pre_AddNewPlayerUpdate != Net_AddNewPlayerUpdate) {
+		Pre_AddNewPlayerUpdate = Net_AddNewPlayerUpdate;
+		return True;
+	}
+	return False;
+}
+
+Integer GetNbPlayers() {
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netread Integer Net_NbPlayerChosen for UI;
+	//log("Net_NbPlayerChosen: " ^ Net_NbPlayerChosen);
+	return Net_NbPlayerChosen;
+}
+
+Integer GetDriverMode() {
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netread Integer Net_DriverMode for UI;
+	return 1; //Solo Mode
+	return Net_DriverMode;
+}
+
+Integer GetRestartGameChoice() {
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netread Integer Net_PlayerRestartChoice for UI;
+	return Net_PlayerRestartChoice;
+}
+
+Void SetNbPlayers(Integer _NbPlayer) {
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Integer Net_NbPlayerFromServer for UI;
+	Net_NbPlayerFromServer = _NbPlayer;
+}
+
+Void SetNobodyHasWon(Boolean _Value) {
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Boolean Net_NobodyHasWon for UI;
+	Net_NobodyHasWon = _Value;
+}
+
+Void PlayerHasRestart() {
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Integer Net_PlayerHasRestartUpdate for UI;
+	Net_PlayerHasRestartUpdate += 1;
+}
+
+Void SetPopupLayerVisibility(Boolean _Visibility) {
+	Layers::SetVisibility(C_LAYERNAME_MENUSTATUS, _Visibility);
+}
+
+Void SetNbPlayersLayerVisibility(Boolean _Visibility)  {
+	Layers::SetVisibility(C_LAYERNAME_SELECNBPLAYERS, _Visibility);
+}
+
+Void SetDriverModeVisibility(Boolean _Visibility)  {
+	Layers::SetVisibility(C_LAYERNAME_DRIVERMODE, _Visibility);
+}
+
+Void SetRestartGameVisibility(Boolean _Visibility) {
+	Layers::SetVisibility(C_LAYERNAME_RESTARTGAME, _Visibility);
+}
+
+Boolean GetDriverModeVisibility()  {
+	return Layers::IsLayerVisible(C_LAYERNAME_DRIVERMODE);
+}
+
+Boolean PlayerHasValidate() {
+	declare Boolean PlayerHasValidate = False;
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netread Integer 	Net_ActionValidated 	for UI;
+	declare netwrite Integer 	Pre_ActionValidated 	for UI;
+	
+	if(Pre_ActionValidated != Net_ActionValidated) {
+		PlayerHasValidate = True;
+		Pre_ActionValidated = Net_ActionValidated;
+	}
+	return PlayerHasValidate;
+}
+
+// VOICES
+Void PlayVoiceTryAgain() 
+{
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Integer Net_TriggerSound_TryAgain for UI;
+	Net_TriggerSound_TryAgain = Now;
+}
+
+Void PlayVoiceOutOfGas() 
+{
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Integer Net_TriggerSound_OutOfGas for UI;
+	Net_TriggerSound_OutOfGas = Now;
+}
+
+Void PlayVoiceCongrats() 
+{
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Integer Net_TriggerSound_Congrats for UI;
+	Net_TriggerSound_Congrats = Now;
+}
+
+Void PlayVoiceNextPlayerLeader() 
+{
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Integer Net_TriggerSound_NextPlayerLeader for UI;
+	Net_TriggerSound_NextPlayerLeader = Now;
+}
+
+Void PlayVoiceNextPlayerNormal() 
+{
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Integer Net_TriggerSound_NextPlayerNormal for UI;
+	Net_TriggerSound_NextPlayerNormal = Now;
+}
+
+Void PlayVoiceNextPlayerPositive() 
+{
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Integer Net_TriggerSound_NextPlayerPositive for UI;
+	Net_TriggerSound_NextPlayerPositive = Now;
+}
+
+Void PlayVoiceYourTurn() 
+{
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Integer Net_TriggerSound_TeamSelect for UI;
+	Net_TriggerSound_TeamSelect = Now;
+}
+
+Void PlayVoiceVictory() 
+{
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Integer Net_TriggerSound_TeamVictory for UI;
+	Net_TriggerSound_TeamVictory = Now;
+}

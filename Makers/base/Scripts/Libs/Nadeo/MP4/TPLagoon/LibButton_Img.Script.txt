@@ -1,0 +1,159 @@
+
+#Const C_DefaultPlatform		2 // PC
+#Const C_Platforms [
+	"PC"	=> 0,	///< Take care before changing this number, it is linked to the index of the BUTTONS_MENU, etc arrays !
+	"PS4"	=> 1,	///< Take care before changing this number, it is linked to the index of the BUTTONS_MENU, etc arrays !
+	"XB1"	=> 2	///< Take care before changing this number, it is linked to the index of the BUTTONS_MENU, etc arrays !
+]
+#Const C_PadBase	 "file://Media/MEDIABROWSER_HiddenResources/Common/Images/PadButtons/"
+
+// Buttons in the menus
+
+Integer GetPlatform(Text _Platform) {
+
+	if (!C_Platforms.existskey(_Platform)) return C_DefaultPlatform;
+	return C_Platforms[_Platform];
+}
+
+
+
+Text IncludeInDeclare()
+{
+	declare Text MLText;
+	MLText = """ 
+	declare Boolean G_NeedUpdate;
+	declare Integer G_LastInputType;
+	""" ;
+	return MLText;
+}
+
+Text IncludeInWhile(Text[] _ButtonsIMG, Text[] _FramesToHide)
+{
+	declare Text MLText;
+	MLText = """ 
+		if (Input.PendingEvents.count != 0 || G_NeedUpdate) {
+			//declare Integer[CManiaAppEvent::EMenuNavAction] BUTTONS_MENU = [CManiaAppEvent::EMenuNavAction::Select => 0];
+
+			declare Text[][Text] BUTTONS_MENU = [
+				"Button_Select"   =>["Enter"     ,"Cross"			, "A"			   ],
+				"Button_Cancel"   =>["Backspace" ,"Circle"			, "B"			   ],
+				"Button_Action2"  =>["Fin"       ,"Triangle"	    , "Y"			   ],
+				"Button_Action1"  =>["Home"      ,"Square"			, "X"			   ],
+				"Button_PageUp"   =>["Pageup"    ,"L1"				, "LB"			   ],
+				"Button_PageDown" =>["Pagedown"  ,"R1"				, "RB"			   ],
+				"Button_AppMenu"  =>["Echap"     ,"Options"		    , "Menu"		   ],
+				"Button_Down"     =>[""          ,"Editor_DPadDown" , "Editor_DPadDown"]
+			];
+			
+			declare Integer LastInputPlatform for This;
+			declare Text[] Buttons;
+			""";
+
+	foreach(Button in _ButtonsIMG)
+	{
+		MLText ^= """Buttons.add("{{{Button}}}");
+		""";
+	}
+	MLText ^= """
+
+			foreach(Button in Buttons)
+			{
+				declare CMlQuad Quad_Button <=> (Page.MainFrame.GetFirstChild(Button)	as CMlQuad);
+				if(Button == "" || Quad_Button == Null) continue;
+
+				if(Input.PendingEvents.count != 0)
+				{
+					declare CInputPad::EPadType PadType = Input.PendingEvents[Input.PendingEvents.count-1].Pad.Type;
+					switch (PadType) {
+						case CInputPad::EPadType::Keyboard 		: LastInputPlatform = {{{GetPlatform("PC")}}};
+						case CInputPad::EPadType::PlayStation 	: LastInputPlatform = {{{GetPlatform("PS4")}}};
+						case CInputPad::EPadType::XBox 			: LastInputPlatform = {{{GetPlatform("XB1")}}};
+						default 								: LastInputPlatform = {{{GetPlatform("PC")}}};
+					}
+					G_LastInputType = LastInputPlatform;
+				}
+				else
+				{
+					//LastInputPlatform = G_LastInputType;
+				}
+
+				declare Text Platform;
+				switch (LastInputPlatform) {
+					case 0 : {
+						Platform = "PC";
+						Quad_Button.Hide();
+					}
+					case 1 : {
+						Platform = "PS4";
+						Quad_Button.Show();
+					}
+					case 2 : {
+						Platform = "XB1";
+						Quad_Button.Show();
+					}
+					default : {
+						Platform = "PC";
+						Quad_Button.Hide();
+					}
+				}
+
+				declare Text ButtonPath = "{{{C_PadBase}}}" ^ Platform^"/"^BUTTONS_MENU[Button][LastInputPlatform]^".dds";
+				//log("ButtonPath: "^ ButtonPath);
+				Quad_Button.ChangeImageUrl(ButtonPath);
+			}
+
+
+
+			//FramesToHide
+			declare Text[] FramesToHide;
+			""";
+	if(_FramesToHide[0] != "")
+	{
+		foreach(Button in _FramesToHide)
+		{
+			MLText ^= """FramesToHide.add("{{{Button}}}");
+			""";
+		}
+	}
+	MLText ^= """
+
+			foreach(MyFrame in FramesToHide)
+			{
+				declare CMlFrame Frame_ToHide <=> (Page.MainFrame.GetFirstChild(MyFrame)	as CMlFrame);
+				switch (LastInputPlatform) {
+					case 0 : {
+						Frame_ToHide.Show();
+					}
+					case 1 : {
+						Frame_ToHide.Hide();
+					}
+					case 2 : {
+						Frame_ToHide.Hide();
+					}
+					default : {
+						Frame_ToHide.Show();
+					}
+				}
+			}
+
+
+			G_NeedUpdate = False;
+		}
+	""";
+	return MLText;
+}
+
+Text IncludeInWhile(Text[] _ButtonsIMG)
+{
+	return IncludeInWhile(_ButtonsIMG, [""]);
+}
+
+Text IncludeInShow()
+{
+	declare Text MLText;
+	MLText = """
+		G_NeedUpdate = True;
+	""";
+	return MLText;
+}
+

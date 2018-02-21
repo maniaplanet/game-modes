@@ -1,0 +1,593 @@
+#Include "TextLib" as TextLib
+#Include "MathLib" as MathLib
+#Include "Libs/Nadeo/Common/ManiascriptTools/XmlParser.Script.txt"											as XmlParser
+#Include "Libs/Nadeo/MP4/TPLagoon/TokenManager.Script.txt"										as TokenManager
+#Include "Libs/Nadeo/Common/Core/Logger.Script.txt"												as Logger
+
+#Const C_ImgBase	"file://Media/MEDIABROWSER_HiddenResources/Common/Images/Menus/"
+#Const C_WaitTimeMax			5000
+#Const C_MaxNbServersPerPage	9
+
+declare Text					G_Base_API_Url;
+declare CHttpRequest			G_Request;
+declare Boolean					G_HasFetched;
+declare Boolean					G_HasStartedFetch;
+
+declare Text					G_OrderBy;
+declare Text					G_TextFilter;
+declare Text					G_ScriptFilter;
+declare Text					G_ZoneFilter;
+declare Integer					G_ModeFilter;
+declare Integer					G_CurrentPage;
+declare Boolean					G_IsOnlyPrivate;
+declare Boolean					G_IsOnlyLobby;
+
+declare Boolean   				G_Auth_Success;
+declare Text[Text][]			G_Multiplayer_ServerList;
+declare Text[Text]				G_Filters;
+declare Boolean					G_IsFavorite;
+declare Boolean					G_IsHidingFull;
+declare Boolean					G_IsShowingPrivate;
+declare Boolean					G_CanPageUp;
+declare Integer					G_LimitTime;
+declare Boolean					G_DisplayTitleServersOnly;
+
+declare Boolean					G_FetchServerListAsync;
+
+Void Load(Boolean _TitleServersOnly)
+{
+	G_LimitTime					= -1;
+	G_Request					= Null;
+	G_Base_API_Url				= "https://www.maniaplanet.com";
+	G_CurrentPage				= 0;
+	G_DisplayTitleServersOnly	= _TitleServersOnly;
+}
+
+Void Load()
+{
+	Load(True);
+}
+
+Text Http_GetHeaders() {
+	return """Maniaplanet-Auth: Login="{{{ LocalUser.Login }}}", Token="{{{ Authentication_Token }}}" """ ^ "\nAccept: application/xml";
+}
+
+Integer GetPlayerLevelClass(Integer _LadderPoints, Integer  _MaxLadderPoints)
+{
+    if (_LadderPoints >= _MaxLadderPoints * 0.8)
+        return 5;
+    else if (_LadderPoints >= _MaxLadderPoints * 0.6)
+        return 4;
+    else if (_LadderPoints >= _MaxLadderPoints * 0.4)
+        return 3;
+    else if (_LadderPoints >= _MaxLadderPoints * 0.2)
+        return 2;
+    else
+        return 1;
+    return 1;
+}
+
+Text[Text] GetServerInfos(Integer _Index)
+{
+	declare Text[Text] ServerInfos; 
+	ServerInfos["name"]                  = G_Multiplayer_ServerList[_Index]["name"];
+    ServerInfos["description"]           = G_Multiplayer_ServerList[_Index]["description"];
+    ServerInfos["login"]                 = G_Multiplayer_ServerList[_Index]["login"];
+    ServerInfos["title"]                 = G_Multiplayer_ServerList[_Index]["title"];
+    ServerInfos["ladder_limit_min"]      = G_Multiplayer_ServerList[_Index]["ladder_limit_min"];
+    ServerInfos["ladder_limit_max"]      = G_Multiplayer_ServerList[_Index]["ladder_limit_max"];
+    ServerInfos["average_ladder_points"] = G_Multiplayer_ServerList[_Index]["average_ladder_points"];
+    ServerInfos["player_count"]          = G_Multiplayer_ServerList[_Index]["player_count"];
+    ServerInfos["player_max"]            = G_Multiplayer_ServerList[_Index]["player_max"];
+    ServerInfos["spectator_count"]       = G_Multiplayer_ServerList[_Index]["spectator_count"];
+    ServerInfos["zone"]                  = G_Multiplayer_ServerList[_Index]["zone"];
+    ServerInfos["is_private"]            = G_Multiplayer_ServerList[_Index]["is_private"];
+    ServerInfos["is_spectator_private"]  = G_Multiplayer_ServerList[_Index]["is_spectator_private"];
+    ServerInfos["is_lobby"]              = G_Multiplayer_ServerList[_Index]["is_lobby"];
+    ServerInfos["level_class_1"]         = G_Multiplayer_ServerList[_Index]["level_class_1"];
+    ServerInfos["level_class_2"]         = G_Multiplayer_ServerList[_Index]["level_class_2"];
+    ServerInfos["level_class_3"]         = G_Multiplayer_ServerList[_Index]["level_class_3"];
+    ServerInfos["level_class_4"]         = G_Multiplayer_ServerList[_Index]["level_class_4"];
+    ServerInfos["level_class_5"]         = G_Multiplayer_ServerList[_Index]["level_class_5"];
+    ServerInfos["script_name"]           = G_Multiplayer_ServerList[_Index]["script_name"];
+    ServerInfos["game_mode"]             = G_Multiplayer_ServerList[_Index]["game_mode"];
+    return ServerInfos;
+}
+
+Integer GetPlayerLevelClass()
+{
+	return GetPlayerLevelClass(MathLib::NearestInteger(LocalUser.LadderPoints), 90000);
+}
+
+Text[] GetServersName()
+{
+	declare Text[] Result;
+	foreach(Server in G_Multiplayer_ServerList) {
+		if (!Server.existskey("name")) {
+			Logger::Warn("GetServersName : " ^ Server);
+			Result.add("");
+		} else {
+			Result.add(Server["name"]);
+		}
+	}
+	return Result;
+}
+
+Boolean[] GetServersIs_Private()
+{
+	declare Boolean[] Result;
+	foreach(Server in G_Multiplayer_ServerList) {
+		if (!Server.existskey("is_private") || !Server.existskey("is_spectator_private")) {
+			Logger::Warn("GetServersIs_Private : " ^ Server);
+			Result.add(False);
+		} else {
+			Result.add(Server["is_private"] == "1" || Server["is_spectator_private"] == "1");
+		}
+	}
+	return Result;
+}
+
+Boolean GetServerIs_Private(Integer _Index)
+{
+	if(G_Multiplayer_ServerList.existskey(_Index)) return G_Multiplayer_ServerList[_Index]["is_private"] == "true";
+	return False;
+}
+
+Text[] GetServersIs_SpectPrivate()
+{
+	declare Text[] Result;
+	foreach(Server in G_Multiplayer_ServerList) {
+		if (!Server.existskey("is_spectator_private")) {
+			Logger::Warn("GetServersName : " ^ Server);
+			Result.add("");
+		} else {
+			Result.add(Server["is_spectator_private"]);
+		}
+	}
+	return Result;
+}
+
+Boolean GetServerIs_SpectPrivate(Integer _Index)
+{
+	if(G_Multiplayer_ServerList.existskey(_Index)) return G_Multiplayer_ServerList[_Index]["is_spectator_private"] == "true";
+	return False;
+}
+
+
+Integer[] GetServersPlayers()
+{
+	declare Integer[] Result;
+	foreach(Server in G_Multiplayer_ServerList) {
+		if (!Server.existskey("player_count")) {
+			Logger::Warn("ServersPlayers : " ^ Server);
+			Result.add(0);
+		} else {
+			Result.add(TextLib::ToInteger(Server["player_count"]));
+		}
+	}
+	return Result;
+}
+
+Integer[] GetServersPlayersMax()
+{
+	declare Integer[] Result;
+	foreach(Server in G_Multiplayer_ServerList) {
+		if (!Server.existskey("player_max")) {
+			Logger::Warn("ServersPlayersMax : " ^ Server);
+			Result.add(0);
+		} else {
+			Result.add(TextLib::ToInteger(Server["player_max"]));
+		}
+	}
+	return Result;
+}
+
+Text[] GetServersMode()
+{
+	declare Text[] Result;
+	foreach(Server in G_Multiplayer_ServerList) {
+		if (!Server.existskey("script_name")) {
+			Logger::Warn("ServersMode : " ^ Server);
+			Result.add("");
+		} else {
+			Result.add(Server["script_name"]);
+		}
+	}
+	return Result;
+}
+
+Text GetEchelonUrlFromLevel(Integer _Level)
+{
+	return "ECHELON" ^ _Level;
+}
+
+Text[] GetServersLevelUrl()
+{
+	declare LevelClass = GetPlayerLevelClass();
+	declare Text[] Result;
+	foreach(Server in G_Multiplayer_ServerList) {
+		if (!Server.existskey("average_ladder_points")) {
+			Logger::Warn("ServersLevel : " ^ Server);
+			Result.add("");
+		} else {
+			Result.add(GetEchelonUrlFromLevel(TextLib::ToInteger(Server["average_ladder_points"])));
+		}
+	}
+	return Result;
+}
+
+Text[] GetServersIds()
+{
+	declare Text[] Result;
+	foreach(Server in G_Multiplayer_ServerList) {
+		if (!Server.existskey("login") || !Server.existskey("title")) {
+			Logger::Warn("ServersIds : " ^ Server);
+			Result.add("");
+		} else {
+			Result.add(Server["login"] ^ "@" ^ Server["title"]);
+		}
+	}
+	return Result;
+}
+
+Text[] GetServersFlagUrls()
+{
+	declare Text[] Result;
+	foreach(Server in G_Multiplayer_ServerList) {
+		if (!Server.existskey("zone") || Server["zone"] == "") {
+			Result.add("file://ZoneFlags/Path/World");
+		} else {
+			Result.add("file://ZoneFlags/Path/" ^ Server["zone"]);
+		}
+	}
+	return Result;
+}
+
+Text GetAppropriateImageFromRelInfo(Integer _RelInfo)
+{
+	declare Text[]  IMG_Levels;
+	for (I, 0, 6) {
+		IMG_Levels.add(C_ImgBase ^ "Multiplayer/Server_Level" ^ I ^ ".dds");
+	}
+
+	declare Integer[Integer] ConversionArray = [1 => 2, 2=> 3, 3 => 1, 4 => 4, 5 => 0];
+	if (_RelInfo >= 1 && _RelInfo <=5) {
+		return IMG_Levels[ConversionArray[_RelInfo]];
+	}
+	if (IMG_Levels.existskey(_RelInfo)) {
+		return IMG_Levels[_RelInfo];
+	}
+	return "";
+}
+
+Text[] GetServersRelInfoUrls()
+{
+	declare LevelClass = GetPlayerLevelClass();
+	declare Text[] Result;
+	foreach(Server in G_Multiplayer_ServerList) {
+		if (!Server.existskey("level_class_" ^ LevelClass)) {
+			Logger::Warn("ServersIds : " ^ Server);
+			Result.add("");
+		} else {
+			Result.add(GetAppropriateImageFromRelInfo(TextLib::ToInteger(Server["level_class_" ^ LevelClass])));
+		}
+	}
+	return Result;
+}
+
+Integer GetCurrentPageNumber()
+{
+	return G_CurrentPage + 1;
+}
+
+Boolean CanPageUp()
+{
+	return G_CanPageUp;
+}
+
+Void ServerPull() {
+	declare XmlDoc <=> Xml.Create(G_Request.Result);
+	declare ResultNode = XmlDoc.GetFirstChild("response");
+	if (ResultNode != Null) {
+		G_Multiplayer_ServerList = XmlParser::NodeToText_TextArray_Array(ResultNode);
+		if (G_Multiplayer_ServerList.count >= C_MaxNbServersPerPage + 1) {
+			if (!G_Multiplayer_ServerList.removekey(G_Multiplayer_ServerList.count - 1)) {
+				Logger::Warn("MultiplayerAPI : G_Multiplayer_ServerList empty");
+			}
+			G_CanPageUp = True;
+		} else {
+			G_CanPageUp = False;
+		}
+		Http.Destroy(G_Request);
+		G_Request = Null;
+	} else {
+		Logger::Warn("ResultNode == Null");
+	}
+	Xml.Destroy(XmlDoc);
+}
+
+Void Private_FetchServerListAsync(Text[Text] _Filters, Text _OrderBy, Integer _Offset, Integer _Length, Boolean _TitleServersOnly)
+{
+	G_CanPageUp = False;
+	declare Text[] QueryArgs;
+	foreach (Key => Value in _Filters) {
+		QueryArgs.add(Key ^ "=" ^ Value);
+	}
+	if (_OrderBy != "") {
+		QueryArgs.add("""orderBy={{{_OrderBy}}}""");
+	}
+	QueryArgs.add("offset=" ^ _Offset);
+	QueryArgs.add("length=" ^ _Length);
+	declare Text QueryString = TextLib::Join("&", QueryArgs);
+	if (G_Request != Null) {
+		Http.Destroy(G_Request);
+	}
+	declare Text BrowsingFactor;
+	if (_TitleServersOnly) {
+		declare Text UidTitle = LoadedTitle.TitleId;
+		BrowsingFactor = """titleUids[]={{{UidTitle}}}""";
+	} else {
+		declare Text ProjectEnviro for LocalUser;
+		BrowsingFactor = """environments[]={{{ProjectEnviro}}}""";
+	}
+	G_Request = Http.CreateGet("""{{{G_Base_API_Url}}}/ingame/servers/online?{{{BrowsingFactor}}}&{{{QueryString}}}""", False, Http_GetHeaders());
+}
+
+Text[Text] GetFilters()
+{
+	declare Text[Text] Result;
+	Result["excludeLobby"]	= "0";
+	if (G_TextFilter != "") {
+		Result["search"] = TextLib::ToLowerCase(G_TextFilter);
+	}
+	if (G_ScriptFilter != "") {
+		Result["scriptName"] = G_ScriptFilter;
+		// TODO : G_ModeFilter ?
+	}
+	if (G_ZoneFilter != "") {
+		Result["zone"] = G_ZoneFilter;
+	}
+	if (G_IsOnlyLobby) {
+		Result["onlyLobby"]		= "1";
+	}
+	if (G_IsFavorite) {
+		Result["onlyFavorite"]	= "1";
+	}
+	if (G_IsOnlyPrivate) {
+		Result["onlyPrivate"]	= "1";
+		Result["onlyPublic"]	= "0";
+	}/* else {
+		Result["onlyPublic"]	= "1";
+	}*/
+	return Result;
+}
+
+Text GetOrderBy()
+{
+	return G_OrderBy;
+}
+
+Void Private_FetchServerListAsync()
+{
+	declare Text[Text] 	Filters	= GetFilters();
+	declare Text 		OrderBy	= GetOrderBy();
+	declare Integer 	Offset	= G_CurrentPage * C_MaxNbServersPerPage;
+	declare Integer 	Length	= C_MaxNbServersPerPage + 1;
+	Private_FetchServerListAsync(Filters, OrderBy, Offset, Length, G_DisplayTitleServersOnly);
+}
+
+Boolean HasFetched()
+{
+	if (!G_HasStartedFetch && !TokenManager::Is_Auth_Success() && (Now < G_LimitTime)) {
+		return False;
+	} else if (!G_HasStartedFetch && TokenManager::Is_Auth_Success()) {
+		G_HasStartedFetch = True;
+		Private_FetchServerListAsync();
+		return False;
+	}
+	if (((G_Request != Null) && G_Request.IsCompleted && !G_HasFetched)) {
+		G_LimitTime = -1;
+		G_HasFetched = True;
+		if (((G_Request != Null) && G_Request.IsCompleted)
+		 && (G_Request.StatusCode < 200 || G_Request.StatusCode >= 300)) {
+			Logger::Warn("ERROR Url		" ^ G_Request.Url);
+			Logger::Warn("ERROR Code	" ^ G_Request.StatusCode);
+			Logger::Warn("ERROR Content	" ^ G_Request.Result);
+			return False;
+		} else {
+			ServerPull();
+			return True;
+		}
+	} else if (Now > G_LimitTime && G_LimitTime != -1) {
+		G_LimitTime = -1;
+		Logger::Warn("ERROR Timeout");
+		return True;
+	}
+	return False;
+}
+
+Void InitiateFetch()
+{
+	G_HasStartedFetch	= False;
+	G_HasFetched		= False;
+	G_LimitTime			= Now + C_WaitTimeMax;
+}
+
+Void FetchServerListAsync()
+{
+	InitiateFetch();
+}
+
+Void SetFilterForScript(Integer _Index)
+{
+	G_CurrentPage = 0;
+	if (G_Multiplayer_ServerList.existskey(_Index) && G_Multiplayer_ServerList[_Index].existskey("script_name")
+		&& G_Multiplayer_ServerList[_Index].existskey("game_mode")) {
+		G_ScriptFilter	= G_Multiplayer_ServerList[_Index]["script_name"];
+		G_ModeFilter	= TextLib::ToInteger(G_Multiplayer_ServerList[_Index]["game_mode"]);
+	} else {
+		Logger::Warn("SetFilterForScript : no filter : " ^ _Index);
+		if (G_Multiplayer_ServerList.existskey(_Index)) {
+			Logger::Warn("content : " ^ G_Multiplayer_ServerList[_Index]);
+		}
+	}
+}
+
+Void ToggleIsFavorite()
+{
+	G_CurrentPage	= 0;
+	G_IsFavorite	= True;
+	G_IsOnlyLobby	= False;
+}
+
+Void ToggleIsMatchMaking()
+{
+	G_CurrentPage	= 0;
+	G_IsOnlyLobby	= True;
+	G_IsFavorite	= False;
+}
+
+Void ToggleOut()
+{
+	G_CurrentPage	= 0;
+	G_IsFavorite	= False;
+	G_IsOnlyLobby	= False;
+}
+
+Void ToggleAdditionalFilter(Integer _AdditionalFilterIndex1, Integer _AdditionalFilterIndex2)
+{
+	G_CurrentPage	= 0;
+	switch (_AdditionalFilterIndex1) {
+		case 0: { // Zone
+			declare AllZoneFilters = ["", "World|Africa", "World|Asia", "World|Europe", "World|Middle East",
+				"World|North America", "World|Oceania", "World|South America"];
+			G_ZoneFilter = AllZoneFilters[_AdditionalFilterIndex2];
+		}
+		case 1: { // Switch to all modes
+			G_ScriptFilter	= "";
+			G_ModeFilter	= -1;
+		}
+		case 2: { // Toggle private
+			G_IsOnlyPrivate = !G_IsOnlyPrivate;
+		}
+		default: {
+		}
+	}
+}
+
+Void ResetAllFilters()
+{
+	G_CurrentPage	= 0;
+	G_TextFilter	= "";
+	G_ScriptFilter	= "";
+	G_ZoneFilter	= "";
+	G_ModeFilter	= -1;
+	G_IsOnlyLobby	= False;
+	G_IsFavorite	= False;
+	G_IsOnlyPrivate	= False;
+}
+
+Boolean ServerList_PageUp()
+{
+	if (G_CurrentPage > 0) {
+		G_CurrentPage += -1;
+		return True;
+	}
+	return False;
+}
+
+Boolean ServerList_PageDown()
+{
+	if (G_CanPageUp) {
+		G_CurrentPage += 1;
+		return True;
+	}
+	return False;
+}
+
+Boolean ServerList_SetTextFilter(Text _Value)
+{
+	G_CurrentPage = 0;
+	G_TextFilter = _Value;
+	return True;
+}
+
+Boolean ServerList_SortElements(Integer _SortId)
+{
+	G_CurrentPage = 0;
+	declare LevelClass = GetPlayerLevelClass();
+	switch(_SortId) {
+		case 0: {
+			G_OrderBy = "name";
+		}
+		case 1: {
+			G_OrderBy = "playerCount";
+		}
+		case 2: {
+			G_OrderBy = "scriptName";
+		}
+		case 3: {
+			G_OrderBy = "levelClass" ^ LevelClass;
+		}
+		case 4: {
+			G_OrderBy = "levelClass" ^ LevelClass;
+		}
+		default: {
+			return False;
+		}
+	}
+	return True;
+}
+
+Real GetLadderPoints() {
+	return LocalUser.LadderPoints;
+}
+
+Text GetMultiplayerEchelon() {
+	switch(LocalUser.Echelon)
+	{
+		case CUser::EEchelon::None:    return "0";
+		case CUser::EEchelon::Bronze1: return "1";
+		case CUser::EEchelon::Bronze2: return "2";
+		case CUser::EEchelon::Bronze3: return "3";
+		case CUser::EEchelon::Silver1: return "4";
+		case CUser::EEchelon::Silver2: return "5";
+		case CUser::EEchelon::Silver3: return "6";
+		case CUser::EEchelon::Gold1:   return "7";
+		case CUser::EEchelon::Gold2:   return "8";
+		case CUser::EEchelon::Gold3:   return "9";
+	}
+	return "0";
+}
+
+Integer Get_PointsToNextPromotion() {
+	return MathLib::Rand(0, 9999); // !!!!!!
+}
+
+Text[] GetMultiplayerPlayerRanking() {
+	declare Text[] Result;
+	declare Text[] Zones = TextLib::Split("|", LocalUser.ZonePath);
+	if (Zones.count == 0) {
+		return [_("|You are offline|Offline")];
+	}
+	declare Text ConcatenatedZone;
+	foreach (ZoneIndex => Zone in Zones) {
+		if (ZoneIndex != 0) {
+			ConcatenatedZone ^= "|";
+		}
+		ConcatenatedZone ^= Zone;
+		declare Integer PlayerRanking = ScoreMgr.MultiplayerLeaderBoard_GetPlayerRanking(UserMgr.MainUser.Id, ConcatenatedZone);
+		declare Integer PlayerCount = ScoreMgr.MultiplayerLeaderBoard_GetPlayerCount(ConcatenatedZone);
+		if (PlayerCount == 0) {
+			Result.add(TextLib::ToUpperCase(Zone) ^ " > - / -");
+			continue;
+		}
+		if (PlayerRanking == 0) {
+			PlayerRanking = PlayerCount;
+		}
+		Result.add(TextLib::ToUpperCase(Zone) ^ " > " ^
+			PlayerRanking ^ " / " ^
+			PlayerCount);
+	}
+	return Result;
+}

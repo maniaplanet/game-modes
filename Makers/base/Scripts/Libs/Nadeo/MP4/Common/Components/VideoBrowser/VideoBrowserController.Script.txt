@@ -1,0 +1,205 @@
+#Include "Libs/Nadeo/Common/Core/MenuLayers.Script.txt"												as Layers
+#Include "Libs/Nadeo/Common/Core/Pages.Script.txt"													as Pages
+#Include "Libs/Nadeo/Common/Core/Logger.Script.txt"													as Logger
+#Include "TextLib"																				as TextLib
+
+// APIs
+#Include "Libs/Nadeo/MP4/Common/Components/VideoBrowser/VideoBrowserAPI.Script.txt"					as VideoBrowserAPI
+#Include "Libs/Nadeo/MP4/Common/Components/MediaBrowser/MediaBrowserController.Script.txt"			as MediaBrowserController
+
+//Layers
+#Include "Libs/Nadeo/MP4/Common/Components/VideoBrowser/LBVideoBrowser.Script.txt"					as LBVideoBrowser
+#Include "Libs/Nadeo/MP4/Common/Components/VideoBrowser/LBVideoPreview.Script.txt"					as LBVideoPreview
+
+#Const C_BrowserName	"VideoBrowser"
+#Const C_PageName		"BrowseVideos"
+#Const C_MediaTitle		_("Videos")
+
+#Const C_Context1		"MakerCampaign"
+#Const C_Context2		"MatchSettingsEditor"
+#Const C_Context3		"LocalPlaySingleMap"
+#Const C_Context4		"EditorsClassicMapEditor"
+#Const C_Context5		"GhostEditor"
+#Const C_Context6		"CustomEditor"
+
+declare Text G_FolderPath;
+declare Text G_Context;
+
+Void Preview(Text _MediaPath)
+{
+	LayerCustomEvent(Layers::Get("VideoPreview"), "Show", [_MediaPath]);
+}
+
+Void StopPreview()
+{
+	LayerCustomEvent(Layers::Get("VideoPreview"), "Hide", Text[]);
+}
+
+Void Build(Text _LayerName, Boolean _Attach) {
+	declare Text MLText;
+	switch(_LayerName) {
+		case("VideoPreview"):{
+			MLText = LBVideoPreview::Build();
+		}
+	}
+
+	if(MLText == "") {
+		Logger::Warn("Unknown Page: "^_LayerName);
+		return;
+	}
+	
+	Layers::Create(_LayerName, MLText);
+	
+	declare CUILayer Layer <=> Layers::Get(_LayerName);
+	declare Text Page_LayerName for Layer.LocalPage;
+	
+	Page_LayerName = _LayerName;
+	if(_Attach) Layers::Attach(_LayerName);
+}
+
+Void Load() {
+	G_FolderPath = "";
+	MediaBrowserController::Load(LBVideoBrowser::Build(), C_PageName, C_BrowserName, C_MediaTitle);
+	VideoBrowserAPI::Load();
+	Build("VideoPreview", True);
+}
+
+Void OpenCurrentFolder()
+{
+	VideoBrowserAPI::FetchData(G_FolderPath);
+}
+
+Void OpenInExplorer()
+{
+	if (!OpenFileInExplorer(VideoBrowserAPI::FullPath(G_FolderPath))) {
+		Logger::Warn(C_BrowserName ^ " : OpenFileInExplorer did not function");
+	}
+}
+
+Boolean IsRunning()
+{
+	return MediaBrowserController::IsRunning(C_BrowserName);
+}
+
+Void Show(Text _EventNamePrefix, Text[] _ButtonNames, Text _MediaTitle, Text[] _SecondaryButtonNames, Text _Context)
+{
+	if (G_Context != _Context) {
+		G_Context = _Context;
+		G_FolderPath = "";
+	}
+	VideoBrowserAPI::FetchData(G_FolderPath);
+	MediaBrowserController::Show(C_BrowserName, C_PageName, _EventNamePrefix, _ButtonNames, _MediaTitle, _SecondaryButtonNames);
+}
+
+Void Show(Text _EventNamePrefix, Text[] _ButtonNames, Text _MediaTitle, Text[] _SecondaryButtonNames)
+{
+	Show(_EventNamePrefix, _ButtonNames, _MediaTitle, _SecondaryButtonNames, C_Context1);
+}
+
+Void Show(Text _EventNamePrefix, Text[] _ButtonNames, Text _MediaTitle)
+{
+	Show(_EventNamePrefix, _ButtonNames, _MediaTitle, Text[]);
+}
+
+Void Hide()
+{
+	StopPreview();
+	MediaBrowserController::Hide(C_BrowserName);
+}
+
+Void ForceHide()
+{
+	StopPreview();
+	MediaBrowserController::ForceHide(C_BrowserName);
+}
+
+Text[][] LineDataFromContext(Text _Context, Text[Text] _Metadata)
+{
+	switch(_Context) {
+		case "MakerCampaign" : {
+			return		Text[][];
+		}
+		case "MatchSettingsEditor" : {
+			
+		}
+		case "LocalPlaySingleMap" : {
+			
+		}
+		case "EditorsClassicMapEditor" : {
+			
+		}
+		case "GhostEditor" : {
+			
+		}
+		case "CustomEditor" : {
+			
+		}
+	}
+	return Text[][];
+}
+
+Text[][][] GetLineData(Text _Context)
+{
+	declare Text[][][] Result;
+	declare Text[Text][] MainData = VideoBrowserAPI::GetMainData();
+	foreach (Metadata in MainData) {
+		if (Metadata.existskey("CardType") && Metadata["CardType"] == "Folder") {
+			Result.add(Text[][]);
+		} else {
+			Result.add(LineDataFromContext(_Context, Metadata));
+		}
+	}
+	return Result;
+}
+
+Text[][][] GetLineData()
+{
+	return GetLineData(G_Context);
+}
+
+Void Loop() {
+	if (VideoBrowserAPI::HasFetched()) {
+		VideoBrowserAPI::UpdateMainData();
+		MediaBrowserController::UpdateData(C_BrowserName, VideoBrowserAPI::FullPath(G_FolderPath), VideoBrowserAPI::GetMainData(), GetLineData(), VideoBrowserAPI::GetCurrentPageIndex(), VideoBrowserAPI::GetMaxPages());
+	}
+	if (MediaBrowserController::IsRunning(C_BrowserName)) {
+		MediaBrowserController::Loop(C_BrowserName);
+	}
+	if (MediaBrowserController::IsRequestingFolderOpening(C_BrowserName)) {
+		G_FolderPath = MediaBrowserController::FolderOpeningPath(C_BrowserName);
+		OpenCurrentFolder();
+	}
+	if (MediaBrowserController::IsRequestingFolderBack(C_BrowserName)) {
+		G_FolderPath = VideoBrowserAPI::FolderParentPath();
+		OpenCurrentFolder();
+	}
+	if (MediaBrowserController::IsRequestingRefreshFolder(C_BrowserName)) {
+		OpenCurrentFolder();
+	}
+	if (MediaBrowserController::IsRequestingOpenInExplorer(C_BrowserName)) {
+		OpenInExplorer();
+	}
+	if (MediaBrowserController::IsRequestingSwitchFlatten(C_BrowserName)) {
+		VideoBrowserAPI::SwitchFlatten();
+		OpenCurrentFolder();
+	}
+	if (MediaBrowserController::IsRequestingSortByDateName(C_BrowserName)) {
+		VideoBrowserAPI::SwitchSortCriterion();
+		OpenCurrentFolder();
+	}
+	if (MediaBrowserController::IsRequestingSortAscDesc(C_BrowserName)) {
+		VideoBrowserAPI::SwitchSortOrder();
+		OpenCurrentFolder();
+	}
+	if (MediaBrowserController::IsRequestingInputPageUp(C_BrowserName)) {
+		VideoBrowserAPI::InputPageUp();
+		MediaBrowserController::UpdateData(C_BrowserName, VideoBrowserAPI::FullPath(G_FolderPath), VideoBrowserAPI::GetMainData(), GetLineData(), VideoBrowserAPI::GetCurrentPageIndex(), VideoBrowserAPI::GetMaxPages());
+	}
+	if (MediaBrowserController::IsRequestingInputPageDown(C_BrowserName)) {
+		VideoBrowserAPI::InputPageDown();
+		MediaBrowserController::UpdateData(C_BrowserName, VideoBrowserAPI::FullPath(G_FolderPath), VideoBrowserAPI::GetMainData(), GetLineData(), VideoBrowserAPI::GetCurrentPageIndex(), VideoBrowserAPI::GetMaxPages());
+	}
+	if (MediaBrowserController::IsRequestingSteamWorkshop(C_BrowserName)) {
+		TitleControl.PublishFile(VideoBrowserAPI::FullPath(MediaBrowserController::RequestingSteamWorkshopMediaName(C_BrowserName)));
+	}
+}

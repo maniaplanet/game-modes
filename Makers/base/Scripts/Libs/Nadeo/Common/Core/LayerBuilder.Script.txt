@@ -1,0 +1,207 @@
+// LayerBuilder.Script.txt
+// Asks for functions :
+//
+// Void Init(); called in the beginning of main()
+// Void Loop(); called in the while(True) loop
+// Void Show(Integer _State, Text _PreviousPage);
+// Void Hide(Integer _State, Text _PreviousPage);
+// all three called on the layer when showing it, hiding it and hiding it quick
+// Look at Pages::Includes() for all values of _State
+//
+// Can use functions (not necessary) :
+// Void Input_Up()
+// Void Input_Right()
+// Void Input_Left()
+// Void Input_Down()
+// Void Input_Select()
+// Void Input_Cancel()
+// Void Input_PageUp()
+// Void Input_PageDown()
+// Void Input_AppMenu()
+// Void Input_Action1()
+// Void Input_Action2()
+
+#Include "Libs/Nadeo/Common/Core/MenuLayers.Script.txt"										as Layers
+#Include "Libs/Nadeo/Common/Core/Pages.Script.txt"											as Pages
+#Include "Libs/Nadeo/Common/Core/Logger.Script.txt"											as Logger
+#Include "TextLib"																		as TextLib
+
+Text BaseLibIncludes(Text _LayerName)
+{
+	return """
+// Layer Name : {{{_LayerName}}}
+	#Include "TextLib"					as {{{_LayerName}}}_TextLib
+{{{Pages::Includes()}}}
+	#Const C_LockDelayTiming			100
+	""";
+}
+
+Text BaseLibDeclares(Text _LayerName)
+{
+	return """
+	declare Integer G_LockInputTiming;
+
+	Void BaseLib_Show()
+	{
+		SendCustomEvent("UpdateBarreSection", [{{{dump(_LayerName)}}}]);
+	}
+
+	Void BaseLib_Hide()
+	{
+		EnableMenuNavigation(False,False,Null,0);
+		SendCustomEvent("DetachPage", [{{{dump(_LayerName)}}}]);
+	}
+
+	Void BaseLib_GoToPrevious()
+	{
+		SendCustomEvent("GotoPrevious", [{{{dump(_LayerName)}}}]);
+	}
+
+	Integer BaseLib_TextToInteger(Text _Value)
+	{
+		return {{{_LayerName}}}_TextLib::ToInteger(_Value);
+	}
+
+	Boolean BaseLib_TextToBoolean(Text _Value)
+	{
+		return (_Value == {{{_LayerName}}}_TextLib::ToText(True));
+	}
+
+	Text BaseLib_BooleanToText(Boolean _Value)
+	{
+		return {{{_LayerName}}}_TextLib::ToText(_Value);
+	}
+
+	Text BaseLib_IntegerToText(Integer _Value)
+	{
+		return {{{_LayerName}}}_TextLib::ToText(_Value);
+	}
+
+	Vec3 BaseLib_TextToColor(Text _Value)
+	{
+		return {{{_LayerName}}}_TextLib::ToColor(_Value);
+	}
+""";
+}
+
+Text ConditionalUnitNavigation(Text _Action, Boolean _Replace)
+{
+	if (_Replace) {
+		return """							case CMlEvent::EMenuNavAction::{{{_Action}}} : {
+								BaseLib_GoToPrevious();
+							}
+""";
+	}
+	return """							case CMlEvent::EMenuNavAction::{{{_Action}}} : {
+								Input_{{{_Action}}}();
+							}
+""";
+}
+
+Text ConditionalMenuNavigation(Text[] _AllActions)
+{
+	declare Boolean ReplaceCancel = !_AllActions.exists("Cancel");
+	declare Boolean ReplaceAppMenu = !_AllActions.exists("AppMenu");
+	declare Text Result;
+	Result ^= ConditionalUnitNavigation("Cancel", ReplaceCancel);
+	Result ^= ConditionalUnitNavigation("AppMenu", ReplaceAppMenu);
+	foreach (Action in _AllActions) {
+		if (Action == "Cancel" || Action == "AppMenu") {
+			continue;
+		}
+		Result ^= ConditionalUnitNavigation(Action, False);
+	}
+	return Result;
+}
+
+Text MenuNavigation(Text[] _AllActions)
+{
+	return """
+					case CMlEvent::Type::MenuNavigation: {
+						if (Now < G_LockInputTiming) {
+							continue;
+						}
+						G_LockInputTiming = Now + C_LockDelayTiming;
+						switch(Event.MenuNavAction) {
+{{{ConditionalMenuNavigation(_AllActions)}}}
+						}
+					}
+	""";
+}
+
+Text Main(Text[] _AllActions)
+{
+	return """
+	main()
+	{
+		Init();
+		while(True) {
+			yield;
+			if (!PageIsVisible && PendingEvents.count == 0) {
+				continue;
+			}
+			Loop();
+			foreach(Event in PendingEvents) {
+				switch(Event.Type) {
+{{{MenuNavigation(_AllActions)}}}
+					case CMlEvent::Type::PluginCustomEvent: {
+						switch(Event.CustomEventType) {
+							case "Show" : {
+								G_LockInputTiming = Now + C_LockDelayTiming;
+								BaseLib_Show();
+								if (Event.CustomEventData.count < 2) {
+									continue;
+								}
+								declare Integer State		= BaseLib_TextToInteger(Event.CustomEventData[0]);
+								declare Text PreviousPage	= Event.CustomEventData[1];
+								Show(State, PreviousPage);
+							}
+							case "Hide" : {
+								if (Event.CustomEventData.count < 2) {
+									continue;
+								}
+								declare Integer State		= BaseLib_TextToInteger(Event.CustomEventData[0]);
+								declare Text PreviousPage	= Event.CustomEventData[1];
+								Hide(State, PreviousPage);
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+""";
+}
+
+Text TransformUserText(Text _UserText)
+{
+	return TextLib::Replace(_UserText, "-->", "==>"); // THIS LINE OF CODE SAVES LIVES DO NOT REMOVE
+}
+
+Boolean HasInput(Text _Declares, Text _ActionType)
+{
+	return TextLib::Find("Void Input_" ^ _ActionType ^ "()", _Declares, False, True);
+}
+
+Text Build(Text _LayerName, Text _Manialink, Text _Includes, Text _Declares)
+{
+	declare Text[] AllActions = ["Up", "Right", "Left", "Down",
+		"Select", "Cancel", "PageUp", "PageDown", "AppMenu", "Action1", "Action2"];
+	foreach(Action in AllActions) {
+		if (!HasInput(_Declares, Action)) {
+			if (!AllActions.remove(Action)) {
+				Logger::Warn("AllActions remove malfunction : " ^ Action);
+			}
+		}
+	}
+	return """<manialink version="3" layername="L_{{{_LayerName}}}">
+{{{_Manialink}}}
+	<script><!--
+{{{BaseLibIncludes(_LayerName)}}}
+{{{TransformUserText(_Includes)}}}
+{{{BaseLibDeclares(_LayerName)}}}
+{{{TransformUserText(_Declares)}}}
+{{{Main(AllActions)}}}
+--></script>
+</manialink>""";
+}

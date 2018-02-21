@@ -1,0 +1,132 @@
+#Include "TextLib"                                         as TextLib
+#Include "Libs/Nadeo/Common/Core/Logger.Script.txt"             as Logger
+#Include "Libs/Nadeo/MP4/Common/GlobalVariables.Script.txt"    as GlobalVariables
+#Include "Libs/Nadeo/MP4/Common/SettingsController.Script.txt" as SettingsController
+
+#Const C_BaseFileTM		"file://Media/MEDIABROWSER_HiddenResources/MakerTM/XML/EditorXMLs/BaseEditors.xml"
+#Const C_BaseFileSM		"file://Media/MEDIABROWSER_HiddenResources/MakerSM/XML/EditorXMLs/BaseEditors.xml"
+
+declare Real		G_AccelerationCoef;
+declare Real		G_ControlCoef;
+declare Real		G_GravityCoef;
+declare Text[]		G_BaseIds;
+declare Text[]		G_BaseTitleNames;
+declare Text[]		G_BaseMakerNames;
+declare Text[]		G_UGCAssets;
+declare Boolean[]	G_IsVisibleInMaker;
+declare Boolean[]	G_IsActivated;
+
+Void ReadBase(Text _XML)
+{
+	G_BaseIds.clear();
+	G_BaseTitleNames.clear();
+	G_BaseMakerNames.clear();
+	G_IsVisibleInMaker.clear();
+	G_IsActivated.clear();
+	G_UGCAssets.clear();
+	if (_XML == "") {
+		return;
+	}
+	declare Document				<=> Xml.Create(_XML);
+	declare Editors					<=> Document.Root;
+	foreach(Ingame in Editors.Children) {
+		if (Ingame.GetAttributeBoolean("isdefault", False)) {
+			G_BaseIds.add(Ingame.GetAttributeText("id", ""));
+			G_BaseTitleNames.add(Ingame.GetAttributeText("titlename", ""));
+			G_BaseMakerNames.add(Ingame.GetAttributeText("makername", ""));
+			G_IsVisibleInMaker.add(Ingame.GetAttributeBoolean("isvisibleinmaker", True));
+			G_IsActivated.add(Ingame.GetAttributeBoolean("isactivated", True));
+		} else {
+			G_UGCAssets.add(Ingame.GetAttributeText("id", ""));
+		}
+	}
+	Xml.Destroy(Document);
+}
+
+Void ReadBase()
+{
+	declare Text[Integer] BaseFiles = [GlobalVariables::LaunchContext_Maker() => C_BaseFileTM,
+										GlobalVariables::LaunchContext_MakerSM() => C_BaseFileSM];
+	declare Text BaseFile = BaseFiles[GlobalVariables::GetLaunchContext()];
+	declare GetRequest				<=> Http.CreateGet(BaseFile);
+	wait(GetRequest.IsCompleted);
+	if (GetRequest.StatusCode != 200)
+	{
+		Logger::Warn("EditorXmlReader : le fichier n'a pas été trouvé");
+		return;
+	}
+	//ReadBase(GetRequest.Result);
+	Http.Destroy(GetRequest);
+}
+
+Void AnalyzeXML(Text _XML)
+{
+	if (_XML == "")
+	{
+		return;
+	}
+	declare Document				<=> Xml.Create(_XML);
+	declare Ingame					<=> Document.Root;
+
+	if (Ingame == Null)
+	{
+		Logger::Warn("Texte mal formaté : balise Ingame non trouvée");
+		Xml.Destroy(Document);
+		return;
+	}
+	G_AccelerationCoef	= Ingame.GetAttributeReal("accelcoef", 1.);
+	G_ControlCoef		= Ingame.GetAttributeReal("controlcoef", 1.);
+	G_GravityCoef		= Ingame.GetAttributeReal("gravitycoef", 1.);
+	
+	SettingsController::Set_AccelerationCoef(G_AccelerationCoef);
+	SettingsController::Set_ControlCoef(G_ControlCoef);
+	SettingsController::Set_GravityCoef(G_GravityCoef);
+
+	//ReadBase(Document.TextContents);
+	Xml.Destroy(Document);
+}
+
+Text[] GetBaseIds()
+{
+	return G_BaseIds;
+}
+
+Text[] GetBaseTitleNames()
+{
+	return G_BaseTitleNames;
+}
+
+Text[] GetBaseMakerNames()
+{
+	return G_BaseMakerNames;
+}
+
+Text[] GetUGCAssets()
+{
+	return G_UGCAssets;
+}
+
+Boolean[] GetIsVisibleInMaker()
+{
+	return G_IsVisibleInMaker;
+}
+
+Boolean[] GetIsActivated()
+{
+	return G_IsActivated;
+}
+
+Real GetAccelerationCoef()
+{
+	return G_AccelerationCoef;
+}
+
+Real GetControlCoef()
+{
+	return G_ControlCoef;
+}
+
+Real GetGravityCoef()
+{
+	return G_GravityCoef;
+}

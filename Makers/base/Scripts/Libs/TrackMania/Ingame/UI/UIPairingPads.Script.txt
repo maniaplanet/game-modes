@@ -1,0 +1,731 @@
+/** 
+ *	In-Game UI library
+ */
+
+#Const Version		"2014-06-30"
+#Const ScriptName	"UIHotSeat.Script.txt"
+
+#Include "TextLib" as TL
+
+// #Include "Libs/Trackmania/Ingame/Game.Script.txt" 							as Game
+#Include "Libs/Nadeo/Common/Ingame/IngameLayers.Script.txt" 										as Layers
+#Include "Libs/Nadeo/Common/ManialinkTools/UIPadButtons.Script.txt"									as UIButtons
+// #Include "Libs/Nadeo/SystemText.Script.txt"										as SystemText
+//#Include "Libs/Trackmania/Ingame/UI/UIPopupBuilder.Script.txt"				as UIPopupBuilder
+#Include "Libs/Nadeo/MP4/Common/ManialinkTools/FontManager.Script.txt" 							as Font
+#Include "Libs/Nadeo/MP4/Common/Colors.Script.txt" 								as Colors
+#Include "Libs/Trackmania/Ingame/UI/UIButtonNamesPopup.Script.txt"			as UIButtonNamesPopup
+
+#Include "Libs/Trackmania/Ingame/UI/Layers/LB_PairingPad.Script.txt"				as LB_PairingPad
+
+// #Const ImgPath						"file://Media/Images/TMConsole/Ingame/"
+#Const IMGPATH						"file://Media/Images/TMConsole/Ingame/"
+#Const C_TEXT_DEFAUTSIZE 			3
+#Const SoundPath					"file://Media/Sounds/TMConsole/"
+
+#Const C_SoundSelect				"event-validate.wav"
+#Const C_LAYERNAME_PAIRINGPADS 		"Layer_TMC_PairingPads"
+#Const C_LayerPosition				 <-85., 15., 36.>
+#Const MODE_COLORID_MULTIPLAYER		1
+
+// #Const IMGPATH										"file://Media/Images/TMConsole/Ingame/"
+// #Const IMG_HOTSEAT									"splitlogo.png"
+#Const IMG_HOTSEAT									"mode-hotseat.dds"
+#Const IMG_SPLITSCREEN								"mode-splitscreen.png"
+#Const IMG_ARCADE									"mode-arcade.png"
+
+declare Integer G_NbPlayers;
+declare Text	G_ModeName;
+
+Void ConstructPairingPadsPopup(Integer _PlayerNb, Integer _ColorMode, Vec3 _LayerPos) {
+	declare UI <=> UIManager.GetUI(Players[0]);
+	declare netwrite Text[] 	Net_PairingPadsInputs		for UI;
+	declare netwrite Text		Net_PairingPadsTitle		for UI;
+	declare netwrite Text 		Net_PairingPadsSubtitle		for UI;
+	declare netwrite Integer		Net_NbPlayers				for UI;
+	
+	// Net_MenuStatusTitle
+	declare Text ImgName;
+	if(G_ModeName == "Solo") {
+		ImgName = _("Campaign");
+	} else if(G_ModeName == "Campaign_Duo") {
+		ImgName = _("Campaign");
+	} else if(G_ModeName == "Arcade") {
+		ImgName = IMGPATH^IMG_ARCADE;
+	} else if(G_ModeName == "HotSeat") {
+		ImgName = IMGPATH^IMG_HOTSEAT;
+	} else if(G_ModeName == "Rounds Splitscreen") {
+		ImgName = IMGPATH^IMG_SPLITSCREEN;
+	}
+	
+	declare FontMain 		 	= Font::GetFontName	("Main");
+	declare FontMainSmall	 	= Font::GetFontName	("MainSmall");
+	declare Integer Platform 	= UIButtons::GetPlatform();
+	declare IMGJoin 			= UIButtons::GetImage(Platform, CManiaAppEvent::EMenuNavAction::Action1);
+	declare IMGQuit 			= UIButtons::GetImage(Platform, CManiaAppEvent::EMenuNavAction::Cancel);
+	declare IMGSelect 			= UIButtons::GetImage(Platform, CManiaAppEvent::EMenuNavAction::Select);
+	// declare IMGJoin 			= UIButtons::GetImage(Platform, CManiaAppEvent::EMenuNavAction::Action1);
+	declare TXTGo 				= UIButtonNamesPopup::GetGoText();
+	declare ColorXmlWhite 	 	= Colors::GetColorXml("White");
+	declare ColorWhite 	 		= Colors::GetColor("White");
+	declare ColorGrey 	 		= Colors::GetColor("Grey");
+	declare ColorRed 	 		= Colors::GetColor("Red");
+	
+	// declare ColorBlue 	= Colors::GetColor("Blue");
+	// declare ColorRed 	= Colors::GetColor("Red");
+	// declare ColorGreen 	= Colors::GetColor("Green");
+	// declare ColorPurple = Colors::GetColor("Purple");
+	
+	Net_PairingPadsInputs 		= [IMGSelect, TXTGo];
+	
+	declare TextSizeLit 		= 7;
+	declare ColorMode 			= Colors::GetModeColorName(_ColorMode);
+	declare TitleParam			= "ColorText "^ColorMode;
+	declare Vec3 LayerPos 		= _LayerPos;
+	declare IMGPlayerConfirmed	= IMGPATH^"circle.dds";
+
+	
+	
+	declare Text[][] LayersContent;
+	declare Text[] MLXml_Players; 
+	for(I, 0, _PlayerNb-1) {
+		MLXml_Players.add(
+		"""
+			<frame id="Frame_Player{{{I}}}">
+				<quad  id="Quad_Button"   pos="114. -1.2 .3" 	size="8 8" halign="center" valign="left" bgcolor="999" hidden="0" image="{{{IMGJoin}}}"/>
+				
+				<!--<quad  id="Quad_PlayerConfirmed" pos="6. -1.2 .3" 	size="7 7" halign="center" valign="left" bgcolor="999" hidden="0" image="{{{IMGPlayerConfirmed}}}"/>-->
+				<label id="Label_PadName" pos="2. -4. .4" size="80 20" valign="center" halign="left" textfont="{{{FontMain}}}" textsize="{{{TextSizeLit}}}" textcolor="{{{ColorXmlWhite}}}" text="Player {{{I+1}}}" /> 
+				<label id="Label_PadStatus" pos="36. -4. .4" size="80 20" valign="center" halign="left" textfont="{{{FontMain}}}" textsize="{{{TextSizeLit}}}" textcolor="{{{ColorXmlWhite}}}" text="dsqds" /> 
+				<label id="Label_PadAction" pos="103. -4. .4" size="80 20" valign="center" halign="left" textfont="{{{FontMainSmall}}}" textsize="{{{TextSizeLit}}}" textcolor="{{{ColorXmlWhite}}}" text="dsqd" hidden="1"/> 
+			</frame>
+		"""
+		);
+	}
+	
+	LayersContent.clear();
+	//L16N. Popup title for joining the game
+	LayersContent.add(["Title", 	"Title", 		ImgName, 								"2",	"", TitleParam, "Net_PairingPadsTitle Net_PairingPadsSubtitle"]);
+	LayersContent.add(["Space", 	"", 		  	"", 											"1",	"", "", ""]);
+	
+	for(I, 0, _PlayerNb-1) {
+		LayersContent.add(["Custom", 	"PairingPlayer"^I,		  	MLXml_Players[I], 					"1",	"", "Fg Bg", ""]);
+	}
+	LayersContent.add(["Space", 	"", 		  	"", 											"1",	"", "", ""]);
+	LayersContent.add(["Input", 	"Input", 		"", 											"1",	"", "", "Net_PairingPadsInputs"]);
+	
+	declare MLScriptFunctions = 
+	"""
+		Void SetPlayerStatus(Integer _Index, Integer _Status) {
+			// log(_Index);
+			if(_Index == -1) return;
+			declare Frame_AccordedPlayer 			<=> ((Page.MainFrame.GetFirstChild("Frame_Player"^_Index)) 				as CMlFrame);
+			declare Label_PadName 					<=> ((Frame_AccordedPlayer.GetFirstChild("Label_PadName")) 			as CMlLabel);
+			declare Label_PadStatus 				<=> ((Frame_AccordedPlayer.GetFirstChild("Label_PadStatus")) 		as CMlLabel);
+			declare Label_PadAction 				<=> ((Frame_AccordedPlayer.GetFirstChild("Label_PadAction")) 		as CMlLabel);
+			declare Quad_Button 					<=> ((Frame_AccordedPlayer.GetFirstChild("Quad_Button")) 				as CMlQuad);
+
+			if(_Status == 0) {
+				Quad_Button.ImageUrl = "{{{IMGJoin}}}";
+				Quad_Button.Hide();
+				Label_PadAction.Hide();
+				//L16N Pad status for pairing pads. Pad is not connected. In a small popup, each pad is one slot, and informations are in column
+				Label_PadStatus.Value = _("Not connected");
+				Label_PadStatus.TextColor = {{{ColorGrey}}};
+			} else if(_Status == 1) {
+				Quad_Button.ImageUrl = "{{{IMGJoin}}}";
+				Quad_Button.Show();
+				// Label_PadAction.Show();
+				//L16N Infinitive verb. Pad action for pairing pads. In a small popup, each pad is one slot, and informations are in column
+				Label_PadAction.Value = _("join");
+				// Label_PadName.TextColor = {{{ColorWhite}}};
+				//L16N Pad status for pairing pads. Pad is there. In a small popup, each pad is one slot, and informations are in column
+				Label_PadStatus.Value = _("|About pad|Connected");
+				Label_PadStatus.TextColor = {{{ColorWhite}}};
+			} else if(_Status == 2) {
+				Quad_Button.ImageUrl = "{{{IMGQuit}}}";
+				Quad_Button.Show();
+				// Label_PadAction.Show();
+				//L16N Infinitive verb. Pad action for pairing pads. In a small popup, each pad is one slot, and informations are in column
+				Label_PadAction.Value = _("quit");
+				// Label_PadName.TextColor = {{{ColorWhite}}};
+				//L16N Pad status for pairing pads. Pad is ready to play. In a small popup, each pad is one slot, and informations are in column
+				Label_PadStatus.Value = _("|About pad|Ready");
+				Label_PadStatus.TextColor = {{{ColorWhite}}};
+			} else if(_Status == 3) {
+				Quad_Button.Hide();
+				Label_PadAction.Hide();
+				//L16N Pad status for pairing pads. There are enough players. In a small popup, each pad is one slot, and informations are in column
+				Label_PadStatus.Value = _("Enough players");
+				Label_PadStatus.TextColor = {{{ColorWhite}}};
+				// Label_PadName.TextColor = {{{ColorWhite}}};
+			} else if(_Status == 4) {
+				Quad_Button.ImageUrl = "{{{IMGJoin}}}";
+				Quad_Button.Show();
+				Label_PadAction.Show();
+				//L16N Infinitive verb. Pad action for pairing pads. In a small popup, each pad is one slot, and informations are in column
+				// Label_PadAction.Value = _("join");
+				Label_PadStatus.Value = _("Not connected");
+				// Label_PadName.TextColor = {{{ColorRed}}};
+			} else if(_Status == 5) {
+				// Quad_Button.ImageUrl = "{{{IMGQuit}}}";
+				Quad_Button.Hide();
+				// Label_PadAction.Show();
+				//L16N Infinitive verb. Pad action for pairing pads. In a small popup, each pad is one slot, and informations are in column
+				Label_PadAction.Value = _("quit");
+				// Label_PadName.TextColor = {{{ColorWhite}}};
+				//L16N Pad status for pairing pads. Pad is ready to play. In a small popup, each pad is one slot, and informations are in column
+				Label_PadStatus.Value = _("|About pad|Ready");
+				Label_PadStatus.TextColor = {{{ColorWhite}}};
+			} else if(_Status == 6) {
+				Quad_Button.ImageUrl = "{{{IMGJoin}}}";
+				Quad_Button.Hide();
+				Label_PadAction.Hide();
+				//L16N Pad status for pairing pads. Pad is not connected. In a small popup, each pad is one slot, and informations are in column
+				Label_PadStatus.Value = _("Not in game");
+				Label_PadStatus.TextColor = {{{ColorGrey}}};
+			}
+			//L16N Slot name for pairing pads. %1 is the index of the pad. Information  are displayed in a small popup, each pad is one slot, and informations are in column
+			Label_PadName.Value = TL::Compose(_("|8 chars max.|Slot %1"), ""^_Index+1);
+		}
+		
+		Void SetPopupInputsAvailableAccordingPads() {
+			declare Boolean 			IsPopupValidationFordidden					for UI;
+			declare netwrite Integer[] 	LibTMC_PairingPads_PadsPlaying 				for UI;
+			declare netread Integer		Net_NbPlayers								for UI;
+			declare netread Text 		Net_ModeName 								for UI;
+			declare Integer[]			LibTMC_PairingPads_PadSlotIdToPadControllerId	for UI;
+			declare netwrite Integer[]			Net_SlotIdUsed								for UI;
+			declare netwrite Integer[]			Pre_SlotIdUsed								for UI;
+			
+			declare Boolean SlotMissing = False;
+			declare Integer[] SlotId;
+			
+			if(Net_ModeName == "Rounds Splitscreen") {
+				foreach(SlotId in Pre_SlotIdUsed) {
+					if(!Net_SlotIdUsed.exists(SlotId)) {
+						SlotMissing = True;
+					}
+				}
+			}
+			
+			if(LibTMC_PairingPads_PadsPlaying.count >= Net_NbPlayers && !SlotMissing) {
+				IsPopupValidationFordidden = False;
+			} else {
+				IsPopupValidationFordidden = True;
+			}
+		}
+	""";
+	
+	declare MLScriptInit =
+	"""
+		declare netwrite Integer[] 			LibTMC_PairingPads_PadsPlaying 					for UI;
+		declare Integer[]					LibTMC_PairingPads_PadSlotIdToPadControllerId	for UI;
+		declare netread Boolean 			Net_IsSelection 								for UI;
+		declare netwrite	Integer[] 		Pre_LibTMC_PairingPads_PadsPlaying				for UI;
+		declare Boolean						IsPopupValidationFordidden						for UI;
+		declare Boolean						IsPairingPads									for UI;
+		declare netread Integer				Net_NbPlayers									for UI;
+		declare netwrite Integer[]			Net_SlotIdUsed									for UI;
+		declare netwrite Integer[]			Pre_SlotIdUsed									for UI;
+		declare netread Text 				Net_ModeName 									for UI;
+		declare netread Integer 			Net_StartPairingUpdate 							for UI;
+		declare			Integer				Pre_StartPairingUpdate							for UI;
+		
+		Pre_StartPairingUpdate = -1;
+		
+		declare netread Integer Net_SplitscreenMode for UI;
+		// declare Label_PadName 					<=> ((Frame_AccordedPlayer.GetFirstChild("Label_PadName")) 			as CMlLabel);
+		
+		declare netread Boolean Net_IsFirstInit for UI;
+		
+		// declare Boolean		Net_IsFirstInit = False;
+		declare Boolean		NewPairingComplete = False;
+		declare CMlFrame 	Frame_AccordedPlayer;
+		declare Integer[] 	ActivePads for UI;
+		declare Integer[]	PadsSlotIdEnough;
+		LibTMC_PairingPads_PadsPlaying.clear();
+		// LibTMC_PairingPads_PadSlotIdToPadControllerId.clear();
+		declare netwrite Integer Net_MainUserControllerId for UI;
+		declare Integer Pre_MainUserControllerId = Net_MainUserControllerId;
+		
+		if(Net_MainUserControllerId > -1) {
+			LibTMC_PairingPads_PadsPlaying.add(Net_MainUserControllerId);
+		}
+	""";
+	
+	declare MLScriptWhenShown = 
+	"""
+		if(PageIsVisible) {
+			
+		} else {
+			IsPairingPads = False;
+		}
+	""";
+	
+	declare MLScriptLoop = """
+		// log(Net_StartPairingUpdate);
+		if(Pre_StartPairingUpdate != Net_StartPairingUpdate) {
+			log(Now^">START PAIRING");
+			Pre_StartPairingUpdate = Net_StartPairingUpdate;
+			
+			declare Vec3[Integer] Colors;
+			Colors[0] 	= {{{Colors::GetColor("Blue")}}};
+			Colors[1] 	= {{{Colors::GetColor("Red")}}};
+			Colors[2] 	= {{{Colors::GetColor("Green")}}};
+			Colors[3] 	= {{{Colors::GetColor("Purple")}}};
+			
+			declare Boolean ReInitPads = True;
+			Pre_SlotIdUsed = Net_SlotIdUsed;
+
+			
+			// if(Net_ModeName == "Rounds Splitscreen") {
+			if(True) {
+				for(I, 0, 3) {
+					declare Frame_AccordedPlayer 			<=> ((Page.MainFrame.GetFirstChild("Frame_Player"^I)) 				as CMlFrame);
+					declare Label_PadName 					<=> ((Frame_AccordedPlayer.GetFirstChild("Label_PadName")) 			as CMlLabel);
+					
+					if(Net_ModeName == "Rounds Splitscreen") {
+						if(Net_SplitscreenMode == 4 || Net_SplitscreenMode == 2 && I < 2) {
+							Label_PadName.TextColor = Colors[I];
+						} else if(Net_SplitscreenMode == 2 && I > 1) {
+							// Label_PadName.TextColor = {{{ColorGrey}}};
+							Label_PadName.TextColor = Colors[I];
+						}
+						
+						if(Net_IsFirstInit) {
+							if(Pre_SlotIdUsed.exists(I)) {
+								Label_PadName.TextColor = Colors[I];
+							} else {
+								Label_PadName.TextColor = {{{ColorWhite}}};
+							}
+							
+						} else {
+							Label_PadName.TextColor = Colors[I];
+						}
+					}
+					
+					//On fait une photographie de l'état juste avant.
+					if(Net_IsFirstInit) {
+						if(LibTMC_PairingPads_PadSlotIdToPadControllerId.existskey(I) && LibTMC_PairingPads_PadSlotIdToPadControllerId[I] != -1) {
+							declare ControllerId = LibTMC_PairingPads_PadSlotIdToPadControllerId[I];
+							declare Boolean Found = False;
+							foreach(Index => Pad in Input.Pads) {
+								if(ControllerId == Pad.ControllerId) {
+									Found = True;
+								}
+							}
+
+							if(Found) {
+								if(!Pre_SlotIdUsed.exists(I)) {
+									ActivePads.remove(LibTMC_PairingPads_PadSlotIdToPadControllerId[I]);
+									LibTMC_PairingPads_PadSlotIdToPadControllerId[I] = -1;
+									SetPlayerStatus(I, 0);
+								} else {
+									SetPlayerStatus(I, 1);
+								}
+							} else {
+								LibTMC_PairingPads_PadSlotIdToPadControllerId[I] = -1;
+								SetPlayerStatus(I, 0);
+							}
+						} else {
+							SetPlayerStatus(I, 0);
+						}
+					}
+				}
+				
+				if(Net_IsFirstInit) {
+					ReInitPads = False;
+				}
+			}
+			
+			if(ReInitPads) {
+
+				LibTMC_PairingPads_PadSlotIdToPadControllerId.clear();
+				ActivePads.clear();
+				
+				for(I, 0, 3) {
+					SetPlayerStatus(I, 0);
+				}
+			}
+			
+			PadsSlotIdEnough.clear();
+			LibTMC_PairingPads_PadsPlaying.clear();
+			Net_SlotIdUsed.clear();
+			NewPairingComplete = False;
+			Pre_MainUserControllerId = Net_MainUserControllerId;
+			IsPopupValidationFordidden = True;
+			IsPairingPads = True;
+			SetPopupInputsAvailableAccordingPads();
+		}
+		
+		// log(Now^">START PAIRING");
+		
+		foreach(Pad in Input.Pads) {
+			if(!ActivePads.exists(Pad.ControllerId) && Net_MainUserControllerId != -1) {
+				ActivePads.add(Pad.ControllerId);
+				
+				if(!LibTMC_PairingPads_PadSlotIdToPadControllerId.exists(Pad.ControllerId)) {
+					declare Integer FinalSlotId 	= 0;
+					declare Integer FirstEmptySlot 	= -1;
+					
+					for(I, 0, LibTMC_PairingPads_PadSlotIdToPadControllerId.count-1) {
+						declare Boolean IsSlotUsed = True;
+						/*
+						if(Net_ModeName == "Rounds Splitscreen") {
+							if(Net_IsFirstInit) {
+								if(!Pre_SlotIdUsed.exists(I)) {
+									IsSlotUsed = False;
+								}
+							}
+						}
+						*/
+						
+						if(LibTMC_PairingPads_PadSlotIdToPadControllerId[I] == -1 && IsSlotUsed) {
+							FirstEmptySlot = I;
+							break;
+						}
+					}
+					//aaaaaa
+					if(FirstEmptySlot > -1) {
+						LibTMC_PairingPads_PadSlotIdToPadControllerId[FirstEmptySlot] = Pad.ControllerId;
+						FinalSlotId = FirstEmptySlot;
+					} else {
+						LibTMC_PairingPads_PadSlotIdToPadControllerId.add(Pad.ControllerId);
+						FinalSlotId = 0;
+					}
+					
+					// log(Pre_SlotIdUsed);
+					if(Net_ModeName == "Rounds Splitscreen" && Net_IsFirstInit && !Pre_SlotIdUsed.exists(LibTMC_PairingPads_PadSlotIdToPadControllerId.keyof(Pad.ControllerId))) {
+						SetPlayerStatus(LibTMC_PairingPads_PadSlotIdToPadControllerId.keyof(Pad.ControllerId), 6);
+					} else {
+						if(!PadsSlotIdEnough.exists(FinalSlotId)) {
+							SetPlayerStatus(LibTMC_PairingPads_PadSlotIdToPadControllerId.keyof(Pad.ControllerId), 1);
+						} else {
+							SetPlayerStatus(FinalSlotId, 3);
+						}
+						
+						if(Net_SplitscreenMode != 4) {
+							if(LibTMC_PairingPads_PadsPlaying.count == Net_NbPlayers) {
+								for(I, 0, LibTMC_PairingPads_PadSlotIdToPadControllerId.count-1) {
+									if(!LibTMC_PairingPads_PadsPlaying.exists(LibTMC_PairingPads_PadSlotIdToPadControllerId[I])
+										&& LibTMC_PairingPads_PadSlotIdToPadControllerId[I] != -1
+									) {
+
+										SetPlayerStatus(LibTMC_PairingPads_PadSlotIdToPadControllerId.keyof(LibTMC_PairingPads_PadSlotIdToPadControllerId[I]), 3);
+										PadsSlotIdEnough.add(LibTMC_PairingPads_PadSlotIdToPadControllerId.keyof(LibTMC_PairingPads_PadSlotIdToPadControllerId[I]));
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+
+		declare Integer[] PadsToRemove;
+		foreach(PadId in ActivePads) {
+			declare Boolean IsInPads = False;
+			foreach(Pad in Input.Pads) {
+				if(Pad.ControllerId == PadId) {
+					IsInPads = True;
+				}
+			}
+			
+			if(!IsInPads) {
+				PadsToRemove.add(PadId);
+			}
+		}
+		
+		foreach(PadId in PadsToRemove) {
+			if(LibTMC_PairingPads_PadSlotIdToPadControllerId.keyof(PadId) <= Net_NbPlayers-1) {
+				SetPlayerStatus(LibTMC_PairingPads_PadSlotIdToPadControllerId.keyof(PadId), 0);
+			}
+			
+			//Normalement il existe forcément mais on sait jamais
+			if(LibTMC_PairingPads_PadSlotIdToPadControllerId.exists(PadId)) {	
+				if(LibTMC_PairingPads_PadsPlaying.exists(PadId)) {
+					LibTMC_PairingPads_PadsPlaying.remove(PadId);
+					Net_SlotIdUsed.remove(LibTMC_PairingPads_PadSlotIdToPadControllerId.keyof(PadId));
+					// log(Now^"> Slot Used removed");
+				}
+				
+				declare Integer PadSlotId = LibTMC_PairingPads_PadSlotIdToPadControllerId.keyof(PadId);
+				LibTMC_PairingPads_PadSlotIdToPadControllerId[PadSlotId] = -1;
+				
+				
+				foreach(PadSlotId in PadsSlotIdEnough) {
+					SetPlayerStatus(PadSlotId, 1);
+				}
+				SetPlayerStatus(PadSlotId, 0);
+				PadsSlotIdEnough.clear();
+			}
+			
+			
+			SetPopupInputsAvailableAccordingPads();
+			ActivePads.remove(PadId);
+		}
+		
+		declare netwrite Boolean Net_IsPauseMenuEnabled for UI;
+		if(Net_IsPauseMenuEnabled) continue;
+
+		foreach(PadIndex => Pad in Input.Pads) 
+		{
+			foreach(Button in Pad.ButtonEvents)
+			{
+				switch(Button) 
+				{
+					case CInputScriptPad::EButton::A : 
+					{
+						if(!IsPopupValidationFordidden && LibTMC_PairingPads_PadsPlaying.exists(Pad.ControllerId)) {
+							declare netwrite Integer 	Net_{{{C_LAYERNAME_PAIRINGPADS}}}_PopupUpdate for UI;
+							Net_{{{C_LAYERNAME_PAIRINGPADS}}}_PopupUpdate = Now;
+							// Net_IsFirstInit = True;
+						}
+					}
+					case CInputScriptPad::EButton::X : 
+					{
+						
+						if(Net_ModeName == "Rounds Splitscreen" && Net_IsFirstInit && !Pre_SlotIdUsed.exists(LibTMC_PairingPads_PadSlotIdToPadControllerId.keyof(Pad.ControllerId))) {
+							break;
+						}
+						
+						// log((LibTMC_PairingPads_PadsPlaying.count < Net_NbPlayers)^" "^(Net_SplitscreenMode == 4 && !Net_IsFirstInit)^" "^LibTMC_PairingPads_PadsPlaying.exists(Pad.ControllerId));
+						log(LibTMC_PairingPads_PadsPlaying.count^" "^Net_NbPlayers);
+						
+						if(((LibTMC_PairingPads_PadsPlaying.count < Net_NbPlayers) || (Net_SplitscreenMode == 4 && !Net_IsFirstInit)) && !LibTMC_PairingPads_PadsPlaying.exists(Pad.ControllerId)) {
+							
+							Net_SlotIdUsed.add(LibTMC_PairingPads_PadSlotIdToPadControllerId.keyof(Pad.ControllerId));
+							LibTMC_PairingPads_PadsPlaying.add(Pad.ControllerId);
+							SetPlayerStatus(LibTMC_PairingPads_PadSlotIdToPadControllerId.keyof(Pad.ControllerId), 2);
+							SetPopupInputsAvailableAccordingPads();
+							 // log(LibTMC_PairingPads_PadsPlaying.count);
+							if(Net_ModeName == "Rounds Splitscreen" && Net_IsFirstInit) {
+								break;
+							}
+
+							if(LibTMC_PairingPads_PadsPlaying.count == Net_NbPlayers && !Net_IsSelection) {
+								
+								for(I, 0, LibTMC_PairingPads_PadSlotIdToPadControllerId.count-1) {
+									if(!LibTMC_PairingPads_PadsPlaying.exists(LibTMC_PairingPads_PadSlotIdToPadControllerId[I])
+										&& LibTMC_PairingPads_PadSlotIdToPadControllerId[I] != -1
+									) {
+
+										SetPlayerStatus(LibTMC_PairingPads_PadSlotIdToPadControllerId.keyof(LibTMC_PairingPads_PadSlotIdToPadControllerId[I]), 3);
+										PadsSlotIdEnough.add(LibTMC_PairingPads_PadSlotIdToPadControllerId.keyof(LibTMC_PairingPads_PadSlotIdToPadControllerId[I]));
+									}
+								}
+							}
+						}
+					}
+					
+					case CInputScriptPad::EButton::B : 
+					{
+						if(LibTMC_PairingPads_PadsPlaying.exists(Pad.ControllerId)) {
+							SetPlayerStatus(LibTMC_PairingPads_PadSlotIdToPadControllerId.keyof(Pad.ControllerId), 1);
+							LibTMC_PairingPads_PadsPlaying.remove(Pad.ControllerId);
+							Net_SlotIdUsed.remove(LibTMC_PairingPads_PadSlotIdToPadControllerId.keyof(Pad.ControllerId));
+							SetPopupInputsAvailableAccordingPads();
+							
+							foreach(PadSlotId in PadsSlotIdEnough) {
+								SetPlayerStatus(PadSlotId, 1);
+							}
+							PadsSlotIdEnough.clear();
+						}
+					}						
+				}
+			}
+		}
+	""";
+	
+	/*
+	UIPopupBuilder::CreateLayer(
+		C_LAYERNAME_PAIRINGPADS,
+		"PadMissing",
+		LayerPos,
+		LayersContent, 
+		MLScriptFunctions, 
+		MLScriptInit, 
+		MLScriptWhenShown,
+		MLScriptLoop
+	);
+	*/
+
+
+	declare Text MLText = LB_PairingPad::Build();
+	Layers::Create(C_LAYERNAME_PAIRINGPADS, MLText);
+	Layers::Attach(C_LAYERNAME_PAIRINGPADS);
+
+	Layers::SetVisibility(C_LAYERNAME_PAIRINGPADS, False);
+}
+
+Void Private_SetOnePlayerArcade() {
+	declare Text ML = """
+		<frame id="Frame_MedalCount" pos="0 0 0">
+
+		</frame>
+		
+		<script><!--
+		
+			main()
+			{	
+				declare netwrite Integer[] 	LibTMC_PairingPads_PadsPlaying 		for UI;
+				declare netread Integer Net_SetOnePlayerUpdate 					for UI;
+				declare netread Integer Net_SetDefaultTwoPlayerUpdate 			for UI;
+				declare Integer Pre_SetOnePlayerUpdate;
+				declare netwrite Integer Net_MainUserControllerId 				for UI;
+				
+				while(True) {
+					yield;
+
+					if(Pre_SetOnePlayerUpdate != Net_SetOnePlayerUpdate) {
+						Pre_SetOnePlayerUpdate = Net_SetOnePlayerUpdate;
+						if(Net_MainUserControllerId > -1) {
+							LibTMC_PairingPads_PadsPlaying.clear();
+							LibTMC_PairingPads_PadsPlaying.add(Net_MainUserControllerId);
+						}	
+					} 
+					
+					/*
+					if(Pre_SetDefaultTwoPlayerUpdate != Net_SetDefaultTwoPlayerUpdate) {
+						if(Net_MainUserControllerId > -1) {
+							LibTMC_PairingPads_PadsPlaying.clear();
+							LibTMC_PairingPads_PadsPlaying.add(Net_MainUserControllerId);
+						}
+						Pre_SetDefaultTwoPlayerUpdate = Net_SetDefaultTwoPlayerUpdate
+					}
+					*/
+				}
+			}
+		--></script>
+	""";
+	
+	Layers::Create("Solo_Arcade", ML);
+	Layers::Attach("Solo_Arcade");
+}
+
+Void SetDefaultTwoPlayers() {
+	declare UI <=> UIManager.GetUI(Players[0]);
+	declare netwrite Integer Net_SetDefaultTwoPlayerUpdate for UI;
+	Net_SetDefaultTwoPlayerUpdate += 1;
+}
+
+Void SetOnePlayerArcade() {
+	declare UI <=> UIManager.GetUI(Players[0]);
+	declare netwrite Integer Net_SetOnePlayerUpdate for UI;
+	Net_SetOnePlayerUpdate += 1;
+}
+
+Boolean GetPopUpAnswer()
+{
+	declare UI <=> UIManager.GetUI(Players[0]);
+	declare netread Integer Net_Layer_TMC_PairingPads_PopupUpdate 	for UI;
+	declare 		Integer Prev_Layer_TMC_PairingPads_PopupUpdate 	for UI;
+	//log("0");
+	if(Prev_Layer_TMC_PairingPads_PopupUpdate != Net_Layer_TMC_PairingPads_PopupUpdate)
+	{
+		Prev_Layer_TMC_PairingPads_PopupUpdate = Net_Layer_TMC_PairingPads_PopupUpdate;
+		Layers::SetVisibility(C_LAYERNAME_PAIRINGPADS, False);
+		return True;
+	}
+	return False;
+}
+
+
+Integer[] GetPlayingPads() {
+	declare UI <=> UIManager.GetUI(Players[0]);
+	declare netread Integer[] 	LibTMC_PairingPads_PadsPlaying 	for UI;
+	return LibTMC_PairingPads_PadsPlaying;
+}
+
+Boolean DoesRequiredPadMissing() {
+	declare UI <=> UIManager.GetUI(Players[0]);
+	declare netread Integer[] 	LibTMC_PairingPads_PadsPlaying 	for UI;
+	declare Integer NbRequiredPadsPresent = 0;
+
+	foreach(PadControllerId in LibTMC_PairingPads_PadsPlaying) {
+		foreach(Pad in Input.Pads) {
+			if(Pad.ControllerId == PadControllerId) {
+				NbRequiredPadsPresent += 1;
+			}
+		}
+	}
+	
+	// return (NbRequiredPadsPresent != LibTMC_PairingPads_PadsPlaying.count || LibTMC_PairingPads_PadsPlaying.count != G_NbPlayers);
+	return False;
+	return (NbRequiredPadsPresent != LibTMC_PairingPads_PadsPlaying.count || LibTMC_PairingPads_PadsPlaying.count != G_NbPlayers) && G_NbPlayers > 1;
+}
+
+Void WillStartPairing() {
+	declare UI <=> UIManager.GetUI(Players[0]);
+	declare netwrite Integer Net_StartPairingUpdate for UI;
+	Net_StartPairingUpdate += 1;
+}
+
+Void SetPairingPagsVisibility(Boolean _IsVisible) {
+	
+	Layers::SetVisibility(C_LAYERNAME_PAIRINGPADS, _IsVisible);
+}
+
+Void SetPairingPadsMode(Integer _Mode) {
+	declare UI <=> UIManager.GetUI(Players[0]);
+	declare netwrite Integer Net_PairingMode for UI;
+	Net_PairingMode = _Mode;
+}
+
+Void SetNbPlayers(Integer _Player) {
+	declare UI <=> UIManager.GetUI(Players[0]);
+	declare netwrite Integer Net_NbPlayers 				for UI;
+	declare netwrite Text 	 Net_PairingPadsSubtitle	for UI;
+	declare netwrite Boolean Net_IsSelection 			for UI;
+	
+	Net_NbPlayers 	= _Player;
+	G_NbPlayers		= _Player;
+	if(!Net_IsSelection) {
+		//L16N indication for pads pairing
+		Net_PairingPadsSubtitle		= TL::Compose(_("%1 players needed"), ""^Net_NbPlayers);
+	} else {
+		//L16N indication for pads pairing
+		Net_PairingPadsSubtitle		= TL::Compose(_("At least %1 players needed"), ""^3, UIButtons::GetPadName());
+	}
+}
+
+Void SetIsPlayerSelection(Boolean _IsSelection) {
+	declare UI <=> UIManager.GetUI(Players[0]);
+	declare netwrite Boolean Net_IsSelection for UI;
+	Net_IsSelection = _IsSelection;
+	SetNbPlayers(3);
+}
+
+Void Load(Text _ModeName) {
+	declare Integer ColorMode = 0;
+	declare Vec3 LayerPosition = C_LayerPosition;
+	if(_ModeName == "Trackbuilder") return;
+
+	if(_ModeName == "Solo" || _ModeName == "Campaign_Duo") {
+		ColorMode = 2;
+	} else {
+		ColorMode = 1;
+		if(_ModeName == "Rounds Splitscreen") {
+			LayerPosition = <0.0, 0.0, 36.0>;
+		}
+	}
+	
+	//log("0");
+	G_ModeName = _ModeName;
+	
+	declare UI <=> UIManager.GetUI(Players[0]);
+	declare Integer WaitForPadTimer = Now + 5000;
+	declare netread Integer Net_MainUserControllerId for UI;
+	while(Net_MainUserControllerId ==  0 && WaitForPadTimer > Now) {
+		yield;
+	}
+	
+	ConstructPairingPadsPopup(4, ColorMode, LayerPosition);	
+	Private_SetOnePlayerArcade();
+	SetNbPlayers(1);
+
+	// declare UI <=> UIManager.GetUI(Players[0]);
+	// declare netwrite Integer Net_NbPlayers for UI;
+	// Net_NbPlayers 	= 1;
+}

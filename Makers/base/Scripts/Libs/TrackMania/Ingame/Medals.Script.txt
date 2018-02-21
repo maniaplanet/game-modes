@@ -1,0 +1,192 @@
+#Const TMC_MEDAL_AUTHOR			0
+#Const TMC_MEDAL_GOLD			1
+#Const TMC_MEDAL_SILVER			2
+#Const TMC_MEDAL_BRONZE			3
+#Const TMC_MEDAL_PLAYER			4
+#Const TMC_MEDAL_NONE			5
+#Const TMC_MEDAL_ANOTHERPLAYER		6
+
+#Const IMGPATH					"file://Media/Images/TMConsole/Ingame/"
+
+declare Integer[Integer] G_TimesOnMap;
+
+Integer RoundHundredthTime(Integer _Time) 
+{
+	return _Time/10;
+}
+
+Integer GetPlayerTimesOnMap(CTmPlayer _Player, Text _Context) 
+{
+	declare Ident MyUserID for Players[0].User;
+	declare Integer PlayerTime = ScoreMgr.Map_GetRecord(MyUserID, Map.MapInfo.MapUid, _Context);
+	return PlayerTime;
+}
+
+Integer[Integer] GetTimesOnMap() 
+{
+	declare Integer[Integer] TimesOnMap;
+	TimesOnMap[TMC_MEDAL_AUTHOR] 		= Map.TMObjective_AuthorTime;
+	TimesOnMap[TMC_MEDAL_GOLD] 			= Map.TMObjective_GoldTime;
+	TimesOnMap[TMC_MEDAL_SILVER] 		= Map.TMObjective_SilverTime;
+	TimesOnMap[TMC_MEDAL_BRONZE] 		= Map.TMObjective_BronzeTime;
+	return TimesOnMap;
+}
+
+Void SetTimesOnMap(Integer[Integer] _TimesOnMap) {
+	G_TimesOnMap = _TimesOnMap;
+}
+
+Integer GetMedalTime(Integer _Medal)
+{
+	declare Integer Time = -1;
+	switch(_Medal)
+	{
+		case TMC_MEDAL_AUTHOR 	: Time = Map.TMObjective_AuthorTime;
+		case TMC_MEDAL_GOLD 	: Time = Map.TMObjective_GoldTime;
+		case TMC_MEDAL_SILVER 	: Time = Map.TMObjective_SilverTime;
+		case TMC_MEDAL_BRONZE 	: Time = Map.TMObjective_BronzeTime;
+	}
+	return Time;
+}
+
+Text GetMedalName(Integer _Medal)
+{
+	declare Text MedalName = "";
+	switch(_Medal)
+	{
+		//L16N Name of the trackmaster medal
+		case TMC_MEDAL_AUTHOR 	: MedalName = _("Author");
+		//L16N Name of the gold medal
+		case TMC_MEDAL_GOLD 	: MedalName = _("Gold");
+		//L16N Name of the silver medal
+		case TMC_MEDAL_SILVER 	: MedalName = _("Silver");
+		//L16N Name of the bronze medal
+		case TMC_MEDAL_BRONZE 	: MedalName = _("Bronze");
+		//L16N Propose to the player to drive without ghost
+		case TMC_MEDAL_NONE 	: MedalName = _("Drive alone");
+		//L16N Propose to the player to drive against his personal record
+		case TMC_MEDAL_PLAYER 	: MedalName = _("Personal Record");
+	}
+	return MedalName;
+}
+
+
+Text GetCompletMedalName(Integer _Medal)
+{
+	declare Text MedalName = "";
+	switch(_Medal)
+	{
+		//L16N Full Name of the trackmaster medal
+		case TMC_MEDAL_AUTHOR 	: MedalName = _("Author Medal");
+		//L16N Full Name of the gold medal
+		case TMC_MEDAL_GOLD 	: MedalName = _("Gold Medal");
+		//L16N Full Name of the silver medal
+		case TMC_MEDAL_SILVER 	: MedalName = _("Silver Medal");
+		//L16N Full Name of the bronze medal
+		case TMC_MEDAL_BRONZE 	: MedalName = _("Bronze Medal");
+		//L16N Propose to the player to drive without ghost
+		case TMC_MEDAL_NONE 	: MedalName = _("Drive alone");
+		//L16N Propose to the player to drive against his personal record
+		case TMC_MEDAL_PLAYER 	: MedalName = _("Personal Record");
+	}
+	return MedalName;
+}
+
+Integer GetMedalFromTime(Integer _Time) 
+{
+	declare Integer Medal = TMC_MEDAL_NONE;
+	if(_Time == -1)
+	{
+		return Medal;
+	}
+	
+	declare Integer PlayerTime = RoundHundredthTime(_Time);
+	
+	declare Integer[Integer] TimesOnMap = G_TimesOnMap;
+	
+	if(TimesOnMap.count == 0) {
+		TimesOnMap = GetTimesOnMap();
+	}
+	
+	if(PlayerTime <= RoundHundredthTime(TimesOnMap[TMC_MEDAL_AUTHOR])) 
+	{
+		Medal = TMC_MEDAL_AUTHOR;
+	} 
+	else 
+	if(PlayerTime <= RoundHundredthTime(TimesOnMap[TMC_MEDAL_GOLD])) 
+	{
+		Medal = TMC_MEDAL_GOLD;
+	} 
+	else 
+	if(PlayerTime <= RoundHundredthTime(TimesOnMap[TMC_MEDAL_SILVER])) 
+	{
+		Medal = TMC_MEDAL_SILVER;
+	} 
+	else 
+	if(PlayerTime <= RoundHundredthTime(TimesOnMap[TMC_MEDAL_BRONZE])) 
+	{
+		Medal = TMC_MEDAL_BRONZE;
+	} 
+	else 
+	{
+		Medal = TMC_MEDAL_NONE;
+	}
+	
+	
+	return Medal;
+}
+
+Void SetBestMedalInGameUI(CTmMode _Mode, Integer _BestTime, Ident _PlayerId) {
+	declare Integer PlayerMedal = GetMedalFromTime(_BestTime);
+	declare UI <=> UIManager.GetUI(_Mode.Players[_PlayerId]);
+	declare	netwrite Integer Net_BestMedal for UI;
+	Net_BestMedal = PlayerMedal;
+}
+
+Text GetMedalFunctions()
+{
+	return """ 
+	Text GetMedalForTime(Integer _Time) 
+	{
+		if (_Time <= 0) return "MedalSlot";
+		if (_Time <= Map.TMObjective_AuthorTime) 	return "MedalNadeo";
+		if (_Time <= Map.TMObjective_GoldTime) 		return "MedalGold";
+		if (_Time <= Map.TMObjective_SilverTime)	return "MedalSilver";
+		if (_Time <= Map.TMObjective_BronzeTime) 	return "MedalBronze";
+		
+		return "MedalSlot";
+	}
+
+	Text GetMedalUrl(Integer _Medal)
+	{
+		declare MedalFile 	= "";
+		switch(_Medal)
+		{
+			case TMC_MEDAL_AUTHOR 	: MedalFile = "medal-author.dds";
+			case TMC_MEDAL_GOLD 	: MedalFile = "medal-gold.dds";
+			case TMC_MEDAL_SILVER 	: MedalFile = "medal-silver.dds";
+			case TMC_MEDAL_BRONZE 	: MedalFile = "medal-bronze.dds";
+			case TMC_MEDAL_NONE 	: MedalFile = "medal-empty.dds";
+			case TMC_MEDAL_PLAYER 	: MedalFile = "";
+		}
+		
+		if(MedalFile == "") return "";
+		
+		return "{{{IMGPATH}}}" ^ MedalFile;
+	}
+	
+	Text GetJokerUrl(Integer _Medal) {
+		declare MedalFile 	= "";
+		switch(_Medal)
+		{
+			case TMC_MEDAL_GOLD 	: MedalFile = "medal-gold-joker.dds";
+			case TMC_MEDAL_SILVER 	: MedalFile = "medal-silver-joker.dds";
+			case TMC_MEDAL_BRONZE 	: MedalFile = "medal-bronze-joker.dds";
+		}
+		if(MedalFile == "") return "";
+		
+		return "{{{IMGPATH}}}" ^ MedalFile;
+	}
+	
+	""";
+}

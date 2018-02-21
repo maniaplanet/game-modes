@@ -1,0 +1,233 @@
+
+//#Const C_ImgBase 	"file://Media/Manialinks/Nadeo/TMConsole/Images/"
+
+declare Text[] G_BannerIds;
+declare Vec2[] G_BannerParams; //<PosX, SizeX>
+
+Void Unload() {
+	G_BannerIds.clear();
+	G_BannerParams.clear();
+}
+
+Void Load() {
+	Unload();
+}
+
+Text InjectInManialink(Text _BannerId, Vec3 _Position, Vec2 _BannerSize, Integer _TextSize, Text _TextFont, Text _Other) { //en faire éventuellement une 2e plus générale, appellée avec les bonnes valeurs par cette version là
+	// log(_Other);
+	declare Text MLText = """
+	<frame pos="{{{_Position.X}}} {{{_Position.Y}}} {{{_Position.Z}}}" id="{{{_BannerId}}}" clip="1" clipsizen="{{{_BannerSize.X}}} {{{_BannerSize.Y}}}" clipposn="{{{_Position.X + _BannerSize.X / 2}}} {{{_Position.Y}}}">
+        <label id="Content1" {{{_Other}}} textsize="{{{_TextSize}}}" textfont="{{{_TextFont}}}" size="720 10" halign="left" valign="center" pos="0 0 0"/>
+        <label id="Content2" {{{_Other}}} textsize="{{{_TextSize}}}" textfont="{{{_TextFont}}}" size="720 10" halign="left" valign="center" pos="0 0 0"/>
+		<quad id="Quad_ImgBanner1" halign="right" valign="center" size="14 14" bgcolor="009" pos="0 -1.1 1" hidden="1"/>
+		<quad id="Quad_ImgBanner2" halign="right" valign="center" size="14 14" bgcolor="009" pos="0 -1.1 1" hidden="1"/>
+    </frame>
+	""";
+	G_BannerIds.add(_BannerId);
+	G_BannerParams.add (<_Position.X, _BannerSize.X>);
+	return MLText;
+}
+
+Text InjectInManialink2(Text _BannerId, Vec3 _Position, Vec2 _BannerSize, Integer _TextSize, Text _TextFont, Text _Other) {
+	declare Text MLText = """
+	<frame pos="{{{_Position.X}}} {{{_Position.Y}}} {{{_Position.Z}}}" id="{{{_BannerId}}}" clip="1" clipsizen="{{{_BannerSize.X}}} {{{_BannerSize.Y}}}" clipposn="{{{_Position.X + _BannerSize.X / 2}}} {{{_Position.Y - _BannerSize.Y / 2}}}">
+        <label id="Content1" {{{_Other}}} textsize="{{{_TextSize}}}" textfont="{{{_TextFont}}}" size="720 10" halign="left" valign="center" pos="0 0 0"/>
+        <label id="Content2" {{{_Other}}} textsize="{{{_TextSize}}}" textfont="{{{_TextFont}}}" size="720 10" halign="left" valign="center" pos="0 0 0"/>
+		<quad id="Quad_ImgBanner1" halign="right" valign="center" size="14 14" bgcolor="009" pos="0 -1.1 1" hidden="1"/>
+		<quad id="Quad_ImgBanner2" halign="right" valign="center" size="14 14" bgcolor="009" pos="0 -1.1 1" hidden="1"/>
+    </frame>
+	""";
+	G_BannerIds.add(_BannerId);
+	G_BannerParams.add (<_Position.X, _BannerSize.X>);
+	return MLText;
+}
+
+Text InjectInManialink(Text _BannerId, Vec3 _Position, Vec2 _BannerSize, Integer _TextSize, Text _TextFont)
+{
+	return InjectInManialink(_BannerId, _Position, _BannerSize, _TextSize, _TextFont, """textprefix="$t" """);
+}
+
+Text InjectInManialink2(Text _BannerId, Vec3 _Position, Vec2 _BannerSize, Integer _TextSize, Text _TextFont)
+{
+	return InjectInManialink2(_BannerId, _Position, _BannerSize, _TextSize, _TextFont, """textprefix="$t" """);
+}
+
+Text InjectInFunctions() {
+	declare Text Functions = """
+		Void Prompter_SetBanner(Text _BannerId, Text _BannerText, Integer _BannerSpeed, Integer _MinimumSpace, Vec3 _BannerColor, Text _BannerImg) {
+		
+			if (!G_BannerStates.existskey(_BannerId)) {
+				return;
+			}
+			
+			G_BannerStates[_BannerId] = False;
+			G_BannerContents[_BannerId] = _BannerText;
+			G_BannerSpeeds[_BannerId] = _BannerSpeed;
+			G_BannerMinimumSpaces[_BannerId] = _MinimumSpace;
+			G_BannerColor[_BannerId] = _BannerColor;
+			G_BannerImg[_BannerId] = _BannerImg;
+		}
+
+		Void Prompter_SetBanner(Text _BannerId, Text _BannerText, Integer _BannerSpeed, Integer _MinimumSpace, Vec3 _BannerColor) {
+			Prompter_SetBanner(_BannerId, _BannerText, _BannerSpeed, _MinimumSpace, _BannerColor, "");
+		}
+
+		Void Prompter_SetBanner(Text _BannerId, Text _BannerText, Integer _BannerSpeed, Integer _MinimumSpace) {
+			Prompter_SetBanner(_BannerId, _BannerText, _BannerSpeed, _MinimumSpace, <1., 1., 1.>);
+		}
+				
+		Void Prompter_SetBannerIsActive(Text _BannerId, Boolean _IsActive, Boolean _StaticIfSmaller) { 
+		//Seules les bannières actives sont animées. On peut décider de ne l'animer que si ça déborde en mettant _StaticIfSmaller à True
+			
+			if (!G_BannerStates.existskey(_BannerId))
+				return;
+			if (G_BannerStates[_BannerId])
+			{
+				if (!_IsActive)
+					G_BannerStates[_BannerId] = False;
+				return;
+			}
+			
+			declare CMlFrame FrameBanner <=> (Page.GetFirstChild(_BannerId) as CMlFrame);
+			if (FrameBanner == Null)
+				return;
+			
+			//réinit la bannière
+			declare Content1        <=> (FrameBanner.GetFirstChild("Content1")        as CMlLabel);
+			declare Content2        <=> (FrameBanner.GetFirstChild("Content2")        as CMlLabel);
+			declare Quad_ImgBanner1 <=> (FrameBanner.GetFirstChild("Quad_ImgBanner1") as CMlQuad);
+			declare Quad_ImgBanner2 <=> (FrameBanner.GetFirstChild("Quad_ImgBanner2") as CMlQuad);
+			Content1.Value = G_BannerContents[_BannerId];
+			Content2.Value = G_BannerContents[_BannerId];
+			Content1.TextColor = G_BannerColor[_BannerId];
+			Content2.TextColor = G_BannerColor[_BannerId];
+			if(G_BannerImg[_BannerId] != "")
+			{
+				Quad_ImgBanner1.ChangeImageUrl(G_BannerImg[_BannerId]);
+				Quad_ImgBanner2.ChangeImageUrl(G_BannerImg[_BannerId]);
+				Quad_ImgBanner1.Show();
+				Quad_ImgBanner2.Show();
+				Quad_ImgBanner1.Colorize = G_BannerColor[_BannerId];
+				Quad_ImgBanner2.Colorize = G_BannerColor[_BannerId];
+				Quad_ImgBanner1.RelativePosition.X = -1000.;
+				Quad_ImgBanner2.RelativePosition.X = -1000.;
+			}
+			else
+			{
+				Quad_ImgBanner1.Hide();	
+				Quad_ImgBanner2.Hide();	
+			}
+			declare Real Width for FrameBanner;
+			Width = Content1.ComputeWidth(G_BannerContents[_BannerId]);	
+			if (Content1.RelativePosition.X == G_BannerParams[_BannerId].X)
+			{
+				Content2.RelativePosition.X = ML::Max(Content1.RelativePosition.X + Width + G_BannerMinimumSpaces[_BannerId], Content1.RelativePosition.X + G_BannerParams[_BannerId].Y); //BannerParams.Y = BannerWidth !
+			} else {
+				Content2.RelativePosition.X = G_BannerParams[_BannerId].X;
+				Content1.RelativePosition.X = ML::Max(Content2.RelativePosition.X + Width + G_BannerMinimumSpaces[_BannerId], Content2.RelativePosition.X + G_BannerParams[_BannerId].Y);
+			} 
+			
+			if (Width < G_BannerParams[_BannerId].Y && _StaticIfSmaller)
+				return;
+			
+			G_BannerLastUpdateTime[_BannerId] = Now;
+			G_BannerStates[_BannerId] = True;
+		}
+	
+		Void Prompter_AnimBanner(Text _BannerId)
+		{
+			declare CMlFrame FrameBanner <=> (Page.GetFirstChild(_BannerId) as CMlFrame);
+			if (FrameBanner == Null)
+				return;
+			
+			declare Content1        <=> (FrameBanner.GetFirstChild("Content1")        as CMlLabel);
+			declare Content2        <=> (FrameBanner.GetFirstChild("Content2")        as CMlLabel);
+			declare Quad_ImgBanner1 <=> (FrameBanner.GetFirstChild("Quad_ImgBanner1") as CMlQuad);
+			declare Quad_ImgBanner2 <=> (FrameBanner.GetFirstChild("Quad_ImgBanner2") as CMlQuad);
+			declare Real Width for FrameBanner;
+			declare Real Offset =  ML::ToReal(Now-G_BannerLastUpdateTime[_BannerId]) / G_BannerSpeeds[_BannerId] * G_BannerParams[_BannerId].Y;
+			
+			if (!G_BannerStates[_BannerId])
+			{
+				if (Content1.RelativePosition.X == G_BannerParams[_BannerId].X || Content2.RelativePosition.X == G_BannerParams[_BannerId].X)
+					return;
+				if (Content1.RelativePosition.X > G_BannerParams[_BannerId].X && Content1.RelativePosition.X - Offset <= G_BannerParams[_BannerId].X)
+				{
+					declare Delta                       = Content1.RelativePosition.X - G_BannerParams[_BannerId].X;
+					Content1.RelativePosition.X         = G_BannerParams[_BannerId].X;
+					Quad_ImgBanner1.RelativePosition.X  = G_BannerParams[_BannerId].X;
+					Content2.RelativePosition.X        -= Delta;
+					Quad_ImgBanner2.RelativePosition.X -= Delta; 
+				} else if (Content2.RelativePosition.X > G_BannerParams[_BannerId].X && Content2.RelativePosition.X - Offset <= G_BannerParams[_BannerId].X) {
+					declare Delta                       = Content2.RelativePosition.X - G_BannerParams[_BannerId].X;
+					Content1.RelativePosition.X        -= Delta;
+					Quad_ImgBanner1.RelativePosition.X -= Delta;
+					Content2.RelativePosition.X         = G_BannerParams[_BannerId].X;
+					Quad_ImgBanner2.RelativePosition.X  = G_BannerParams[_BannerId].X;
+				} else {
+					Content1.RelativePosition.X        -= Offset;
+					Quad_ImgBanner1.RelativePosition.X -= Offset;
+					Content2.RelativePosition.X        -= Offset;
+					Quad_ImgBanner2.RelativePosition.X -= Offset;
+				}
+			} else {	
+				Content1.RelativePosition.X        -= Offset;
+				Quad_ImgBanner1.RelativePosition.X -= Offset;
+				Content2.RelativePosition.X        -= Offset;
+				Quad_ImgBanner2.RelativePosition.X -= Offset;
+				
+				if (Content1.RelativePosition.X + Width < G_BannerParams[_BannerId].X)
+					Content1.RelativePosition.X = ML::Max(Content2.RelativePosition.X + Width + G_BannerMinimumSpaces[_BannerId], Content2.RelativePosition.X + G_BannerParams[_BannerId].Y);
+				if (Content2.RelativePosition.X + Width < G_BannerParams[_BannerId].X)
+					Content2.RelativePosition.X = ML::Max(Content1.RelativePosition.X + Width + G_BannerMinimumSpaces[_BannerId], Content1.RelativePosition.X + G_BannerParams[_BannerId].Y);
+				if (Quad_ImgBanner1.RelativePosition.X + Width < G_BannerParams[_BannerId].X)
+					Quad_ImgBanner1.RelativePosition.X = ML::Max(Content1.RelativePosition.X + Width + G_BannerMinimumSpaces[_BannerId], Content1.RelativePosition.X + G_BannerParams[_BannerId].Y);
+				if (Quad_ImgBanner2.RelativePosition.X + Width < G_BannerParams[_BannerId].X)
+					Quad_ImgBanner2.RelativePosition.X = ML::Max(Content2.RelativePosition.X + Width + G_BannerMinimumSpaces[_BannerId], Content2.RelativePosition.X + G_BannerParams[_BannerId].Y);
+			}
+			G_BannerLastUpdateTime[_BannerId] = Now;
+		}
+	""";
+	return Functions;
+}
+
+Text InjectInGlobals() {
+	declare Text Globals = """
+		declare Boolean[Text] 	G_BannerStates;
+		declare Text[Text] 		G_BannerContents;
+		declare Integer[Text] 	G_BannerSpeeds;
+		declare Integer[Text] 	G_BannerMinimumSpaces;
+		declare Integer[Text]	G_BannerLastUpdateTime;
+		declare Vec2[Text]		G_BannerParams;
+		declare Vec3[Text]		G_BannerColor;
+		declare Text[Text] 		G_BannerImg;
+		""";
+	return Globals;        
+}
+
+Text InjectInInit() {
+	declare Text Init = "";
+	
+	for (I, 0, G_BannerIds.count-1)
+	{
+		Init ^= """
+			G_BannerStates[{{{dump(G_BannerIds[I])}}}] = False;
+			G_BannerContents[{{{dump(G_BannerIds[I])}}}] = "";
+			G_BannerSpeeds[{{{dump(G_BannerIds[I])}}}] = 10000;
+			G_BannerMinimumSpaces[{{{dump(G_BannerIds[I])}}}] = 10;
+			G_BannerLastUpdateTime[{{{dump(G_BannerIds[I])}}}] = 0;
+			G_BannerParams[{{{dump(G_BannerIds[I])}}}] = <{{{G_BannerParams[I].X}}}, {{{G_BannerParams[I].Y}}}>;
+			G_BannerColor[{{{dump(G_BannerIds[I])}}}] = <1., 1., 1.>;
+			G_BannerImg[{{{dump(G_BannerIds[I])}}}] = "";
+			""";
+	}
+	return Init;
+}
+
+Text InjectInLoop() {
+	declare Text Loop = """
+		foreach(Id => State in G_BannerStates)
+			Prompter_AnimBanner(Id);
+	""";
+	return Loop;
+}

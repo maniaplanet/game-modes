@@ -1,0 +1,88 @@
+#Include "Libs/Nadeo/MP4/Common/Components/AssetMaker/LBAssetMaker.Script.txt"	as AssetMaker
+#Include "TextLib"											as TextLib
+
+#Const C_DefaultAssetPositions	<-130., 29.>
+#Const C_UGCAssetPositions		<-130., -22.>
+//L16N Refers to match settings, generally a playlist of maps with a ruleset to play them.
+#Const C_DefaultAssetTitle		_("|Max 20 characters|Default settings")
+//L16N Refers to match settings, generally a playlist of maps with a ruleset to play them.
+#Const C_UGCAssetTitle			_("|Max 20 characters|Custom settings")
+//L16N Refers to match settings, generally a playlist of maps with a ruleset to play them.
+#Const C_DefaultAssetText		_("These are the classic Trackmania match settings.")
+//L16N Refers to scripts, editors, files.
+#Const C_DefaultAssetEnding		_("You can keep or discard them from your title.")
+#Const C_UGCAssetText			_("These are custom match settings.")
+//L16N Refers to scripts, editors, files.
+#Const C_UGCAssetEnding			_("You can add them to your title by clicking on the '+'.")
+
+Text Build() {
+	//L16N Title of a section, term referencing a playlist of maps with a ruleset to play them
+	declare Text[] AssetName = [_("Match settings"),
+	//L16N |Verb, infinitive| Refers to match settings, generally a playlist of maps with a ruleset to play them.
+	_("Choose match settings")];
+	AssetMaker::Init("MatchSettings", AssetName, C_DefaultAssetTitle,
+				TextLib::Compose("%1 %2", C_DefaultAssetText, C_DefaultAssetEnding),
+			C_UGCAssetTitle,
+			TextLib::Compose("%1 %2", C_UGCAssetText, C_UGCAssetEnding),
+			"");
+	declare Text MLText = """
+<manialink version="3" name="L_MatchSettings">
+{{{AssetMaker::ManialinkFrameModels()}}}
+
+	<frame id="Frame_All">
+{{{AssetMaker::ManialinkMainBody()}}}
+	</frame>
+
+	<script><!--
+	#Include "TextLib" as MatchSettings_TextLib
+	{{{AssetMaker::Includes()}}}
+	{{{AssetMaker::Declares()}}}
+
+	Void ShowPage()
+	{
+		EnableMenuNavigation(True,False,Null,1);
+	}
+
+	main() {
+		Asset_Init();
+		ShowPage();
+		while(True) {
+
+			yield;
+			Asset_Loop();
+			if(! PageIsVisible) continue;
+			foreach(Event in PendingEvents) {
+				switch(Event.Type) {
+					case CMlEvent::Type::MenuNavigation: {
+						switch(Event.MenuNavAction) {
+							case CMlEvent::EMenuNavAction::Cancel : {
+								SendCustomEvent("GotoPrevious", [""]);
+							}
+						}
+					}
+					case CMlEvent::Type::PluginCustomEvent: {
+						switch(Event.CustomEventType) {
+							case "Show" : {
+								ShowPage();
+								SendCustomEvent("UpdateBarreSection", ["MatchSettings"]);
+								SendCustomEvent("TaskBar_UpdateTitleAndLogo", [MatchSettings_TextLib::ToText(False)]);
+								Asset_Show();
+							}
+							case "Back" : {
+								SendCustomEvent("GotoPrevious", Text[]);
+							}
+							case "Hide" : {
+								EnableMenuNavigation(False,False,Null,0);
+								SendCustomEvent("DetachPage", ["MatchSettings"]);
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	--></script>
+</manialink>	""";
+	
+	return MLText;
+}

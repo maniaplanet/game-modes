@@ -1,0 +1,1356 @@
+/**
+ *	Rounds mode
+ */
+
+// #Extends "Modes/TrackMania/RoundsBase.Script.txt"
+#Extends "Modes/TrackMania/ModeBase.Script.txt"
+
+#Const	RoundsVersion		"2015-03-02"
+#Const	RoundsScriptName	"TMC_LocalRounds.Script.txt"
+
+
+#Include "Libs/Trackmania/Ingame/Game.Script.txt" 							as Game
+#Include "Libs/Trackmania/Ingame/UI/UISequences.Script.txt" 				as UISequence
+#Include "Libs/Trackmania/Ingame/UI/UISplitScreen.Script.txt" 				as UISplitScreen
+#Include "Libs/Trackmania/Ingame/CarsModels.Script.txt" 					as CarsModels
+#Include "Libs/Nadeo/MP4/Common/Colors.Script.txt" 								as Colors
+#Include "Libs/Trackmania/Ingame/RewardScreens.Script.txt" 					as RewardScreens
+#Include "Libs/Trackmania/Ingame/FlavourText.Script.txt" 					as FlavourText
+#Include "Libs/Trackmania/Ingame/UI/UIPairingPads.Script.txt" 				as UIPairingPads
+#Include "Libs/Nadeo/MP4/Common/ManialinkTools/FontManager.Script.txt"							as Font
+#Include "Libs/Trackmania/Ingame/UI/UIRewardScreens.Script.txt" 	   		as UIRewardScreens
+
+#Include "MathLib" as ML
+
+// ---------------------------------- //
+// Settings
+// ---------------------------------- //
+#Setting S_PointsLimit 			10		as _("Points limit : ")
+#Setting S_FinishTimeout		15		as _("Finish timeout :")
+// #Setting G_UseAlternateRules	False	as _("Use alternate rules :")
+#Setting S_ForceLapsNb			1		as _("Force number of laps :")
+#Setting S_UseTieBreak			True	as _("Use tie-break :")	///< Continue to play the map until the tie is broken
+
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_BotsNb 			0
+#Const C_PointsRepartition [10, 6, 4, 3, 2, 1]
+#Const C_PointsRepartition_MonoScreen [5, 3, 2, 1]
+#Const C_BonusPoints_MonoScreen 15
+#Const C_SCORETABLE_ROUND	0
+#Const C_SCORETABLE_GAME	1
+#Const C_SCORETABLE_FINAL	2
+
+#Const C_PLAYERCHOICE_QUIT		0
+#Const C_PLAYERCHOICE_RESTART	1
+
+#Const C_ROUNDSTATE_ON		0
+#Const C_ROUNDSTATE_OFF		1
+
+#Const C_LASTPLAYERTIME		60000
+#Const C_WAITBEFOREDESPAWN	2000
+
+#Const C_FINALIST			-1
+#Const C_WINNER				-2
+
+// #Const C_TWOSPLITSCREEN		0
+// #Const C_FOURSPLITSCREEN	1
+
+#Const C_CHEAT_LOW_GRAVITY_COEF		0.42
+#Const C_NB_PLAYERS_MAX				4
+#Const C_MONOSCREEN_NB_LIVES_BASE	1	// Nombre de vies de départ = C_MONOSCREEN_NB_LIVES_BASE + nombre de joueurs
+
+// ---------------------------------- //
+// Global Variables
+// ---------------------------------- //
+declare Ident[]				G_CarModels;
+declare Integer				G_GamePhase;
+declare Text				G_EnviroName;
+declare Integer				G_NbPlayers;
+declare Text[Text]			G_UserNameToGameName;
+declare Integer				G_LastPlayerPosition;
+declare Integer				G_NbRounds;
+declare Integer				G_PointsLimit;
+declare Text[]				G_FinalTable;
+declare Integer				G_NbPlayersPlaying;
+declare Text[]				G_GameName;
+declare Vec3[Text]			G_GameColorVec;
+declare Integer[]			G_RandomizedTrackIndexes;
+declare Integer				G_TrackIndex;
+declare Boolean				G_WeHaveAWinner;
+declare Text				G_WinnerName;
+declare Boolean				G_FirstRoundOnMap;
+declare Integer 			G_RoundStartTime;
+declare Integer[] 			G_PointsRepartition;
+declare Integer[] 			G_PointsRepartition_MonoScreen;
+declare Boolean				G_UseAlternateRules;
+declare Integer				G_PlayerHasGiveUp;
+declare Boolean				G_LastPlayerRace;				
+declare Integer[]			G_MonoScreen_NbRespawns;
+declare Integer[]			G_MonoScreen_NbLivesLeft;
+declare Integer				G_MonoScreen_NbLivesMax;
+declare CUILayer			G_LayerMarkers;
+// ---------------------------------- //
+// Extend
+// ---------------------------------- //
+***LogVersion***
+***
+MB_LogVersion(RoundsScriptName, RoundsVersion);
+***
+
+***InitServer***
+***
+declare PrevPointsLimit = -1;
+***
+
+***StartServer***
+***
+// ---------------------------------- //
+// Initialize mode
+MB_UseSectionRound = True;
+G_PointsRepartition = C_PointsRepartition;
+G_PointsRepartition_MonoScreen = C_PointsRepartition_MonoScreen;
+// NbLaps 				= 1;
+IndependantLaps 	= False;
+
+
+// MB_SetDefaultRespawnMode(CTmMode::ETMRespawnBehaviour:: GiveUpBeforeFirstCheckPoint);
+MB_SetDefaultRespawnMode(CTmMode::ETMRespawnBehaviour:: Normal);
+
+G_NbRounds 			= 0;
+
+// NbLaps	= 3;
+
+G_GameName.add("BLUE");
+G_GameName.add("RED");
+G_GameName.add("GREEN");
+G_GameName.add("PURPLE");
+
+G_GameColorVec["RED"] 		= Colors::GetColor("Red");
+G_GameColorVec["BLUE"] 		= Colors::GetColor("Blue");
+G_GameColorVec["GREEN"] 	= Colors::GetColor("Green");
+G_GameColorVec["PURPLE"] 	= Colors::GetColor("Purple");
+
+G_TrackIndex = 0;
+
+// for(I, 0, MapList.count-1) {
+	// G_RandomizedTrackIndexes.add(I);
+// }
+
+// declare Integer RandIndex;
+// declare Integer TempIndex;
+// for(I, 0, G_RandomizedTrackIndexes.count-2) {
+	// RandIndex = ML::Rand(I+1, G_RandomizedTrackIndexes.count-1);
+	// TempIndex = G_RandomizedTrackIndexes[I];
+	// G_RandomizedTrackIndexes[I] = G_RandomizedTrackIndexes[RandIndex];
+	// G_RandomizedTrackIndexes[RandIndex] = TempIndex;
+// }
+// log(Players[0].ControllerId0);
+
+for(I, 0, C_NB_PLAYERS_MAX - 1)
+{
+	G_MonoScreen_NbRespawns.add(-1);
+	G_MonoScreen_NbLivesLeft.add(-1);
+}
+***
+
+***InitMap***
+***
+MB_SetLapsNb(S_ForceLapsNb);
+***
+
+***StartMap***
+***
+NbLaps = Map.TMObjective_NbLaps;
+Game::SetNbLaps(NbLaps, Map.TMObjective_IsLapRace);
+***
+
+***StartMatch***
+***
+
+foreach(Player in Players) {
+	declare Boolean IsFinalist for Player.Score;
+	IsFinalist = False;
+	// declare Integer WaitBeforeDespawn for Player;
+	// WaitBeforeDespawn = C_WAITBEFOREDESPAWN;
+}
+
+G_FinalTable.clear();
+
+// ---------------------------------- //
+// Initialize scores
+Scores_Clear();
+***
+
+***BeforeLoadMap***
+***
+G_EnviroName = MapList[NextMapIndex].CollectionName;
+CarsModels::StartItemList();
+G_CarModels 		= CarsModels::LoadCarsModels(G_EnviroName, "Splitscreen");
+// G_CarDoubleModels 	= CarsModels::LoadDoubleCarsModels(G_EnviroName, "Campaign");
+CarsModels::EndItemList();
+ClientManiaAppUrl = "file://Media/Manialinks/Nadeo/Ingame/UILocalManiaApp_.Script.txt";
+
+
+
+***
+
+***InitMap***
+***
+declare FakeVariable = 0;
+***
+
+***StartMap***
+***
+while(Players.count == 0) yield;
+declare UI <=> UIManager.GetUI(Players[0]);
+declare netwrite Integer Net_SplitscreenMode for UI;
+Net_SplitscreenMode = UIManager.UI.count-1;
+
+// log("SPLITSCREEN MODE: "^Net_SplitscreenMode);
+
+if(Net_SplitscreenMode == 2) {
+	G_UseAlternateRules = True;
+}
+
+if(G_UseAlternateRules) {
+	G_PointsLimit 	= 3;
+} else {
+	G_PointsLimit 	= 30;
+}
+
+SpawnPlayers();
+
+G_FirstRoundOnMap = True;
+
+
+Game::SetSplitScreenModeUI(True);
+Game::Load(This, "Rounds Splitscreen");
+NbLaps = Map.TMObjective_NbLaps;
+Game::SetNbLaps(NbLaps, Map.TMObjective_IsLapRace);
+
+// UISequence::ComposeVideoTransitionLayer();
+UIManager.HoldLoadingScreen = False;
+// declare UI <=> UIManager.GetUI(Players[0]);
+
+
+//ShowDefaultScreenGen();
+
+UISplitScreen::Load();
+Game::SetPairingPadsNb(2);
+if(Net_SplitscreenMode == 4) {
+	Game::SetPairingPadsIsPlayerSelection(True);
+	Game::PairingPadsSequence();
+	Game::SetPairingPadsIsPlayerSelection(False);
+	G_NbPlayers = UIPairingPads::GetPlayingPads().count;
+} else {
+	G_NbPlayers = 2;
+	Game::SetNbPlayers(G_NbPlayers);
+	Game::SetPairingPadsIsPlayerSelection(True);
+	Game::PairingPadsSequence();
+	Game::SetPairingPadsIsPlayerSelection(False);
+	
+}
+
+Game::SetMultiPairing(True);
+Game::SetNbPlayers(G_NbPlayers);
+
+/*
+G_NbPlayers = PairingController::SetPairing(2);
+*/
+
+if(Net_SplitscreenMode == 2) {
+	//C.B. Tricky part : on donne le modèle et le nom du slot concerné mais on l'affecte au premier et second joueur du tableau.
+	declare Integer[Integer] SortSlotId = Game::Duo_GetSortSlotId();
+	foreach(Index => SlotId in SortSlotId) {
+		if(G_CarModels.existskey(SlotId)) {
+			//Players[Index].ForceModelId = G_CarModels[SlotId];
+		}
+		G_UserNameToGameName[Scores[Index].User.Name] = G_GameName[SlotId];
+	}
+} else {
+	foreach(Index => Player in Players) {
+		if(G_CarModels.existskey(Index)) {
+			//Player.ForceModelId = G_CarModels[Index];
+		}
+	}
+	foreach(Index => Score in Scores) {
+		
+		G_UserNameToGameName[Score.User.Name] = G_GameName[Index];
+		
+	}
+}
+
+***
+
+***StartRound***
+***
+log("START ROUND");
+CutOffTimeLimit = -1;
+// ---------------------------------- //
+// Initialize round
+UIManager.UIAll.UISequence = CUIConfig::EUISequence::Playing;
+G_RoundStartTime = Now + 3000;
+
+G_PlayerHasGiveUp = 0;
+G_LastPlayerRace = False;
+// ---------------------------------- //
+// Initialize scores
+foreach (Score in Scores) {
+	Score.PrevRace = Null;
+	Score.PrevRaceDeltaPoints = 0;
+}
+								
+G_MonoScreen_NbLivesMax = G_NbPlayers + C_MONOSCREEN_NB_LIVES_BASE;
+
+if(G_FirstRoundOnMap) {
+	UISplitScreen::LoadFonts();
+	UISplitScreen::ConstructSeparatorLayer(False);
+	
+	UISplitScreen::SetNbPlayers(G_NbPlayers);
+	UISplitScreen::ConstructScoreRankingLayer();
+	UISplitScreen::ConstructPopupLayer();
+	UISplitScreen::ConstructPauseMenuPopup();
+	UISplitScreen::ConstructRestartGamePopup();
+	if(True)
+	{
+		UISplitScreen::ConstructPlayerCurrentRank_Create();
+		foreach (IndexPlayer => Player in Players)
+		{
+			if(Game::IsSplitscreenPlayerLinkedToPad(IndexPlayer))
+			{
+				UISplitScreen::ConstructPlayerCurrentRank_Attach(Player);
+			}
+		}
+	}
+	else
+	{
+		// layer pour marker3D custom
+		if(G_LayerMarkers != Null)
+		{
+			UIManager.UILayerDestroy(G_LayerMarkers);
+		}
+		G_LayerMarkers <=> UIManager.UILayerCreate();
+		G_LayerMarkers.Type = CUILayer::EUILayerType::Markers;	// marque la layer comme étant celle dans laquelle on recherchera la manialinkframeid
+		UIManager.UIAll.UILayers.add(G_LayerMarkers);
+		G_LayerMarkers.ManialinkPage = CreateMarkersManialinkPage();
+		G_LayerMarkers.IsVisible = True;
+	}
+	// Game::LinkSplitscreenPlayersToPad();
+	// SetPairingPagsVisibility(False);
+	//MB_Sleep(500);
+}
+
+G_WeHaveAWinner = False;
+G_NbRounds += 1;
+UISequence::StopTransitionVideo();
+
+G_NbPlayersPlaying 		= 0;
+G_LastPlayerPosition 	= 0;
+// ---------------------------------- //
+// Spawn players for the race
+foreach (IndexPlayer => Player in Players) {
+	if (Player.Score == Null) continue;
+
+	declare Boolean IsInGame for Player			= False;
+	declare Boolean IsInGameScore for Player.Score	= False;
+	IsInGame 		= False;
+	IsInGameScore = IsInGame;
+	declare Boolean IsFinalist for Player.Score;
+	/*
+	if(Game::IsSplitscreenPlayerLinkedToPad(IndexPlayer)) {
+		IsInGame = True;
+		IsInGameScore = IsInGame;
+		G_NbPlayersPlaying += 1;
+	}
+	*/
+	//HACK
+	IsInGame = True;
+	IsInGameScore = IsInGame;
+	G_NbPlayersPlaying += 1;
+}
+
+declare Integer Net_ShowIngameUI 			for Teams[0];
+Net_ShowIngameUI += 1;
+
+//MB_Sleep(500);
+
+declare UI <=> UIManager.GetUI(Players[0]);
+if(UI == Null) return;
+declare netwrite Integer Net_StartScaleDown for UI;
+Net_StartScaleDown = Now;
+
+foreach(Player in Players) {
+if (Player.Score == Null) continue;
+	declare Boolean IsInGame for Player	= False;
+	if (!IsInGame) {
+		Game::WaitRace(Player);
+	}
+}
+
+// UIWriteName::SetVisibilityNameEdit(True);
+/*
+UIWriteName::SetVisibilityNamePlayer(True);
+while(!UIWriteName::ScoreWritten()) yield;
+*/
+foreach (Player in Players) {
+	if (Player.Score == Null) continue;
+	declare Boolean IsInGame for Player	= False;
+	//log("IsInGame: " ^ IsInGame);
+	if (IsInGame) {
+		HideRewardScreen(Player);
+		Game::StartRace(Player);
+	}
+	else
+	{
+		Game::StartRace(Player);
+	}
+}
+// Game::WaitTime()
+if(G_FirstRoundOnMap) {
+	G_FirstRoundOnMap = False;
+	HideRewardScreenGen();
+}
+
+// MB_Sleep(1000);
+
+/*
+foreach(Player in Players) {
+	if (Player.Score == Null) continue;
+	declare Boolean IsInGame for Player	= False;
+	if (IsInGame) {
+		HideRewardScreen(Player);
+	}
+}
+*/
+SetSplitscreenRoundState(C_ROUNDSTATE_ON);
+
+/*
+foreach(Player in Players)
+{
+	//log("["^Now^"]Players: " ^ Player.ControllerId0);
+	//log("["^Now^"]Players: " ^ Player.ControllerCount);
+	//log("["^Now^"]Players: " ^ Player.RaceStartTime);
+	declare UI <=> UIManager.GetUI(Player);
+	declare netread Integer Net_MainUserControllerId for UI;
+	Player.ControllerId0 = Net_MainUserControllerId;
+	Player.ControllerCount 	= 1;
+	log("MainUserControllerId: "^Net_MainUserControllerId);
+}
+declare netread Integer Net_MainUserControllerId for UI;
+Players[0].ControllerId0 = Net_MainUserControllerId;
+Players[0].ControllerCount 	= 1;
+*/
+
+***
+
+***PlayLoop***
+***
+Game::Loop();
+
+
+// log(Scores);
+// foreach(Score in Scores) {
+	// log(Score.User.Name);
+// }
+// ---------------------------------- //
+// Manage events
+foreach (Event in PendingEvents) {
+	// ---------------------------------- //
+	// Waypoint
+	if (Event.Type == CTmModeEvent::EType::WayPoint) {
+		PassOn(Event);
+		if (Event.IsEndRace) {
+			Event.Player.Score.PrevRace = Event.Player.CurRace;
+			
+			Scores_Sort(CTmMode::ETmScoreSortOrder::PrevRace_Time);
+			
+			G_LastPlayerPosition += 1;
+			
+			if(!G_WeHaveAWinner) {
+				GetTheWinner(Event.Player);
+				if(!G_WeHaveAWinner)
+					//log("Here - 0");
+					ShowPlayerRewardScreen(Event.Player, True, False);
+			}
+			
+			Game::EndRace(Event.Player);
+			
+			// ---------------------------------- //
+			// Start the countdown if it is penultieme player or if we have a winner
+			if(CutOffTimeLimit == -1) {
+				if(!G_WeHaveAWinner) {
+					CutOffTimeLimit = GetFinishTimeout();
+				} else {
+					CutOffTimeLimit = Now;
+				}
+			}
+		}
+		if (Event.IsEndLap) {
+			if (Event.Player.Score != Null) {
+				if (Event.Player.Score.BestLap.Compare(Event.Player.CurLap, CTmResult::ETmRaceResultCriteria::Time) <= 0) {
+					Event.Player.Score.BestLap = Event.Player.CurLap;
+				}
+			}
+		}
+	}
+	// ---------------------------------- //
+	// GiveUp
+	else if (Event.Type == CTmModeEvent::EType::GiveUp) {
+		if(Game::GetPlayerStatus(Event.Player) == 1) {			
+			Game::WaitRace(Event.Player);
+			ShowPlayerRewardScreen(Event.Player, False, False);
+			// Game::FlushPlayerEvent(Player);
+			G_NbPlayersPlaying 	-= 1;
+			G_PlayerHasGiveUp 	+= 1;
+			Discard(Event);
+		}
+	} else {
+		PassOn(Event);
+	}
+}
+
+// ---------------------------------- //
+// Server info change
+if (PrevPointsLimit != G_PointsLimit) {
+	PrevPointsLimit = G_PointsLimit;
+}
+
+if(UISplitScreen::PlayerWantsToQuit()) {
+	MB_StopServer = True;
+}
+
+
+//If there is one player left on race and nobody has finished yet, the player is implicitly the winner
+if(G_PlayerHasGiveUp == G_NbPlayers-1 && G_LastPlayerPosition == 0) {
+	log("Here - 2");
+	G_LastPlayerRace = True;
+	foreach(I => Player in Players) {
+		if(Game::GetPlayerStatus(Player) == 1) {
+			Player.Score.PrevRace = Player.CurRace;
+			G_LastPlayerPosition += 1;
+			Game::EndRace(Player);
+			GetTheWinner(Player);
+			if(!G_WeHaveAWinner) {
+				ShowPlayerRewardScreen(Player, True, True);
+			}
+			// FIXME : ci-dessous : devrait être davantage factorisé avec ComputeLatestRaceScores ?
+			
+			if (G_UseAlternateRules) {
+				Player.Score.PrevRaceDeltaPoints = 1;
+			} else {
+				Player.Score.PrevRaceDeltaPoints = G_PointsRepartition[0];
+			}
+			
+		}
+	}
+}
+
+// ---------------------------------- //
+// End the round 
+if((G_LastPlayerPosition >= G_NbPlayersPlaying-1 && Net_SplitscreenMode == 2) || (G_LastPlayerPosition >= G_NbPlayersPlaying && Net_SplitscreenMode == 4) || (CutOffTimeLimit > 0 && Now >= CutOffTimeLimit)) {
+	MB_StopRound = True;
+	log("0 Here - 3: " ^ G_LastPlayerPosition);
+	log("1 Here - 3: " ^ G_NbPlayersPlaying);
+	log("2 Here - 3: " ^ Net_SplitscreenMode);
+	log("3 Here - 3: " ^ CutOffTimeLimit);
+	foreach(Player in Players) {
+		if(Game::IsRacing(Player)) {
+			Game::EndRace(Player);
+			
+			if(!G_WeHaveAWinner) {
+			}
+		}
+	}
+	SetSplitscreenRoundState(C_ROUNDSTATE_OFF);
+	if(!G_WeHaveAWinner)
+		MB_Sleep(2000);
+}
+***
+
+***EndRound***
+***
+log("EndRound");
+
+Game::HideUI();
+
+
+if(!G_LastPlayerRace) {
+	ComputeLatestRaceScores();
+}
+AddScores();
+
+if(!G_UseAlternateRules) {
+	SetPlayersAsFinalist();
+}
+
+MB_Sleep(500);
+
+Scores_Sort(CTmMode::ETmScoreSortOrder::TotalPoints);
+
+if(G_WeHaveAWinner) {
+	ShowWinnerScreen();
+	MB_Sleep(1000);
+	Game::WaitRaceAll();
+	MB_Sleep(5000);
+	
+	UISplitScreen::SetRestartGameVisibility(True);
+	WaitPlayerRestartGameChoice();
+	declare Integer RestartGamePlayerChoice = UISplitScreen::GetRestartGameChoice();
+	UISplitScreen::SetRestartGameVisibility(False);
+	Game::WaitTime(500);
+	// HideRewardScreenGen();
+	if(RestartGamePlayerChoice == C_PLAYERCHOICE_QUIT) {
+		MB_StopServer = True;
+	} else if(RestartGamePlayerChoice == C_PLAYERCHOICE_RESTART) {
+		foreach (Score in Scores) {
+			Score.PrevRace = Null;
+			Score.PrevRaceDeltaPoints = 0;
+			Score.Points = 0;
+		}
+		
+		G_WeHaveAWinner 	= False;
+		G_NbRounds 			= 0;
+		foreach(Player in Players) {
+			declare Boolean IsFinalist for Player.Score;
+			IsFinalist = False;
+		}
+		
+		
+		foreach(Player in Players) {
+			ShowDefaultScreen(Player);
+		}
+		
+		G_FirstRoundOnMap = True;
+	}
+	
+} else {
+	Game::WaitRaceAll();
+	ReinitRoundScore();
+	
+	foreach(Player in Players) {
+		ShowDefaultScreen(Player);
+	}
+	
+	UpdateScoreTable(C_SCORETABLE_GAME);
+	while(!UISplitScreen::GetFinalAnswerRanking()) {
+		yield;
+		Game::Loop();
+	}
+	
+	MB_Sleep(500);
+	RaceTransition();
+	
+	/*
+	if(!G_UseAlternateRules) {
+		if(MapIsOver()) {
+			MB_StopMap = True;
+			declare Integer IndexFromTable = G_RandomizedTrackIndexes[G_TrackIndex];
+			NextMapIndex = IndexFromTable;
+			G_TrackIndex += 1;
+			// Game::WaitRaceAll();
+		} else {
+			
+		}
+	} else {
+		MB_Sleep(500);
+		RaceTransition();
+	}
+	*/
+}
+***
+
+***EndMap***
+***
+
+declare FakeVariable2 = 3;
+// ---------------------------------- //
+// Close ladder
+// Scores_Sort(CTmMode::ETmScoreSortOrder::TotalPoints);
+// if (Scores.existskey(0) &&  Scores[0].BestRace.Time > 0) {
+	// MB_VictoryMessage = TL::Compose(_("$<%1$> wins the map!"), Scores[0].User.Name);
+// }
+
+***
+
+Text CreateMarkersManialinkPage()
+{
+	declare FontNumberBig 		= Font::GetFontName("NumberBig");
+	declare Text MLPage = """
+<script><!--
+	#Const C_BLINK_SPEEDS [0.016, 0.008, 0.004]
+	#Const C_OPACITY_MAX 0.9
+	#Include "MathLib" as ML
+	main() {
+		declare netread Integer[] MonoScreen_NbLivesLeft for UI;
+		declare netread Boolean MonoScreen_HideNbLives for UI;
+		declare CMlFrame[] Frames_PlayerLivesContainer;
+		declare CMlLabel[] Labels_PlayerLives;
+		for(I, 0, {{{C_NB_PLAYERS_MAX - 1}}})
+		{
+			declare Frame_PlayerLivesMarker		= (Page							.GetFirstChild("PlayerLivesMarker" ^ I)	as CMlFrame);
+			declare Frame_PlayerLivesContainer	= (Frame_PlayerLivesMarker		.GetFirstChild("Frame_PlayerLivesContainer")	as CMlFrame);
+			declare Label_PlayerLives			= (Frame_PlayerLivesContainer	.GetFirstChild("Label_PlayerLives") 			as CMlLabel);
+			Label_PlayerLives.Blend = CMlLabel::EBlendMode::Add;
+			// Attention : Frame_PlayerLivesContainer n'est PAS superflue : il ne faut surtout pas toucher à la visibilité de Frame_PlayerLivesMarker elle-même
+			// car celle-ci est conditionnée par l'appui de la touche Haut
+			Frames_PlayerLivesContainer	.add(Frame_PlayerLivesContainer);
+			Labels_PlayerLives			.add(Label_PlayerLives);
+		}
+		while(True) {
+			yield;
+			for(I, 0, {{{C_NB_PLAYERS_MAX - 1}}})
+			{
+				declare NbLivesLeft = MonoScreen_NbLivesLeft[I];
+				if(!MonoScreen_HideNbLives && NbLivesLeft >= 0 && NbLivesLeft <= {{{G_MonoScreen_NbLivesMax}}})
+				{
+					Frames_PlayerLivesContainer[I].Visible = True;
+					Labels_PlayerLives[I].Value = "" ^ NbLivesLeft;
+					// clignotement
+					declare BlinkSpeed = 0.;
+					if(NbLivesLeft < C_BLINK_SPEEDS.count)
+						BlinkSpeed = C_BLINK_SPEEDS[NbLivesLeft];
+					if(BlinkSpeed == 0.)
+						Labels_PlayerLives[I].Opacity = C_OPACITY_MAX;
+					else
+					{
+						declare SinResult = ML::Sin(Now*BlinkSpeed);
+						Labels_PlayerLives[I].Opacity = C_OPACITY_MAX * (1 - SinResult * SinResult);
+					}
+				}
+				else
+					Frames_PlayerLivesContainer[I].Visible = False;
+			}
+		}
+	}
+--></script>""";
+	for(I, 0, C_NB_PLAYERS_MAX - 1)
+	{
+		declare Text PlayerUserName = "";
+		declare Text PlayerGameName = "";
+		declare Vec3 PlayerColor = <1., 1., 1.>;
+		if(I < Players.count && Players[I] != Null)
+			PlayerUserName = Players[I].User.Name;
+		if(PlayerUserName != "" && G_UserNameToGameName.existskey(PlayerUserName))
+			PlayerGameName = G_UserNameToGameName[PlayerUserName];
+		if(PlayerGameName != "" && G_GameColorVec.existskey(PlayerGameName))
+			PlayerColor = G_GameColorVec[PlayerGameName];
+		declare Text PlayerColorXml = """{{{PlayerColor.X}}} {{{PlayerColor.Y}}} {{{PlayerColor.Z}}}""";
+		MLPage ^= """
+<frame id="PlayerLivesMarker{{{I}}}" >
+	<frame id="Frame_PlayerLivesContainer" hidden="1" >
+		<label 	id="Label_PlayerLives"		halign="center" valign="center"	pos="0. 0. 0."	size="7. 15."	textsize="8."	textcolor="{{{PlayerColorXml}}}"	textfont="{{{FontNumberBig}}}"	text="9" />
+	</frame>
+</frame>""";
+	}
+	return MLPage;
+}
+
+Void SetSplitscreenRoundState(Integer _Phase) {
+	log("SetSplitscreenRoundState: " ^ _Phase);
+	declare UI <=> UIManager.GetUI(Players[0]);
+	declare netwrite Integer Net_RoundState for UI;
+	Net_RoundState = _Phase;
+}
+
+Void SetGamePhase(Integer _Phase) {
+	G_GamePhase = _Phase;
+	declare UI <=> UIManager.GetUI(Players[0]);
+	declare netwrite Integer Net_GamePhase for UI;
+	Net_GamePhase = G_GamePhase;
+}
+
+Void WaitPlayerRestartGameChoice() {
+	while(UISplitScreen::GetRestartGameChoice() == -1) {
+		yield;
+		Game::Loop();
+	}
+}
+
+Void WaitPlayerCount() {
+	while(UISplitScreen::GetNbPlayers() == 0) {
+		yield;
+	}
+}
+
+Void ShowDefaultScreen(CTmPlayer _Player) {
+	declare RewardUrl 	= RewardScreens::GetScreenSplitscreen();
+	declare TextColor 	= Colors::GetColor("White");
+	declare Sign 		= "";
+	log("3 - AA");
+	//Game::ShowReward(_Player, "", "", "", "", RewardUrl, TextColor, Sign, False);
+}
+
+Void ShowDefaultScreenGen() {
+	declare RewardUrl 	= RewardScreens::GetScreenSplitscreen();
+	declare TextColor 	= Colors::GetColor("White");
+	declare Sign 		= "";
+
+	log("1 - AA");
+	//Game::ShowRewardSplit(Players[0], "", "", "", "", RewardUrl, TextColor, Sign, False);
+}
+
+Void HideRewardScreenGen() {
+	Game::HideRewardSplit(Players[0]);
+}
+
+Void WaitRewardAnswer() {
+	while(!Game::GetRewardAnswer(Players[0])) {
+		MB_Yield();
+	}
+}
+
+Void ShowWinnerScreen() {
+	declare Title 		= "";
+	declare TextColor 	= Colors::GetColor("BlueLight");
+	declare Subtitle 	= "";
+	
+	declare Text WinnerName = G_UserNameToGameName[G_WinnerName];
+	
+	if(WinnerName == "RED") {
+		Subtitle = "";
+		TextColor = Colors::GetColor("Red");
+	} else if(WinnerName == "BLUE") {
+		Subtitle = "";
+		TextColor = Colors::GetColor("Blue");
+	} else if(WinnerName == "GREEN") {
+		Subtitle = "";
+		TextColor = Colors::GetColor("Green");
+	} else if(WinnerName == "PURPLE") {
+		Subtitle = "";
+		TextColor = Colors::GetColor("Purple");
+	}
+	
+	declare Subtitle2	= "";
+	declare Sign 		= "+";
+	declare RewardUrl 	= RewardScreens::GetScreenSplitscreen();
+	
+	log("2 - BB");
+	Game::ShowRewardSplit(Players[0], Title, Subtitle, Subtitle2, "", TextColor, Sign, False);
+	//Game::ShowReward(Players[0], "Title", "Subtitle", "Subtitle2", "to continue", TextColor, "-", True);
+	//WaitRewardAnswer();
+}
+
+/*
+Text GetRankMessage(Integer _Position) {
+	declare Text RankMessage = "";
+	switch(_Position) {
+		case 1	:	RankMessage = _("1st place");
+		case 2	:	RankMessage = _("2nd place");
+		case 3	:	RankMessage = _("3rd place");
+		default	:	RankMessage = TL::Compose(_("%1th place"), ""^_Position);
+	}
+	return RankMessage;
+}
+*/
+
+// ---------------------------------- //
+/** Check if player is finalist
+ *
+ *	@return		True if it is the case, false otherwise
+ */
+Boolean IsPlayerFinalist(CTmPlayer _Player) {
+	declare Boolean IsFinalist for _Player.Score;
+	return IsFinalist;
+}
+
+Void ShowPlayerRewardScreen(CTmPlayer _Player, Boolean _HasFinishRace, Boolean _UseCustomPosition) {
+	declare Title 		= _("Well done!");
+	declare TextColor 	= Colors::GetColor("White");
+	// EG HERE
+	declare Points		= 0;
+	
+	declare PositionPlayer = 0;
+	if(!_UseCustomPosition) {
+		foreach(IndexScore => Score in Scores) {
+			if(Score.User.Name == _Player.User.Name) {
+				PositionPlayer = IndexScore;
+			}
+		}
+	} else {
+		PositionPlayer = G_LastPlayerPosition-1;
+	}
+	
+	if(!G_UseAlternateRules) {
+		Points = G_PointsRepartition[PositionPlayer];
+		// if(G_LastPlayerPosition > 0) {
+			
+		// }
+	} else {
+		if(PositionPlayer == 0) {
+			Points = 1;
+		} else {
+			Points = 0;
+		}
+	}
+	
+	declare Subtitle 	= Game::JustRankMessage(PositionPlayer, Points);
+	declare Subtitle2	= "";
+	declare Sign 		= "+";
+	declare RewardUrl 	= RewardScreens::GetScreenSplitscreen();
+	
+	if(!G_UseAlternateRules && IsPlayerFinalist(_Player)) {
+		Title		= "";
+		Subtitle 	= "";
+	} else {
+		if(_HasFinishRace) {
+			if(PositionPlayer == 0) {
+				Title 		= "";
+				declare Text GameName = G_UserNameToGameName[_Player.User.Name];
+				TextColor 	= G_GameColorVec[GameName];
+			} else if(PositionPlayer < G_NbPlayers) {
+				Title 		= "";
+			} else {
+				Title 		= "";
+			}
+		} else {
+			Title 		= "";
+			Subtitle	= "";
+		}
+	}
+	
+	declare Integer Time 	= _Player.Score.PrevRace.Time;
+	declare Text RecordText =  "";
+	if(Time > 0)
+		// RecordText = TL::Compose(_("Your record: %1"), TL::TimeToText(_Player.Score.PrevRace.Time, True));
+		RecordText = FlavourText::GetRecordOfThePlayer(_Player.Score.PrevRace.Time);
+	
+	Subtitle2 = RecordText;
+	
+	if(!_HasFinishRace)
+		Sign = "-";
+		
+	log("2 - AA");
+	//Game::ShowReward(_Player, Title, Subtitle, Subtitle2, "to continue", TextColor, Sign, False);
+	UIRewardScreens::ShowReward(_Player, "Title", "Subtitle", "Subtitle2", "to continue", TextColor, Sign, False, True, False, Text[], Text[], Integer[], Text[], Integer[], 5, 5, True);
+}
+
+Void HideRewardScreen(CTmPlayer _Player) {
+	Game::HideReward(_Player);
+}
+
+// ---------------------------------- //
+/** Update the final position of players
+ *
+ *	@return		True if it is the case, false otherwise
+ */
+ 
+ /*
+Void UpdateFinalPlayerPosition(Text Name) {
+	if(!G_FinalTable.exists(Name)) {
+		G_FinalTable.add(Name);
+	}
+}
+*/
+
+Void SpawnPlayers() {
+	foreach(Player in Players) {
+		Player.IsSpawned = True;
+	}
+}
+
+Void RaceTransition() {
+	// UISequence::StartTransitionVideo();
+	Game::WaitTime(1000);
+	Game::WaitRaceAll();
+}
+
+Void UpdateScoreTable(Integer  _ScoreTable) {
+	declare Text[] 		PlayersName;
+	declare Integer[] 	PlayersScore;
+	declare Vec3[]		PlayersColor;
+	declare Boolean 	KnownScoreTable = False;
+	declare Boolean		IsFinalTable	= False;
+	if(_ScoreTable == C_SCORETABLE_GAME) {
+		Scores_Sort(CTmMode::ETmScoreSortOrder::TotalPoints);
+		foreach(IndexScores => Score in Scores) {
+			// declare Boolean IsInGame 		for Player	= False;
+			declare Boolean IsInGameScore for Score;
+			
+			if(IsInGameScore) {
+				PlayersName.add(G_UserNameToGameName[Score.User.Name]);
+				declare Boolean IsFinalist for Score;
+				
+				if(IsFinalist) {
+					PlayersScore.add(C_FINALIST);
+				} else {
+					PlayersScore.add(Score.Points);
+				}
+				
+				declare Text GameName 	= G_UserNameToGameName[Score.User.Name];
+				declare Vec3 Color 		= G_GameColorVec[GameName];
+				PlayersColor.add(Color);
+			}
+			KnownScoreTable = True;
+		}
+	} else if(_ScoreTable == C_SCORETABLE_ROUND) {
+		Scores_Sort(CTmMode::ETmScoreSortOrder::PrevRace_Time);
+		foreach(IndexScores => Score in Scores) {
+			PlayersName.add(G_UserNameToGameName[Score.User.Name]);
+			declare Boolean IsFinalist for Score;
+			if(IsFinalist) {
+				PlayersScore.add(C_FINALIST);
+			} else {
+				PlayersScore.add(1000+Score.PrevRaceDeltaPoints);
+			}
+			
+			declare Text GameName 	= G_UserNameToGameName[Score.User.Name];
+			declare Vec3 Color 		= G_GameColorVec[GameName];
+			PlayersColor.add(Color);
+			KnownScoreTable = True;
+		}	
+	} else if(_ScoreTable == C_SCORETABLE_FINAL){
+		foreach(Position => Name in G_FinalTable) {
+			PlayersName.add(G_UserNameToGameName[Name]);
+			if(Position == 0)
+				PlayersScore.add(C_WINNER);
+			else {
+				declare Boolean ScoreIsFinalist = False;
+				declare Integer ScorePoints		= 0;
+				foreach(Score in Scores) {
+					if(Name == Score.User.Name) {
+						declare Boolean IsFinalist for Score;
+						ScoreIsFinalist = IsFinalist;
+						ScorePoints		= Score.Points;
+					}
+				}
+				
+				PlayersScore.add(ScorePoints);
+			}
+				
+			declare Text GameName 	= G_UserNameToGameName[Name];
+			declare Vec3 Color 		= G_GameColorVec[GameName];
+			PlayersColor.add(Color);
+			KnownScoreTable = True;
+			IsFinalTable = True;
+		}
+	}
+	
+	//HACK
+	PlayersName.add("Player1");
+	PlayersName.add("Player2");
+	PlayersScore.add(15);
+	PlayersScore.add(15);
+	PlayersColor.add(<1., 0., 1.>);
+	PlayersColor.add(<1., 0., 1.>);
+	/*
+	log("===="^Now^"=====");
+	log("Players score: "^PlayersScore);
+	log("Players color: "^PlayersColor);
+	*/
+	
+	if(KnownScoreTable) {
+		UISplitScreen::UpdateScoreTable(PlayersName, PlayersScore, PlayersColor, IsFinalTable);
+		UISplitScreen::ShowScoreTable(True);
+	}
+}
+
+Integer GetFinishTimeout() {
+	declare FinishTimeout = 0;
+	
+	if (S_FinishTimeout >= 0) {
+		FinishTimeout = S_FinishTimeout * 1000;
+	} else {
+		FinishTimeout = 5000;
+		if (Map.TMObjective_IsLapRace && NbLaps > 0 && Map.TMObjective_NbLaps > 0) {
+			FinishTimeout += ((Map.TMObjective_AuthorTime / Map.TMObjective_NbLaps) * NbLaps) / 6;
+		} else {
+			FinishTimeout += Map.TMObjective_AuthorTime / 6;
+		}
+	}
+	
+	if (G_UseAlternateRules) {
+		if (Map.TMObjective_IsLapRace && NbLaps > 0 && Map.TMObjective_NbLaps > 0) {
+			return G_RoundStartTime + ((Map.TMObjective_AuthorTime / Map.TMObjective_NbLaps) * NbLaps) + FinishTimeout;
+		} else {
+			return G_RoundStartTime + Map.TMObjective_AuthorTime + FinishTimeout;
+		}
+	} else {
+		return Now + FinishTimeout;
+	}
+	
+	// Default value from TMO, TMS (not used)
+	return Now + 15000;
+}
+
+// met à jour les traits MonoScreen_NbLivesLeft des UI en fonction de G_MonoScreen_NbLivesLeft
+Void SendNbLivesLeftToUIs()
+{
+	foreach(Player in Players)
+	{
+		declare UI <=> UIManager.GetUI(Player);
+		declare netwrite Integer[] MonoScreen_NbLivesLeft for UI;
+		MonoScreen_NbLivesLeft = G_MonoScreen_NbLivesLeft;
+	}
+}
+
+// met à jour G_MonoScreen_NbLivesLeft en fonction de G_MonoScreen_NbRespawns
+Void UpdateNbLivesLeftFromNbRespawns()
+{
+	declare Integer NbRespawnsMin = -1;
+	// Rem : G_MonoScreen_NbRespawns contient des -1 pour les joueurs qui ont abandonn ou ont t limins
+	foreach(NbRespawns in G_MonoScreen_NbRespawns)
+		if(NbRespawns >= 0 &&  (NbRespawnsMin == -1 || NbRespawns < NbRespawnsMin))
+			NbRespawnsMin = NbRespawns;
+	foreach(I => NbRespawns in G_MonoScreen_NbRespawns)
+	{
+		if(NbRespawns < 0 || NbRespawns > NbRespawnsMin + G_MonoScreen_NbLivesMax)
+			G_MonoScreen_NbLivesLeft[I] = -1;
+		else
+			G_MonoScreen_NbLivesLeft[I] = NbRespawnsMin + G_MonoScreen_NbLivesMax - NbRespawns;
+	}
+			
+}
+
+// met à jour G_MonoScreen_NbRespawns et G_MonoScreen_NbLivesLeft
+Boolean UpdateNbRespawnsAndLivesLeft(Boolean _IsRoundFinished)
+{
+	declare Boolean HasChanged = False;
+	foreach(I => Player in Players)
+	{
+		declare Integer NewNbRespawns = -1;
+		declare Boolean IsInGame for Player	= False;
+		if(IsInGame)
+		{
+			if(_IsRoundFinished)
+			{
+				if(Player.Score.PrevRace.Time > 0)
+					NewNbRespawns = Player.Score.PrevRace.NbRespawns;
+			}
+			else
+			{
+				if(Now < Player.RaceStartTime)		// pendant le 3,2,1,Go on met tout à -1
+					NewNbRespawns = -1;
+				else if(!Game::IsWaiting(Player))	// IsWaiting = joueurs ayant abandonné (ou ayant été forcés d'abandonner car étant sortis trop de fois de l'écran en mode MonoScreen)
+					NewNbRespawns = Player.CurRace.NbRespawns;
+			}
+		}
+		if(G_MonoScreen_NbRespawns[I] != NewNbRespawns)//Player.Score.PrevRace.NbRespawns
+		{
+			G_MonoScreen_NbRespawns[I] = NewNbRespawns;
+			HasChanged = True;
+		}
+	}
+	if(HasChanged)
+	{
+		UpdateNbLivesLeftFromNbRespawns();
+		SendNbLivesLeftToUIs();
+	}
+	return HasChanged;
+}
+
+Integer MonoScreenDuel_GetPlayerBonusPoints(Integer _PlayerIndex)
+{
+	if(_PlayerIndex < 0 || _PlayerIndex >= G_MonoScreen_NbLivesLeft.count)
+		return 0;
+	declare PlayerLivesLeft = -1;
+	declare OtherPlayerLivesLeft = -1;	// index of the other player, 
+	foreach(I => NbLivesLeft in G_MonoScreen_NbLivesLeft)
+	{
+		if(I == _PlayerIndex)
+			PlayerLivesLeft = NbLivesLeft;
+		else if(NbLivesLeft >= 0)
+			OtherPlayerLivesLeft = NbLivesLeft;
+	}
+	if(PlayerLivesLeft > OtherPlayerLivesLeft)
+	{
+		if(OtherPlayerLivesLeft == -1)
+			return G_MonoScreen_NbLivesMax;
+		else
+			return PlayerLivesLeft - OtherPlayerLivesLeft;
+	}
+	return 0;
+}
+
+Integer MonoScreenRounds_GetPlayerBonusPoints(Integer _PlayerIndex)
+{
+	if(_PlayerIndex < 0 || _PlayerIndex >= G_MonoScreen_NbLivesLeft.count)
+		return 0;
+	if(G_MonoScreen_NbLivesLeft[_PlayerIndex] <= 0)	// NbLivesLeft == 0 or -1 => no bonus
+		return 0;
+	declare Integer TotalLives = 0;
+	foreach(I => Player in Players)
+	{
+		if(G_MonoScreen_NbLivesLeft[I] > 0)
+			TotalLives += G_MonoScreen_NbLivesLeft[I];
+	}
+	return ML::NearestInteger(ML::ToReal(C_BonusPoints_MonoScreen * G_MonoScreen_NbLivesLeft[_PlayerIndex]) / ML::ToReal(TotalLives));
+}
+
+Integer GetPlayerIndexFromScore(CTmScore _Score)
+{
+	if(_Score == Null)
+		return -1;
+	declare ScorePlayerIndex = -1;
+	foreach(I => Player in Players)
+	{
+		if(Player.Score == _Score)
+			ScorePlayerIndex = I;
+	}
+	return ScorePlayerIndex;
+}
+
+// ---------------------------------- //
+/// Compute the latest race scores
+Void ComputeLatestRaceScores() {
+	Scores_Sort(CTmMode::ETmScoreSortOrder::PrevRace_Time);
+	
+	// Only points for the first players
+	if (G_UseAlternateRules) {
+		
+		declare Points = 1;
+		foreach (Score in Scores) {
+			if(Score.PrevRace.Time > 0) {
+				Score.PrevRaceDeltaPoints = Points;
+				if (Points > 0) Points -= 1;
+			} else {
+				Score.PrevRaceDeltaPoints = 0;
+			}
+		}
+		
+	}
+	
+	// Points distributed between all players
+	else {
+		declare I = 0;
+		foreach (Score in Scores) {
+			declare Boolean IsFinalist for Score;
+			if (Score.PrevRace.Time > 0 && !IsFinalist) {
+				declare Points = 0;
+				
+				if (G_PointsRepartition.count > 0 && !IsFinalist) {
+					if (G_PointsRepartition.existskey(I)) {
+						Points = G_PointsRepartition[I];
+					} else {
+						Points = G_PointsRepartition[G_PointsRepartition.count - 1];
+					}
+				}
+				Score.PrevRaceDeltaPoints = Points;
+
+				I += 1;
+			} else {
+				Score.PrevRaceDeltaPoints = 0;
+			}
+		}
+	}
+}
+
+// ---------------------------------- //
+/** Set players beyond point limit as finalist
+ *
+ *	@return		True if it is the case, false otherwise
+ */
+Void SetPlayersAsFinalist() {
+	declare Integer NbPlayerFinalist;
+	foreach(Score in Scores) {
+		declare Boolean IsFinalist for Score;
+		if(Score.Points >= G_PointsLimit && !IsFinalist) {
+			IsFinalist = True;
+			Score.Points = G_PointsLimit;
+		}
+		if(IsFinalist) {
+			NbPlayerFinalist += 1;
+		}
+	}
+}
+
+// ---------------------------------- //
+/// Compute the map scores
+Void AddScores() {
+	foreach (Score in Scores) {
+		Score.Points += Score.PrevRaceDeltaPoints;
+	}
+}
+
+Void ReinitRoundScore() {
+	foreach(Score in Scores) {
+		Score.PrevRaceDeltaPoints = 0;
+	}
+}
+
+// Boolean PointsLimitReached() {
+
+
+// }
+
+// ---------------------------------- //
+/** Check if the match is over (Duel)
+ *
+ *	@return		True if it is the case, false otherwise
+ */
+Boolean DoesPlayerWillWin(CTmPlayer _Player) {
+	if(G_LastPlayerPosition != 1)
+		return False;
+	declare BonusPoints = 0;
+	
+	return (_Player.Score.Points + 1 + BonusPoints >= G_PointsLimit);
+}
+
+Void GetTheWinner(CTmPlayer _Player) {
+	//If it is the first player to be finalist and finish the race then we have a winner
+	if(!G_UseAlternateRules) {
+		if(IsPlayerFinalist(_Player) && G_LastPlayerPosition == 1) {
+			G_WeHaveAWinner = True;
+			G_WinnerName = _Player.User.Name;
+			
+		}
+	} else {
+		if(DoesPlayerWillWin(_Player)) {
+			G_WeHaveAWinner = True;
+			G_WinnerName = _Player.User.Name;
+		}
+	}
+}
+ 
+Boolean MatchIsOver() {
+	/*
+	if(!G_UseAlternateRules) {
+		if(G_FinalTable.count == G_NbPlayers) return True;
+	} else {
+		//Just check if one of the players has the points needed
+		foreach(Score in Scores) {
+			if(Score.Points >= G_PointsLimit) {
+				return True;
+			}
+		}
+	}
+	*/
+	
+	if(!G_UseAlternateRules) {
+		return G_WeHaveAWinner;
+	} else {
+		foreach(Score in Scores) {
+			if(Score.Points >= G_PointsLimit) {
+				return True;
+			}
+		}
+	}
+	return False;
+}
+
+
+// ---------------------------------- //
+/** Check if we should go to the next map
+ *
+ *	@return		True if it is the case, false otherwise
+ */
+Boolean MapIsOver() {
+	// return G_NbRounds%4 == 0;
+	return False;
+}
+
+Void WaitPlayerPopupAnswer() {
+	while(!UISplitScreen::GetPopUpAnswer()) {
+		yield;
+	}
+}
+
+// Void ShowPopup() {
+	// UISplitScreen::ShowPopup("ROUNDS "^G_NbRounds, "Everyone for themselves", "Gentlemen,", "Start your engine", "GO");
+// }
+
+// Void ShowStartPopup() {
+	// UISplitScreen::ShowPopup("ROUNDS", "Everyone for themselves", "Reach 60 points", "to win the match", "OK");
+// }

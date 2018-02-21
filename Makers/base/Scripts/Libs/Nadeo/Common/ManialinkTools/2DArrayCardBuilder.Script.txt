@@ -1,0 +1,779 @@
+/** REQUIRES A FRAMEMODEL :
+	TwoDArrayCardBuilder_Card
+
+	REQUIRES THE FOLLOWING FUNCTIONS : 
+	Void TwoDArrayCardBuilder_HideCard(CMlFrame _Card)
+	Void TwoDArrayCardBuilder_ShowCard(CMlFrame _Card)
+	Void TwoDArrayCardBuilder_ShowLockedCard(CMlFrame _Card)
+	Void TwoDArrayCardBuilder_UnFocusCard(CMlFrame _Card)
+	Void TwoDArrayCardBuilder_FocusCard(CMlFrame _Card)
+	Void TwoDArrayCardBuilder_UnSelectCard(CMlFrame _Card)
+	Void TwoDArrayCardBuilder_SelectCard(CMlFrame _Card)
+
+	Append the following lines of code in your Layer Builder:
+	TwoDArrayCardBuilder::Init(Integer _CardInstancesCount_X, Integer _CardInstancesCount_Y, Vec2 _CardFirstPos, Vec2 _CardSize, Vec2 _CardMargin)
+		in the beginning
+	{{{TwoDArrayCardBuilder::ManialinkMainBody()}}}
+		after framemodel with id="TwoDArrayCardBuilder_Card" is declared
+	{{{TwoDArrayCardBuilder::Includes()}}}
+		in the layer includes
+	{{{TwoDArrayCardBuilder::Declares()}}}
+		after the "TwoDArrayCardBuilder_HideCard, TwoDArrayCardBuilder_ShowCard, ..." functions are defined
+	TwoDArrayCardBuilder_Init();
+		in the layer's Init() or at the beginning of the main() (shouldn't be called twice)
+	TwoDArrayCardBuilder_Loop();
+		in the while(True) loop
+
+	In your layer, for each time the cards are displayed differently, you should use :
+	TwoDArrayCardBuilder_Update(CardStates, _Index_X, _Index_Y)
+	or
+	TwoDArrayCardBuilder_Update(CardStates) = TwoDArrayCardBuilder_Update(CardStates, 0, 0)
+	or
+	TwoDArrayCardBuilder_Update()
+	CardStates corresponds to which buttons are displayed, hidden, or locked. Its values are :
+		C_TwoDArrayCardBuilder_Available			: The card is shown and clickable/selectable
+		C_TwoDArrayCardBuilder_Locked				: The card is shown but isn't selectable in any way
+		C_TwoDArrayCardBuilder_NonExistentState	: The card is not shown (doesn't mean the frameinstance is hidden)
+	TwoDArrayCardBuilder_SetRunningState(RunningState) : RunningState to False deactivates the TwoDArrayCardBuilder. You may use this to switch off to a different navigation inside the layer (surrounding buttons)
+		If the mouse has been used after, SetRunningState(False) has to be called once more
+	Boolean TwoDArrayCardBuilder_IsRunning() : Returns True if inputs are processed with keyboard, else returns False.
+	Boolean TwoDArrayCardBuilder_HasDoubleClicked() : To put in the while loop : "if (TwoDArrayCardBuilder_HasDoubleClicked()) {DoubleClickInput();}" returns True whenever the selected card has been clicked once
+
+	Accessible elements :
+	CMlFrame with id = TwoDArrayCardBuilder_Frame (contains all the cards)
+	CMlFrame with id = TwoDArrayCardBuilder_CardInstance-I (contains the graphical representation of the card)
+	Integer G_TwoDArrayCardBuilder_CountX
+	Integer G_TwoDArrayCardBuilder_CountY
+	Integer C_TwoDArrayCardBuilder_NonExistentState
+	Integer C_TwoDArrayCardBuilder_Locked
+	Integer C_TwoDArrayCardBuilder_Available
+	*/
+
+declare Integer	G_CardInstancesCount_X;
+declare Integer	G_CardInstancesCount_Y;
+declare Real	G_CardFirstPos_X;
+declare Real	G_CardFirstPos_Y;
+declare Real	G_CardSize_X;
+declare Real	G_CardSize_Y;
+declare Real	G_CardMargin_X;
+declare Real	G_CardMargin_Y;
+declare Text	G_AlignmentAddOn;
+declare Vec2[]	G_CardPositions;
+
+Void LoadCardInstancesBeforeBuild(Integer _CardInstancesCount_X, Integer _CardInstancesCount_Y)
+{
+	G_CardInstancesCount_X	= _CardInstancesCount_X;
+	G_CardInstancesCount_Y	= _CardInstancesCount_Y;
+}
+
+Void LoadCardFirstPosBeforeBuild(Vec2 _CardFirstPos)
+{
+	G_CardFirstPos_X		= _CardFirstPos.X;
+	G_CardFirstPos_Y		= _CardFirstPos.Y;
+}
+
+Void LoadCardSizeBeforeBuild(Vec2 _CardSize)
+{
+	G_CardSize_X			= _CardSize.X;
+	G_CardSize_Y			= _CardSize.Y;
+}
+
+Void LoadCardMarginBeforeBuild(Vec2 _CardMargin)
+{
+	G_CardMargin_X			= _CardMargin.X;
+	G_CardMargin_Y			= _CardMargin.Y;
+}
+
+Void LoadAlignmentAddOnBeforeBuild(Text _AlignmentAddOn)
+{
+	G_AlignmentAddOn = _AlignmentAddOn;
+}
+
+Void Init(Integer _CardInstancesCount_X, Integer _CardInstancesCount_Y, Vec2 _CardFirstPos, Vec2 _CardSize, Vec2 _CardMargin, Text _AlignmentAddOn)
+{
+	LoadCardInstancesBeforeBuild(_CardInstancesCount_X, _CardInstancesCount_Y);
+	LoadCardFirstPosBeforeBuild(_CardFirstPos);
+	LoadCardSizeBeforeBuild(_CardSize);
+	LoadCardMarginBeforeBuild(_CardMargin);
+	LoadAlignmentAddOnBeforeBuild(_AlignmentAddOn);
+}
+
+Void Init(Integer _CardInstancesCount_X, Integer _CardInstancesCount_Y, Vec2 _CardFirstPos, Vec2 _CardSize, Vec2 _CardMargin)
+{
+	Init(_CardInstancesCount_X, _CardInstancesCount_Y, _CardFirstPos, _CardSize, _CardMargin, "halign=\"center\" valign=\"center\"");
+}
+
+Vec2[] GetCardPositions()
+{
+	declare Vec2[] Result;
+	for(IndexY, 0, G_CardInstancesCount_Y - 1)
+	{
+		declare Real PosY = G_CardFirstPos_Y - IndexY * (G_CardSize_Y + G_CardMargin_Y);
+		for(IndexX, 0, G_CardInstancesCount_X - 1)
+		{
+			declare Real PosX = G_CardFirstPos_X + IndexX * (G_CardSize_X + G_CardMargin_X);
+			Result.add(<PosX, PosY>);
+		}
+	}
+	return Result;
+}
+
+// ---------------
+// ATTENTION : Ici les lignes sont instanciées en premier.
+// Les arrays commencent donc avec les lignes : Array[Y][X] au lieu de Array[X][Y]
+// ---------------
+
+
+/** REQUIRES A FRAMEMODEL : TwoDArrayCardBuilder_Card
+	*/
+Text ManialinkMainBody()
+{
+	declare Text AlignmentAddOn;
+	if (G_AlignmentAddOn != "") {
+		AlignmentAddOn = G_AlignmentAddOn ^ " ";
+	}
+	declare Text MLText = """	<frame id="TwoDArrayCardBuilder_Frame" pos="{{{G_CardFirstPos_X}}} {{{G_CardFirstPos_Y}}}">""";
+	for(IndexY, 0, G_CardInstancesCount_Y - 1)
+	{
+		declare Real PosY = - IndexY * (G_CardSize_Y + G_CardMargin_Y);
+		for(IndexX, 0, G_CardInstancesCount_X - 1)
+		{
+			declare Real PosX = IndexX * (G_CardSize_X + G_CardMargin_X);
+			MLText ^= 
+"""			<frame pos="{{{PosX}}} {{{PosY}}}" >
+				<frameinstance modelid="TwoDArrayCardBuilder_Card" id="TwoDArrayCardBuilder_CardInstance-{{{IndexX + IndexY * G_CardInstancesCount_X}}}"/>
+				<quad {{{AlignmentAddOn}}}size="{{{G_CardSize_X}}} {{{G_CardSize_Y}}}" z-index="-1" scriptevents="1" id="TwoDArrayCardBuilder_Quad"/>
+			</frame>""";
+		}
+	}
+	MLText ^= "	</frame>";
+	return MLText;
+}
+
+Text Includes()
+{
+	return """
+	// <script>
+
+	#Const C_TwoDArrayCardBuilder_NonExistentState	0
+	#Const C_TwoDArrayCardBuilder_Locked			1
+	#Const C_TwoDArrayCardBuilder_Available			2""";
+}
+// <script>
+Text FirstDeclares()
+{
+	return """
+	// <script>
+	declare Integer			G_TwoDArrayCardBuilder_CountX;
+	declare Integer			G_TwoDArrayCardBuilder_CountY;
+	declare Boolean			G_Private_TwoDArrayCardBuilder_IsRunning;
+	declare Integer			G_Private_TwoDArrayCardBuilder_SelectedCardIndex_X;
+	declare Integer			G_Private_TwoDArrayCardBuilder_SelectedCardIndex_Y;
+	declare Integer			G_Private_TwoDArrayCardBuilder_FocusedCardIndex_X;
+	declare Integer			G_Private_TwoDArrayCardBuilder_FocusedCardIndex_Y;
+	declare Integer			G_Private_TwoDArrayCardBuilder_PreviouslySelectedCardIndex_X;
+	declare Integer			G_Private_TwoDArrayCardBuilder_PreviouslySelectedCardIndex_Y;
+	declare Integer			G_Private_TwoDArrayCardBuilder_PreviouslyFocusedCardIndex_X;
+	declare Integer			G_Private_TwoDArrayCardBuilder_PreviouslyFocusedCardIndex_Y;
+	declare Integer[][]		G_Private_TwoDArrayCardBuilder_CardStates;
+	declare CMlFrame		G_Private_TwoDArrayCardBuilder_Frame;
+	declare CMlFrame[][]	G_Private_TwoDArrayCardBuilder_Cards;
+	declare CMlFrame[][]	G_Private_TwoDArrayCardBuilder_CardContainers;
+	declare CMlControl[][]	G_Private_TwoDArrayCardBuilder_Quads;
+	declare Boolean			G_Private_TwoDArrayCardBuilder_HasDoneInit;
+	declare Boolean			G_Private_TwoDArrayCardBuilder_HasDoubleClicked;
+	declare Boolean			G_Private_TwoDArrayCardBuilder_HasJustUpdated;
+
+	Integer TwoDArrayCardBuilder_GetIndexXFrom1DIndex(Integer _1DIndex)
+	{
+		if (_1DIndex == -1) {
+			return -1;
+		}
+		return _1DIndex % G_TwoDArrayCardBuilder_CountX;
+	}
+
+	Integer TwoDArrayCardBuilder_GetIndexYFrom1DIndex(Integer _1DIndex)
+	{
+		if (_1DIndex == -1) {
+			return -1;
+		}
+		return _1DIndex / G_TwoDArrayCardBuilder_CountX;
+	}
+
+	Integer TwoDArrayCardBuilder_Get1DIndexFrom2DIndexes(Integer _IndexX, Integer _IndexY)
+	{
+		declare Result = _IndexX + G_TwoDArrayCardBuilder_CountX * _IndexY;
+		if (Result < -1) Result = -1;
+		return Result;
+	}
+
+	Boolean TwoDArrayCardBuilder_HasJustUpdated()
+	{
+		return G_Private_TwoDArrayCardBuilder_HasJustUpdated;
+	}
+
+	""";
+}
+// <script>
+/** REQUIRES THE FOLLOWING FUNCTIONS : 
+	Void TwoDArrayCardBuilder_HideCard(CMlFrame _Card)
+	Void TwoDArrayCardBuilder_ShowCard(CMlFrame _Card)
+	Void TwoDArrayCardBuilder_ShowLockedCard(CMlFrame _Card)
+	Void TwoDArrayCardBuilder_UnFocusCard(CMlFrame _Card)
+	Void TwoDArrayCardBuilder_FocusCard(CMlFrame _Card)
+	Void TwoDArrayCardBuilder_UnSelectCard(CMlFrame _Card)
+	Void TwoDArrayCardBuilder_SelectCard(CMlFrame _Card)
+	*/
+Text SecondDeclares()
+{
+	return """
+	// <script>
+	CMlControl Private_TwoDArrayCardBuilder_GetQuadFromFrameInstance(CMlFrame _Card)
+	{
+		declare Integer Index_Y for _Card;
+		declare Integer Index_X for _Card;
+		return G_Private_TwoDArrayCardBuilder_Quads[Index_Y][Index_X];
+	}
+
+	CMlFrame Private_TwoDArrayCardBuilder_GetCardContainerFromFrameInstance(CMlFrame _Card)
+	{
+		declare Integer Index_Y for _Card;
+		declare Integer Index_X for _Card;
+		return G_Private_TwoDArrayCardBuilder_CardContainers[Index_Y][Index_X];
+	}
+
+	Void Private_TwoDArrayCardBuilder_HideCard(CMlFrame _Card)
+	{
+		TwoDArrayCardBuilder_HideCard(_Card);
+		declare Quad <=> Private_TwoDArrayCardBuilder_GetQuadFromFrameInstance(_Card);
+		Quad.Hide();
+	}
+
+	Void Private_TwoDArrayCardBuilder_ShowLockedCard(CMlFrame _Card)
+	{
+		TwoDArrayCardBuilder_ShowLockedCard(_Card);
+		declare Quad <=> Private_TwoDArrayCardBuilder_GetQuadFromFrameInstance(_Card);
+		Quad.Hide();
+	}
+
+	Void Private_TwoDArrayCardBuilder_ShowCard(CMlFrame _Card)
+	{
+		TwoDArrayCardBuilder_ShowCard(_Card);
+		declare Quad <=> Private_TwoDArrayCardBuilder_GetQuadFromFrameInstance(_Card);
+		Quad.Show();
+	}
+
+	Void Private_TwoDArrayCardBuilder_SelectCard(CMlFrame _Card)
+	{
+		declare CardContainer <=> Private_TwoDArrayCardBuilder_GetCardContainerFromFrameInstance(_Card);
+		//CardContainer.ZIndex = 1.;
+		// HACK : Décommenter ces lignes quand le bug de ZIndexes dynamique sera résolu
+		TwoDArrayCardBuilder_SelectCard(_Card);
+	}
+
+	Void Private_TwoDArrayCardBuilder_UnSelectCard(CMlFrame _Card)
+	{
+		declare CardContainer <=> Private_TwoDArrayCardBuilder_GetCardContainerFromFrameInstance(_Card);
+		//CardContainer.ZIndex = 0.;
+		// HACK : Décommenter ces lignes quand le bug de ZIndexes dynamique sera résolu
+		TwoDArrayCardBuilder_UnSelectCard(_Card);
+	}
+
+	Void Private_TwoDArrayCardBuilder_DisplayAllCards()
+	{
+		foreach (CardIndex_Y => Line in G_Private_TwoDArrayCardBuilder_Cards) {
+			foreach (CardIndex_X => Card in Line) {
+				declare Integer CardState = G_Private_TwoDArrayCardBuilder_CardStates[CardIndex_Y][CardIndex_X];
+				switch(CardState) {
+					case C_TwoDArrayCardBuilder_NonExistentState: {
+						Private_TwoDArrayCardBuilder_HideCard(Card);
+					}
+					case C_TwoDArrayCardBuilder_Locked: {
+						Private_TwoDArrayCardBuilder_ShowLockedCard(Card);
+					}
+					case C_TwoDArrayCardBuilder_Available: {
+						Private_TwoDArrayCardBuilder_ShowCard(Card);
+					}
+				}
+			}
+		}
+	}
+
+	Boolean Private_TwoDArrayCardBuilder_IsIndexValid(Integer _CardIndex_Y, Integer _CardIndex_X)
+	{
+		return ((_CardIndex_X > -1) && (_CardIndex_X < G_TwoDArrayCardBuilder_CountX)
+			&& (_CardIndex_Y > -1) && (_CardIndex_Y < G_TwoDArrayCardBuilder_CountY));
+	}
+
+	Boolean Private_TwoDArrayCardBuilder_IsIndexExistent(Integer _CardIndex_Y, Integer _CardIndex_X)
+	{
+		if (!Private_TwoDArrayCardBuilder_IsIndexValid(_CardIndex_Y, _CardIndex_X)) {
+			return False;
+		}
+		return (G_Private_TwoDArrayCardBuilder_CardStates[_CardIndex_Y][_CardIndex_X] != C_TwoDArrayCardBuilder_NonExistentState);
+	}
+
+	Boolean Private_TwoDArrayCardBuilder_IsIndexUnlocked(Integer _CardIndex_Y, Integer _CardIndex_X)
+	{
+		if (!Private_TwoDArrayCardBuilder_IsIndexExistent(_CardIndex_Y, _CardIndex_X)) {
+			return False;
+		}
+		return (G_Private_TwoDArrayCardBuilder_CardStates[_CardIndex_Y][_CardIndex_X] != C_TwoDArrayCardBuilder_Locked);
+	}
+
+	Integer Private_TwoDArrayCardBuilder_AccessibleHorizontalIndexFromLine(Integer _LineIndex)
+	{
+		for(CardIndex_X, G_Private_TwoDArrayCardBuilder_SelectedCardIndex_X, G_TwoDArrayCardBuilder_CountX - 1) {
+			if (Private_TwoDArrayCardBuilder_IsIndexUnlocked(_LineIndex, CardIndex_X))
+			{
+				return CardIndex_X;
+			}
+		}
+		return -1;
+	}
+
+	// Manages the display of all instantiated cards
+	Void Private_TwoDArrayCardBuilder_ManageSelectionDisplay()
+	{
+		if ((G_Private_TwoDArrayCardBuilder_SelectedCardIndex_X != G_Private_TwoDArrayCardBuilder_PreviouslySelectedCardIndex_X)
+		||	(G_Private_TwoDArrayCardBuilder_SelectedCardIndex_Y != G_Private_TwoDArrayCardBuilder_PreviouslySelectedCardIndex_Y)) {
+			if (Private_TwoDArrayCardBuilder_IsIndexValid(G_Private_TwoDArrayCardBuilder_PreviouslySelectedCardIndex_Y, G_Private_TwoDArrayCardBuilder_PreviouslySelectedCardIndex_X)) {
+				Private_TwoDArrayCardBuilder_UnSelectCard(G_Private_TwoDArrayCardBuilder_Cards[G_Private_TwoDArrayCardBuilder_PreviouslySelectedCardIndex_Y][G_Private_TwoDArrayCardBuilder_PreviouslySelectedCardIndex_X]);
+			}
+			if (Private_TwoDArrayCardBuilder_IsIndexExistent(G_Private_TwoDArrayCardBuilder_SelectedCardIndex_Y, G_Private_TwoDArrayCardBuilder_SelectedCardIndex_X)){
+				Private_TwoDArrayCardBuilder_SelectCard(G_Private_TwoDArrayCardBuilder_Cards[G_Private_TwoDArrayCardBuilder_SelectedCardIndex_Y][G_Private_TwoDArrayCardBuilder_SelectedCardIndex_X]);
+			}
+		}
+	}
+
+	Void Private_TwoDArrayCardBuilder_ManageFocusDisplay()
+	{
+		if ((G_Private_TwoDArrayCardBuilder_FocusedCardIndex_X != G_Private_TwoDArrayCardBuilder_PreviouslyFocusedCardIndex_X)
+		||	(G_Private_TwoDArrayCardBuilder_FocusedCardIndex_Y != G_Private_TwoDArrayCardBuilder_PreviouslyFocusedCardIndex_Y)) {
+			if (Private_TwoDArrayCardBuilder_IsIndexValid(G_Private_TwoDArrayCardBuilder_PreviouslyFocusedCardIndex_Y, G_Private_TwoDArrayCardBuilder_PreviouslyFocusedCardIndex_X)) {
+				TwoDArrayCardBuilder_UnFocusCard(G_Private_TwoDArrayCardBuilder_Cards[G_Private_TwoDArrayCardBuilder_PreviouslyFocusedCardIndex_Y][G_Private_TwoDArrayCardBuilder_PreviouslyFocusedCardIndex_X]);
+			}
+			if (Private_TwoDArrayCardBuilder_IsIndexExistent(G_Private_TwoDArrayCardBuilder_FocusedCardIndex_Y, G_Private_TwoDArrayCardBuilder_FocusedCardIndex_X)){
+				TwoDArrayCardBuilder_FocusCard(G_Private_TwoDArrayCardBuilder_Cards[G_Private_TwoDArrayCardBuilder_FocusedCardIndex_Y][G_Private_TwoDArrayCardBuilder_FocusedCardIndex_X]);
+			}
+		}
+	}
+
+	Void Private_TwoDArrayCardBuilder_SetSelectedCursor(Integer _SelectedCardIndex_Y, Integer _SelectedCardIndex_X) {
+		G_Private_TwoDArrayCardBuilder_PreviouslySelectedCardIndex_X = G_Private_TwoDArrayCardBuilder_SelectedCardIndex_X;
+		G_Private_TwoDArrayCardBuilder_PreviouslySelectedCardIndex_Y = G_Private_TwoDArrayCardBuilder_SelectedCardIndex_Y;
+		G_Private_TwoDArrayCardBuilder_SelectedCardIndex_X = _SelectedCardIndex_X;
+		G_Private_TwoDArrayCardBuilder_SelectedCardIndex_Y = _SelectedCardIndex_Y;
+		Private_TwoDArrayCardBuilder_ManageSelectionDisplay();
+	}
+
+	Void Private_TwoDArrayCardBuilder_ForceSetSelectedCursor(Integer _SelectedCardIndex_Y, Integer _SelectedCardIndex_X) {
+		if ((G_Private_TwoDArrayCardBuilder_SelectedCardIndex_X == _SelectedCardIndex_X)
+			&& (G_Private_TwoDArrayCardBuilder_SelectedCardIndex_Y == _SelectedCardIndex_Y))
+		{
+			Private_TwoDArrayCardBuilder_SelectCard(G_Private_TwoDArrayCardBuilder_Cards[G_Private_TwoDArrayCardBuilder_SelectedCardIndex_Y][G_Private_TwoDArrayCardBuilder_SelectedCardIndex_X]);
+		} else {
+			Private_TwoDArrayCardBuilder_SetSelectedCursor(_SelectedCardIndex_Y, _SelectedCardIndex_X);
+		}
+	}
+
+	Void Private_TwoDArrayCardBuilder_WithdrawSelectedCursor() {
+		Private_TwoDArrayCardBuilder_SetSelectedCursor(-1, -1);
+	}
+
+	Void Private_TwoDArrayCardBuilder_SetFocusedCursor(Integer _FocusedCardIndex_Y, Integer _FocusedCardIndex_X) {
+		Audio.PlaySoundEvent(CAudioManager::ELibSound::Focus, 1, 0.0);
+		G_Private_TwoDArrayCardBuilder_PreviouslyFocusedCardIndex_X = G_Private_TwoDArrayCardBuilder_FocusedCardIndex_X;
+		G_Private_TwoDArrayCardBuilder_PreviouslyFocusedCardIndex_Y = G_Private_TwoDArrayCardBuilder_FocusedCardIndex_Y;
+		G_Private_TwoDArrayCardBuilder_FocusedCardIndex_X = _FocusedCardIndex_X;
+		G_Private_TwoDArrayCardBuilder_FocusedCardIndex_Y = _FocusedCardIndex_Y;
+		Private_TwoDArrayCardBuilder_ManageFocusDisplay();
+	}
+
+	Void Private_TwoDArrayCardBuilder_WithdrawFocusedCursor() {
+		Private_TwoDArrayCardBuilder_SetFocusedCursor(-1, -1);
+	}
+
+	Void Private_TwoDArrayCardBuilder_Update(Integer[][] _CardStates, Integer _Index_Y, Integer _Index_X)
+	{
+		G_Private_TwoDArrayCardBuilder_HasJustUpdated = True;
+		G_Private_TwoDArrayCardBuilder_CardStates = _CardStates;
+		Private_TwoDArrayCardBuilder_DisplayAllCards();
+		if (_Index_Y == -1 && _Index_X == -1) {
+			Private_TwoDArrayCardBuilder_WithdrawSelectedCursor();
+		} else if (Private_TwoDArrayCardBuilder_IsIndexUnlocked(_Index_Y, _Index_X) && G_Private_TwoDArrayCardBuilder_IsRunning) {
+			Private_TwoDArrayCardBuilder_ForceSetSelectedCursor(_Index_Y, _Index_X);
+		} else if (Private_TwoDArrayCardBuilder_IsIndexUnlocked(0, 0) && G_Private_TwoDArrayCardBuilder_IsRunning) {
+			Private_TwoDArrayCardBuilder_ForceSetSelectedCursor(0, 0);
+		} else {
+			Private_TwoDArrayCardBuilder_WithdrawSelectedCursor();
+		}
+		G_Private_TwoDArrayCardBuilder_HasJustUpdated = False;
+	}
+
+	Void Private_TwoDArrayCardBuilder_Input_VerticalIncrement(Integer _Increment)
+	{
+		declare Integer FutureYIndex = G_Private_TwoDArrayCardBuilder_SelectedCardIndex_Y + _Increment;
+		declare Integer FutureXIndex = Private_TwoDArrayCardBuilder_AccessibleHorizontalIndexFromLine(FutureYIndex);
+		if (FutureXIndex != -1)
+		{
+			Private_TwoDArrayCardBuilder_SetSelectedCursor(FutureYIndex, FutureXIndex);
+		}
+	}
+
+	Void Private_TwoDArrayCardBuilder_Input_HorizontalIncrement(Integer _Increment)
+	{
+		Audio.PlaySoundEvent(CAudioManager::ELibSound::Focus, 1, 0.0);
+		declare Integer FutureXIndex = G_Private_TwoDArrayCardBuilder_SelectedCardIndex_X + _Increment;
+		declare Integer FutureYIndex = G_Private_TwoDArrayCardBuilder_SelectedCardIndex_Y;
+		if (Private_TwoDArrayCardBuilder_IsIndexUnlocked(FutureYIndex, FutureXIndex))
+		{
+			Private_TwoDArrayCardBuilder_SetSelectedCursor(FutureYIndex, FutureXIndex);
+		}
+	}
+
+	Void Private_TwoDArrayCardBuilder_Input_Up()
+	{
+		Private_TwoDArrayCardBuilder_Input_VerticalIncrement(-1);
+	}
+
+	Void Private_TwoDArrayCardBuilder_Input_Down()
+	{
+		Private_TwoDArrayCardBuilder_Input_VerticalIncrement(1);
+	}
+
+	Void Private_TwoDArrayCardBuilder_Input_Left()
+	{
+		Private_TwoDArrayCardBuilder_Input_HorizontalIncrement(-1);
+	}
+
+	Void Private_TwoDArrayCardBuilder_Input_Right()
+	{
+		Private_TwoDArrayCardBuilder_Input_HorizontalIncrement(1);
+	}
+
+	Void Private_TwoDArrayCardBuilder_FillCardsFromCounts()
+	{
+		G_Private_TwoDArrayCardBuilder_Cards							.clear();
+		G_Private_TwoDArrayCardBuilder_CardContainers					.clear();
+		G_Private_TwoDArrayCardBuilder_Quads							.clear();
+		for(LineIndex, 0, G_TwoDArrayCardBuilder_CountY - 1)
+		{
+			G_Private_TwoDArrayCardBuilder_Cards		.add(CMlFrame[]);
+			G_Private_TwoDArrayCardBuilder_CardContainers.add(CMlFrame[]);
+			G_Private_TwoDArrayCardBuilder_Quads		.add(CMlControl[]);
+			for(ColumnIndex, 0, G_TwoDArrayCardBuilder_CountX - 1)
+			{
+				declare Integer FrameIndex = TwoDArrayCardBuilder_Get1DIndexFrom2DIndexes(ColumnIndex, LineIndex);
+				declare CardFrame <=> Page.GetFirstChild("TwoDArrayCardBuilder_CardInstance-" ^ FrameIndex).Parent;
+				G_Private_TwoDArrayCardBuilder_CardContainers[LineIndex].add(CardFrame);
+				foreach(Control in CardFrame.Controls)
+				{
+					if (Control.ControlId == ("TwoDArrayCardBuilder_CardInstance-" ^ FrameIndex))
+					{
+						declare CMlFrame Card <=> (Control as CMlFrame);
+						G_Private_TwoDArrayCardBuilder_Cards[LineIndex]		.add(Card);
+					} else if (Control.ControlId == "TwoDArrayCardBuilder_Quad") {
+						G_Private_TwoDArrayCardBuilder_Quads[LineIndex]		.add(Control);
+					}
+					declare Integer Index_Y		for Control;
+					declare Integer Index_X		for Control;
+					declare Integer OneDIndex	for Control;
+					Index_Y = LineIndex;
+					Index_X = ColumnIndex;
+					OneDIndex = FrameIndex;
+				}
+			}
+		}
+	}
+
+	Void Private_TwoDArrayCardBuilder_PositionCardsFromBaseData(Integer _NewCountX, Integer _NewCountY, Vec2 _CardFirstPos, Vec2 _CardSize, Vec2 _CardMargin)
+	{
+		G_Private_TwoDArrayCardBuilder_Frame.RelativePosition_V3 = _CardFirstPos;
+		for(IndexY, 0, _NewCountY - 1)
+		{
+			declare Real PosY = - IndexY * (_CardSize.Y + _CardMargin.Y);
+			for(IndexX, 0, _NewCountX - 1)
+			{
+				declare Real PosX = IndexX * (_CardSize.X + _CardMargin.X);
+				declare Integer FrameIndex = IndexX + IndexY * _NewCountX;
+				declare CMlFrame ParentFrame = Page.GetFirstChild("TwoDArrayCardBuilder_CardInstance-" ^ FrameIndex).Parent;
+				ParentFrame.RelativePosition_V3 = <PosX, PosY>;
+				ParentFrame.GetFirstChild("TwoDArrayCardBuilder_Quad").Size = <_CardSize.X, _CardSize.Y>;
+			}
+		}
+	}
+
+	Integer GetIndexXFromCountReset(Integer _OldIndexX, Integer _OldIndexY, Integer _OldCountX, Integer _NewCountX)
+	{
+		if (_OldIndexX == -1 || _OldIndexY == -1) {
+			return -1;
+		}
+		declare OneDIndex = _OldIndexX + _OldCountX * _OldIndexY;
+		return OneDIndex % _NewCountX;
+	}
+
+	Integer GetIndexYFromCountReset(Integer _OldIndexX, Integer _OldIndexY, Integer _OldCountX, Integer _NewCountX)
+	{
+		if (_OldIndexX == -1 || _OldIndexY == -1) {
+			return -1;
+		}
+		declare OneDIndex = _OldIndexX + _OldCountX * _OldIndexY;
+		return OneDIndex / _NewCountX;
+	}
+
+	Void Private_TwoDArrayCardBuilder_SwapCardStates(Integer _OldCountX, Integer _NewCountX, Integer _NewCountY)
+	{
+		declare Integer[][] NewCardStates;
+		for(J, 0, _NewCountY - 1) {
+			NewCardStates.add(Integer[]);
+			for (I, 0, _NewCountX - 1) {
+				NewCardStates[J].add(G_Private_TwoDArrayCardBuilder_CardStates[GetIndexYFromCountReset(I, J, _NewCountX, _OldCountX)][GetIndexXFromCountReset(I, J, _NewCountX, _OldCountX)]);
+			}
+		}
+		G_Private_TwoDArrayCardBuilder_CardStates = NewCardStates;
+	}
+
+	// PUBLIC
+
+	Void TwoDArrayCardBuilder_ResetDimensions(Integer _NewCountX, Integer _NewCountY, Vec2 _CardFirstPos, Vec2 _CardSize, Vec2 _CardMargin)
+	{
+		if (G_TwoDArrayCardBuilder_CountX == 0 || G_TwoDArrayCardBuilder_CountY == 0 || !G_Private_TwoDArrayCardBuilder_HasDoneInit) {
+			log(Now ^ ") WARNING : TwoDArrayCardBuilder's ResetDimensions() called before Init. Aborting.");
+			return;
+		}
+		Private_TwoDArrayCardBuilder_SwapCardStates(G_TwoDArrayCardBuilder_CountX, _NewCountX, _NewCountY);
+		Private_TwoDArrayCardBuilder_PositionCardsFromBaseData(_NewCountX, _NewCountY, _CardFirstPos, _CardSize, _CardMargin);
+		declare Temp_SelectedCardIndex_X			= GetIndexXFromCountReset(G_Private_TwoDArrayCardBuilder_SelectedCardIndex_X,
+														G_Private_TwoDArrayCardBuilder_SelectedCardIndex_Y, G_TwoDArrayCardBuilder_CountX, _NewCountX);
+		declare Temp_SelectedCardIndex_Y			= GetIndexYFromCountReset(G_Private_TwoDArrayCardBuilder_SelectedCardIndex_X,
+														G_Private_TwoDArrayCardBuilder_SelectedCardIndex_Y, G_TwoDArrayCardBuilder_CountX, _NewCountX);
+		G_Private_TwoDArrayCardBuilder_SelectedCardIndex_X					= Temp_SelectedCardIndex_X;
+		G_Private_TwoDArrayCardBuilder_SelectedCardIndex_Y					= Temp_SelectedCardIndex_Y;
+		declare Temp_FocusedCardIndex_X				= GetIndexXFromCountReset(G_Private_TwoDArrayCardBuilder_FocusedCardIndex_X,
+														G_Private_TwoDArrayCardBuilder_FocusedCardIndex_Y, G_TwoDArrayCardBuilder_CountX, _NewCountX);
+		declare Temp_FocusedCardIndex_Y				= GetIndexYFromCountReset(G_Private_TwoDArrayCardBuilder_FocusedCardIndex_X,
+														G_Private_TwoDArrayCardBuilder_FocusedCardIndex_Y, G_TwoDArrayCardBuilder_CountX, _NewCountX);
+		G_Private_TwoDArrayCardBuilder_FocusedCardIndex_X						= Temp_FocusedCardIndex_X;
+		G_Private_TwoDArrayCardBuilder_FocusedCardIndex_Y						= Temp_FocusedCardIndex_Y;
+		declare Temp_PreviouslySelectedCardIndex_X	= GetIndexXFromCountReset(G_Private_TwoDArrayCardBuilder_PreviouslySelectedCardIndex_X,
+														G_Private_TwoDArrayCardBuilder_PreviouslySelectedCardIndex_Y, G_TwoDArrayCardBuilder_CountX, _NewCountX);
+		declare Temp_PreviouslySelectedCardIndex_Y	= GetIndexYFromCountReset(G_Private_TwoDArrayCardBuilder_PreviouslySelectedCardIndex_X,
+														G_Private_TwoDArrayCardBuilder_PreviouslySelectedCardIndex_Y, G_TwoDArrayCardBuilder_CountX, _NewCountX);
+		G_Private_TwoDArrayCardBuilder_PreviouslySelectedCardIndex_X			= Temp_PreviouslySelectedCardIndex_X;
+		G_Private_TwoDArrayCardBuilder_PreviouslySelectedCardIndex_Y			= Temp_PreviouslySelectedCardIndex_Y;
+		declare Temp_PreviouslyFocusedCardIndex_X	= GetIndexXFromCountReset(G_Private_TwoDArrayCardBuilder_PreviouslyFocusedCardIndex_X,
+														G_Private_TwoDArrayCardBuilder_PreviouslyFocusedCardIndex_Y, G_TwoDArrayCardBuilder_CountX, _NewCountX);
+		declare Temp_PreviouslyFocusedCardIndex_Y	= GetIndexYFromCountReset(G_Private_TwoDArrayCardBuilder_PreviouslyFocusedCardIndex_X,
+														G_Private_TwoDArrayCardBuilder_PreviouslyFocusedCardIndex_Y, G_TwoDArrayCardBuilder_CountX, _NewCountX);
+		G_Private_TwoDArrayCardBuilder_PreviouslyFocusedCardIndex_X			= Temp_PreviouslyFocusedCardIndex_X;
+		G_Private_TwoDArrayCardBuilder_PreviouslyFocusedCardIndex_Y			= Temp_PreviouslyFocusedCardIndex_Y;
+		G_TwoDArrayCardBuilder_CountX									= _NewCountX;
+		G_TwoDArrayCardBuilder_CountY									= _NewCountY;
+		Private_TwoDArrayCardBuilder_FillCardsFromCounts();
+	}
+
+	Void TwoDArrayCardBuilder_Update(Integer[][] _CardStates, Integer _Index_X, Integer _Index_Y)
+	{
+		// On transpose _CardStates afin de l'avoir dans l'autre sens
+		// ReverseOrderCardStates[Y][X] = _CardStates[X][Y]
+		declare Integer[][] ReverseOrderCardStates;
+		for (ReverseOrderIndexY, 0, G_TwoDArrayCardBuilder_CountY - 1)
+		{
+			ReverseOrderCardStates.add(Integer[]);
+			for (ReverseOrderIndexX, 0, G_TwoDArrayCardBuilder_CountX - 1)
+			{
+				ReverseOrderCardStates[ReverseOrderIndexY].add(_CardStates[ReverseOrderIndexX][ReverseOrderIndexY]);
+			}
+		}
+		Private_TwoDArrayCardBuilder_Update(ReverseOrderCardStates, _Index_Y, _Index_X);
+	}
+
+	Void TwoDArrayCardBuilder_Update(Integer[] _CardStates, Integer _StartIndex)
+	{
+		// D'abord, on complete _CardStates en CompleteCardStates
+		declare Integer[] CompleteCardStates = _CardStates;
+		while (CompleteCardStates.count < G_TwoDArrayCardBuilder_CountX * G_TwoDArrayCardBuilder_CountY) {
+			CompleteCardStates.add(C_TwoDArrayCardBuilder_NonExistentState);
+		}
+		// On met CompleteCardStates en 2D pour pouvoir faire les calculs
+		// TwoDimensionalCardStates[X][Y] = CompleteCardStates[X + CountX * Y]
+		declare Integer[][] TwoDimensionalCardStates;
+		declare Integer Index_X;
+		declare Integer Index_Y;
+		for (OneDIndex, 0, CompleteCardStates.count - 1)
+		{
+			Index_X = TwoDArrayCardBuilder_GetIndexXFrom1DIndex(OneDIndex);
+			Index_Y = TwoDArrayCardBuilder_GetIndexYFrom1DIndex(OneDIndex);
+			if (Index_Y == 0) {
+				TwoDimensionalCardStates.add(Integer[]);
+			}
+			TwoDimensionalCardStates[Index_X].add(CompleteCardStates[OneDIndex]);
+		}
+		Index_X = TwoDArrayCardBuilder_GetIndexXFrom1DIndex(_StartIndex);
+		Index_Y = TwoDArrayCardBuilder_GetIndexYFrom1DIndex(_StartIndex);
+		TwoDArrayCardBuilder_Update(TwoDimensionalCardStates, Index_X, Index_Y);
+	}
+
+	Void TwoDArrayCardBuilder_Update(Integer[] _CardStates)
+	{
+		declare OneDIndex = TwoDArrayCardBuilder_Get1DIndexFrom2DIndexes(G_Private_TwoDArrayCardBuilder_SelectedCardIndex_X, G_Private_TwoDArrayCardBuilder_SelectedCardIndex_Y);
+		TwoDArrayCardBuilder_Update(_CardStates, OneDIndex);
+	}
+
+	Void TwoDArrayCardBuilder_Update()
+	{
+		Private_TwoDArrayCardBuilder_Update(G_Private_TwoDArrayCardBuilder_CardStates,
+			G_Private_TwoDArrayCardBuilder_SelectedCardIndex_Y,
+			G_Private_TwoDArrayCardBuilder_SelectedCardIndex_X);
+	}
+
+	Integer[] TwoDArrayCardBuilder_GetAvailableCardIndexes()
+	{
+		declare Integer[] Result;
+		for(IndexX, 0, G_TwoDArrayCardBuilder_CountX - 1) {
+			for(IndexY, 0, G_TwoDArrayCardBuilder_CountY - 1) {
+				if (Private_TwoDArrayCardBuilder_IsIndexUnlocked(IndexY, IndexX)) {
+					declare Integer OneDIndex = TwoDArrayCardBuilder_Get1DIndexFrom2DIndexes(IndexX, IndexY);
+					Result.add(OneDIndex);
+				}
+			}
+		}
+		return Result;
+	}
+
+	Void TwoDArrayCardBuilder_SetRunningState(Boolean _RunningState, Integer _OneDIndex)
+	{
+		G_Private_TwoDArrayCardBuilder_IsRunning = _RunningState;
+		if (_RunningState == False)
+		{
+			Private_TwoDArrayCardBuilder_WithdrawSelectedCursor();
+		} else if (_OneDIndex != -1) {
+			declare Integer IndexY = TwoDArrayCardBuilder_GetIndexYFrom1DIndex(_OneDIndex);
+			declare Integer IndexX = TwoDArrayCardBuilder_GetIndexXFrom1DIndex(_OneDIndex);
+			Private_TwoDArrayCardBuilder_SetSelectedCursor(IndexY, IndexX);
+		}
+	}
+
+	Void TwoDArrayCardBuilder_SetRunningState(Boolean _RunningState)
+	{
+		TwoDArrayCardBuilder_SetRunningState(_RunningState, -1);
+	}
+
+	Boolean TwoDArrayCardBuilder_IsRunning()
+	{
+		return G_Private_TwoDArrayCardBuilder_IsRunning;
+	}
+
+	Boolean TwoDArrayCardBuilder_HasDoubleClicked()
+	{
+		if (G_Private_TwoDArrayCardBuilder_HasDoubleClicked)
+		{
+			G_Private_TwoDArrayCardBuilder_HasDoubleClicked = False;
+			return True;
+		}
+		return False;
+	}
+
+	Void TwoDArrayCardBuilder_Init()
+	{
+		if (G_Private_TwoDArrayCardBuilder_HasDoneInit) {
+			log(Now ^ ") WARNING : TwoDArrayCardBuilder's Init() has been called more than once. Aborting Init.");
+			return;
+		}
+		G_TwoDArrayCardBuilder_CountX									= {{{G_CardInstancesCount_X}}};
+		G_TwoDArrayCardBuilder_CountY									= {{{G_CardInstancesCount_Y}}};
+		G_Private_TwoDArrayCardBuilder_IsRunning						= True;
+		G_Private_TwoDArrayCardBuilder_SelectedCardIndex_X			= -1;
+		G_Private_TwoDArrayCardBuilder_SelectedCardIndex_Y			= -1;
+		G_Private_TwoDArrayCardBuilder_FocusedCardIndex_X				= -1;
+		G_Private_TwoDArrayCardBuilder_FocusedCardIndex_Y				= -1;
+		G_Private_TwoDArrayCardBuilder_PreviouslySelectedCardIndex_X	= -1;
+		G_Private_TwoDArrayCardBuilder_PreviouslySelectedCardIndex_Y	= -1;
+		G_Private_TwoDArrayCardBuilder_PreviouslyFocusedCardIndex_X	= -1;
+		G_Private_TwoDArrayCardBuilder_PreviouslyFocusedCardIndex_Y	= -1;
+		G_Private_TwoDArrayCardBuilder_Frame							= (Page.GetFirstChild("TwoDArrayCardBuilder_Frame") as CMlFrame);
+		G_Private_TwoDArrayCardBuilder_HasDoneInit					= True;
+		G_Private_TwoDArrayCardBuilder_HasDoubleClicked				= False;
+		G_Private_TwoDArrayCardBuilder_HasJustUpdated					= False;
+		Private_TwoDArrayCardBuilder_FillCardsFromCounts();
+		declare Integer[] CardStates;
+		for(FillIndex, 0, G_TwoDArrayCardBuilder_CountX * G_TwoDArrayCardBuilder_CountY - 1) {
+			CardStates.add(C_TwoDArrayCardBuilder_NonExistentState);
+		}
+		TwoDArrayCardBuilder_Update(CardStates);
+	}
+
+	Void TwoDArrayCardBuilder_Loop()
+	{
+		foreach(Event in PendingEvents)
+		{
+			switch (Event.Type)
+			{
+				case CMlEvent::Type::MenuNavigation: {
+					if (!G_Private_TwoDArrayCardBuilder_IsRunning)
+					{
+						continue;
+					}
+					switch(Event.MenuNavAction) {
+						case CMlEvent::EMenuNavAction::Up : {
+							Private_TwoDArrayCardBuilder_Input_Up();
+						}
+						case CMlEvent::EMenuNavAction::Down : {
+							Private_TwoDArrayCardBuilder_Input_Down();
+						}
+						case CMlEvent::EMenuNavAction::Left : {
+							Private_TwoDArrayCardBuilder_Input_Left();
+						}
+						case CMlEvent::EMenuNavAction::Right : {
+							Private_TwoDArrayCardBuilder_Input_Right();
+						}
+					}
+				}
+				case CMlEvent::Type::MouseClick: {
+					if (Event.ControlId == "TwoDArrayCardBuilder_Quad")
+					{
+						declare Integer Index_Y for Event.Control;
+						declare Integer Index_X for Event.Control;
+						if (Index_Y == G_Private_TwoDArrayCardBuilder_SelectedCardIndex_Y && 
+							Index_X == G_Private_TwoDArrayCardBuilder_SelectedCardIndex_X &&
+							G_Private_TwoDArrayCardBuilder_IsRunning) {
+							G_Private_TwoDArrayCardBuilder_HasDoubleClicked = True;
+						}
+						G_Private_TwoDArrayCardBuilder_IsRunning = True;
+						Private_TwoDArrayCardBuilder_SetSelectedCursor(Index_Y, Index_X);
+					}
+				}
+				case CMlEvent::Type::MouseOver: {
+					if (Event.ControlId == "TwoDArrayCardBuilder_Quad")
+					{
+						declare Integer Index_Y for Event.Control;
+						declare Integer Index_X for Event.Control;
+						Private_TwoDArrayCardBuilder_SetFocusedCursor(Index_Y, Index_X);
+					}
+				}
+				case CMlEvent::Type::MouseOut: {
+					if (Event.ControlId == "TwoDArrayCardBuilder_Quad")
+					{
+						Private_TwoDArrayCardBuilder_WithdrawFocusedCursor();
+					}
+				}
+			}
+		}
+	}
+	""";
+}
+// <script>
+/** REQUIRES THE FOLLOWING FUNCTIONS : 
+	Void TwoDArrayCardBuilder_HideCard(CMlFrame _Card)
+	Void TwoDArrayCardBuilder_ShowCard(CMlFrame _Card)
+	Void TwoDArrayCardBuilder_ShowLockedCard(CMlFrame _Card)
+	Void TwoDArrayCardBuilder_UnFocusCard(CMlFrame _Card)
+	Void TwoDArrayCardBuilder_FocusCard(CMlFrame _Card)
+	Void TwoDArrayCardBuilder_UnSelectCard(CMlFrame _Card)
+	Void TwoDArrayCardBuilder_SelectCard(CMlFrame _Card)
+	*/
+Text Declares()
+{
+	return FirstDeclares() ^ SecondDeclares();
+}

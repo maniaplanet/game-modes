@@ -1,0 +1,146 @@
+#Include "Libs/Nadeo/Common/Core/MenuLayers.Script.txt"											as Layers
+#Include "Libs/Nadeo/Common/Core/Logger.Script.txt"												as Logger
+#Include "Libs/Nadeo/Common/Core/Pages.Script.txt"												as Pages
+#Include "Libs/Nadeo/Common/Core/SectionsManager.Script.txt"										as SectionsManager
+#Include "TextLib"																			as TextLib
+
+//Layers
+#Include "Libs/Nadeo/MP4/Common/Components/DialogBox/LBDialogBox.Script.txt"					as LBDialogBox
+
+#Const C_DialogBoxName				"DialogBox"
+
+declare Boolean G_IsShown;
+declare Boolean G_IsFinished;
+declare Integer G_Choice;
+
+Integer ManialinkId_Base()
+{
+	return LBDialogBox::ManialinkId_Base();
+}
+
+Void Build(Text _LayerName, Boolean _Attach) {
+
+	declare Text MLText;
+	switch(_LayerName) {
+		case(C_DialogBoxName):{
+			MLText = LBDialogBox::Build();
+		}
+	}
+
+	if(MLText == "") {
+		Logger::Warn("Unknown Page: "^_LayerName);
+		return;
+	}
+	
+	Layers::Create(_LayerName, MLText);
+	
+	declare CUILayer Layer <=> Layers::Get(_LayerName);
+	declare Text Page_LayerName for Layer.LocalPage;
+	
+	Page_LayerName = _LayerName;
+	if(_Attach) Layers::Attach(_LayerName);
+}
+
+Boolean IsShown()
+{
+	return G_IsShown;
+}
+
+Boolean IsFinished()
+{
+	if (G_IsFinished) {
+		G_IsFinished = False;
+		return True;
+	}
+	return G_IsFinished;
+}
+
+Integer Choice()
+{
+	return G_Choice;
+}
+
+Void Load() {
+	Build(C_DialogBoxName, False);
+	declare CUILayer DialogBoxLayer = Layers::Get(C_DialogBoxName);
+	DialogBoxLayer.IsVisible = False;
+	G_IsShown		= False;
+	G_IsFinished	= False;
+	G_Choice		= -1;
+}
+
+Void ShowMessage(Integer _ManialinkId, Text[] _MessageContents, Text[] _MessageOptions, Text[] _MessageActions)
+{
+	if (G_IsShown) {
+		Logger::Warn("Deux ShowMessage consécutifs");
+	}
+	Audio.PlaySoundEvent(CAudioManager::ELibSound::ShowDialog, 0, 0.0);
+	G_IsShown		= True;
+	G_IsFinished	= False;
+	G_Choice		= -1;
+	declare CUILayer DialogBoxLayer = Layers::Get(C_DialogBoxName);
+	declare Integer ManialinkId		for DialogBoxLayer.LocalPage;
+	declare Text[] MessageContents	for DialogBoxLayer.LocalPage;
+	declare Text[] MessageOptions	for DialogBoxLayer.LocalPage;
+	declare Text[] MessageActions	for DialogBoxLayer.LocalPage;
+	ManialinkId		= _ManialinkId;
+	MessageContents	= _MessageContents;
+	MessageOptions	= _MessageOptions;
+	MessageActions	= _MessageActions;
+	LayerCustomEvent(DialogBoxLayer, "ShowMessage", Text[]);
+	DialogBoxLayer.IsVisible = True;
+}
+
+Void ShowMessage(Text _Title, Text _Message, Text[] _MessageOptions)
+{
+	ShowMessage(ManialinkId_Base(), [_Title, _Message], _MessageOptions, ["Select", "Cancel"]);
+}
+
+Void ShowMessage(Text _Title, Text _Message)
+{
+	ShowMessage(_Title, _Message, [_("|I understood|Ok")]);
+}
+
+Void ShowMessage(Text _Message)
+{
+	ShowMessage(_("Warning"), _Message);
+}
+
+Void HideMessageBase()
+{
+	if (!G_IsShown) {
+		Logger::Warn("Deux HideMessage consécutifs");
+	}
+	G_IsShown		= False;
+	declare CUILayer DialogBoxLayer = Layers::Get(C_DialogBoxName);
+	DialogBoxLayer.IsVisible = False;
+}
+
+Void HideMessage()
+{
+	HideMessageBase();
+	G_IsFinished	= False;
+	G_Choice		= -1;
+}
+
+Void HideMessageAndKeepChoice(Integer _Choice)
+{
+	HideMessageBase();
+	G_IsFinished	= True;
+	G_Choice		= _Choice;
+}
+
+Void Loop() {
+	foreach(Event in PendingEvents) {
+		if(Event.Type != CManiaAppEvent::EType::LayerCustomEvent) continue;
+		switch(Event.CustomEventType) {
+			case "DialogBox_HideMessage": {
+				declare Integer Choice = -1;
+				if (Event.CustomEventData.existskey(0)) {
+					Choice = TextLib::ToInteger(Event.CustomEventData[0]);
+				}
+				HideMessageAndKeepChoice(Choice);
+			}
+		}
+	}
+}

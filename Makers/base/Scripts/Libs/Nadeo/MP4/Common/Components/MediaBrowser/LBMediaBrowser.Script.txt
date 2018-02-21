@@ -1,0 +1,805 @@
+#Include "Libs/Nadeo/MP4/Common/Components/MediaDisplayer/LBMediaDisplayer.Script.txt"	as MediaCardDisplayer
+
+#Include "Libs/Nadeo/MP4/Common/GlobalVariables.Script.txt"		as GlobalVariables
+#Include "Libs/Nadeo/Common/Core/Logger.Script.txt"				as Logger
+#Include "Libs/Nadeo/MP4/Common/ManialinkTools/FontManager.Script.txt"			as Font
+#Include "Libs/Nadeo/MP4/Common/Colors.Script.txt"				as Colors
+#Include "Libs/Nadeo/MP4/Common/DesignManialinks.Script.txt"	as DesignManialinks
+#Include "Libs/Nadeo/Common/Core/LayerBuilder.Script.txt"	as LayerBuilder
+
+#Const C_ImgBase		"file://Media/MEDIABROWSER_HiddenResources/Common/Images/Menus/Buttons/"
+
+#Const C_ImgPictoBase	"file://Media/MEDIABROWSER_HiddenResources/Common/Images/Menus/Picto/"
+#Const C_ImgAchievements "file://Media/MEDIABROWSER_HiddenResources/Common/Images/Menus/Achievements/"
+#Const C_ItemType_Card	1
+#Const C_ItemType_List	2
+
+#Const C_IMG_Checkbox_Open		"file://Media/MEDIABROWSER_HiddenResources/Common/Images/Menus/Buttons/Checkbox_Open.dds"
+#Const C_IMG_Checkbox_Closed_Over "file://Media/MEDIABROWSER_HiddenResources/Common/Images/Menus/Buttons/Checkbox_Closed_Over.dds"
+#Const C_IMG_Checkbox_Closed	"file://Media/MEDIABROWSER_HiddenResources/Common/Images/Menus/Buttons/Checkbox_Closed.dds"
+#Const C_IMG_Checkbox_Open_Over "file://Media/MEDIABROWSER_HiddenResources/Common/Images/Menus/Buttons/Checkbox_Open_Over.dds"
+
+Integer ItemType_Card()
+{
+	return C_ItemType_Card;
+}
+
+Integer ItemType_List()
+{
+	return C_ItemType_List;
+}
+
+Text Build(Text _LayerName, Text[] _InfoLineLogos, Integer _ItemType, Boolean _CropImages) {
+	//Maps
+	declare Text	IMGStart				= C_ImgBase ^ "StartLogo.dds";
+	declare Text	IMGMapEvaluer			= C_ImgBase ^ "AddLogo.dds";
+	declare Text IMG_Arrow					= "file://Media/MEDIABROWSER_HiddenResources/Common/Images/Ingame/Arrow.dds";
+	declare Text IMG_OpenInExplorer			= "file://Media/MEDIABROWSER_HiddenResources/Maker/Images/Resources/OpenInExplorer.dds";
+	declare Text IMG_OpenInExplorer_Over	= "file://Media/MEDIABROWSER_HiddenResources/Maker/Images/Resources/OpenInExplorer_Over.dds";
+	declare Text	IMGMedalReal			= C_ImgAchievements ^ "Medal.dds";
+
+	declare Text IMG_Browser_PictoBG	= C_ImgPictoBase ^ "Browser_PictoBG.dds";
+	declare Text IMG_Browser_Picto0 	= C_ImgPictoBase ^ "Browser_Picto0.dds";
+	declare Text IMG_Browser_Picto1 	= C_ImgPictoBase ^ "Browser_Picto1.dds";
+	declare Text IMG_Browser_Picto2 	= C_ImgPictoBase ^ "Browser_Picto2.dds";
+	declare Text IMG_Browser_Picto3 	= C_ImgPictoBase ^ "Browser_Picto3.dds";
+	declare Text IMG_Browser_Picto4 	= C_ImgPictoBase ^ "Browser_Picto4.dds";
+	declare Text IMG_Browser_Back   	= C_ImgPictoBase ^ "Browser_Back.dds";
+	declare Text IMG_Browser_Refresh	= C_ImgPictoBase ^ "Browser_Refresh.dds";
+
+	declare Real	BackgroundOpacity		= 0.5;
+	if (GlobalVariables::GetLaunchContext() == GlobalVariables::LaunchContext_Maker())
+	{
+		BackgroundOpacity = 0.3;
+	}
+	declare Vec2	CardSize				= MediaCardDisplayer::Get_SizeMediaCards();
+	declare Vec2	CardMargin				= MediaCardDisplayer::Get_MarginMediaCards();
+	declare Vec2	ExtraMargin				= <2., 2.5>;
+	declare Vec2	BackgroundSize			= 2. * ExtraMargin + CardMargin;
+	declare Vec2	BackgroundPos			= <- ExtraMargin.X - CardMargin.X - CardSize.X / 2., ExtraMargin.Y + CardMargin.Y + CardSize.Y / 2. - 0.5>;
+
+	declare Integer	Count_InstancesCardX	= 3;
+	declare Integer	Count_InstancesCardY	= 4;
+	declare Real	PosXFirstCard			= -110.7;
+	declare Real	PosYFirstCard			= 28.8;
+	declare Boolean	IsAuthorLine			= True;
+	declare Boolean	IsScroll				= True;
+	declare Boolean	ShowsNonExistentFrames	= False;
+	declare Boolean	CanAddNewMedia			= True;
+	declare Vec2	AddNewMediaPos			;
+	declare Text	InfoLineStyle			= "Main";
+	declare Text[]	InfoLineLogos			= _InfoLineLogos;
+	declare Text[]	MetadataKeys			= ["ExtraContextImage"];
+	declare Text[]	ButtonNames				= ["BUTTON 1", "BUTTON 2"];
+	declare Text[]	ButtonLogos				= [IMGStart, IMGMapEvaluer];
+	declare Text[]	ButtonActions			= ["Select", "Action2"];
+	declare Text[]	ButtonEvents			= ["0", "1"];
+	declare Vec2	ContextualMenuPos		;
+
+	declare Vec2	ListItemSize			= MediaCardDisplayer::Get_SizeMediaListItems();
+	declare Vec2	ListItemMargin			= MediaCardDisplayer::Get_MarginMediaListItems();
+	declare Integer	Count_InstancesListItemX = 1;
+	declare Integer	Count_InstancesListItemY = 12;
+	declare Real	PosXFirstListItem		= -69.1;
+	declare Real	PosYFirstListItem		= 36.63;
+	declare Text YellowIntense = Colors::GetColorXml("YellowIntense2");
+
+	BackgroundSize.X						+= Count_InstancesCardX * (CardSize.X + CardMargin.X);
+	BackgroundSize.Y						+= Count_InstancesCardY * (CardSize.Y + CardMargin.Y) + 15.;
+	BackgroundPos							+= <PosXFirstCard, PosYFirstCard>;
+
+	declare Vec2	BigThumbnailSize		= <3 * CardSize.X + 2 * CardMargin.X, 3 * (CardSize.Y + CardMargin.Y)>;
+	declare Real	ThumbnailSizeY			= BigThumbnailSize.Y;
+	if (_CropImages) {
+		ThumbnailSizeY						= BigThumbnailSize.Y * 2.;
+	}
+	ContextualMenuPos						= <0., - (Count_InstancesCardY - 1.5) * (CardSize.Y + CardMargin.Y)>;
+	ContextualMenuPos						+= <0., PosYFirstCard>;
+	AddNewMediaPos							= <0., DesignManialinks::GetSecondaryButtonLargeSize().Y + BackgroundPos.Y>;
+
+	declare Real	ToolboxHeight			= 7.5;
+
+	declare Vec2	SizeSelectorCards		= MediaCardDisplayer::Get_SizeSelectorCards();
+
+	MediaCardDisplayer::Init(	Count_InstancesCardX, Count_InstancesCardY, <PosXFirstCard, PosYFirstCard>, IsAuthorLine, IsScroll, ShowsNonExistentFrames,
+								CanAddNewMedia, AddNewMediaPos, InfoLineStyle, InfoLineLogos, MetadataKeys, ButtonNames, ButtonLogos, ButtonActions, ButtonEvents, ContextualMenuPos);
+
+	declare Text MainFont				= Font::GetFontName("Main");
+	declare Text ChronoFont				= Font::GetFontName("Chrono");
+	declare Text SubFont				= Font::GetFontName("SubTitle");
+	declare IMGSelectorAdded			= "file://Media/MEDIABROWSER_HiddenResources/Common/Images/Menus/Media/Cards/CadreSelectWOutside.png";
+	declare Text Manialink	= """
+	<framemodel id="MediaCardDisplayer_Card_ExtraData">
+		<quad	id="Quad_MedalInCard"		halign="center" valign="center" size="7 14" pos="-15.6 5" keepratio="fit" z-index="1"/> 
+		<quad	id="Quad_ContextInCard"		halign="left" valign="bottom" size="5.5 5.5" pos="-19.5 -10.5"/>
+		<quad	id="Quad_AddedToListCard"	halign="center" valign="center" size="{{{SizeSelectorCards.X}}} {{{SizeSelectorCards.Y}}}" image="{{{IMGSelectorAdded}}}" modulatecolor="fff" hidden="1" keepratio="Clip"/>
+	</framemodel>
+
+	<framemodel id="MediaCardDisplayer_Menu_ExtraData">
+		<frame size="{{{BigThumbnailSize.X}}} {{{BigThumbnailSize.Y}}}" pos="0
+				{{{BigThumbnailSize.Y}}}">
+			<frame pos="{{{BigThumbnailSize.X / 2.}}} {{{- BigThumbnailSize.Y / 2.}}}">
+				<quad id="Quad_BigThumbnail" halign="center" valign="center" size="{{{BigThumbnailSize.X}}}
+					{{{ThumbnailSizeY}}}" z-index="2" keepratio="fit"/>
+				<quad id="Quad_BigThumbnailImg"		halign="center" valign="center" size="{{{BigThumbnailSize.X/1.5}}}
+					{{{BigThumbnailSize.Y/1.5}}}" z-index="1" keepratio="Fit"
+					modulatecolor="{{{DesignManialinks::GetColorCode_ButtonOutline_Normal()}}}"/>
+				<quad id="Quad_BigThumbnailBG" halign="center" valign="center" size="{{{BigThumbnailSize.X}}}
+					{{{ThumbnailSizeY}}}" bgcolor="000"/>
+				<quad id="Quad_BigThumbnailBlurryBG" halign="center" valign="center" size="{{{BigThumbnailSize.X}}}
+					{{{ThumbnailSizeY}}}" style="Bgs1" substyle="BgDialogBlur" opacity="0." bluramount="0.1"/>
+			</frame>
+		</frame>
+		<label id="Label_PersonalTime" halign="center" valign="center" pos="102 -5" size="20 4" textfont="{{{ChronoFont}}}" textcolor="{{{YellowIntense}}}" textsize="5" text="--:--.--"/>
+		<quad id="Quad_PersonalMedal" halign="center" valign="center" pos="71.5 -8" size="7 14" keepratio="fit" z-index="1"/>
+	</framemodel>
+
+	<framemodel id="MediaCardDisplayer_ListItem_ExtraData">
+		<quad	id="Quad_ContextInListItem"		halign="left" valign="center" size="5.5 5.5" pos="{{{- ListItemSize.X / 2. + 1.5}}} 0"/>
+		<quad	id="Quad_AddedToListItem"		halign="center" valign="center" size="{{{ListItemSize.X}}} {{{ListItemSize.Y}}}" bgcolor="0A0" opacity="0.3" hidden="1"/>
+	</framemodel>
+
+	{{{MediaCardDisplayer::ManialinkFrameModels()}}}
+
+	<frame id="Frame_All">
+		<frame id="Backgrounds" pos="{{{BackgroundPos.X}}} {{{BackgroundPos.Y}}}" z-index="-1">
+			<frame id="BrowserToolBox" pos="0 2">
+				<frame id="Frame_Path" z-index="-1">
+					<quad							valign="bottom"	size="82 {{{ToolboxHeight}}}" z-index="-1" bgcolor="000" opacity="0.2"/>
+					<label id="Label_FolderPath"	valign="center"	size="73.2 {{{ToolboxHeight}}}" pos="{{{ToolboxHeight + 1.}}} {{{ToolboxHeight / 2. + 0.2}}}" textfont="{{{SubFont}}}" textsize="2" text="Browser Not Loaded"/>
+				</frame>
+				
+				<quad 										valign="bottom" size="{{{ToolboxHeight - 2.}}} {{{ToolboxHeight - 2.}}}" pos="{{{130.5 - ToolboxHeight}}} 1" z-index="0" image="{{{IMG_Browser_PictoBG}}}" opacity="0.7"/>
+				<quad id="Quad_ChangeDisplayType_Button"	valign="bottom" size="{{{ToolboxHeight - 2.}}} {{{ToolboxHeight - 2.}}}" pos="{{{130.5 - ToolboxHeight}}} 1" z-index="1" bgcolor="fff" opacity="0." scriptevents="1"/>
+				<quad id="Quad_ChangeDisplayType"			valign="bottom" size="{{{ToolboxHeight - 2.}}} {{{ToolboxHeight - 2.}}}" pos="{{{130.5 - ToolboxHeight}}} 1" z-index="2" image="{{{IMG_Browser_Picto4}}}"/>
+
+				<quad										valign="bottom" size="{{{ToolboxHeight - 2.}}} {{{ToolboxHeight - 2.}}}" pos="{{{130.5 - 2 * ToolboxHeight}}} 1" z-index="2" image="{{{IMG_Browser_PictoBG}}}" opacity="0.7"/>
+				<quad id="Quad_RefreshFolder_Button"		valign="bottom" size="{{{ToolboxHeight - 2.}}} {{{ToolboxHeight - 2.}}}" pos="{{{130.5 - 2 * ToolboxHeight}}} 1" z-index="1" bgcolor="fff" opacity="0." scriptevents="1"/>
+				<quad id="Quad_RefreshFolder"				valign="bottom" size="{{{ToolboxHeight - 2.}}} {{{ToolboxHeight - 2.}}}" pos="{{{130.5 - 2 * ToolboxHeight}}} 1" z-index="0" image="{{{IMG_Browser_Refresh}}}"/>
+				
+				<quad 										valign="bottom" size="{{{ToolboxHeight - 2.}}} {{{ToolboxHeight - 2.}}}" pos="{{{130.5 - 3 * ToolboxHeight}}} 1" image="{{{IMG_Browser_PictoBG}}}" opacity="0.7"/>
+				<quad id="Quad_OpenInExplorer_Button"		valign="bottom" size="{{{ToolboxHeight - 2.}}} {{{ToolboxHeight - 2.}}}" pos="{{{130.5 - 3 * ToolboxHeight}}} 1" z-index="1" bgcolor="fff" opacity="0." scriptevents="1"/>
+				<quad id="Quad_OpenInExplorer"				valign="bottom" size="{{{ToolboxHeight - 2.}}} {{{ToolboxHeight - 2.}}}" pos="{{{130.5 - 3 * ToolboxHeight}}} 1" image="{{{IMG_OpenInExplorer}}}"/>
+				
+				<quad 										valign="bottom" size="{{{ToolboxHeight - 2.}}} {{{ToolboxHeight - 2.}}}" pos="{{{130.5 - 4 * ToolboxHeight}}} 1" image="{{{IMG_Browser_PictoBG}}}" opacity="0.7"/>
+				<quad id="Quad_SwitchFlatten_Button"		valign="bottom" size="{{{ToolboxHeight - 2.}}} {{{ToolboxHeight - 2.}}}" pos="{{{130.5 - 4 * ToolboxHeight}}} 1" z-index="1" bgcolor="fff" opacity="0." scriptevents="1"/>
+				<quad id="Quad_SwitchFlatten"				valign="bottom" size="{{{ToolboxHeight - 2.}}} {{{ToolboxHeight - 2.}}}" pos="{{{130.5 - 4 * ToolboxHeight}}} 1" image="{{{IMG_Browser_Picto0}}}"/>
+				
+				<frame id="Frame_SteamWorkshop" pos="{{{130.5 - 5 * ToolboxHeight}}} 1">
+					<quad 										valign="bottom" size="{{{ToolboxHeight - 2.}}} {{{ToolboxHeight - 2.}}}" image="{{{IMG_Browser_PictoBG}}}" opacity="0.7"/>
+					<quad id="Quad_SteamWorkshop_Button"		valign="bottom" size="{{{ToolboxHeight - 2.}}} {{{ToolboxHeight - 2.}}}" z-index="1" bgcolor="fff" opacity="0." scriptevents="1"/>
+					<label	id="Label_SteamWorkshop"		valign="center" halign="center" size="{{{ToolboxHeight - 2.}}} {{{ToolboxHeight - 2.}}}" pos="{{{(ToolboxHeight - 2.) / 2.}}} {{{(ToolboxHeight - 2.) / 2. + 0.2}}}" z-index="1" textsize="{{{ToolboxHeight - 4.5}}}" textcolor="FFF" text=""/>
+				</frame>
+				<quad id="Quad_SortByDateName"		valign="bottom" size="{{{ToolboxHeight - 2.}}} {{{ToolboxHeight - 2.}}}" pos="95.5 1" style="Icons64x64_2" substyle="Calendar" scriptevents="1" hidden="1"/>
+				<quad id="Quad_SortAscDesc"			valign="bottom" size="{{{ToolboxHeight - 2.}}} {{{ToolboxHeight - 2.}}}" pos="88.5 1" style="Icons64x64_1" substyle="ShowUpChanging" scriptevents="1" hidden="1"/>
+				<quad id="Quad_SelectAll"			valign="bottom" size="{{{ToolboxHeight - 2.}}} {{{ToolboxHeight - 2.}}}" pos="81.5 1" style="Icons64x64_1" substyle="ToolRoot" scriptevents="1" hidden="1"/>
+				<label id="Label_MultiSelectSwitch" halign="right" valign="center" size="39.5 4" pos="123 {{{ToolboxHeight + 3.}}}"  text="{{{//L16N |Verb, infinitive| Designates the option to add media to a list with a simple click of the mouse
+				_("Enable multiple selection")}}}" textcolor="{{{DesignManialinks::GetColorCode_TextLabel_Normal()}}}" textsize="1" textprefix="$t" hidden="1" opacity="0" textfont="{{{SubFont}}}"/>
+				<quad id="Quad_MultiSelectSwitch"	valign="bottom" size="{{{ToolboxHeight - 2.}}} {{{ToolboxHeight - 2.}}}" pos="123.5 {{{ToolboxHeight}}}" image="{{{C_IMG_Checkbox_Open}}}" imagefocus="{{{C_IMG_Checkbox_Open_Over}}}" scriptevents="1" hidden="1"/>
+				
+				<quad 									valign="bottom" size="{{{ToolboxHeight - 2.}}} {{{ToolboxHeight - 2.}}}" pos="1 1" image="{{{IMG_Browser_PictoBG}}}" opacity="0.7"/>
+				<quad id="Quad_GoToParentFolder_Button"	valign="bottom" size="{{{ToolboxHeight - 2.}}} {{{ToolboxHeight - 2.}}}" pos="1 1" z-index="1" bgcolor="fff" opacity="0." scriptevents="1"/>
+				<quad id="Quad_GoToParentFolder"		valign="bottom" size="{{{ToolboxHeight - 2.}}} {{{ToolboxHeight - 2.}}}" pos="1 1" image="{{{IMG_Browser_Back}}}" scriptevents="1"/>
+				
+				<quad id="Quad_ButtonsCover"	halign="right"	valign="bottom"	size="46 {{{ToolboxHeight + 6.}}}" pos="{{{BackgroundSize.X}}} 0" z-index="-1" bgcolor="000" opacity="0.2"/>
+			</frame>
+			<quad id="Background" size="{{{BackgroundSize.X}}} {{{BackgroundSize.Y}}}" z-index="-1" bgcolor="000" opacity="{{{BackgroundOpacity}}}"/>
+			<quad id="Quad_BlurryBG" size="{{{BackgroundSize.X}}} {{{BackgroundSize.Y}}}" z-index="-1" bgcolor="000" opacity="0"
+				style="Bgs1" substyle="BgDialogBlur" bluramount="0.1"/>
+			<frame id="NoMedia_Frame" pos="{{{BackgroundSize.X / 2.}}} -15" hidden="1">
+				<quad								halign="center" valign="bottom" size="5 5" pos="48.2 9.5" image="{{{IMG_Arrow}}}" opacity="0.5" rot="-90" keepratio="fit"/>
+				<label id="NoMedia_Label"	halign="center" valign="center" size="120 15" pos="0 -2"		textfont="{{{SubFont}}}" autonewline="1"/>
+				<label						halign="center" valign="center" size="120 5" pos="0 -19"		textfont="{{{MainFont}}}" textprefix="$t" text="{{{_("Open in explorer")}}}"/>
+				<quad id="Quad_OpenInExplorer"		halign="center" valign="bottom" size="20 20" pos="0 -40" image="{{{IMG_OpenInExplorer}}}" imagefocus="{{{IMG_OpenInExplorer_Over}}}" scriptevents="1"/>
+				<quad								halign="center" valign="bottom" size="5 5" pos="-1.5 -13" image="{{{IMG_Arrow}}}" opacity="0.5" rot="90" keepratio="fit"/>
+			</frame>
+		</frame>
+		{{{MediaCardDisplayer::ManialinkMainBody()}}}
+		{{{DesignManialinks::ManialinkScrollFrame(<PosXFirstCard + ((Count_InstancesCardX - 1) * (CardSize.X + CardMargin.X)) / 2.,
+						PosYFirstCard - ((Count_InstancesCardY - 1) * (CardSize.Y + CardMargin.Y)) - 20.>, "z-index=\"1\"", "MediaBrowser_Scroll")}}}
+	</frame>
+
+	""";
+	declare Text Includes	= """
+	// <script>
+#Include "TextLib" as {{{_LayerName}}}_TextLib
+#Const C_BackgroundOpacity {{{BackgroundOpacity}}}
+#Const C_ItemType_Card	{{{C_ItemType_Card}}}
+#Const C_ItemType_List	{{{C_ItemType_List}}}
+#Const C_ImgContextMedals	["Author" =>"{{{IMGMedalReal}}}" , "Gold" => "{{{IMGMedalReal}}}" , "Silver" => "{{{IMGMedalReal}}}",
+							"Bronze" => "{{{IMGMedalReal}}}" , "NoMedal" => ""]
+#Const C_ColorMedals		["Author" => {{{Colors::GetColor("GreenMaster")}}} , "Gold" =>  {{{Colors::GetColor("GoldShiny")}}} , "Silver" =>  {{{Colors::GetColor("SilverShiny")}}},
+							"Bronze" =>  {{{Colors::GetColor("BronzeShiny")}}} , "NoMedal" => <0., 0., 0.>]
+#Const C_MediaBrowser_ColorFromSecondThumbnail {{{dump(MediaCardDisplayer::GetColorCodes())}}}
+#Const C_MediaBrowser_ImgUrlFromSecondThumbnail ["Folder"	=> "{{{C_ImgPictoBase ^ "Big_Dossier.dds"}}}",
+											"EmptyThumbnail"	=> "{{{C_ImgPictoBase ^ "Big_EmptyThumbnail.dds"}}}",
+											"File"				=> "{{{C_ImgPictoBase ^ "Big_File.dds"}}}"]
+#Const C_MediaBrowser_OpacityFromSecondThumbnail ["Folder"	=> 1.,
+											"EmptyThumbnail"	=> 0.3,
+											"File"				=> 1.]
+{{{MediaCardDisplayer::Includes()}}}
+	""";
+	declare Text Declares	= """
+	// <script>
+{{{MediaCardDisplayer::FirstDeclares()}}}
+	declare Text	G_EventPrefix;
+	declare Text[]	G_ButtonNames;
+	declare Text[]	G_SecondaryButtonNames;
+	declare Text	G_AddToListButtonName;
+	declare Integer	G_DisplayType;
+	declare Text[]	G_ListOfSelectedPaths;
+	declare Boolean	G_IsInMultiSelectMode;
+	declare Boolean	G_FlattenOpen;
+
+	Void MediaCardDisplayer_ShowCard(CMlFrame _Card, Text[Text] _Data)
+	{
+		(_Card.GetFirstChild("Quad_ContextInCard") as CMlQuad).ChangeImageUrl(_Data["ExtraContextImage"]);
+		(_Card.GetFirstChild("Quad_ContextInListItem") as CMlQuad).ChangeImageUrl(_Data["ExtraContextImage"]);
+		if ((_Data.existskey("CardType") && (_Data["CardType"] == "Folder")) || !G_ListOfSelectedPaths.exists(_Data["Path"])) {
+			_Card.GetFirstChild("Quad_AddedToListCard").Hide();
+			_Card.GetFirstChild("Quad_AddedToListItem").Hide();
+		} else {
+			_Card.GetFirstChild("Quad_AddedToListCard").Show();
+			_Card.GetFirstChild("Quad_AddedToListItem").Show();
+		}
+		declare Quad_MedalInCard	<=>	(_Card.GetFirstChild("Quad_MedalInCard") as CMlQuad);
+	}
+
+	Void MediaCardDisplayer_ShowLockedCard(CMlFrame _Card, Text[Text] _Data)
+	{
+	}
+
+	Void MediaCardDisplayer_UnFocusCard(CMlFrame _Card, Text[Text] _Data)
+	{
+	}
+
+	Void MediaCardDisplayer_FocusCard(CMlFrame _Card, Text[Text] _Data)
+	{
+	}
+
+	Void MediaCardDisplayer_UpdateContextualMenuMultipleSelections()
+	{
+		if (G_ListOfSelectedPaths.count == 0) {
+			return;
+		}
+		declare Quad_BigThumbnail	<=> (Page.GetFirstChild("Quad_BigThumbnail") as CMlQuad);
+		declare Label_PersonalTime	<=>	(Page.GetFirstChild("Label_PersonalTime") as CMlLabel);
+		declare Quad_PersonalMedal	<=>	(Page.GetFirstChild("Quad_PersonalMedal") as CMlQuad);
+		Quad_BigThumbnail.ChangeImageUrl("");
+		Label_PersonalTime.Opacity = 0.;
+		Quad_PersonalMedal.ChangeImageUrl("");
+
+		declare CMlLabel MediaCardDisplayer_MediaNameLabel <=> (Page.GetFirstChild("MediaCardDisplayer_MediaNameLabel")	as CMlLabel);
+		MediaCardDisplayer_MediaNameLabel.SetText(_("Multiple selection"));
+		declare CMlQuad	Quad_InfoLogo						<=> (Page.GetFirstChild("Quad_InfoLogo") as CMlQuad);
+		Quad_InfoLogo.ChangeImageUrl("");
+		declare CMlLabel MediaCardDisplayer_AuthorNameLabel <=> (Page.GetFirstChild("MediaCardDisplayer_AuthorNameLabel") as CMlLabel);
+		MediaCardDisplayer_AuthorNameLabel.SetText("");
+
+		//L16N media can be a file, two files or several files
+		declare Text[][]	LineMetaData	= [[{{{_LayerName}}}_TextLib::Compose(_("%1 selected media"), {{{_LayerName}}}_TextLib::ToText(G_ListOfSelectedPaths.count))]];
+		foreach(InfoLineIndex => InfoLineData in LineMetaData)
+		{
+			declare CMlQuad		MediaCardDisplayer_LineInfo_Quad <=> (Page.GetFirstChild("MediaCardDisplayer_LineInfo" ^ InfoLineIndex ^ "_Quad") as CMlQuad);
+			declare CMlControl	MediaCardDisplayer_LineInfo_Frame <=> Page.GetFirstChild("MediaCardDisplayer_LineInfo" ^ InfoLineIndex ^ "_Frame");
+			if (MediaCardDisplayer_LineInfo_Quad == Null) {
+				continue;
+			}
+			MediaCardDisplayer_LineInfo_Frame.Show();
+			foreach(LabelIndex => SegmentedInfoBit in InfoLineData)
+			{
+				declare CMlLabel	MediaCardDisplayer_LineInfo_Label <=> (Page.GetFirstChild("MediaCardDisplayer_LineInfo" ^ InfoLineIndex ^ "_Label" ^ LabelIndex) as CMlLabel);
+				if (MediaCardDisplayer_LineInfo_Label == Null) {
+					continue;
+				}
+				MediaCardDisplayer_LineInfo_Label.SetText(SegmentedInfoBit);
+			}
+		}
+		for (HideIndex, LineMetaData.count, 5) {
+			declare CMlControl MediaCardDisplayer_LineInfo_Frame <=> Page.GetFirstChild("MediaCardDisplayer_LineInfo" ^ HideIndex ^ "_Frame");
+			if (MediaCardDisplayer_LineInfo_Frame == Null) {
+				continue;
+			}
+			MediaCardDisplayer_LineInfo_Frame.Hide();
+		}
+	}
+
+	Void MediaCardDisplayer_UnSelectCard(CMlFrame _Card)
+	{
+		declare Quad_BigThumbnail		<=> (Page.GetFirstChild("Quad_BigThumbnail")	as CMlQuad);
+		declare Label_PersonalTime		<=>	(Page.GetFirstChild("Label_PersonalTime")	as CMlLabel);
+		declare Quad_PersonalMedal		<=>	(Page.GetFirstChild("Quad_PersonalMedal")	as CMlQuad);
+		declare Quad_BigThumbnailImg	<=> (Page.GetFirstChild("Quad_BigThumbnailImg")	as CMlQuad);
+		declare Quad_BigThumbnailBG		<=> (Page.GetFirstChild("Quad_BigThumbnailBG")	as CMlQuad);
+		Quad_BigThumbnail.ChangeImageUrl("");
+		Label_PersonalTime.Opacity = 0.;
+		Quad_PersonalMedal.ChangeImageUrl("");
+
+		declare Integer OneDIndex for _Card;
+		declare Text SecondThumbnailImage = "";
+		declare Text SecondThumbnailColorCode = "000";
+		Quad_BigThumbnailImg.ChangeImageUrl(SecondThumbnailImage);
+		Quad_BigThumbnailBG.BgColor = {{{_LayerName}}}_TextLib::ToColor(SecondThumbnailColorCode);
+		MediaCardDisplayer_UpdateContextualMenuMultipleSelections();
+	}
+
+	Void MediaCardDisplayer_SelectCard(CMlFrame _Card, Text[Text] _Data)
+	{
+		declare Quad_BigThumbnail		<=> (Page.GetFirstChild("Quad_BigThumbnail")	as CMlQuad);
+		declare Label_PersonalTime		<=>	(Page.GetFirstChild("Label_PersonalTime")	as CMlLabel);
+		declare Quad_PersonalMedal		<=>	(Page.GetFirstChild("Quad_PersonalMedal")	as CMlQuad);
+		declare Quad_BigThumbnailImg	<=> (Page.GetFirstChild("Quad_BigThumbnailImg")	as CMlQuad);
+		declare Quad_BigThumbnailBG		<=> (Page.GetFirstChild("Quad_BigThumbnailBG")	as CMlQuad);
+
+
+		declare Integer OneDIndex for _Card;
+		declare Text SecondThumbnailImage = "";
+		declare Text SecondThumbnailColorCode = "000";
+		declare Real BigTOpacity = 0.15;
+		if(_Data.existskey("SecondThumbnailImage") && C_MediaBrowser_ColorFromSecondThumbnail.existskey(_Data["SecondThumbnailImage"])) {
+			SecondThumbnailImage = C_MediaBrowser_ImgUrlFromSecondThumbnail[_Data["SecondThumbnailImage"]];
+			SecondThumbnailColorCode = C_MediaBrowser_ColorFromSecondThumbnail[_Data["SecondThumbnailImage"]];
+			BigTOpacity = C_MediaBrowser_OpacityFromSecondThumbnail[_Data["SecondThumbnailImage"]];
+		}
+		Quad_BigThumbnailImg.ChangeImageUrl(SecondThumbnailImage);
+		Quad_BigThumbnailBG.BgColor = {{{_LayerName}}}_TextLib::ToColor(SecondThumbnailColorCode);
+		Quad_BigThumbnailBG.Opacity = BigTOpacity;
+		if (_Data.existskey("CardType") && _Data["CardType"] == "Folder") {
+			Quad_BigThumbnail.ChangeImageUrl("");
+			Label_PersonalTime.Opacity = 0.;
+			Quad_PersonalMedal.ChangeImageUrl("");
+			foreach (ButtonIndex => BadButtonName in C_MediaCardDisplayer_ButtonNames) {
+				declare CMlFrame MediaCardDisplayer_Button <=> (Page.GetFirstChild("MediaCardDisplayer_Button_" ^ ButtonIndex ^ "_Frame") as CMlFrame);
+				if (ButtonIndex == 0) {
+					declare CMlLabel MediaCardDisplayer_Label <=> (Page.GetFirstChild("MediaCardDisplayer_Button_" ^ ButtonIndex ^ "_Label") as CMlLabel);
+					//L16N |Verb| To browse one folder
+					MediaCardDisplayer_Label.SetText(_("Open"));
+					// TODO : Voir comment on change la vignette du bouton
+					continue;
+				}
+				MediaCardDisplayer_Button.Hide();
+			}
+		} else {
+			if (G_IsInMultiSelectMode) {
+				if (!TwoDArrayCardBuilder_HasJustUpdated()) {
+					SendCustomEvent("MediaBrowser_AddToList", [_Data["Path"]]);
+				}
+			}
+			Quad_BigThumbnail.ChangeImageUrl(_Data["Thumbnail"]);
+			if (_Data.existskey("PersonalTime") && _Data.existskey("PersonalMedal")
+				&& _Data["PersonalTime"] != "" && _Data["PersonalMedal"] != "") {
+				Label_PersonalTime.Opacity = 1.;
+				if (_Data["PersonalTime"] != "-1") {
+					Label_PersonalTime.SetText({{{_LayerName}}}_TextLib::TimeToText({{{_LayerName}}}_TextLib::ToInteger(_Data["PersonalTime"]), True));
+				} else {
+					Label_PersonalTime.SetText("--:--.--");
+				}
+				declare Text MedalType = _Data["PersonalMedal"];
+				Quad_PersonalMedal.ChangeImageUrl(C_ImgContextMedals[MedalType]);
+				Quad_PersonalMedal.Colorize = C_ColorMedals[MedalType];
+			} else {
+				Label_PersonalTime.Opacity = 0.;
+				Quad_PersonalMedal.ChangeImageUrl("");
+			}
+			foreach (ButtonIndex => BadButtonName in C_MediaCardDisplayer_ButtonNames) {
+				declare CMlFrame MediaCardDisplayer_Button <=> (Page.GetFirstChild("MediaCardDisplayer_Button_" ^ ButtonIndex ^ "_Frame") as CMlFrame);
+				if (!G_ButtonNames.existskey(ButtonIndex)) {
+					MediaCardDisplayer_Button.Hide();
+					continue;
+				}
+				declare ButtonName = G_ButtonNames[ButtonIndex];
+				if (ButtonIndex == 0) {
+					declare CMlLabel MediaCardDisplayer_Label <=> (Page.GetFirstChild("MediaCardDisplayer_Button_" ^ ButtonIndex ^ "_Label") as CMlLabel);
+					MediaCardDisplayer_Label.SetText(ButtonName);
+					continue;
+				}
+				MediaCardDisplayer_Button.Show();
+			}
+			declare CMlFrame MediaCardDisplayer_Button <=> (Page.GetFirstChild("MediaCardDisplayer_Button_" ^ G_ButtonNames.count ^ "_Frame") as CMlFrame);
+			if (G_AddToListButtonName != "") {
+				declare ButtonName = G_AddToListButtonName;
+				MediaCardDisplayer_Button.Show();
+			} else if (MediaCardDisplayer_Button != Null) {
+				MediaCardDisplayer_Button.Hide();
+			}
+
+			if (_Data.existskey("2ndState")) {
+				if (_Data["2ndState"] == "Valid") {
+					Quad_BigThumbnail.ModulateColor = <1., 1., 1.>;
+				} else if (_Data["2ndState"] == "Greyed") {
+					Quad_BigThumbnail.Colorize = <0.4, 0.4, 0.4>;
+				}
+			}
+		}
+		MediaCardDisplayer_UpdateContextualMenuMultipleSelections();
+	}
+
+{{{MediaCardDisplayer::SecondDeclares()}}}
+
+	Void UpdateListOfSelectedPaths()
+	{
+		declare Text[]	MediaBrowser_ListOfSelectedPaths	for Page;
+		declare Boolean	MediaBrowser_IsInMultiSelectMode	for Page;
+		G_ListOfSelectedPaths = MediaBrowser_ListOfSelectedPaths;
+		G_IsInMultiSelectMode = MediaBrowser_IsInMultiSelectMode;
+		declare CMlQuad MultiSelectSwitch <=> (Page.GetFirstChild("Quad_MultiSelectSwitch") as CMlQuad);
+		if (G_IsInMultiSelectMode) {
+			MultiSelectSwitch.ImageUrl = {{{dump(C_IMG_Checkbox_Closed)}}};
+			MultiSelectSwitch.ImageUrlFocus = {{{dump(C_IMG_Checkbox_Closed_Over)}}};
+		} else {
+			MultiSelectSwitch.ImageUrl = {{{dump(C_IMG_Checkbox_Open)}}};
+			MultiSelectSwitch.ImageUrlFocus = {{{dump(C_IMG_Checkbox_Open_Over)}}};
+		}
+		TwoDArrayCardBuilder_Update();
+	}
+
+	Void UpdateSteamWorkshop()
+	{
+		declare Boolean MediaBrowser_SteamWorkshop			for Page;
+		declare CMlControl Frame_SteamWorkshop <=> Page.GetFirstChild("Frame_SteamWorkshop");
+		if (MediaBrowser_SteamWorkshop) {
+			Frame_SteamWorkshop.Show();
+		} else {
+			Frame_SteamWorkshop.Hide();
+		}
+	}
+
+	Void UpdateAnnounceNoMedia()
+	{
+		declare Boolean MediaBrowser_AnnounceNoMedia for Page;
+		declare Text MediaBrowser_NoMediaMessage for Page;
+		declare NoMedia_Frame <=> Page.GetFirstChild("NoMedia_Frame");
+		NoMedia_Frame.Visible = MediaBrowser_AnnounceNoMedia;
+		declare NoMedia_Label <=> (Page.GetFirstChild("NoMedia_Label") as CMlLabel);
+		NoMedia_Label.SetText(MediaBrowser_NoMediaMessage);
+	}
+
+	Void UpdateFolderPath()
+	{
+		declare Text		MediaBrowser_FolderPath for Page;
+		declare CMlLabel	Label_FolderPath <=> (Page.GetFirstChild("Label_FolderPath") as CMlLabel);
+		Label_FolderPath.SetText(MediaBrowser_FolderPath);
+		MediaCardDisplayer_UnSelectCard(Null);
+	}
+
+	Void UpdateScroll()
+	{
+		declare Integer MediaBrowser_CurrentPageIndex		for Page;
+		declare Integer MediaBrowser_MaxPages				for Page;
+		DesignManialinks_ScrollButtons_Update("MediaBrowser_Scroll", MediaBrowser_CurrentPageIndex, MediaBrowser_MaxPages);
+	}
+
+	Void UpdateData()
+	{
+		declare Text[] EventNames;
+		foreach (ButtonIndex => ButtonName in G_ButtonNames) {
+			declare Text EventName = G_EventPrefix;
+			EventName ^= "_Button_" ^ ButtonIndex;
+			EventNames.add(EventName);
+			declare CMlLabel Button <=> (Page.GetFirstChild("MediaCardDisplayer_Button_" ^ ButtonIndex ^ "_Label") as CMlLabel);
+			declare CMlFrame ButtonFrame <=> (Page.GetFirstChild("MediaCardDisplayer_Button_" ^ ButtonIndex ^ "_Frame") as CMlFrame);
+			ButtonFrame.Show();
+			Button.SetText(ButtonName);
+		}
+		declare CMlQuad		Quad_SelectAll			<=> (Page.GetFirstChild("Quad_SelectAll") as CMlQuad);
+		declare CMlLabel	Label_MultiSelectSwitch	<=> (Page.GetFirstChild("Label_MultiSelectSwitch") as CMlLabel);
+		declare CMlQuad		Quad_MultiSelectSwitch	<=> (Page.GetFirstChild("Quad_MultiSelectSwitch") as CMlQuad);
+		declare CMlControl	Quad_ButtonsCover		<=> Page.GetFirstChild("Quad_ButtonsCover");
+		if (G_AddToListButtonName != "") {
+			EventNames.add("MediaBrowser_AddToList");
+			declare CMlLabel Button <=> (Page.GetFirstChild("MediaCardDisplayer_Button_" ^ G_ButtonNames.count ^ "_Label") as CMlLabel);
+			declare CMlFrame ButtonFrame <=> (Page.GetFirstChild("MediaCardDisplayer_Button_" ^ G_ButtonNames.count ^ "_Frame") as CMlFrame);
+			ButtonFrame.Show();
+			Button.SetText(G_AddToListButtonName);
+			//Quad_SelectAll.Show();
+			Quad_ButtonsCover.Size = <46., {{{ToolboxHeight * 2. - 1.}}}>;
+			Label_MultiSelectSwitch.Show();
+			Label_MultiSelectSwitch.Opacity = 1.;
+			Quad_MultiSelectSwitch.Show();
+		} else {
+			Quad_ButtonsCover.Size = <46., {{{ToolboxHeight}}}>;
+			Quad_SelectAll.Hide();
+			Label_MultiSelectSwitch.Hide();
+			Label_MultiSelectSwitch.Opacity = 0.;
+			Quad_MultiSelectSwitch.Hide();
+		}
+		for (HideIndex, G_ButtonNames.count + 1, 1) {
+			declare CMlFrame ButtonFrame <=> (Page.GetFirstChild("MediaCardDisplayer_Button_" ^ HideIndex ^ "_Frame") as CMlFrame);
+			ButtonFrame.Hide();
+		}
+		if (G_SecondaryButtonNames.count != 0) {
+			Page.GetFirstChild("MediaCardDisplayer_AddNewMedia_Frame").Show();
+		} else {
+			Page.GetFirstChild("MediaCardDisplayer_AddNewMedia_Frame").Hide();
+		}
+		MediaCardDisplayer_SetButtonEvents(EventNames);
+	}
+
+	Void Input_SecondaryButton(Integer _InputIndex)
+	{
+		SendCustomEvent(G_EventPrefix ^ "_SecondaryButton_" ^ _InputIndex, Text[]);
+	}
+
+	Void DisplayFromDisplayType()
+	{
+		switch(G_DisplayType) {
+			case C_ItemType_Card : {
+				TwoDArrayCardBuilder_ResetDimensions({{{Count_InstancesCardX}}},
+					{{{Count_InstancesCardY}}},
+					{{{<PosXFirstCard, PosYFirstCard>}}},
+					{{{CardSize}}},
+					{{{CardMargin}}});
+			}
+			case C_ItemType_List : {
+				TwoDArrayCardBuilder_ResetDimensions({{{Count_InstancesListItemX}}},
+					{{{Count_InstancesListItemY}}},
+					{{{<PosXFirstListItem, PosYFirstListItem>}}},
+					{{{ListItemSize}}},
+					{{{ListItemMargin}}});
+			}
+		}
+		for(I, 0, 11) {
+			declare CMlFrame ItemFrame <=> (Page.GetFirstChild("TwoDArrayCardBuilder_CardInstance-" ^ I) as CMlFrame);
+			switch(G_DisplayType) {
+				case C_ItemType_Card : {
+					ItemFrame.GetFirstChild("Frame_WholeListItem").Hide();
+					ItemFrame.GetFirstChild("Frame_WholeCard").Show();
+				}
+				case C_ItemType_List : {
+					ItemFrame.GetFirstChild("Frame_WholeListItem").Show();
+					ItemFrame.GetFirstChild("Frame_WholeCard").Hide();
+				}
+			}
+		}
+	}
+
+	Void ChangeDisplayType()
+	{
+		declare CMlQuad Quad_ChangeDisplayType <=> (Page.GetFirstChild("Quad_ChangeDisplayType") as CMlQuad);
+		if (G_DisplayType == C_ItemType_Card) {
+			G_DisplayType = C_ItemType_List;
+			Quad_ChangeDisplayType.ChangeImageUrl("{{{IMG_Browser_Picto3}}}");
+		} else {
+			G_DisplayType = C_ItemType_Card;
+			Quad_ChangeDisplayType.ChangeImageUrl("{{{IMG_Browser_Picto4}}}");
+		}
+		DisplayFromDisplayType();
+	}
+
+	Void RefreshLoop()
+	{
+		declare Boolean MediaBrowser_Refresh					for Page;
+		declare Boolean MediaBrowser_RefreshSelectedPaths		for Page;
+		declare Boolean MediaBrowser_RefreshMediaData			for Page;
+		declare Boolean MediaBrowser_RefreshWorkshop			for Page;
+		if (MediaBrowser_Refresh)
+		{
+			declare Text		MediaBrowser_EventNamePrefix	for Page;
+			declare Text[]		MediaBrowser_ButtonNames		for Page;
+			declare Text		MediaBrowser_MediaTitle			for Page;
+			declare Text[]		MediaBrowser_SecondaryButtonNames	for Page;
+			declare Text		MediaBrowser_AddToListButtonName	for Page;
+			G_EventPrefix		= MediaBrowser_EventNamePrefix;
+			G_ButtonNames		= MediaBrowser_ButtonNames;
+			G_SecondaryButtonNames	= MediaBrowser_SecondaryButtonNames;
+			G_AddToListButtonName	= MediaBrowser_AddToListButtonName;
+			UpdateData();
+
+			MediaBrowser_Refresh					= False;
+		}
+		if (MediaBrowser_RefreshSelectedPaths)
+		{
+			UpdateListOfSelectedPaths();
+			MediaBrowser_RefreshSelectedPaths		= False;
+		}
+		if (MediaBrowser_RefreshMediaData)
+		{
+			UpdateScroll();
+			UpdateFolderPath();
+			UpdateAnnounceNoMedia();
+			MediaBrowser_RefreshMediaData			= False;
+		}
+		if (MediaBrowser_RefreshWorkshop)
+		{
+			UpdateSteamWorkshop();
+			MediaBrowser_RefreshWorkshop			= False;
+		}
+	}
+
+	Void Init()
+	{
+		MediaCardDisplayer_Init();
+		G_DisplayType = {{{_ItemType}}};
+		DisplayFromDisplayType();
+		G_ListOfSelectedPaths = Text[];
+		G_IsInMultiSelectMode = False;
+	}
+
+	Void GoToParentFolder()
+	{
+		SendCustomEvent("MediaBrowser_FolderBack", Text[]);
+	}
+
+	Void RefreshFolder()
+	{
+		SendCustomEvent("MediaBrowser_RefreshFolder", Text[]);
+	}
+
+	Void OpenInExplorer()
+	{
+		SendCustomEvent("MediaBrowser_OpenInExplorer", Text[]);
+	}
+
+	Void SwitchFlatten()
+	{
+		G_FlattenOpen = !G_FlattenOpen;
+		declare CMlQuad Quad_SwitchFlatten <=> (Page.GetFirstChild("Quad_SwitchFlatten") as CMlQuad);
+		if (G_FlattenOpen) {
+			Quad_SwitchFlatten.ChangeImageUrl("{{{IMG_Browser_Picto1}}}");
+		} else {
+			Quad_SwitchFlatten.ChangeImageUrl("{{{IMG_Browser_Picto0}}}");
+		}
+		SendCustomEvent("MediaBrowser_SwitchFlatten", Text[]);
+	}
+
+	Void SteamWorkshop()
+	{
+		SendCustomEvent("MediaBrowser_CallSteamWorkshop", [MediaCardDisplayer_GetSelectedPath()]);
+	}
+
+	Void SortByDateName()
+	{
+		SendCustomEvent("MediaBrowser_SortByDateName", Text[]);
+	}
+
+	Void SortAscDesc()
+	{
+		SendCustomEvent("MediaBrowser_SortAscDesc", Text[]);
+	}
+
+	Void SelectAll()
+	{
+		SendCustomEvent("MediaBrowser_SelectAll", Text[]);
+	}
+
+	Void MultiSelectSwitch()
+	{
+		SendCustomEvent("MediaBrowser_MultiSelectSwitch", Text[]);
+	}
+
+	Void Private_MediaBrowser_InputPageUp()
+	{
+		SendCustomEvent("MediaBrowser_InputPageUp", Text[]);
+	}
+
+	Void Private_MediaBrowser_InputPageDown()
+	{
+		SendCustomEvent("MediaBrowser_InputPageDown", Text[]);
+	}
+
+	Void Loop()
+	{
+		RefreshLoop();
+		MediaCardDisplayer_Loop();
+		foreach(Event in PendingEvents) {
+			switch(Event.Type) {
+				case CMlEvent::Type::MenuNavigation: {
+					switch(Event.MenuNavAction) {
+						case CMlEvent::EMenuNavAction::Action1 : {
+							if (G_SecondaryButtonNames.count != 0) {
+								Input_SecondaryButton(0); // TODO : Faire accepter plusieurs boutons
+							}
+						}
+						case CMlEvent::EMenuNavAction::PageUp: {
+							Private_MediaBrowser_InputPageUp();
+						}
+						case CMlEvent::EMenuNavAction::PageDown: {
+							Private_MediaBrowser_InputPageDown();
+						}
+					}
+				}
+				case CMlEvent::Type::MouseClick: {
+					switch (Event.ControlId) {
+						case "MediaCardDisplayer_AddNewMedia" : {
+							Input_SecondaryButton(0); // TODO : Faire accepter plusieurs boutons
+						}
+						case "Quad_GoToParentFolder_Button" : {
+							GoToParentFolder();
+						}
+						case "Quad_RefreshFolder_Button" : {
+							RefreshFolder();
+						}
+						case "Quad_OpenInExplorer_Button" : {
+							OpenInExplorer();
+						}
+						case "Quad_SwitchFlatten_Button" : {
+							SwitchFlatten();
+						}
+						case "Quad_SteamWorkshop_Button" : {
+							SteamWorkshop();
+						}
+						case "Quad_SortByDateName" : {
+							SortByDateName();
+						}
+						case "Quad_SortAscDesc" : {
+							SortAscDesc();
+						}
+						case "Quad_SelectAll" : {
+							SelectAll();
+						}
+						case "Quad_MultiSelectSwitch" : {
+							MultiSelectSwitch();
+						}
+						case "Quad_ChangeDisplayType_Button" : {
+							ChangeDisplayType();
+						}
+						case "MediaBrowser_Scroll_ScrollL" : {
+							Private_MediaBrowser_InputPageUp();
+						}
+						case "MediaBrowser_Scroll_ScrollR" : {
+							Private_MediaBrowser_InputPageDown();
+						}
+					}
+				}
+				case CMlEvent::Type::MouseOver: {
+					if(Event.ControlId == "Quad_RefreshFolder_Button" || Event.ControlId == "Quad_OpenInExplorer_Button" || Event.ControlId == "Quad_SwitchFlatten_Button"
+					|| Event.ControlId == "Quad_ChangeDisplayType_Button" || Event.ControlId == "Quad_GoToParentFolder_Button" || Event.ControlId == "Quad_SteamWorkshop_Button") {
+						declare CMlQuad Quad_Over <=> (Page.MainFrame.GetFirstChild(Event.ControlId)	as CMlQuad);
+						Quad_Over.Opacity = 0.5;
+					}
+				}
+				case CMlEvent::Type::MouseOut: {
+					if(Event.ControlId == "Quad_RefreshFolder_Button" || Event.ControlId == "Quad_OpenInExplorer_Button" || Event.ControlId == "Quad_SwitchFlatten_Button"
+					|| Event.ControlId == "Quad_ChangeDisplayType_Button" || Event.ControlId == "Quad_GoToParentFolder_Button" || Event.ControlId == "Quad_SteamWorkshop_Button") {
+						declare CMlQuad Quad_Over <=> (Page.MainFrame.GetFirstChild(Event.ControlId)	as CMlQuad);
+						Quad_Over.Opacity = 0.;
+					}
+				}
+			}
+		}
+	}
+
+	Void Show(Integer _State, Text _PreviousPage)
+	{
+		SendCustomEvent("MediaBrowser_StartRunning", [{{{dump(_LayerName)}}}]);
+		EnableMenuNavigation(True,False,Null,1);
+		MediaCardDisplayer_Show();
+		declare CMlQuad Background <=> (Page.GetFirstChild("Background") as CMlQuad);
+		Background.Opacity = 0.;
+		Background.RelativePosition_V3 = <0., 3.>;
+		LibManialink_AnimStop(Background);
+		LibManialink_SetTargetOpacity(Background, C_BackgroundOpacity);
+		LibManialink_SetTargetPosition(Background, <0., 0.>);
+		LibManialink_PresetAnim(Background, 350, "EaseOutQuad");
+	}
+
+	Void Hide(Integer _State, Text _PreviousPage)
+	{
+		if (_State == C_Pages_GOTONEXTPAGE) {
+			SendCustomEvent("MediaBrowser_MakeIdle", [{{{dump(_LayerName)}}}]);
+		} else {
+			SendCustomEvent("MediaBrowser_StopRunning", [{{{dump(_LayerName)}}}]);
+		}
+		EnableMenuNavigation(False,False,Null,0);
+		BaseLib_Hide();
+	}
+
+	""";
+//<script>
+	return LayerBuilder::Build(_LayerName, Manialink, Includes, Declares);
+}
+
+Text Build(Text _LayerName, Text[] _InfoLineLogos, Integer _ItemType)
+{
+	return Build(_LayerName, _InfoLineLogos, _ItemType, True);
+}
+
+Text Build(Text _LayerName, Integer _ItemType)
+{
+	return Build(_LayerName, ["", "", "", "", ""], _ItemType);
+}
+
+Text Build(Text _LayerName)
+{
+	return Build(_LayerName, C_ItemType_Card);
+}

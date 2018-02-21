@@ -1,0 +1,216 @@
+#Include "TextLib" as TextLib
+#Include "Libs/Nadeo/Common/ManialinkTools/Manialink3WPrevAnims.Script.txt"	as Manialink
+#Include "Libs/Nadeo/MP4/Common/Components/ListDisplayer/LBListDisplayer.Script.txt"	as ListDisplayer
+#Include "Libs/Nadeo/MP4/Common/ManialinkTools/FontManager.Script.txt" 	as Font
+
+#Const C_ImgBase	"file://Media/MEDIABROWSER_HiddenResources/Common/Images/Menus/"
+#Const C_LPMinToJoin 60000
+
+Text Build() {
+	ListDisplayer::Init(	["Text",		"Ratio",	"TextNoFlag",	"Quad",		"Quad"],
+							[_("|Server|Name"),		_("|Server, number of players|Players"),	_("|Server, game rules|Mode"),		_("|Server echelon, max 7 characters|Ech"),			_("Level")],
+							[<-99.7, 0.>,	<0.7, 0.>,	<30.0, 0.>,		<53.0, 0.>,		<69.0, 0.>],
+							[<38., 8.0>,	<29., 8.0>,	<30., 8.>,		<12., 8.>,		<20., 8.>],
+							[True,			True,		True,			True,			False],
+							//L16N |Infinitive| In a popup, a button to join the selected server
+							[_("Join")],
+							//L16N |Infinitive| In a popup, a button to start making a new server
+							[_("Create")],
+							["ListOneChoice",	"Locked",		"ListYesNo"],
+							[_("|Zone|World"),			_("|Servers' scripts|All modes"),	_("|Server parameters|Advanced")],
+							[[_("|Zone|World"), _("|Zone|Africa"), _("|Zone|Asia"), _("|Zone|Europe"), _("|Zone|Middle East"), _("|Zone|North America"), _("|Zone|Oceania"), _("|Zone|South America")], Text[], [_("|Servers|Private")]]);
+
+	declare Text[]  IMG_Levels;
+	for(I, 0, 6) {
+		IMG_Levels.add(C_ImgBase ^ "Multiplayer/Server_Level" ^ I ^ ".dds");
+	}
+
+	declare Text LPToJoin = TextLib::Compose(_("|Server|You need at least %1 LP to join this server"), ""^C_LPMinToJoin);
+
+	declare Text[]	Levels_Instructions = [_("|Server|Very easy"), _("|Server|Easy"), _("|Server|At your level"), _("|Server|Difficult"), _("|Server|Very Difficult"), LPToJoin, _("|Server|Private")];
+
+	declare Text SubFont = Font::GetFontName("SubTitle");
+
+
+	declare Text MLText = """
+<manialink version="3" name="L_Multiplayer_Find">
+{{{ListDisplayer::ManialinkFrameModels()}}}
+
+	<frame id="Frame_All">
+		<frame id="Frame_CursorHelper" z-index="5" hidden="1">
+			<quad halign="center" valign="center" size="50 15" pos="0 10" z-index="-1" bgcolor="666"/>
+			<label id="Label_CursorHelper" halign="center" valign="center" size="40 5" pos="0 10" textfont="{{{SubFont}}}" autonewline="1"/>
+		</frame>
+{{{ListDisplayer::ManialinkMainBody()}}}
+	</frame>
+
+	<script><!--
+		#Include "TextLib" as Multiplayer_Find_TextLib
+{{{ListDisplayer::Includes()}}}
+		#Const C_IMG_Levels				{{{dump(IMG_Levels)}}}
+		#Const C_Levels_Instructions	{{{dump(Levels_Instructions)}}}
+
+	declare Boolean G_IsCursorHelperShown;
+
+	Text ListDisplayer_ConvertToImageUrl(Integer _QuadId) {
+		return "";
+	}
+
+	Void ListDisplayer_Input_Action1()
+	{
+		//SendCustomEvent("GotoPage", ["MultiplayerCreate"]);
+	}
+
+	Void ListDisplayer_Input_Select(Text[Text] _Data) {
+		declare Boolean Hack = True;
+		if(Hack)
+		{
+			declare ServerLink = "maniaplanet://#join=" ^ _Data["CoreInfo"];
+			SendCustomEvent("Multiplayer_JoiningServer", Text[]);
+			OpenLink(ServerLink, CMlScript::LinkType::Goto);
+		}
+		else
+		{
+			SendCustomEvent("ServerSelect",[_Data["CoreInfo"]]);
+		}
+	}
+
+{{{ListDisplayer::Declares()}}}
+
+	Void ShowPage()
+	{
+		EnableMenuNavigation(True,False,Null,1);
+	}
+
+	Void Init()
+	{
+		G_IsCursorHelperShown = False;
+	}
+
+	Void ShowCursorHelper(Text _CursorHelperText)
+	{
+		G_IsCursorHelperShown = True;
+		declare Frame_CursorHelper <=> Page.GetFirstChild("Frame_CursorHelper");
+		Frame_CursorHelper.Show();
+		declare CMlLabel Label_CursorHelper <=> (Page.GetFirstChild("Label_CursorHelper") as CMlLabel);
+		Label_CursorHelper.SetText(_CursorHelperText);
+	}
+
+	Void HideCursorHelper()
+	{
+		G_IsCursorHelperShown = False;
+		declare Frame_CursorHelper <=> Page.GetFirstChild("Frame_CursorHelper");
+		Frame_CursorHelper.Hide();
+	}
+
+	Void CursorHelper_Loop()
+	{
+		if (!G_IsCursorHelperShown) {
+			return;
+		}
+		declare Frame_CursorHelper <=> Page.GetFirstChild("Frame_CursorHelper");
+		Frame_CursorHelper.RelativePosition_V3 = <MouseX, MouseY>;
+	}
+
+	main() {
+		Init();
+		ListDisplayer_Init();
+		while(True) {
+
+			yield;
+			if(! PageIsVisible) continue;
+			ListDisplayer_Loop();
+			CursorHelper_Loop();
+			LibManialink_AnimLoop();
+
+			foreach(Event in PendingEvents) {
+				switch(Event.Type) {
+
+					case CMlEvent::Type::MenuNavigation: {
+						switch(Event.MenuNavAction) {
+							case CMlEvent::EMenuNavAction::Cancel : {
+								SendCustomEvent("GotoPrevious", [""]);
+							}
+							case CMlEvent::EMenuNavAction::PageUp : {
+								SendCustomEvent("Barre_PageUp", [""]);
+							}
+							case CMlEvent::EMenuNavAction::PageDown : {
+								SendCustomEvent("Barre_PageDown", [""]);
+							}
+							case CMlEvent::EMenuNavAction::Action2 : {
+								SendCustomEvent("Multiplayer_Find_SecondaryButton_0", [""]);
+							}
+						}
+					}
+					case CMlEvent::Type::MouseClick: {
+						if (Event.ControlId == "Quad_Refresh")
+						{
+							SendCustomEvent("GetServers", ["Multiplayer_Find"]);
+							continue;
+						}
+						declare EventIdSplit = Multiplayer_Find_TextLib::Split("_", Event.ControlId);
+						if ((EventIdSplit.count > 0) && (EventIdSplit[0] == "SecondaryButton"))
+						{
+							SendCustomEvent("Multiplayer_Find_SecondaryButton_"^ EventIdSplit[1], [""]);
+							continue;
+						} else if (Event.ControlId == "Elem_Category2") {
+							declare Label <=> (Event.Control as CMlLabel);
+							declare Integer ListDisplayer_Id for Label;
+							SendCustomEvent("SetFilterForScript", [Multiplayer_Find_TextLib::ToText(ListDisplayer_Id)]);
+							HideCursorHelper();
+						}
+					}
+					case CMlEvent::Type::MouseOver: {
+						if (Event.ControlId == "Elem_Category4") {
+							declare Quad <=> (Event.Control as CMlQuad);
+							if (Quad != Null) {
+								foreach(IMGIndex => IMG_Level in C_IMG_Levels) {
+									if (Quad.ImageUrl == IMG_Level) {
+										ShowCursorHelper(C_Levels_Instructions[IMGIndex]);
+									}
+								}
+							}
+						} else if (Event.ControlId == "Elem_Category2") {
+							declare Label <=> (Event.Control as CMlLabel);
+							if (Label != Null) {
+								ShowCursorHelper(Multiplayer_Find_TextLib::Compose("{{{_("Click to filter by %1")}}}", Label.Value));
+							}
+						}
+					}
+					case CMlEvent::Type::MouseOut: {
+						if (Event.ControlId == "Elem_Category4" || Event.ControlId == "Elem_Category2") {
+							HideCursorHelper();
+						}
+					}
+					case CMlEvent::Type::PluginCustomEvent: {
+						switch(Event.CustomEventType) {
+							case "Show" : {
+								ShowPage();
+								SendCustomEvent("UpdateBarreSection", ["Multiplayer_Find"]);
+								SendCustomEvent("GetServers", ["Multiplayer_Find"]);
+								ListDisplayer_Show();
+								declare PreviousPage = Event.CustomEventData[1];
+								AnimShow_Frame(PreviousPage == "SectionsSelector");
+							}
+							case "Hide" : {
+								EnableMenuNavigation(True,False,Null,0);
+								SendCustomEvent("DetachPage", ["Multiplayer_Find"]);
+							}
+							case "Back" : {
+								SendCustomEvent("GotoPrevious", [""]);
+							}
+							case "OpenLink" : {
+								declare Text ServerLink = Event.CustomEventData[0];
+								OpenLink(ServerLink, CMlScript::LinkType::Goto);
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	--></script>
+</manialink>	""";
+	
+	return MLText;
+}

@@ -1,0 +1,96 @@
+#Include "Libs/Nadeo/MP4/Common/Components/ListDisplayer/LBListDisplayer.Script.txt" as ListDisplayer
+
+Text Build()
+{
+	ListDisplayer::Init(	["Text", "Integer", "Integer", "Date"],
+							["BUDDY", "WINS", "LOSSES", "DATE"],
+							[<-99.7, 0.>, <15.7, 0.>, <35.0, 0.>, <65.0, 0.>],
+							[<38., 8.0>, <20., 8.0>, <20., 8.0>, <28., 8.0>],
+							["DETAILS"]);
+
+	declare ML =
+	"""<manialink version="3" name="L_RecordCenter">
+{{{ListDisplayer::ManialinkFrameModels()}}}
+
+	<frame id="Frame_All">
+{{{ListDisplayer::ManialinkMainBody()}}}
+	</frame>
+
+	<script><!--
+		#Include "MathLib" as RecordCenter_MathLib
+		#Include "TextLib" as RecordCenter_TextLib
+{{{ListDisplayer::Includes()}}}
+
+	Void ListDisplayer_Input_Action1()
+	{
+
+	}
+
+	Void ListDisplayer_Input_Select(Text[Text] _Data)
+	{
+		SendCustomEvent("RecordCenterDetailsStart", [_Data["CoreInfo"],
+			"0", _Data["Category0"],
+			_Data["Category2"], _Data["Category1"]]);
+	}
+
+{{{ListDisplayer::Declares()}}}
+
+	main()
+	{
+		ListDisplayer_Init();
+		while(True)
+		{
+			yield;
+			if(!PageIsVisible && PendingEvents.count == 0) continue;
+			ListDisplayer_Loop();
+			foreach(Event in PendingEvents)
+			{
+				switch(Event.Type) {
+					case CMlEvent::Type::MenuNavigation: {
+						switch(Event.MenuNavAction) {
+							case CMlEvent::EMenuNavAction::Cancel : {
+								SendCustomEvent("RecordCenter_Back", [""]);
+							}
+							case CMlEvent::EMenuNavAction::PageUp : {
+								SendCustomEvent("Barre_PageUp", [""]);
+							}
+							case CMlEvent::EMenuNavAction::PageDown : {
+								SendCustomEvent("Barre_PageDown", [""]);
+							}
+						}
+					}
+					case CMlEvent::Type::PluginCustomEvent :
+					{
+						switch(Event.CustomEventType)
+						{
+							case "Show":
+							{
+								EnableMenuNavigation(True, False, Null, 1);
+								SendCustomEvent("UpdateBarreSection", ["RecordCenter"]);
+								SendCustomEvent("GetBuddiesMapsRecord", ["RecordCenter"]);
+								ListDisplayer_Show();
+							}
+							case "Hide":
+							{
+								EnableMenuNavigation(False, False, Null, 1);
+								SendCustomEvent("DetachPage", ["RecordCenter"]);
+							}
+							case "ChangeName":
+							{
+								declare PlayerName = Event.CustomEventData[0];
+								//L16N Main title when using the record center to challenge your buddy's best score on a map
+								declare Text VersusText = RecordCenter_TextLib::Compose( _("Versus %1"), PlayerName);
+								declare Label_Player   <=> (Page.MainFrame.GetFirstChild("Label_Player") as CMlLabel);
+								Label_Player.Value = VersusText;
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	--></script>
+</manialink>""";
+
+	return ML;
+}

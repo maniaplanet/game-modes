@@ -1,0 +1,90 @@
+#Include "Libs/Nadeo/Common/Core/MenuLayers.Script.txt"													as Layers
+#Include "Libs/Nadeo/Common/Core/Pages.Script.txt"														as Pages
+#Include "Libs/Nadeo/Common/Core/Logger.Script.txt"														as Logger
+#Include "Libs/Nadeo/Common/Core/SectionsManager.Script.txt"												as SectionsManager
+#Include "Libs/Nadeo/MP4/Common/Components/ImageBrowser/ImageBrowserController.Script.txt"				as ImageBrowserController
+#Include "TextLib"																					as TextLib
+#Include "Libs/Nadeo/MP4/Common/Components/DialogBox/DialogBoxController.Script.txt"					as DialogBoxController
+
+//Layers
+#Include "Libs/Nadeo/MP4/TitlePackMaker/Components/Component_MatchSettings/LBMatchSettings.Script.txt"	as LBMatchSettings
+#Include "Libs/Nadeo/MP4/Common/Components/ScriptBrowser/ScriptBrowserController.Script.txt"			as ScriptBrowserController
+#Include "Libs/Nadeo/MP4/Common/Components/AssetMaker/AssetMakerController.Script.txt"										as AssetMakerController
+
+Text GenerateXML ()
+{
+	return """	<MatchSettings>
+	</MatchSettings>""";
+}
+
+Void Init()
+{
+}
+
+Void AnalyzeXML(Text _XML)
+{
+	Init();
+}
+
+Boolean CanPublishXML()
+{
+	return True;
+}
+
+Text PublishXML()
+{
+	return GenerateXML();
+}
+
+Void Build(Text _LayerName, Boolean _Attach) {
+
+	declare Text MLText;
+	switch(_LayerName) {
+		case("MatchSettings"):{
+			MLText = LBMatchSettings::Build();
+		}
+	}
+
+	if(MLText == "") {
+		Logger::Warn("Unknown Page: "^_LayerName);
+		return;
+	}
+	
+	Layers::Create(_LayerName, MLText);
+	
+	declare CUILayer Layer <=> Layers::Get(_LayerName);
+	declare Text Page_LayerName for Layer.LocalPage;
+	
+	Page_LayerName = _LayerName;
+	if(_Attach) Layers::Attach(_LayerName);
+}
+
+Void Build(Text _LayerName) {
+	Build(_LayerName, False);
+
+}
+
+Void Load() {
+	Init();
+	AssetMakerController::Init("MatchSettings", Text[], Text[], Text[], Text[], Boolean[], False);
+	Build("MatchSettings");
+	Pages::Compose("MatchSettings", ["MatchSettings"]);
+	SectionsManager::AddSection("MatchSettings", "MatchSettings");
+}
+
+Void Loop() {
+	AssetMakerController::Loop("MatchSettings");
+	foreach(Event in PendingEvents) {
+		if(Event.Type != CManiaAppEvent::EType::LayerCustomEvent) continue;
+		switch(Event.CustomEventType) {
+			case "ScriptBrowserToMatchSettings_Button_0": {
+				Pages::GotoPrevious();
+				declare Path = Event.CustomEventData[0];
+				AssetMakerController::AddNewAsset("MatchSettings", Path);
+			}
+		}
+	}
+	if (AssetMakerController::IsAskingNewAsset("MatchSettings")) {
+		DialogBoxController::ShowMessage("You cannot add match settings to your title yet.");
+	}
+}

@@ -1,0 +1,141 @@
+#Const C_TokenTtl 900000 // FIXME YOLO 15 min (origin: 50 min, pourquoi?)
+#Const C_RetryTokenTtl 5000
+
+declare Boolean         Auth_Success;    //for ManiaPlanet;
+declare Text            Auth_HttpHeader; //for ManiaPlanet;
+declare Text            Auth_Token;      //for ManiaPlanet;
+declare Integer         Auth_TokenTime;  //for ManiaPlanet;
+declare Text            Auth_Url;        //for ManiaPlanet;
+
+declare Boolean         RetryToken;
+declare Integer         RetryTokenCount;
+declare Integer         RetryTokenTime;
+declare Boolean         RequestNewToken;
+declare Boolean         WaitingMasterServer;
+declare Boolean         WaitingLiveApi;
+declare CHttpRequest    LiveApiRequest;
+
+
+Void Init()
+{
+    Http.AutomaticHeaders_Timezone = True;
+    
+    Auth_Success    = False;
+    RequestNewToken = True;
+    Auth_HttpHeader = "";
+    Auth_Token      = "";
+    Auth_TokenTime  = 0;
+    RetryTokenCount = 0;
+    if(Auth_Url == "") {
+        Auth_Url = "https://www.maniaplanet.com/ingame/auth";
+    }
+    //log("""[auth] Boaty Macboatface: {{{Auth_Url}}}""");
+
+}
+
+
+Boolean IsTokenExpire()
+{
+	// Token expiration
+	if(Auth_Success && Auth_Token != "" && Auth_TokenTime > 0 && Auth_TokenTime + C_TokenTtl < Now) {
+		return True;
+	}
+	return False;
+}
+
+Boolean Is_Auth_Success()
+{
+	return Auth_Success;
+}
+
+/*
+Boolean Auth_GenerateToken() {
+ //GenerateTokenCooldown
+ if (G_LastTokenGenerationTime != 0 && Now < G_LastTokenGenerationTime + G_TokenGenerationCooldown)
+  return False;
+  
+ if (ManiaPlanet.MasterServer_MainMSUser == Null)
+  return False;
+  
+ if (G_WaitingForTokenStatus == C_WaitingForTokenStatus_WaitMS || ManiaPlanet.MasterServer_MainMSUser.ConnectionStatus != CNetMasterServerUserInfo::EMasterServerConnectionStatus::Connected)
+ {
+  
+  return True;
+ }
+ 
+ log("GENERATETOKEN-----------------------------------------------------------");
+ Authentication_GetToken(UserMgr.MainUser.Id, "nadeolive");
+ G_LastTokenGenerationTime = -1;
+ G_WaitingForTokenStatus = C_WaitingForTokenStatus_WaitMS;
+ return True;
+}
+*/
+Void Loop()
+{
+	// Token expiration
+	if(Auth_Success && Auth_Token != "" && Auth_TokenTime > 0 && Auth_TokenTime + C_TokenTtl < Now) {
+		//log("""[auth] Token expired""");
+		// Fixme faut-il invalider le token existant ici?
+		RequestNewToken = True;
+		Auth_TokenTime = 0;
+	}
+	// Token retry
+	else if(RetryToken && RetryTokenTime > 0 && RetryTokenTime + (RetryTokenCount+1) * C_RetryTokenTtl < Now) {
+		//log("""[auth] Retry token after {{{(RetryTokenCount+1) * C_RetryTokenTtl/1000}}}s""");
+		RetryToken = False;
+		RetryTokenTime = 0;
+		RetryTokenCount = RetryTokenCount + 1;
+		RequestNewToken = True;
+	}
+	// Request new token
+	else if(RequestNewToken) {
+		RequestNewToken = False;
+		//log("""[auth] Request new token""");
+		
+		// TODO Est-ce que y'a encore besoin du 2e param de la fonction get token? quoi que je mette ça fonctionne.
+		Authentication_GetToken(UserMgr.MainUser.Id, "");
+		WaitingMasterServer = True;
+	}
+	// Wait for master server response
+	else if(WaitingMasterServer && Authentication_GetTokenResponseReceived) {
+		WaitingMasterServer = False;
+		if(Authentication_ErrorCode == 0) {
+			//log("""[auth] Received token: {{{Authentication_Token}}}""");
+			LiveApiRequest = Http.CreateGet(
+				Auth_Url,
+				False,
+				"""Maniaplanet-Auth: Login="{{{ LocalUser.Login }}}", Token="{{{ Authentication_Token }}}" """
+				^"\nAccept: application/xml"
+			);
+			WaitingLiveApi = True;
+		}
+		else {
+			//log("""ERROR [auth] Master server error: {{{Authentication_ErrorCode}}}""");
+			RetryToken = True;
+			RetryTokenTime = Now;
+		}
+	}
+
+	// Wait for live api response
+	else if(WaitingLiveApi && LiveApiRequest.IsCompleted) {
+		WaitingLiveApi = False;
+		if(LiveApiRequest.StatusCode >= 200 && LiveApiRequest.StatusCode < 300) {
+			Auth_Success = True;
+			//log("LiveApiRequest.StatusCode: "^ LiveApiRequest.StatusCode);
+			Auth_Token = Authentication_Token;
+			Auth_TokenTime = Now;
+			Auth_HttpHeader =
+				"""Maniaplanet-Auth: Login="{{{ LocalUser.Login }}}", Token="{{{ Authentication_Token }}}" """
+				^ "\nAccept: application/xml";
+			RetryTokenCount = 0;
+		}
+		else {
+			log("""ERROR [auth] Token check error: {{{LiveApiRequest.StatusCode}}}""");
+			RetryToken = True;
+			RetryTokenTime = Now;
+		}
+		Http.Destroy(LiveApiRequest);
+		LiveApiRequest = Null;
+
+	}
+}

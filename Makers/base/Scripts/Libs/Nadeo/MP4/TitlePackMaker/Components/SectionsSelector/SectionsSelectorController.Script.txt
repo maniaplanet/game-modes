@@ -1,0 +1,117 @@
+#Include "Libs/Nadeo/Common/Core/MenuLayers.Script.txt"												as Layers
+#Include "Libs/Nadeo/Common/Core/Pages.Script.txt"													as Pages
+#Include "Libs/Nadeo/Common/Core/Logger.Script.txt"													as Logger
+#Include "Libs/Nadeo/Common/Core/SectionsManager.Script.txt"											as SectionsManager
+#Include "TextLib"																				as TextLib
+#Include "Libs/Nadeo/MP4/TitlePackMaker/XMLController.Script.txt"									as XMLController
+#Include "Libs/Nadeo/MP4/Common/Components/DialogBox/DialogBoxController.Script.txt"				as DialogBoxController
+
+#Include "Libs/Nadeo/MP4/TitlePackMaker/ActivationController.Script.txt"							as ActivationController
+
+//Layers
+#Include "Libs/Nadeo/MP4/TitlePackMaker/Components/SectionsSelector/LBSectionsSelector.Script.txt"	as SectionsSelector
+
+#Const C_SectionActiveId		[1 => "Solo", 2 => "Online", 3 => "LocalPlay", 4 => "Editor"]
+
+declare Boolean G_RequestQuit;
+
+Void UpdateInfo() {
+	declare CUILayer LayerToSend = Layers::Get("SectionsSelector");
+	declare Integer[] SectionsSelector_Warnings					for LayerToSend.LocalPage;
+	declare Boolean[Integer] SectionsSelector_ActiveSections	for LayerToSend.LocalPage;
+	SectionsSelector_Warnings = XMLController::GetWarningSections();
+	SectionsSelector_ActiveSections = ActivationController::GetActiveSections();
+	LayerCustomEvent(LayerToSend, "UpdateAll", Text[]);
+}
+
+Void WarnNotEnoughParams(CManiaAppEvent _Event) {
+	Logger::Warn("[Menucontroller] event "^_Event.CustomEventType^": not enough params ["^_Event.CustomEventData^"]");
+}
+
+Void Build(Text _LayerName, Boolean _Attach) {
+
+	declare Text MLText;
+	switch(_LayerName) {
+		case("SectionsSelector"):{
+			MLText = SectionsSelector::Build();
+		}
+	}
+
+	if(MLText == "") {
+		Logger::Warn("Unknown Page: "^_LayerName);
+		return;
+	}
+	
+	Layers::Create(_LayerName, MLText);
+	
+	declare CUILayer Layer <=> Layers::Get(_LayerName);
+	declare Text Page_LayerName for Layer.LocalPage;
+	
+	Page_LayerName = _LayerName;
+	if(_Attach) Layers::Attach(_LayerName);
+}
+
+Void Build(Text _LayerName) {
+	Build(_LayerName, False);
+}
+
+Void Load() {
+	G_RequestQuit = False;
+	Build("SectionsSelector");
+	Pages::Compose("SectionsSelector", ["SectionsSelector"]);
+}
+
+Boolean RequestsQuit()
+{
+	if (G_RequestQuit) {
+		G_RequestQuit = False;
+		return True;
+	}
+	return False;
+}
+
+Void Loop() {
+	foreach(Event in PendingEvents) {
+		if(Event.Type != CManiaAppEvent::EType::LayerCustomEvent) continue;
+		switch(Event.CustomEventType) {
+			case "GetSections": {
+				if(Event.CustomEventData.count < 1) {
+					WarnNotEnoughParams(Event);
+					continue;
+				}
+				declare Text LayerName = Event.CustomEventData[0];
+				
+				declare CUILayer LayerToSend = Layers::Get(LayerName);
+				if(LayerToSend == Null) return;
+				declare Text[] Sections_Name      for LayerToSend.LocalPage;
+				declare Text[] Sections_FirstPage for LayerToSend.LocalPage;
+				Sections_Name      = SectionsManager::GetSections_Name();
+				Sections_FirstPage = SectionsManager::GetSections_FirstPage();
+				LayerCustomEvent(LayerToSend, "SectionInfosSent", [""]);
+				UpdateInfo();
+			}
+			case "GotoSection": {
+				if(Event.CustomEventData.count < 1) {
+					WarnNotEnoughParams(Event);
+					continue;
+				}
+				declare Integer SectionId = TextLib::ToInteger(Event.CustomEventData[0]);
+				SectionsManager::SetActualSection(SectionId);
+				declare Text NewPage = SectionsManager::GetSection_FirstPageById(SectionId);
+				Pages::GotoNext(NewPage);
+			}
+			case "GoToProfile": {
+				Menu_Profile();
+			}
+			case "SectionsSelector_SetActive": {
+				declare Integer SectionId = TextLib::ToInteger(Event.CustomEventData[0]);
+				declare Text SectionTextId = C_SectionActiveId[SectionId];
+				declare Boolean IsActive = TextLib::CompareWithoutFormat(TextLib::ToText(True), Event.CustomEventData[1], True);
+				ActivationController::SetActive(SectionTextId, IsActive);
+			}
+			case "Quit": {
+				G_RequestQuit = True;
+			}
+		}
+	}
+}

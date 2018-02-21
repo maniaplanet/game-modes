@@ -1,0 +1,296 @@
+#Include "Libs/Nadeo/Common/Core/MenuLayers.Script.txt"											as Layers
+#Include "Libs/Nadeo/Common/Core/Pages.Script.txt"												as Pages
+#Include "Libs/Nadeo/Common/Core/Logger.Script.txt"												as Logger
+#Include "Libs/Nadeo/Common/Core/SectionsManager.Script.txt"										as SectionsManager
+#Include "Libs/Nadeo/MP4/TPLagoon/Components/G_BarreSection/BarreSectionController.Script.txt"	as BarreSectionController
+#Include "TextLib"																			as TextLib
+#Include "MathLib"																			as MathLib
+
+#Include "Libs/Nadeo/MP4/Common/Components/ListDisplayer/ListDisplayerController_Menu.Script.txt"						as ListDisplayerController_Menu
+#Include "Libs/Nadeo/MP4/Common/Components/MatchSettingsEditor/MatchSettingsEditorController.Script.txt" as MatchSettingsEditorController
+
+//APIs
+#Include "Libs/Nadeo/MP4/Common/SettingsController.Script.txt"  								as SettingsController
+#Include "Libs/Nadeo/MP4/TPLagoon/XMLController.Script.txt"										as XMLController
+#Include "Libs/Nadeo/MP4/TPLagoon/Components/Multiplayer/MultiplayerAPI.Script.txt"				as MultiplayerAPI
+#Include "Libs/Nadeo/MP4/Common/LoadingScreen.Script.txt"										as LoadingScreen
+
+//Layers
+#Include "Libs/Nadeo/MP4/TPLagoon/Components/Multiplayer/LBMultiplayer_Find.Script.txt"			as LBMultiplayer_Find
+#Include "Libs/Nadeo/MP4/TPLagoon/Components/Multiplayer/LBMultiplayer_Create.Script.txt"		as LBMultiplayer_Create
+#Include "Libs/Nadeo/MP4/TPLagoon/Components/Multiplayer/LBMultiplayer_InfoServer.Script.txt"	as LBMultiplayer_InfoServer
+
+#Const C_Multiplayer_Create "Multiplayer_Create"
+
+declare Text G_MatchSettingsFileName;
+declare Integer G_ServerFocus;
+
+Vec3 GetColor() {
+	declare Text[Text] Colors = XMLController::Get_Color_Sections();
+	if (!Colors.existskey("Multiplayer")) {
+		Logger::Warn("Couleur non trouvée dans le Online");
+		return <0.8,0.2,0.6>;
+	}
+	return TextLib::ToColor(Colors["Multiplayer"]);
+}
+
+Void Build(Text _LayerName, Boolean _Attach) {
+
+	declare Text MLText;
+	switch(_LayerName) {
+		case("Multiplayer_Find"):{
+			MLText = LBMultiplayer_Find::Build();
+		}
+		case(C_Multiplayer_Create):{
+			MLText = LBMultiplayer_Create::Build();
+		}
+		case("Multiplayer_InfoServer"):{
+			MLText = LBMultiplayer_InfoServer::Build();
+		}
+	}
+
+	if(MLText == "") {
+		Logger::Warn("Unknown Page: " ^ _LayerName);
+		return;
+	}
+	
+	Layers::Create(_LayerName, MLText);
+	
+	declare CUILayer Layer <=> Layers::Get(_LayerName);
+	declare Text Page_LayerName for Layer.LocalPage;
+	
+	Page_LayerName = _LayerName;
+	if(_Attach) Layers::Attach(_LayerName);
+}
+
+Void Build(Text _LayerName) {
+	Build(_LayerName, False);
+}
+
+Void Load() {
+	MultiplayerAPI::Load(XMLController::Get_DisplayTitleServersOnly());
+	Build("Multiplayer_Find");
+	Build(C_Multiplayer_Create);
+	Build("Multiplayer_InfoServer");
+	declare Text[] 	         MultiPlayer_Sections;
+	MultiPlayer_Sections = [/*_("Ranking"), */_("|Servers|All"), _("|Servers|Matchmaking"), _("Favorites")];
+	BarreSectionController::AddConfiguration("Multiplayer_Find",
+							//L16N Name for the main menu button, is related to the multiplayer servers online
+							_("Online play"),
+							MultiPlayer_Sections, Text[], Text[], "OnlinePlay");
+	BarreSectionController::AddConfiguration(C_Multiplayer_Create, "", Text[], Text[]);
+
+	Pages::Compose("MultiplayerFind",   ["Multiplayer_Find", "BarreSection"]);
+	Pages::Compose("MultiplayerCreate", [C_Multiplayer_Create, "BarreSection"]);
+	Pages::Compose("MultiplayerInfoServer", ["Multiplayer_InfoServer"]);
+	SectionsManager::AddSection("Multiplayer", "MultiplayerFind", "Multiplayer", GetColor());
+}
+
+Void SendServersToLayer(Text _LayerName, Text[] _ServersName, Boolean[] _ServersIsPrivate, Integer[] _ServersPlayers, Integer[] _ServersPlayersMax,
+	Text[] _ServersMode, Text[] _ServersLevelUrls, Text[] _ServersIds, Text[] _FlagUrls, Text[] _ServerRelativeInfos,
+	Integer _CurrentPage, Boolean _CanPageUp)
+{
+	declare Text[Text][] RequestedServersResume;
+	for(I, 0, _ServersName.count - 1)
+	{
+		RequestedServersResume.add(
+		[
+		"Category0" => _ServersName[I],
+		"Category1" => TextLib::ToText(_ServersPlayers[I]) ^ "/" ^ TextLib::ToText(_ServersPlayersMax[I]),
+		"Category2" => _ServersMode[I],
+		"CoreInfo" => _ServersIds[I],
+		"Flag" => _FlagUrls[I],
+		"Category3" => _ServersLevelUrls[I],
+		"Category4" => _ServerRelativeInfos[I],
+		"IsPrivate" => TextLib::ToText(_ServersIsPrivate[I])]);
+	}
+	declare LayerToGet <=> Layers::Get(_LayerName);
+	declare Integer MaxPages;
+	if (_CanPageUp) {
+		MaxPages = -2;
+	} else {
+		MaxPages = -1;
+	}
+	ListDisplayerController_Menu::ChangeData(_LayerName, RequestedServersResume, _CurrentPage, MaxPages);
+
+}
+
+Void GetServers(Text _LayerName)
+{
+	declare Text[]		ServersName			= MultiplayerAPI::GetServersName();
+	declare Boolean[]	ServersIsPrivate	= MultiplayerAPI::GetServersIs_Private();
+	declare Integer[]	ServersPlayers		= MultiplayerAPI::GetServersPlayers();
+	declare Integer[]	ServersPlayersMax	= MultiplayerAPI::GetServersPlayersMax();
+	declare Text[]		ServersMode			= MultiplayerAPI::GetServersMode();
+	declare Text[]		ServersLevelUrls	= MultiplayerAPI::GetServersLevelUrl();
+	declare Text[]		ServersIds			= MultiplayerAPI::GetServersIds();
+	declare Text[]		ServersFlagUrls		= MultiplayerAPI::GetServersFlagUrls();
+	declare Text[]		ServersRelInfoUrls	= MultiplayerAPI::GetServersRelInfoUrls();
+	declare Integer		CurrentPageNumber	= MultiplayerAPI::GetCurrentPageNumber();
+	declare Boolean		CanPageUp			= MultiplayerAPI::CanPageUp();
+
+	SendServersToLayer(_LayerName, ServersName, ServersIsPrivate, ServersPlayers, ServersPlayersMax,
+		ServersMode, ServersLevelUrls, ServersIds, ServersFlagUrls, ServersRelInfoUrls,
+		CurrentPageNumber, CanPageUp);
+}
+
+Void ShowServerInfo(Integer _ServerIndex)
+{
+	declare CUILayer LayerToGet <=> Layers::Get("Multiplayer_Find");
+	declare Text[Text] DataServerInfo            for LayerToGet.LocalPage;
+	declare Text[]     PlayerListServerInfo      for LayerToGet.LocalPage;
+	declare Text[]     MapListServerInfo         for LayerToGet.LocalPage;
+	declare Boolean    Page_IsServerPrivate      for LayerToGet.LocalPage;
+	declare Boolean    Page_IsServerSpectPrivate for LayerToGet.LocalPage;
+	DataServerInfo.clear();
+	PlayerListServerInfo.clear();
+	MapListServerInfo.clear();
+
+	declare Text[Text] ServerInfos = MultiplayerAPI::GetServerInfos(_ServerIndex);
+	
+	DataServerInfo["ServerName"]        = ServerInfos["name"];
+	DataServerInfo["Comment"]           = ServerInfos["description"];
+	DataServerInfo["PlayerCount"]       = ServerInfos["player_count"];
+	DataServerInfo["MaxPlayerCount"]    = ServerInfos["player_max"];
+	DataServerInfo["SpectatorCount"]    = "";
+	DataServerInfo["MaxSpectatorCount"] = "";
+	DataServerInfo["ServerLevelText"]   = "";
+	DataServerInfo["ModeName"]          = ServerInfos["script_name"];
+	DataServerInfo["MapCount"]          = "";
+	Page_IsServerPrivate                = ServerInfos["is_private"] == "true";
+	Page_IsServerSpectPrivate           = ServerInfos["is_spectator_private"] == "true";
+
+	LayerCustomEvent(LayerToGet, "ShowServerInfo", Text[]);
+}
+
+Void FetchServerListAsync()
+{
+	declare CUILayer LayerToGet <=> Layers::Get("Multiplayer_Find");
+	LayerCustomEvent(LayerToGet, "ListDisplayer_SetLoadingThrobberVisible", Text[]);
+	MultiplayerAPI::FetchServerListAsync();
+}
+
+Void Loop() {
+	if (MultiplayerAPI::HasFetched()) {
+		GetServers("Multiplayer_Find");
+	}
+	foreach(Event in PendingEvents) {
+		if(Event.Type != CManiaAppEvent::EType::LayerCustomEvent) continue;
+		switch(Event.CustomEventType) {
+			case "ServerSelect": {
+				declare Text ServersId = Event.CustomEventData[0];
+				declare Text[] ServersIds = MultiplayerAPI::GetServersIds();
+				
+				G_ServerFocus = ServersIds.keyof(ServersId);
+				declare Boolean ServersIsPrivate = MultiplayerAPI::GetServerIs_Private(G_ServerFocus);
+				declare Boolean ServersIsSpectPrivate = MultiplayerAPI::GetServerIs_Private(G_ServerFocus);
+				declare CUILayer LayerToGet <=> Layers::Get("Multiplayer_Find");
+				if(LayerToGet == Null) continue;
+				declare Boolean    Page_IsServerPrivate      for LayerToGet.LocalPage;
+				declare Boolean    Page_IsServerSpectPrivate for LayerToGet.LocalPage;
+				Page_IsServerPrivate                = ServersIsPrivate;
+				Page_IsServerSpectPrivate           = ServersIsSpectPrivate;
+
+				if(ServersIsPrivate && ServersIsSpectPrivate)
+				{
+					LayerCustomEvent(LayerToGet, "JoinOrSpectate", Text[]);
+				}
+				else
+				{
+					ShowServerInfo(G_ServerFocus);
+				}
+			}
+			case "ListDisplayer_Password" : {
+				declare Text ServerPassword = Event.CustomEventData[0];
+				declare Boolean TryToSpectate = Event.CustomEventData[1] == "True";
+				declare Text[] ServersIds			= MultiplayerAPI::GetServersIds();
+				declare Text ServerLink = "maniaplanet://#join=" ^ ServersIds[G_ServerFocus];
+				declare CUILayer LayerToGet <=> Layers::Get("Multiplayer_Find");
+				if(ServerPassword != "")
+				{
+					//OpenLink(ServerLink, CManiaA::LinkType::Goto);
+					if(LayerToGet != Null) LayerCustomEvent(LayerToGet, "OpenLink", [ServerLink]);
+				}
+				if(LayerToGet != Null) LayerCustomEvent(LayerToGet, "HideServerInfo", Text[]);
+			}
+			case "GetServers": {
+				FetchServerListAsync();
+			}
+			case "SetFilterForScript": {
+				declare Text BarreClickId = Event.CustomEventData[0];
+				MultiplayerAPI::SetFilterForScript(TextLib::ToInteger(BarreClickId));
+				FetchServerListAsync();
+			}
+			case "BarreSec_Click": {
+				declare Text BarreClickId = Event.CustomEventData[0];
+				switch(BarreClickId) {
+					case "0" : MultiplayerAPI::ToggleOut();
+					case "1" : MultiplayerAPI::ToggleIsMatchMaking();
+					case "2" : MultiplayerAPI::ToggleIsFavorite();
+				}
+				FetchServerListAsync();
+			}
+			case "ListDisplayer_AdditionalFilter": {
+				declare Text AdditionalFilter1 = Event.CustomEventData[0];
+				declare Text AdditionalFilter2 = Event.CustomEventData[1];
+				MultiplayerAPI::ToggleAdditionalFilter(TextLib::ToInteger(AdditionalFilter1), TextLib::ToInteger(AdditionalFilter2));
+				FetchServerListAsync();
+			}
+			case "Multiplayer_Find_SecondaryButton_0": {
+				MatchSettingsEditorController::Show("", "MatchSettingsFromOnline", [_("Next")],
+					//L16N |Noun| Title of the section, browsing playlists of maps associated with a ruleset
+					_("Match settings"),
+					//L16N |Noun| In a popup, a button to create a new playlist of maps associated with a ruleset
+					[_("New match settings")], XMLController::Get_AllowedOnlineModes());
+			}
+			case "MatchSettingsFromOnline_Button_0": {
+				//SELECT MATCHSETTINGS
+				MatchSettingsEditorController::MakeIdle();
+				G_MatchSettingsFileName = MatchSettingsEditorController::GetMatchSettingsPath();
+				Pages::GotoNext("MultiplayerCreate");
+			}
+			case "ListDisplayer_PageUp" : {
+				if (MultiplayerAPI::ServerList_PageUp()) {
+					FetchServerListAsync();
+				}
+			}
+			case "ListDisplayer_PageDown" : {
+				if (MultiplayerAPI::ServerList_PageDown()) {
+					FetchServerListAsync();
+				}
+			}
+			case "ListDisplayer_SetTextFilter" : {
+				if (MultiplayerAPI::ServerList_SetTextFilter(Event.CustomEventData[0])) {
+					FetchServerListAsync();
+				}
+			}
+			case "ListDisplayer_SortElements" : {
+				if (MultiplayerAPI::ServerList_SortElements(TextLib::ToInteger(Event.CustomEventData[0]))) {
+					FetchServerListAsync();
+				}
+			}
+			case "Multiplayer_JoiningServer": {
+				LoadingScreen::SetLoadingType(0, "");
+			}
+			case "Multiplayer_CreateServer" : {
+				declare CUILayer LayerToSend = Layers::Get(C_Multiplayer_Create);
+				if(LayerToSend == Null) return;
+				declare Text[] Page_SettingContents for LayerToSend.LocalPage;
+				declare Text Settings = SettingsController::GetSettingsXml("SingleMap", False);
+				declare Text ServerName            = Page_SettingContents[0];
+				declare Text ServerComment         = Page_SettingContents[1];
+				declare Integer MaxPlayerCount     = TextLib::ToInteger(Page_SettingContents[2]);
+				declare Text Password              = Page_SettingContents[3];
+				declare Text PasswordSpectators    = Page_SettingContents[4];
+				if(MaxPlayerCount <= 0)  MaxPlayerCount = 1;
+				if(MaxPlayerCount > 255) MaxPlayerCount = 255;
+				TitleFlow.CreateServer(ServerName, ServerComment, MaxPlayerCount, Password, PasswordSpectators, False, G_MatchSettingsFileName ^ ".txt");
+			}
+		}
+	}
+}
+
+Text GenerateXML ()
+{
+	return "";
+}

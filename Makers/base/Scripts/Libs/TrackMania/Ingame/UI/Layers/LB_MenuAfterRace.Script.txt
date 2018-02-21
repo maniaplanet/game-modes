@@ -1,0 +1,459 @@
+#Include "Libs/Nadeo/Common/ManialinkTools/Manialink3WPrevAnims.Script.txt"								as Manialink
+#Include "Libs/Trackmania/Ingame/Medals.Script.txt"									as Medals
+#Include "Libs/Trackmania/Ingame/UI/UIButtonNamesPopup.Script.txt"					as UIButtonNamesPopup
+#Include "Libs/Trackmania/Ingame/UI/Layers/Inject_SoloMapInfosBase.Script.txt"		as Inject_SoloMapInfosBase
+#Include "Libs/Trackmania/Ingame/UI/Layers/Inject_QuadsSelector.Script.txt"			as Inject_QuadsSelector
+#Include "Libs/Nadeo/MP4/Common/DesignManialinks.Script.txt"							as DesignManialinks
+#Include "Libs/Nadeo/MP4/Common/ManialinkTools/FontManager.Script.txt" 								as Font
+#Include "Libs/Nadeo/MP4/Common/Colors.Script.txt" 					            		as Colors
+
+#Const C_ImgBase	"file://Media/MEDIABROWSER_HiddenResources/Common/Images/Ingame/"
+ 
+#Const TMC_PLAYERCHOICE_CHOOSEGHOST 	1
+#Const TMC_PLAYERCHOICE_QUIT	 		2
+#Const TMC_PLAYERCHOICE_NEXTTRACK 		3
+#Const TMC_PLAYERCHOICE_IMPROVE			4
+#Const TMC_PLAYERCHOICE_REPLAY			6
+
+Text Build() {
+	declare Integer Count_InstancesY         = 4;
+	declare Integer Count_InstancesX         = 1;
+	declare Real	PosXFirstQuad            = 0.;
+	declare Real	PosYFirstQuad            = 20.;
+
+	declare Real	SizeXQuad                = 77.;
+	declare Real	SizeYQuad                = 10.;
+	declare Real	MarginY_Button           = 4.0;
+	declare Real	MarginX_Button           = 4.0;
+	declare  Boolean	Solo_NextTrackIsPossible for Users[0];
+	declare  Boolean	Solo_ChooseOpponentIsPossible for Users[0];
+	//if(Solo_NextTrackIsPossible) Count_InstancesY += 1;
+	
+	declare Text[Integer] MenuButtonText = [	TMC_PLAYERCHOICE_IMPROVE     => _("Improve"),
+												TMC_PLAYERCHOICE_CHOOSEGHOST => _("Choose Opponent"),
+												TMC_PLAYERCHOICE_REPLAY      => _("Save Replay"),
+												TMC_PLAYERCHOICE_NEXTTRACK   => _("Next Track"),
+												TMC_PLAYERCHOICE_QUIT        => _("Back to menu")];
+
+	declare Integer[] MenuButton;
+	MenuButton.add(TMC_PLAYERCHOICE_IMPROVE);
+	if(Solo_ChooseOpponentIsPossible)	MenuButton.add(TMC_PLAYERCHOICE_CHOOSEGHOST);
+	MenuButton.add(TMC_PLAYERCHOICE_REPLAY);
+	if(Solo_NextTrackIsPossible)	MenuButton.add(TMC_PLAYERCHOICE_NEXTTRACK);
+	MenuButton.add(TMC_PLAYERCHOICE_QUIT);
+
+
+	declare Real	SizeXFrameEntrySave           = 150.;
+	declare Real	SizeYFrameEntrySave           = 25.;
+	declare Real	SizeXEntrySave           = SizeXFrameEntrySave - 20.;
+	declare Vec2	MainActionPosition = <37.0, -15.>;
+
+	DesignManialinks::Load();
+
+	declare Text SubFont = Font::GetFontName("SubTitle");
+
+	declare Text MLText = """
+<manialink version="3" name="L_UIMedalSelection">
+	<frame id="Frame_All">
+		<frame id="Frame_MouseClick" pos="0 0" hidden="0" z-index="-7">
+			<quad id="Quad_MouseClick" halign="center" valign="center" size="320 180"  opacity="0." scriptevents="1"/>
+		</frame>
+
+		<frame id="Frame_Menu" pos="0 0" hidden="0">
+			{{{Inject_SoloMapInfosBase::InjectInManialink()}}}
+			{{{Inject_QuadsSelector::InjectInManialink(MenuButton.count, Count_InstancesX)}}}
+		</frame>
+
+		<frame id="Frame_Entry" pos="0 0" z-index="1" hidden="1">
+			<quad  halign="center" valign="center" z-index="0" size="{{{SizeXFrameEntrySave}}} {{{SizeYFrameEntrySave}}}"    bgcolor="000" style="Bgs1" substyle="BgDialogBlur" bluramount="0.1"/>
+			<quad  halign="center" valign="center" z-index="1" size="{{{SizeXEntrySave}}} 7" bgcolor="000" opacity="0.7" id="Quad_Save" scriptevents="1"/>
+			<entry halign="left" valign="center" z-index="2" size="{{{SizeXEntrySave-7.}}} 7" style="TextCardSmall" text="" pos="{{{-SizeXEntrySave/2.+4.}}} 0" textprefix="$t" textsize="3." id="Entry_Save" scriptevents="1"/>
+			<label halign="left" valign="top" style="TextButtonBig" text="{{{_("Save replay")}}}" z-index="2" pos="{{{-SizeXFrameEntrySave/2.+2.}}} {{{SizeYFrameEntrySave/2.-2.}}}" textsize="3" textcolor="fff" opacity="1." textfont="{{{SubFont}}}"/>
+			{{{DesignManialinks::ManialinkMainButtonSmall(MainActionPosition, _("Save"), "", "", "ButtonSave")}}}
+		</frame>
+	</frame>
+	
+	
+	<script><!--
+		#Const DebugName  "L_MenuStart"
+		#Const C_TimeHideMenu 8000
+		#Const C_MenuButton	{{{dump(MenuButton)}}}
+		#Const C_MenuButtonText	{{{dump(MenuButtonText)}}}
+
+		{{{Manialink::GetIncludes()}}}
+		{{{DesignManialinks::Includes()}}}
+		
+		{{{Manialink::Load()}}}
+
+		
+		declare Boolean G_MenuIsVisible;
+		declare Boolean G_EntryIsVisible;
+		declare Integer G_TimeVisible;
+		declare Text    G_SaveGhostName;
+		declare Vec3[Integer] G_QuadMedalImgColor;
+		{{{DesignManialinks::Declares()}}}
+		{{{Inject_SoloMapInfosBase::InjectInGlobal()}}}
+
+		{{{Inject_QuadsSelector::InjectInFunction()}}}
+		{{{Inject_SoloMapInfosBase::InjectInFunction()}}}
+
+		Void ClearChoose()
+		{
+			//declare netwrite Integer Net_MedalChosen 		for UI;
+			//Net_MedalChosen = -1;
+			declare netwrite Text    Net_SaveGhostName 		for UI;
+			Net_SaveGhostName = "";
+		}
+
+		Void Init(Text _ImproveText)
+		{
+			declare  Boolean	Solo_NextTrackIsPossible 				for LocalUser;
+
+			G_QuadMedalImgColor = [0 => {{{Colors::GetColor("GreenMaster")}}},
+					  	           1 => {{{Colors::GetColor("GoldShiny")}}},
+					  	           2 => {{{Colors::GetColor("SilverShiny")}}},
+					  	           3 => {{{Colors::GetColor("BronzeShiny")}}},
+					  	           4 => <0.,0.,0.>
+					  	           ];
+
+			ClearChoose();
+			declare Text[] LabelMedals;
+			foreach(I => Index in C_MenuButton)
+			{
+				if(I == 0 && _ImproveText != "") LabelMedals.add(_ImproveText);
+				else LabelMedals.add(C_MenuButtonText[Index]);
+			}
+
+
+			LabelMedals.add("{{{_("Back to menu")}}}");
+
+			SetButtons(LabelMedals);
+		}
+
+		Void Init()
+		{
+			Init("");
+		}
+
+		Void UpdateEntryVisibility()
+		{
+			declare CMlFrame Frame_Entry <=> (Page.MainFrame.GetFirstChild("Frame_Entry") as CMlFrame);
+			if(G_EntryIsVisible)
+			{
+				Frame_Entry.Show();
+				declare netread Text Net_DefaultReplay for UI;
+				declare CMlEntry  Entry_Save	<=> (Page.MainFrame.GetFirstChild("Entry_Save") as CMlEntry);
+				Entry_Save.SetText(Net_DefaultReplay, False);
+				G_SaveGhostName = Net_DefaultReplay;
+			}
+			else
+			{
+				Frame_Entry.Hide();
+			}
+		}
+
+		Void UpdateMenuVisibility(Boolean _Anim)
+		{
+			declare CMlFrame Frame_Menu <=> (Page.MainFrame.GetFirstChild("Frame_Menu") as CMlFrame);
+			declare CMlFrame Frame_MouseClick <=> (Page.MainFrame.GetFirstChild("Frame_MouseClick") as CMlFrame);
+			Frame_Menu.Visible      =  G_MenuIsVisible;
+			if(G_MenuIsVisible)
+			{
+				G_EntryIsVisible = False;
+				UpdateEntryVisibility();
+				Frame_MouseClick.Hide();
+				AnimShow_QuadSelect();
+				AnimShow_SoloMapInfosBase();
+			}
+			else
+			{
+				Frame_MouseClick.Show();
+				G_TimeVisible = Now + C_TimeHideMenu;
+			}
+		}
+		
+
+
+		Void ShowPage()
+		{
+
+
+			declare netwrite Integer 	Net_PlayerChoice 			for UI;
+			Net_PlayerChoice = -1;
+			CloseInGameMenu(CMlScriptIngame::EInGameMenuResult::Resume);
+			EnableMenuNavigation(True,False,Null,2);
+			ClearChoose();
+			FocusButton();
+			G_MenuIsVisible = True;
+			G_TimeVisible = Now + C_TimeHideMenu;
+			UpdateMenuVisibility(True);
+			
+
+			declare netread Text    Net_ModeName      for UI;
+			declare netread Boolean Net_IsNewMedal    for UI;
+			declare netread Text    BestTimePlayer    for UI;
+			declare netread Integer Net_CurTime       for UI;
+			declare netread Integer Net_CurMedal      for UI;
+			declare netread Integer Net_BestMedal     for UI;
+			declare netread Integer Net_NextMedalTime for UI;
+
+			if(Net_IsNewMedal && Net_CurMedal < 4 && Net_CurMedal >1)
+			{
+				declare Text[] ChallengeText = [_("Challenge  Gold"), _("Challenge  Silver"), _("Challenge  Bronze")];
+				Init(ChallengeText[Net_CurMedal-2]);
+			}
+			else
+			{
+				Init();
+
+			}
+
+			if(Net_ModeName == "Campaign_Solo" || Net_ModeName == "SingleMapMode")
+			{
+				declare Vec3 Color_LastTime  = G_QuadMedalImgColor[Net_CurMedal];
+				declare Vec3 Color_BestTime  = G_QuadMedalImgColor[Net_BestMedal];
+				declare Vec3 Color_NextMedal;
+				declare Text[] PlayersName   = [_("Last Time"),_("Best Time"),_("Next Medal")];
+				declare Text[] PlayersTime;
+				declare Text CurTime = TL::TimeToText(Net_CurTime, True);
+				CurTime ^= TL::SubText(Net_CurTime  ^"", (TL::Length(Net_CurTime^"")-1), 1);
+				declare Text NextMedalTime = TL::TimeToText(Net_NextMedalTime, True);
+				NextMedalTime ^= TL::SubText(Net_NextMedalTime  ^"", (TL::Length(Net_NextMedalTime^"")-1), 1);
+				PlayersTime.add(CurTime);
+				declare Text BTimePlayer = BestTimePlayer;
+				if(BTimePlayer == "") BTimePlayer = "0:00.000";
+				PlayersTime.add(BTimePlayer);
+				if(Net_BestMedal >= 2)
+				{
+					Color_NextMedal = G_QuadMedalImgColor[Net_BestMedal-1];
+					PlayersTime.add(NextMedalTime);
+				}
+				declare Vec3[] PlayersColor  = [Color_LastTime, Color_BestTime, Color_NextMedal];
+				SetTimeInfo_SoloMapInfosBase(PlayersName, PlayersTime, PlayersColor);
+			}
+		}
+
+		Void Button_Improve()
+		{
+			//log(Net_PlayerChoice^Net_PlayerChoice^Net_PlayerChoice); 
+			declare netwrite Integer 	Net_PlayerChoice 			for UI;
+			Net_PlayerChoice = {{{TMC_PLAYERCHOICE_IMPROVE}}};
+		}
+
+		Void Button_Opponent()
+		{
+			//log(Net_PlayerChoice^Net_PlayerChoice^Net_PlayerChoice); 
+			declare netwrite Integer 	Net_PlayerChoice 			for UI;
+			Net_PlayerChoice = {{{TMC_PLAYERCHOICE_CHOOSEGHOST}}};
+		}
+
+		Void Button_Replay()
+		{
+			//declare netwrite Integer 	Net_PlayerChoice 			for UI;
+			//Net_PlayerChoice = {{{TMC_PLAYERCHOICE_REPLAY}}};
+			G_MenuIsVisible = False;
+			UpdateMenuVisibility(False);
+		}
+
+		Void Button_SaveReplay()
+		{
+			G_EntryIsVisible = True;
+			G_MenuIsVisible = False;
+			UpdateMenuVisibility(False);
+			UpdateEntryVisibility();
+		}
+
+		Void Button_Quit()
+		{
+			declare netwrite Integer 	Net_PlayerChoice			for UI;
+			Net_PlayerChoice = {{{TMC_PLAYERCHOICE_QUIT}}};
+
+		}
+
+		Void Button_NextTrack()
+		{
+			declare netwrite Integer 	Net_PlayerWantsToNextTrackUpdate			for UI;
+
+		}
+
+		Void SaveReplay()
+		{
+			declare netwrite Text    Net_SaveGhostName 		for UI;
+			declare netwrite Integer Net_UpdateSaveGhost	for UI;
+			Net_SaveGhostName = G_SaveGhostName;
+			Net_UpdateSaveGhost += 1;
+			G_MenuIsVisible = True;
+			UpdateMenuVisibility(True);
+		}
+
+		Void PressSelect()
+		{
+			if(!G_MenuIsVisible && !G_EntryIsVisible)
+			{
+				G_MenuIsVisible = True;
+				UpdateMenuVisibility(True);
+			}
+			else
+			{
+				if(!G_EntryIsVisible)
+				{
+					declare Integer ButtonChoose = C_MenuButton[G_ButtonFocus];
+					switch(ButtonChoose)
+					{
+						case {{{TMC_PLAYERCHOICE_IMPROVE}}}: {
+							declare Integer 	Net_ShowIngameUI 			for Teams[0];
+							Net_ShowIngameUI += 1;
+							Button_Improve();
+						}
+						case {{{TMC_PLAYERCHOICE_CHOOSEGHOST}}}: {
+							Button_Opponent();
+						}
+						case {{{TMC_PLAYERCHOICE_REPLAY}}}: {
+							Button_SaveReplay();
+						}
+						case {{{TMC_PLAYERCHOICE_QUIT}}}: {
+							Button_Quit();
+						}
+						case {{{TMC_PLAYERCHOICE_NEXTTRACK}}}: { //NextTrack
+							declare  Boolean	Solo_NextTrackRequested 				for LocalUser;
+							Solo_NextTrackRequested = True;
+							Button_Quit();
+						}
+					}
+				}
+			}
+
+			EnableMenuNavigation(True, False, Null, 0);
+		}
+
+		main() {
+			Init();
+			{{{Inject_SoloMapInfosBase::InjectInMain()}}}
+
+			declare Boolean WillSaveReplay = False;
+			declare Boolean Prev_Visibility;
+
+			G_TimeVisible = -1;
+
+			while(True) {
+				
+				yield;
+				if(Prev_Visibility != PageIsVisible) {
+					if(PageIsVisible) ShowPage();
+					Prev_Visibility = PageIsVisible;
+				}
+				if(! PageIsVisible) continue;
+
+				{{{Inject_SoloMapInfosBase::InjectInWhile()}}}
+				DesignManialinks_Loop();
+
+				if(G_TimeVisible < Now && G_TimeVisible != -1)
+				{
+					if(G_MenuIsVisible)
+					{
+						G_MenuIsVisible = False;
+						UpdateMenuVisibility(True);
+					}
+					G_TimeVisible = -1;
+				}
+				LibManialink_AnimLoop();
+				
+				
+				foreach(Event in PendingEvents) {
+					switch(Event.Type) {
+						case CMlEvent::Type::MenuNavigation: {
+							switch(Event.MenuNavAction) {
+								case CMlEvent::EMenuNavAction::Select : {
+									if(G_EntryIsVisible) {
+										WillSaveReplay = True;
+									}
+								}
+							}
+						}
+					}
+				}
+
+				{{{Inject_QuadsSelector::InjectInWhile("PressSelect();")}}}
+
+				if (WillSaveReplay) {
+					SaveReplay();
+					WillSaveReplay = False;
+				}
+				foreach(Event in PendingEvents) {
+					switch(Event.Type) {
+
+						case CMlEvent::Type::MenuNavigation: {
+							G_TimeVisible = Now + C_TimeHideMenu;
+							if(!G_MenuIsVisible && !G_EntryIsVisible)
+							{
+								G_MenuIsVisible = True;
+								UpdateMenuVisibility(True);
+								continue;
+							}
+							switch(Event.MenuNavAction) {
+								case CMlEvent::EMenuNavAction::Cancel : {
+									if(G_MenuIsVisible)
+									{
+										Button_Replay();
+									}
+									else if(G_EntryIsVisible)
+									{
+										G_MenuIsVisible = True;
+										UpdateMenuVisibility(True);
+									}
+								}
+							}
+						}
+						case CMlEvent::Type::MouseClick: {
+							if(!G_MenuIsVisible && !G_EntryIsVisible)
+							{
+								if(Event.ControlId == "Quad_MouseClick")
+								{
+									G_MenuIsVisible = True;
+									UpdateMenuVisibility(True);
+								}
+							}
+							if(Event.ControlId == "Quad_Save")
+							{
+								Button_SaveReplay();
+							}
+							else if (Event.ControlId == "ButtonSave")
+							{
+								SaveReplay();
+							}
+						}
+						case CMlEvent::Type::MouseOver: {
+							if(G_MenuIsVisible)
+							{
+								G_TimeVisible = Now + C_TimeHideMenu;
+							}
+						}
+						case CMlEvent::Type::PluginCustomEvent: {
+							
+							switch(Event.PluginCustomEventType) {
+								case "Show" : {
+									ShowPage();
+								}
+								case "Hide" : {
+									//EnableMenuNavigation(True,False,Null,0);
+								}
+							}
+						}
+						case CMlEvent::Type::EntrySubmit: {
+							declare CMlEntry Entry_Save    <=> (Event.Control as CMlEntry);
+							
+							if(Entry_Save.Value == "") continue;
+
+							G_SaveGhostName = Entry_Save.Value;
+
+						}
+					}
+				}
+			}
+		}
+	--></script>
+</manialink>
+	""";
+	
+	return MLText;
+}

@@ -1,0 +1,190 @@
+#Include "Libs/Nadeo/MP4/Common/ManialinkTools/FontManager.Script.txt" 				as Font
+
+Text Build() {
+	declare Integer Count_InstancesY         = 20;
+	declare Integer Count_InstancesX         = 1;
+	declare Real	PosXFirstQuad            = 10.;
+	declare Real	PosYFirstQuad            = -70.;
+
+	declare Real	SizeXQuad                = 77.;
+	declare Real	SizeYQuad                = 10.;
+	declare Real	MarginY_Button           = 0.0;
+	declare Real	MarginX_Button           = 4.0;
+
+	declare Text	SubFont					 = Font::GetFontName("SubTitle");
+
+	declare Text MLText = """
+<manialink version="3" name="L_ManiaCredits">
+	<framemodel id="Frame_Button">
+		<quad id="Quad_CreditButton"    halign="center" valign="center" size="{{{SizeXQuad}}} {{{SizeYQuad}}}"  pos="30 0" z-index="1" opacity="0.0" bgcolor="009" scriptevents="1" />
+		<quad id="Quad_CreditImg" halign="right" valign="center"  size="7 5"  pos="-2 0" z-index="1" image="" bgcolor="009" keepratio="Fit"/>
+		<label id="Label_Section"  halign="left"   valign="center" textfont="{{{SubFont}}}" z-index="2" textsize="2" textcolor="fff" opacity="1."/>
+	</framemodel>
+
+	
+	<frame id="Frame_All">
+		<frame id="Frame_Content" size="180 130" pos="-50 65">
+			<frame id="Frame_Credit" pos="0 -70">
+	""";
+	for(I,0,Count_InstancesY-1)
+	{
+		declare Real IndexY = I*1.;
+		declare Real PosY = PosYFirstQuad - IndexY*SizeYQuad - IndexY*MarginY_Button*1.;
+		for(J,0,Count_InstancesX-1)
+		{
+			declare Real IndexX = J*1.;
+			declare Real PosX = PosXFirstQuad + IndexX*SizeXQuad + IndexX*MarginX_Button*1.;
+			MLText^="""
+				<frameinstance modelid="Frame_Button" pos="{{{PosX}}} {{{PosY}}}" z-index="5" id="Frame_Instance{{{I}}}{{{J}}}" hidden="1"/>
+			""";
+		}
+	}
+	MLText^="""
+			</frame>
+		
+			<quad pos="-0.2 0.2" size="180.4 130.4" opacity="0.5" bgcolor="000"/>
+		</frame>
+		
+		
+	</frame>
+	
+	
+	<script><!--
+		declare Integer G_FrameCreditMax;
+
+		Void ShowPage()
+		{
+			SendCustomEvent("GetManiaCredits", [""]);
+			EnableMenuNavigation(True,False,Null,1);
+			declare CMlFrame Frame_Credit <=> (Page.MainFrame.GetFirstChild("Frame_Credit")	as CMlFrame);
+			Frame_Credit.RelativePosition_V3.Y = -70.;
+		}
+
+		Boolean SetTitle(Integer _FrameFocus, Text _Job)
+		{
+			declare CMlFrame Frames_Instance <=> (Page.MainFrame.GetFirstChild("Frame_Instance"^_FrameFocus^"0")	as CMlFrame);
+			if(Frames_Instance == Null) return False;
+			declare CMlLabel Label_Section <=> (Frames_Instance.GetFirstChild("Label_Section")	as CMlLabel);
+			declare CMlQuad Quad_CreditImg  <=> (Frames_Instance.GetFirstChild("Quad_CreditImg")	as CMlQuad);
+
+			Frames_Instance.Show();
+			Quad_CreditImg.Hide();
+			Label_Section.SetText(_Job);
+			Label_Section.TextSizeReal = 4.;
+			Label_Section.RelativePosition_V3.X = 8.;
+			return True;
+		}
+
+		Boolean SetCredit(Integer _FrameFocus, Text _Name, Text _Flag)
+		{
+			declare CMlFrame Frames_Instance <=> (Page.MainFrame.GetFirstChild("Frame_Instance"^_FrameFocus^"0")	as CMlFrame);
+			if(Frames_Instance == Null) return False;
+			declare CMlQuad Quad_CreditImg  <=> (Frames_Instance.GetFirstChild("Quad_CreditImg")	as CMlQuad);
+			declare CMlLabel Label_Section <=> (Frames_Instance.GetFirstChild("Label_Section")	as CMlLabel);
+			Frames_Instance.Show();
+			Quad_CreditImg.Show();
+			
+			Quad_CreditImg.ChangeImageUrl(_Flag);
+			Label_Section.SetText(_Name);
+			return True;
+		}
+
+		Void UpdateManiaCredits()
+		{
+			declare Text[]       Page_CreditName        for Page;
+			declare Text[Text]   Page_CreditCountry     for Page;
+			declare Text[Text]   Page_CreditJob         for Page;
+			declare Text[][Text] Page_CreditByJob       for Page;
+
+			declare Integer FrameFocus = 0;
+			foreach(JobName => Job in  Page_CreditByJob)
+			{
+				declare Boolean FrameFind = SetTitle(FrameFocus, JobName);
+				if(!FrameFind) {
+					log("[ManiaCredits] Not enough frame !");
+					break;
+				}
+				FrameFocus += 1;
+				foreach(Name in Job)
+				{
+					declare Text Country =  Page_CreditCountry[Name];
+					declare Boolean FrameFind = SetCredit(FrameFocus, Name, Country);
+					if(!FrameFind) {
+						log("[ManiaCredits] Not enough frame !");
+						break;
+					}
+					
+					FrameFocus +=1;
+
+				}
+			}
+			G_FrameCreditMax = FrameFocus;
+		}
+
+		main() {
+			ShowPage();
+
+			declare CMlFrame Frame_Credit <=> (Page.MainFrame.GetFirstChild("Frame_Credit")	as CMlFrame);
+
+
+			while(True) {
+				
+				yield;
+				if(! PageIsVisible) continue;
+				
+				declare Real FrameSpeed = 0.05;
+				if(Frame_Credit.RelativePosition_V3.Y >= G_FrameCreditMax*{{{SizeYQuad}}}+70.) Frame_Credit.RelativePosition_V3.Y = -70.;
+				else                                                            Frame_Credit.RelativePosition_V3.Y += FrameSpeed;
+
+				foreach(Event in PendingEvents) {
+					switch(Event.Type) {
+
+						case CMlEvent::Type::MenuNavigation: {
+							switch(Event.MenuNavAction) {
+								case CMlEvent::EMenuNavAction::Cancel : {
+									SendCustomEvent("GotoPrevious", [""]);
+								}
+							}
+						}
+						case CMlEvent::Type::MouseClick: {
+							if (Event.ControlId == "Quad_CreditButton")
+							{
+							}
+						}
+						case CMlEvent::Type::MouseOver: {
+							if (Event.ControlId == "Quad_CreditButton")
+							{
+
+							}
+						}
+						case CMlEvent::Type::MouseOut: {
+							if (Event.ControlId == "Quad_CreditButton")
+							{
+
+							}
+						}
+						case CMlEvent::Type::PluginCustomEvent: {
+							
+							switch(Event.CustomEventType) {
+								case "Show" : {
+									ShowPage();
+								}
+								
+								case "Hide" : {
+									SendCustomEvent("DetachPage", ["ManiaCredits"]);
+								}
+								case "SendManiaCredits" : {
+									UpdateManiaCredits();
+								}
+								
+							}
+						}
+					}
+				}
+			}
+		}
+	--></script>
+</manialink>	""";
+	
+	return MLText;
+}

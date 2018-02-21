@@ -1,0 +1,263 @@
+#Include "TextLib" as TL
+
+#Include "Libs/Nadeo/Common/Core/Logger.Script.txt"						as Logger
+#Include "Libs/Nadeo/Common/Core/MenuLayers.Script.txt"					as Layers
+#Include "Libs/Nadeo/MP4/Common/SettingsController.Script.txt"  		as SettingsController
+
+declare Boolean	G_RecordCenterMode;
+declare Boolean G_StatSent;
+declare CWebServicesTaskResult_BuddiesChallengeRecordsComparison G_Task_BuddiesChallengeRecordsComparison;
+
+Void WarnNotEnoughParams(CManiaAppEvent _Event) {
+	Logger::Warn("[Menucontroller] event "^_Event.CustomEventType^": not enough params ["^_Event.CustomEventData^"]");
+}
+
+Boolean Get_RecordCenterMode()
+{
+	if(G_RecordCenterMode)
+	{
+		G_RecordCenterMode = False;
+		return True;
+	}
+	return False;
+}
+
+Void RecordPlayTrack(Text _MapPath, Text _Difficulty, Text _Environment, Text _GhostUrl) {
+	declare Boolean RecordCenterVisible  for LocalUser;
+	RecordCenterVisible = False;
+	G_RecordCenterMode = True;
+	declare Text Settings = SettingsController::GetSettingsXml("Versus", False);
+	TitleFlow.PlayMap(_MapPath, "Modes/TrackMania/CampaignSolo", "");
+}
+
+Void ReleaseRecordsTaskResult(Text PageLoaded)
+{
+	if(PageLoaded == "Main")
+	{
+		declare CUILayer Layer_RecordCenter = Layers::Get("RecordCenter");
+		declare CWebServicesTaskResult 	RecordsTaskResult 		for Layer_RecordCenter.LocalPage;
+		declare Boolean 				RecordsTaskResultLoaded for Layer_RecordCenter.LocalPage;
+
+		if(RecordsTaskResult != Null) {
+			ManiaPlanet.MasterServer_ReleaseMSTaskResult(RecordsTaskResult.Id);
+		}
+		
+		RecordsTaskResultLoaded = False;
+	}
+	else
+	{
+		declare CUILayer Layer_RecordCenterDetails = Layers::Get("RecordCenterDetails");
+		declare CWebServicesTaskResult	RecordsTaskResult		for Layer_RecordCenterDetails.LocalPage;
+		declare Boolean					RecordsTaskResultLoaded for Layer_RecordCenterDetails.LocalPage;
+
+		if(RecordsTaskResult != Null) {
+			ManiaPlanet.MasterServer_ReleaseMSTaskResult(RecordsTaskResult.Id);
+		}
+		
+		RecordsTaskResultLoaded = False;
+	}
+}
+
+Void GetRecordsResume(Text SelectedFilter, Text FromOutside)
+{
+	declare CUILayer 				Layer_RecordCenter 		= Layers::Get("RecordCenter");
+	declare CWebServicesTaskResult 	RecordsTaskResult 		for Layer_RecordCenter.LocalPage;
+	declare Boolean					RecordsTaskResultLoaded for Layer_RecordCenter.LocalPage;
+	declare Text[Text][] 			RequestedRecordsResume 	for Layer_RecordCenter.LocalPage;
+
+	// if(RecordsTaskResultLoaded == False) LoadRecordsTaskResult();
+	declare BuddiesComparisonResult <=> (RecordsTaskResult as CWebServicesTaskResult_BuddiesChallengeRecordsComparison);
+
+	switch(SelectedFilter)
+	{
+		case "1": BuddiesComparisonResult.SortByOpponentDisplayName();
+		case "2": BuddiesComparisonResult.SortByPlayerCount();
+		case "3": BuddiesComparisonResult.SortByOpponentCount();
+		case "4": BuddiesComparisonResult.SortByOpponentDate();
+	}
+
+	declare Integer BetterCount	= 0;
+	declare Integer EqualCount 	= 0;
+	declare Integer WorseCount 	= 0;
+	
+	// Load the data to display in the table
+	RequestedRecordsResume.clear ();
+	foreach(Buddy in BuddiesComparisonResult.BuddiesComparison) 
+	{
+		RequestedRecordsResume.add([
+		"OpponentLogin" 					=> Buddy.OpponentLogin,
+		"OpponentDisplayName"				=> Buddy.OpponentDisplayName,
+		"OpponentBestRecordCount" 			=> TL::ToText(Buddy.OpponentBestRecordCount),
+		"BestRecordCount" 					=> TL::ToText(Buddy.BestRecordCount),
+		"OpponentBestRecordElapsedTime" 	=> ""^Buddy.OpponentBestRecordElapsedTime
+		]);
+		
+		if(Buddy.OpponentBestRecordCount > Buddy.BestRecordCount) 		WorseCount 	+= 1;
+		else if(Buddy.OpponentBestRecordCount < Buddy.BestRecordCount) 	BetterCount += 1;
+		else															EqualCount 	+= 1;
+	}
+
+	if(! G_StatSent) {
+		G_StatSent = True;
+		//HACK DataMgr
+		//ManiaPlanet.MasterServer_Tracking_StatRecordCenter(DataMgr.MenuUserId, BetterCount, EqualCount, WorseCount);
+		Logger::Log("MasterServer_Tracking_StatRecordCenter: "^BetterCount^", "^EqualCount^", "^WorseCount);
+	}
+	
+	if(FromOutside != "True") LayerCustomEvent(Layer_RecordCenter, "RecordsLoaded", [""]);
+}
+
+Void GetRecords(Text SelectedFilter, Text BuddyLogin, Text SelectedGroup, Text FromOutside, Text BuddyName){
+	declare CUILayer Layer_RecordCenterDetails = Layers::Get("RecordCenterDetails");
+
+	declare Text[Text][] 			RemotePlayerRecords;
+	declare Text[Text][]		 	RemoteBuddyRecords;
+	declare Text[Text][] 			RequestedPlayerRecords 	for Layer_RecordCenterDetails.LocalPage;
+	declare CWebServicesTaskResult	RecordsTaskResult 			for Layer_RecordCenterDetails.LocalPage;
+	declare Boolean 				RecordsTaskResultLoaded for Layer_RecordCenterDetails.LocalPage;
+	declare Text[Text][] 			RequestedBuddyRecords 	for Layer_RecordCenterDetails.LocalPage;
+
+	// if(RecordsTaskResultLoaded == False) LoadRecordsTaskResult(BuddyLogin);
+	// wait(RecordsTaskResultLoaded == True);
+	declare RecordsComparisonResult <=> (RecordsTaskResult as CWebServicesTaskResult_BuddyChallengeRecordsComparison);
+
+	switch(SelectedFilter){
+		case "1": RecordsComparisonResult.SortByMapName();
+		case "2": RecordsComparisonResult.SortByRecordTime();
+		case "3": RecordsComparisonResult.SortByRecordDate();
+	}
+
+	// Check if the player wants to load the buddy data
+	if(SelectedGroup == "0"){
+		RemoteBuddyRecords.clear();
+
+    foreach(Record in RecordsComparisonResult.BuddyBestRecordsComparison){
+			RemoteBuddyRecords.add(["Mapname" => Record.MapInfo.Name,
+			"MapFileName" => Record.MapInfo.FileName,
+			"OpponentRecordTime" => TL::TimeToText(Record.OpponentRecordTime, True),
+			"RecordTimeDiff" => TL::TimeToText(Record.RecordTime - Record.OpponentRecordTime),
+			"OpponentRecordDate" => TL::ToText(Record.OpponentRecordDate),
+			"OpponentRecordElapsedTime" => TL::ToText(Record.OpponentRecordElapsedTime),
+			"GhostUrl" => Record.OpponentRecordUrl]);
+    }
+
+		RequestedBuddyRecords = RemoteBuddyRecords;
+	} else if(SelectedGroup == "1"){
+		RemotePlayerRecords.clear();
+
+		foreach(Record in RecordsComparisonResult.PlayerBestRecordsComparison){
+			RemotePlayerRecords.add(["Mapname" => Record.MapInfo.Name,
+			"MapFileName" => Record.MapInfo.FileName,
+			"RecordTime" => TL::TimeToText(Record.RecordTime, True),
+			"RecordTimeDiff" => TL::TimeToText(Record.OpponentRecordTime - Record.RecordTime, True),
+			"RecordDate" => TL::ToText(Record.RecordDate),
+			"RecordElapsedTime" => TL::ToText(Record.RecordElapsedTime),
+			"GhostUrl" => Record.OpponentRecordUrl]);
+    }
+
+		RequestedPlayerRecords = RemotePlayerRecords;
+	} else { // The player wants to load the data for him and his buddy (come from another page)
+		RemotePlayerRecords.clear();
+		RemoteBuddyRecords.clear();
+
+		foreach(Record in RecordsComparisonResult.BuddyBestRecordsComparison){
+			RemoteBuddyRecords.add(["Mapname" => Record.MapInfo.Name,
+			"MapFileName" => Record.MapInfo.FileName,
+			"RecordTime" => TL::TimeToText(Record.OpponentRecordTime, True),
+			"RecordTimeDiff" => TL::TimeToText(Record.RecordTime - Record.OpponentRecordTime, True),
+			"RecordDate" => TL::ToText(Record.OpponentRecordDate),
+			"RecordElapsedTime" => TL::ToText(Record.OpponentRecordElapsedTime),
+			"GhostUrl" => Record.OpponentRecordUrl]);
+		}
+
+		foreach(Record in RecordsComparisonResult.PlayerBestRecordsComparison){
+			RemotePlayerRecords.add(["Mapname" => Record.MapInfo.Name,
+			"MapFileName" => Record.MapInfo.FileName,
+			"RecordTime" => TL::TimeToText(Record.RecordTime, True),
+			"RecordTimeDiff" => TL::TimeToText(Record.OpponentRecordTime - Record.RecordTime, True),
+			"RecordDate" => TL::ToText(Record.RecordDate),
+			"RecordElapsedTime" => TL::ToText(Record.RecordElapsedTime),
+			"GhostUrl" => Record.OpponentRecordUrl]);
+		}
+
+		RequestedPlayerRecords = RemotePlayerRecords;
+		RequestedBuddyRecords = RemoteBuddyRecords;
+
+		if(FromOutside != "True") LayerCustomEvent(Layer_RecordCenterDetails, "BuddyLoaded", [BuddyLogin, SelectedFilter, BuddyName]);
+	}
+}
+
+Void LoadRecordsTaskResult(Text SelectedFilter, Text FromOutside)
+{
+	declare CUILayer Layer_RecordCenter = Layers::Get("RecordCenter");
+
+	declare CWebServicesTaskResult 	RecordsTaskResult 		for Layer_RecordCenter.LocalPage;
+	// declare Boolean 				RecordsTaskResultLoaded for Layer_RecordCenter.LocalPage;
+
+	// RecordsTaskResult = ManiaPlanet.MasterServer_GetBuddiesChallengeRecordsComparison( DataMgr.MenuUserId );
+	
+	//CB: on release d'abord la tâche précédente, sinon ça stack
+	if(RecordsTaskResult != Null) {
+		ManiaPlanet.MasterServer_ReleaseMSTaskResult(RecordsTaskResult.Id);
+		Logger::Log("RELEASE TASK BUDDIES COMPARISON");
+	}
+	
+	
+	//HACK DataMgr
+	//RecordsTaskResult = ScoreMgr.Campaign_GetBuddiesMapRecordsComparison(DataMgr.MenuUserId, "");
+
+	declare Time = Now;
+	wait(!RecordsTaskResult.IsProcessing || Now >= Time + 5 * 1000);
+
+	if(RecordsTaskResult.HasSucceeded)
+	{
+		declare Boolean RecordCenterVisible  for LocalUser;
+		RecordCenterVisible = True;
+		GetRecordsResume(SelectedFilter, FromOutside);
+		RecordsTaskResult = Null;
+	}
+	else
+	{
+		Logger::Log("RecordsTaskResult has not succeeded");
+		RecordsTaskResult = Null;
+	}
+}
+
+Void LoadRecordsTaskResult(Text SelectedFilter, Text BuddyLogin, Text SelectedGroup, Text FromOutside, Text BuddyName)
+{
+	declare CUILayer Layer_RecordCenterDetails = Layers::Get("RecordCenterDetails");
+
+	declare CWebServicesTaskResult 																		RecordsTaskResult				for Layer_RecordCenterDetails.LocalPage;
+	if(RecordsTaskResult != Null) {
+		ManiaPlanet.MasterServer_ReleaseMSTaskResult(RecordsTaskResult.Id);
+		Logger::Log("RELEASE TASK BUDDY COMPARISON");
+	}
+	
+	
+	//HACK DataMgr
+	//RecordsTaskResult = ScoreMgr.Campaign_GetBuddyMapRecordsComparison( DataMgr.MenuUserId, BuddyLogin , "");
+
+	declare Time = Now;
+	wait(!RecordsTaskResult.IsProcessing || Now >= Time + 5 * 1000);
+
+	if(RecordsTaskResult.HasSucceeded)
+	{
+		GetRecords(SelectedFilter, BuddyLogin, SelectedGroup, FromOutside, BuddyName);
+	}
+	else
+	{
+		Logger::Log("BuddyChallenge RecordsTaskResult has not succeeded");
+	}
+}
+
+Void GetBuddiesMapsRecord(Text _CampaignId)
+{
+	G_Task_BuddiesChallengeRecordsComparison = ScoreMgr.Campaign_GetBuddiesMapRecordsComparison(UserMgr.MainUser.Id, _CampaignId);
+	if (G_Task_BuddiesChallengeRecordsComparison == Null) {
+		Logger::Warn("G_Task_BuddiesChallengeRecordsComparison == Null. Abort");
+		return;
+	}
+
+	while(G_Task_BuddiesChallengeRecordsComparison.IsProcessing) yield;
+	log("G_Task_BuddiesChallengeRecordsComparison.HasSucceeded: "^ G_Task_BuddiesChallengeRecordsComparison.HasSucceeded);
+}

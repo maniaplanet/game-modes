@@ -1,0 +1,1981 @@
+/**
+ *	Time Attack mode
+ */
+
+#Extends "Modes/TrackMania/ModeBase.Script.txt"
+
+#Const	CompatibleMapTypes	["RaceCE","Race"]
+#Const	Version		"2016-01-20"
+#Const	ScriptName	"HotSeat.Script.txt"
+
+#Include "TextLib" as TL
+#Include "MathLib" as ML
+#Include "Libs/Trackmania/Ingame/UI/UISequences.Script.txt" 				as UISequence
+#Include "Libs/Trackmania/Ingame/Game.Script.txt" 							as Game
+#Include "Libs/Trackmania/Ingame/Ghosts.Script.txt" 						as Ghosts
+#Include "Libs/Trackmania/Ingame/Medals.Script.txt" 						as Medals
+#Include "Libs/Trackmania/Ingame/FlavourText.Script.txt" 					as FlavourText
+#Include "Libs/Nadeo/MP4/Common/Colors.Script.txt" 								as Colors
+#Include "Libs/Trackmania/Ingame/UI/UIHotSeat.Script.txt" 					as UIHotSeat
+#Include "Libs/Trackmania/Ingame/UI/UIHotSeatRankings.Script.txt" 			as UIHotSeatRankings
+#Include "Libs/Trackmania/Ingame/CarsModels.Script.txt" 					as CarsModels
+#Include "Libs/Nadeo/Common/ManialinkTools/UIPadButtons.Script.txt"								as UIButtons
+#Include "Libs/Trackmania/Ingame/UI/UIButtonNamesPopup.Script.txt"			as UIButtonNamesPopup
+
+// ---------------------------------- //
+// Settings
+// ---------------------------------- //
+#Setting S_TimeLimit 	300		as _("Time limit :")
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const IMGPATH						"file://Media/Images/TMConsole/Ingame/"
+#Const IMG_HOTSEAT					"mode-hotseat.dds"
+
+#Const C_DRIVERMODE_SOLO			1
+#Const C_DRIVERMODE_DOUBLEDRIVER 	2
+
+#Const C_GAMEPHASE_PLAYERSSELEC	-1
+#Const C_GAMEPHASE_PREPARATION	0
+#Const C_GAMEPHASE_GAME			1
+#Const C_GAMEPHASE_POSTGAME		2
+#Const C_GAMEPHASE_FINALSCORE	3
+#Const C_GAMEPHASE_DRIVERMODE	4
+
+#Const C_NOTIFTYPE_PLAYING		0
+#Const C_NOTIFTYPE_GIVEUP		1
+#Const C_NOTIFTYPE_NEWRANK		2
+#Const C_NOTIFTYPE_NONEWRANK	3
+#Const C_NOTIFTYPE_FIRSTPLACE	4
+#Const C_NOTIFTYPE_SECONDPLACE	5
+#Const C_NOTIFTYPE_NOENERGY		6
+#Const C_NOTIFTYPE_ELIMINATES	7
+#Const C_NOTIFTYPE_SAVED		8
+#Const C_NOTIFTYPE_VICTORY		9
+
+#Const C_TABLESCORE_BESTTIME	0
+#Const C_TABLESCORE_CHECKPOINT	1
+#Const C_TABLESCORE_DEFAULT		2
+#Const C_TABLESCORE_FINAL		3
+
+#Const TMC_MEDAL_AUTHOR			0
+#Const TMC_MEDAL_GOLD			1
+#Const TMC_MEDAL_SILVER			2
+#Const TMC_MEDAL_BRONZE			3
+#Const TMC_MEDAL_PLAYER			4
+#Const TMC_MEDAL_NONE			5
+#Const TMC_MEDAL_ANOTHERPLAYER	6
+
+#Const C_HOTSEATUI_SELECPLAYER	0
+#Const C_HOTSEATUI_FINALSCORE	1
+
+#Const C_HOTSEAT_PLAYING		0
+#Const C_HOTSEAT_ELIMINATE		1
+#Const C_HOTSEAT_SURVIVING		2
+#Const C_HOTSEAT_GIVEUP			3
+
+#Const C_HOTSEATSCORE_NOSCORE	-1
+
+// popup answer
+#Const C_POPUP_NO_ANSWER 		0
+#Const C_POPUP_OK 				1
+#Const C_POPUP_CANCEL			2
+
+#Const COLOR_BLUE 				0
+#Const COLOR_RED 				1
+#Const COLOR_GREEN 				2
+#Const COLOR_PURPLE 			3
+#Const COLOR_PINK 				4
+#Const COLOR_CYAN 				5
+#Const COLOR_BLACK 				6
+#Const COLOR_WHITE 				7
+
+#Const C_REWARDSCREEN_GAMEOVER			"file://Media/Images/TMConsole/Ingame/rewards-gameover.png"
+#Const C_REWARDSCREEN_OK				"file://Media/Images/TMConsole/Ingame/rewards-hotseat.png"
+#Const C_REWARDSCREEN_BRAVO				"file://Media/Images/TMConsole/Ingame/rewards-bravo2.png"
+
+#Const C_PLAYERCHOICE_RESTART	0
+#Const C_PLAYERCHOICE_QUIT		1
+#Const C_PLAYERCHOICE_NEXTTRACK	2
+
+#Const C_WAITTIME_POPUP			500
+#Const C_WAITTIME_SCREEN		750
+
+#Const C_CHEAT_LOW_GRAVITY_COEF		0.42
+
+
+// #Const G_EnergyForPlayer		300000
+
+// ---------------------------------- //
+// Global Variables
+// ---------------------------------- //
+declare Integer						G_GamePhase;
+declare Integer						G_NbPlayer;
+declare Integer						G_NbTempPlayer;
+// declare CTmResult					G_BestRacePlayer;
+declare Ident						G_ThePlayerId;
+declare CGhost[Integer]				G_GhostPlayers;
+declare Text[Integer]				G_IndexToName;
+declare Integer[Integer][Integer]	G_PlayerPassedCheckpoint;
+declare Integer[Integer]			G_SpareCpCurPlayer;
+declare Vec3[Integer]				G_IndexToColorVec;
+declare Ident[]						G_CarModels;
+declare Ident[]						G_CarDoubleModels;
+declare Integer						G_PrevNow;
+declare Integer						G_CustomRaceTime;
+declare Integer						G_EnergyForPlayer;
+declare Boolean						G_FirstStart;
+declare Boolean						G_Elimination;
+declare Text						G_EnviroName;
+declare Integer						G_NbRace;
+declare Integer						G_SurvivingTimer;
+declare Integer						G_MyPeriod;
+declare Boolean						G_FinalScoreLaunched;
+declare Boolean						G_PlayerEliminateFromEndRace;
+declare Boolean						G_PlayerHasGiveUp;
+declare Boolean						G_IsTrackRandom;
+declare Boolean						G_StartThroughInitTime;
+declare Integer						G_NbTeamsSolo;
+declare Integer G_NextCheckpointTime; ///< The next time a checkpoint will be crossed by a ghost
+declare Integer G_CheckpointsUpdate; ///< Last time the checkpoints times were update
+declare Integer G_PrevCheckpointsUpdate; ///< Last time the checkpoints times were taken into account
+
+declare CWebServicesTaskResult G_TaskNewRecord;
+
+// ---------------------------------- //
+// Extend
+// ---------------------------------- //
+***LogVersion***
+***
+MB_LogVersion(ScriptName, Version);
+***
+
+
+
+***InitServer***
+***
+declare Integer PrevTimeLimit = S_TimeLimit;
+declare Integer StartTime;
+***
+
+***BeforeLoadMap***
+***
+G_EnviroName 		= MapList[NextMapIndex].CollectionName;
+CarsModels::StartItemList();
+G_CarModels 		= CarsModels::LoadCarsModels(G_EnviroName, "Hotseat", False);
+G_CarDoubleModels	= CarsModels::LoadCarsModels(G_EnviroName, "Hotseat", True);
+CarsModels::EndItemList();
+//ClientManiaAppUrl = "file://Media/Manialinks/Nadeo/TMConsole/Ingame/UILocalManiaApp.Script.txt";
+
+***
+
+***StartServer***
+***
+// ---------------------------------- //
+// Initialize mode
+// G_EnergyForPlayer = 10000;
+G_EnergyForPlayer = 2000;
+
+G_FirstStart = True;
+PrevTimeLimit = S_TimeLimit;
+StartTime = -1;
+G_NbRace = 0;
+NbLaps = 0;
+IndependantLaps = False;
+// MB_SetDefaultRespawnMode(CTmMode::ETMRespawnBehaviour::GiveUpBeforeFirstCheckPoint);
+MB_SetDefaultRespawnMode(CTmMode::ETMRespawnBehaviour::Normal);
+// G_BestRacePlayer = Null;
+G_Elimination = False;
+G_FinalScoreLaunched = False;
+G_PlayerEliminateFromEndRace = False;
+G_NbPlayer = -1;
+G_GhostPlayers.clear();
+G_CustomRaceTime = 0;
+
+G_IndexToName[COLOR_BLUE] 		= "BLUE";
+G_IndexToName[COLOR_RED] 		= "RED";
+G_IndexToName[COLOR_GREEN] 		= "GREEN";
+G_IndexToName[COLOR_PURPLE]	 	= "PURPLE";
+G_IndexToName[COLOR_PINK] 		= "PINK";
+G_IndexToName[COLOR_CYAN] 		= "CYAN";
+G_IndexToName[COLOR_BLACK] 		= "BLACK";
+G_IndexToName[COLOR_WHITE] 		= "WHITE";
+
+G_IndexToColorVec[COLOR_BLUE] 	= Colors::GetColor("Blue");
+G_IndexToColorVec[COLOR_RED] 	= Colors::GetColor("Red");
+G_IndexToColorVec[COLOR_GREEN] 	= Colors::GetColor("Green");
+G_IndexToColorVec[COLOR_PURPLE] = Colors::GetColor("Purple");
+G_IndexToColorVec[COLOR_PINK] 	= Colors::GetColor("PinkRed");
+G_IndexToColorVec[COLOR_CYAN] 	= Colors::GetColor("Cyan");
+G_IndexToColorVec[COLOR_BLACK] 	= Colors::GetColor("GreyBlack");
+G_IndexToColorVec[COLOR_WHITE] 	= Colors::GetColor("GreyWhite");
+
+// G_IndexToColorTxt[COLOR_RED] = Colors::GetColorHexa("Cyan");
+// G_IndexToColorTxt[COLOR_BLUE] = Colors::GetColorHexa("Red");
+// G_IndexToColorTxt[COLOR_BLUE] = Colors::GetColorHexa("Blue");
+// G_IndexToColorTxt[COLOR_BLACK] = Colors::GetColorHexa("Black");
+// G_IndexToColorTxt[COLOR_WHITE] = Colors::GetColorHexa("White");
+// G_IndexToColorTxt[COLOR_PURPLE] = Colors::GetColorHexa("Purple");
+// G_IndexToColorTxt[COLOR_PINK] = Colors::GetColorHexa("Pink");
+// G_IndexToColorTxt[COLOR_GREEN] = Colors::GetColorHexa("Green");
+// +++ConfigNames+++
+***
+
+***InitMap***
+***
+// UISequence::HudFadeOutStart();
+declare FakeVariable = 3;
+
+***
+
+***StartMap***
+***
+// UISequence::SetStandByView();
+
+// ---------------------------------- //
+// Initialize race
+StartTime = Now + 3000;
+CutOffTimeLimit = StartTime + (S_TimeLimit * 1000000);
+UIManager.UIAll.UISequence = CUIConfig::EUISequence::Playing;
+
+while(Players.count == 0) yield;
+
+Game::Load(This, "HotSeat");
+Game::SetOpposingTeamLabelsVisibility(CUIConfig::ELabelsVisibility::Never);
+
+NbLaps = Map.TMObjective_NbLaps;
+//log("NbLaps["^Map.MapInfo.FileName^"]: "^ Map.TMObjective_NbLaps);
+//log("NbLaps["^Map.MapInfo.FileName^"]: "^ Map.TMObjective_IsLapRace);
+Game::SetNbLaps(NbLaps, Map.TMObjective_IsLapRace);
+
+	// ---------------------------------- //
+// Prepare players
+G_ThePlayerId = Players[0].Id;
+Game::SetPlayerId(G_ThePlayerId);
+
+// UISequence::ComposeVideoTransitionLayer();
+// Game::WaitTime(1);
+
+// ---------------------------------- //
+// Libraries
+Ghosts::Load();
+Game::SetNbPadsNeeded(1);
+declare BestTimePlayer = Ghosts::GetPlayerTime("Solo_BestGhost");
+Medals::SetBestMedalInGameUI(This, BestTimePlayer, G_ThePlayerId);
+
+// ---------------------------------- //
+// Visibility (SPECIAL MODE SETTINGS)
+UIManager.UIAll.OverlayHideOpponentsInfo = False;
+
+// ---------------------------------- //
+// Prepare UI
+UIHotSeat::SetThePlayerId(G_ThePlayerId);
+UIHotSeat::ConstructPauseMenuPopup();
+UIHotSeat::ConstructDriverModePopup();
+UIHotSeat::ConstructRestartGamePopup();
+UIHotSeat::ConstructMainPopups();
+UIHotSeat::ConstructSelectNbPlayersPopup();
+UIHotSeat::ConstructCameraReInit();
+
+declare Text IsTrackRandom = Map.MapInfo.MapStyle;
+if(IsTrackRandom == "Random") {
+	Game::SetIsTrackRandom(True);
+	G_IsTrackRandom = True;
+}
+
+ComputeEnergyPlayers();
+// Game::WaitTime(1);
+UIManager.HoldLoadingScreen = False;
+
+UISequence::SetStandByView();
+Game::SetStandbyMusic();
+SetModelCar(True);
+CustomSpawnPlayer();
+Game::SetMultiPairing(False);
+
+SetGamePhase(C_GAMEPHASE_PLAYERSSELEC);
+
+***
+
+***PlayLoop***
+***
+HotSeatLoop();
+
+if(G_GamePhase == C_GAMEPHASE_PLAYERSSELEC) {
+	UIHotSeat::GamePhaseUI(C_HOTSEATUI_SELECPLAYER);
+	UIHotSeat::SetNbPlayersLayerVisibility(True);
+	WaitPlayerCount();
+	
+	G_NbTempPlayer = UIHotSeat::GetNbPlayers();
+	UIHotSeat::SetNbPlayersLayerVisibility(False);
+	
+	//Game::WaitTime(1200);
+	SetGamePhase(C_GAMEPHASE_DRIVERMODE);
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netread Text[Integer] 	Net_NamesChoose 		for UI;
+	G_IndexToName = Net_NamesChoose;
+
+} else if(G_GamePhase == C_GAMEPHASE_DRIVERMODE) {
+	SetSoloButtonContent();
+	
+	G_PlayerHasGiveUp = False;
+	
+	// ---------------------------------- //
+	// Wipe le tableau des ghosts
+	G_GhostPlayers.clear();
+	G_NbPlayer = G_NbTeamsSolo;
+
+	// ---------------------------------- //
+	// Names
+	InitNames();
+	InitPlayers();
+	
+	UIHotSeatRankings::Load(G_EnergyForPlayer, G_ThePlayerId);
+	UIHotSeatRankings::UpdatePlayerCount(G_NbPlayer);
+	SetOpponentForUI(Null);
+	SetGamePhase(C_GAMEPHASE_PREPARATION);
+	
+} else if(G_GamePhase == C_GAMEPHASE_PREPARATION) {
+	ChoosePlayer();
+	
+	ResetCpPlayers();
+	ResetCpCurPlayer();
+	Game::WaitTime(200);
+
+	LoadGhost();
+	SetRaceOn(True);
+	SetModelCar(False);
+	Game::SetNbPlayers(1);
+	
+	CustomSpawnPlayer();
+	UISequence::SetStandByView();
+	Game::SetStandbyMusic();
+	
+	UISequence::StopTransitionVideo();
+	UIHotSeatRankings::SetDynaRankingVisibility(True);
+	Game::SetRespawnFeedbackActive(True);
+	log(Now^">Show popup");
+	ShowPopup(C_NOTIFTYPE_PLAYING);
+	Game::WaitTime(C_WAITTIME_POPUP);
+	UIHotSeat::PlayVoiceYourTurn();
+	WaitPlayerPopupAnswer();
+	UIHotSeat::HidePopup();
+	if(G_PlayerHasGiveUp) {
+		UIHotSeat::SetPopupLayerVisibility(False);
+		SetGamePhase(C_GAMEPHASE_POSTGAME);
+	} else {
+		UpdateTableScore(C_TABLESCORE_BESTTIME);	
+	}
+	
+	Game::SetMultiPairing(True);
+	
+	Game::SetStopMusic();
+	SetGamePhase(C_GAMEPHASE_GAME);
+	G_FirstStart = False;
+	G_PrevNow = Now;
+} else if(G_GamePhase == C_GAMEPHASE_GAME) {
+	declare Boolean IsEndRace = False;
+	declare Boolean IsRestartPlayer = False;
+	G_MyPeriod = Now - G_PrevNow;
+	G_PrevNow = Now;
+	
+	// ---------------------------------- //
+	// Spawn players
+	foreach (Player in Players) {
+		if(Game::IsWaiting(Player)) {
+			G_SurvivingTimer = 1000;
+			G_CustomRaceTime = 0;
+			Game::StartRace(Player);
+			G_StartThroughInitTime = False;
+		} else {
+			ComputeCustomRaceTime();
+		}
+	}
+	
+	if(Players[G_ThePlayerId].CurRace.Time == -1)  {
+		G_StartThroughInitTime = True;
+	}
+	
+	declare Integer RestartGamePlayerChoice = UIHotSeat::GetRestartGameChoice();
+	if(RestartGamePlayerChoice == C_PLAYERCHOICE_NEXTTRACK) {
+		MB_StopMap = True;
+	}
+	
+	// ---------------------------------- //
+	// Manage events
+	foreach (Event in PendingEvents) {
+		// ---------------------------------- //
+		// Waypoint
+		if (Event.Type == CTmModeEvent::EType::WayPoint) 
+		{
+			PassOn(Event);
+			RecordCheckpointTime();
+			
+			declare Integer CurCheckpointIndex = GetCheckpointIndex() + 1;
+			if (Event.IsEndRace)
+			{			
+				CurCheckpointIndex = 0;
+				declare Tmp = CheckPlayersPassedCheckpoints();
+				
+				if(HasPlayerNewRecord()) {
+					SaveNewRecord();
+				}
+				// log("HASN'T NEW RECORD: "^HasPlayerNewRecord());
+				
+				SetRaceOn(False);
+				UpdateTableScore(C_TABLESCORE_BESTTIME);
+				
+				if(HasPlayerNewRank()) {
+					SavePlayerGhost();
+				} else {
+					if(CheckPlayerState(C_HOTSEAT_SURVIVING)) {
+						EliminatePlayer();
+						SetPlayerState(C_HOTSEAT_ELIMINATE);
+						G_PlayerEliminateFromEndRace = True;
+					}
+				}
+				
+				IsEndRace = True;
+				Game::SetMultiPairing(False);
+				SetGamePhase(C_GAMEPHASE_POSTGAME);
+				G_NbRace += 1;
+			}
+			
+			SetCheckpointIndex(CurCheckpointIndex);
+		}
+		
+		// ---------------------------------- //
+		// GiveUp
+		else if (Event.Type == CTmModeEvent::EType::GiveUp) {
+			if(!CheckPlayerState(C_HOTSEAT_SURVIVING)) {
+				Game::WaitRace(Event.Player);
+				UIHotSeat::PlayerHasRestart();
+				SetCheckpointIndex(0);
+				ResetCpPlayers();
+				ResetCpCurPlayer();
+				CpMlUpdate();
+				G_CustomRaceTime = 0;
+				IsRestartPlayer = True;
+				PassOn(Event);
+			} else {
+				Discard(Event);
+			}
+			
+		} else {
+			PassOn(Event);
+		}
+	}
+	
+	if(!IsRestartPlayer && !IsEndRace && G_StartThroughInitTime) {
+		if(CheckPlayersPassedCheckpoints()) {
+			CpMlUpdate();
+			// UpdateTableScore(C_TABLESCORE_CHECKPOINT);
+		}
+		
+		//Prepare elimination
+		if(CheckPlayerState(C_HOTSEAT_SURVIVING)) {
+			if(CheckEndPlayerSurviving()) {
+				UIHotSeatRankings::SetDynaRankingVisibility(False);
+				Game::WaitTime(C_WAITTIME_POPUP);
+				Game::SetRespawnFeedbackActive(False);
+				SetCheckpointIndex(0);
+				EliminatePlayer();
+				SetPlayerState(C_HOTSEAT_ELIMINATE);
+				SetRaceOn(False);
+				UpdateTableScore(C_TABLESCORE_BESTTIME);
+				
+				ShowSpecialScreen(C_NOTIFTYPE_NOENERGY);
+				Game::WaitTime(C_WAITTIME_POPUP);
+				UIHotSeat::PlayVoiceOutOfGas();
+				WaitScreenAnswer();
+				SetGamePhase(C_GAMEPHASE_POSTGAME);
+			}
+		}
+	}
+	
+	// ---------------------------------- //
+	// Check current energy
+	//log("Players[G_ThePlayerId].RaceStartTime["^Players[G_ThePlayerId].RaceStartTime^"] | Now["^Now^"] => " ^ (Now >= Players[G_ThePlayerId].RaceStartTime));
+	if(Now >= Players[G_ThePlayerId].RaceStartTime) {
+		if(CheckPlayerState(C_HOTSEAT_PLAYING)) {
+			ConsumeEnergyCurPlayer();
+			if(CheckPlayerNoEnergy()) {
+				SetPlayerState(C_HOTSEAT_SURVIVING);
+				Game::SetRespawnFeedbackActive(False);
+				
+				/*				
+				if(OnePlayerHasScore()) {
+					
+				} else {
+					UIHotSeatRankings::SetDynaRankingVisibility(False);
+					Game::WaitTime(C_WAITTIME_POPUP);
+					Game::SetRespawnFeedbackActive(False);
+					SetCheckpointIndex(0);
+					EliminatePlayer();
+					SetPlayerState(C_HOTSEAT_ELIMINATE);
+					SetRaceOn(False);
+					UpdateTableScore(C_TABLESCORE_BESTTIME);
+					
+					ShowSpecialScreen(C_NOTIFTYPE_NOENERGY);
+					Game::WaitTime(C_WAITTIME_POPUP);
+					UIHotSeat::PlayVoiceOutOfGas();
+					WaitScreenAnswer();
+					
+					SetGamePhase(C_GAMEPHASE_POSTGAME);
+				}
+				*/
+			}
+		}
+	}
+	
+	if(G_PlayerEliminateFromEndRace) {
+		Game::SetRespawnFeedbackActive(False);
+		UIHotSeatRankings::SetDynaRankingVisibility(False);
+		Game::WaitTime(C_WAITTIME_POPUP);
+		ShowSpecialScreen(C_NOTIFTYPE_ELIMINATES);
+		Game::WaitTime(C_WAITTIME_POPUP);
+		WaitScreenAnswer();
+		UIHotSeat::PlayVoiceOutOfGas();
+		
+		G_PlayerEliminateFromEndRace = False;
+	}
+	
+	if(G_PlayerHasGiveUp) {
+		SetGamePhase(C_GAMEPHASE_POSTGAME);
+	}
+	
+} else if(G_GamePhase == C_GAMEPHASE_POSTGAME) {
+	if(G_PlayerHasGiveUp) {
+		UIHotSeatRankings::SetDynaRankingVisibility(False);
+		Game::WaitTime(C_WAITTIME_POPUP);
+		Game::HideUI();
+		SetCheckpointIndex(0);
+		EliminatePlayer();
+		SetPlayerState(C_HOTSEAT_ELIMINATE);
+		SetRaceOn(False);
+		UpdateTableScore(C_TABLESCORE_BESTTIME);
+		
+		ShowSpecialScreen(C_NOTIFTYPE_GIVEUP);
+		Game::WaitTime(C_WAITTIME_POPUP);
+		WaitScreenAnswerGiveUp();
+		// Game::HideReward(Players[G_ThePlayerId]);
+	}
+	
+	if(CheckEndGame()) {
+		Ghosts::RemoveAllGhosts();
+		G_PlayerHasGiveUp = False;
+		SetGamePhase(C_GAMEPHASE_FINALSCORE);
+	} else {
+		Game::WaitTime(1500);
+		
+		if(!CheckPlayerState(C_HOTSEAT_ELIMINATE) && !CheckPlayerState(C_HOTSEAT_GIVEUP)) {
+			if(HasPlayerNewRank()) {
+				
+				declare Integer CurRank = GetCurPlayerRanking();
+				if(CurRank == 0) {
+					ShowSpecialScreen(C_NOTIFTYPE_FIRSTPLACE);
+					UIHotSeatRankings::SetDynaRankingVisibility(False);
+					Game::WaitTime(C_WAITTIME_POPUP);
+					UIHotSeat::PlayVoiceNextPlayerLeader();
+					
+					WaitScreenAnswer();
+				// } else if(CurRank == 1) {
+					// if(CheckPlayerState(C_HOTSEAT_SURVIVING)) {
+						// ShowSpecialScreen(C_NOTIFTYPE_SAVED);
+						// Game::WaitTime(C_WAITTIME_POPUP);
+						// UIHotSeat::PlayVoiceNextPlayerPositive();
+						// WaitScreenAnswer();
+					// } else {
+						// ShowPopup(C_NOTIFTYPE_SECONDPLACE);
+						// Game::WaitTime(C_WAITTIME_POPUP);
+						// UIHotSeat::PlayVoiceNextPlayerPositive();
+						// WaitPlayerPopupAnswer();
+					// }
+				// } else {
+				} else {
+					//Est-ce que ce joueur est le dernier
+					if(CheckPlayerState(C_HOTSEAT_SURVIVING)) {
+						
+						ShowSpecialScreen(C_NOTIFTYPE_SAVED);
+						UIHotSeatRankings::SetDynaRankingVisibility(False);
+						Game::WaitTime(C_WAITTIME_POPUP);
+						UIHotSeat::PlayVoiceNextPlayerPositive();
+						WaitScreenAnswer();
+					} else {
+						//Cas particulier quand il s'agit du dernier
+						if(CurRank == G_NbPlayer-1 && !HasPlayerPlayedOnce()) {
+							ShowPopup(C_NOTIFTYPE_NONEWRANK);
+							Game::WaitTime(C_WAITTIME_POPUP);
+							UIHotSeat::PlayVoiceTryAgain();
+							WaitPlayerPopupAnswer();
+						} else {
+							// ShowPopup(C_NOTIFTYPE_NEWRANK);
+							ShowSpecialScreen(C_NOTIFTYPE_NEWRANK);
+							WaitScreenAnswer();
+							Game::WaitTime(C_WAITTIME_POPUP);
+							UIHotSeat::PlayVoiceNextPlayerNormal();
+							// WaitPlayerPopupAnswer();
+						}
+					}
+				}
+			} else {
+				ShowPopup(C_NOTIFTYPE_NONEWRANK);
+				Game::WaitTime(C_WAITTIME_POPUP);
+				UIHotSeat::PlayVoiceTryAgain();
+				WaitPlayerPopupAnswer();
+			}
+		} 
+		/*
+		else {
+			if(G_PlayerHasGiveUp) {
+
+			}
+		}
+		*/
+		
+		G_PlayerHasGiveUp = False;
+		AddCurPlayerHasPlayed();
+		SetGamePhase(C_GAMEPHASE_PREPARATION);
+		Game::WaitTime(1000);
+		SequenceTransition();
+	}
+	
+	
+} else if(G_GamePhase == C_GAMEPHASE_FINALSCORE) {
+	if(!CheckNobodyHasScore()) {
+		if(!G_FinalScoreLaunched)  {
+			Game::WaitTime(1000);
+			ShowSpecialScreen(C_NOTIFTYPE_VICTORY);
+			Game::WaitTime(500);
+			UIHotSeat::PlayVoiceVictory();
+			
+			WaitScreenAnswer();
+			
+			SequenceTransition();
+			CustomSpawnPlayer();
+			UISequence::SetStandByView();
+			
+			UIHotSeatRankings::SetDynaRankingVisibility(False);
+			UpdateTableScore(C_TABLESCORE_FINAL);
+			ConstructFinalTable();
+			Game::WaitTime(250);
+			UIHotSeat::SetFinalTableLayerVisibility(True);
+			
+			Game::WaitTime(500);
+			UIHotSeat::PlayVoiceCongrats();
+			
+			G_FinalScoreLaunched = True;
+		}
+		
+		//WaitPlayerFinalTableAnswer();
+		UIHotSeat::SetFinalTableLayerVisibility(False);
+		
+		Game::WaitTime(1000);
+	
+	} else {
+		Game::WaitTime(500);
+		SequenceTransition();
+		CustomSpawnPlayer();
+		UISequence::SetStandByView();		
+	}
+
+	UIHotSeat::SetRestartGameVisibility(True);
+	Game::WaitTime(500);
+	WaitPlayerRestartGameChoice();
+	declare Integer RestartGamePlayerChoice = UIHotSeat::GetRestartGameChoice();
+	UIHotSeat::SetRestartGameVisibility(False);
+	Game::WaitTime(500);
+
+	if(RestartGamePlayerChoice == C_PLAYERCHOICE_RESTART) {
+		G_FinalScoreLaunched = False;
+		SetGamePhase(C_GAMEPHASE_PLAYERSSELEC);
+		G_NbPlayer = -1;
+	} else if(RestartGamePlayerChoice == C_PLAYERCHOICE_QUIT) {
+		MB_StopServer = True;
+	} else if(RestartGamePlayerChoice == C_PLAYERCHOICE_NEXTTRACK) {
+		MB_StopMap = True;
+	}
+	Game::WaitTime(1000);
+}
+
+***
+
+
+Void SetSoloButtonContent() {
+	declare Text ButtonContent = TL::Compose(_("Solo (%1 teams)"), ""^G_NbTempPlayer);
+	G_NbTeamsSolo = G_NbTempPlayer;
+	UIHotSeat::SetHotseatSoloButtonContent(ButtonContent);
+	if(G_NbTempPlayer > 8) {
+		UIHotSeat::SetHotSeatSoloButtonValable(False);
+	} else {
+		UIHotSeat::SetHotSeatSoloButtonValable(True);
+	}
+}
+
+Void SetCurPlayerNickname() {
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Integer 			Net_CurPlayerIndex 		for UI;
+	declare Text CurPlayerNickname = G_IndexToName[Net_CurPlayerIndex];
+	Game::SetPlayerNickname(CurPlayerNickname);
+}
+
+Void SetGamePhase(Integer _Phase) {
+	G_GamePhase = _Phase;
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Integer Net_GamePhase for UI;
+	Net_GamePhase = G_GamePhase;
+}
+
+
+Void SetOpponentForUI(CGhost _Ghost) {
+	declare Integer[] GhostCpTime;
+	if(_Ghost != Null) {
+		foreach(Cp in _Ghost.Result.Checkpoints) GhostCpTime.add(Cp);
+		Game::SetOpponent(TMC_MEDAL_ANOTHERPLAYER, GhostCpTime);
+	} else {
+		Game::SetOpponent(TMC_MEDAL_NONE, Integer[]);
+	}
+}
+
+Void SequenceTransition() {
+	//Game::ShowTransition(Players[G_ThePlayerId]);
+	Game::WaitTime(1000);
+	if(!Game::IsWaiting(Players[G_ThePlayerId])) {
+		Game::WaitRace(Players[G_ThePlayerId]);
+	}
+	Game::HideTransition(Players[G_ThePlayerId]);
+}
+
+Boolean CheckPlayerState(Integer _State) {
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Integer[Integer] 	Net_PlayersState 		for UI;
+	declare netwrite Integer 			Net_CurPlayerIndex 		for UI;
+	
+	//log("Net_PlayersState["^Now^"]: "^ Net_PlayersState);
+	return Net_PlayersState[Net_CurPlayerIndex] == _State;
+}
+
+Boolean OnePlayerHasScore() {
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Integer[Integer] 			Net_BestTimePlayers 	for UI;
+	declare netwrite Integer[Integer]			Net_TableScore			for UI;
+	
+	foreach(BestTime in Net_BestTimePlayers) {
+		if(BestTime > -1) {
+			return True;
+		}
+	}
+	return False;
+}
+
+Void ConstructFinalTable() {
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Integer[Integer] 			Net_BestTimePlayers 	for UI;
+	declare netwrite Integer[Integer]			Net_TableScore			for UI;
+	
+	declare Text[] NameRanking;
+	declare Integer[] TimeRanking;
+	
+	foreach(IndexRank => IndexPlayer in Net_TableScore) {
+		NameRanking.add(G_IndexToName[IndexPlayer]);
+	}
+
+	declare Vec3[] PlayersColor;
+	foreach(PlayerIndex in Net_TableScore) {
+		PlayersColor.add(G_IndexToColorVec[PlayerIndex]);
+	}
+	
+	for(I, 0, Net_TableScore.count-1) {
+		TimeRanking.add(Net_BestTimePlayers[Net_TableScore[I]]);
+	}
+	
+	//log(""^NameRanking^" "^TimeRanking^" "^PlayersColor);
+	UIHotSeat::ConstructFinalRanking(NameRanking, TimeRanking, PlayersColor, G_NbPlayer);
+}
+
+Void SetRaceOn(Boolean _On) {
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Boolean Net_RaceOn for UI;
+	Net_RaceOn = _On;
+}
+
+Void SetModelCar(Boolean _Default) {
+	foreach(Player in Players) {
+		declare UI <=> UIManager.GetUI(Player);
+		declare netwrite Integer Net_CurPlayerIndex for UI;
+		if(!_Default) {
+			// TODO ?
+		} else {
+			// TODO ?
+		}
+	}
+}
+
+Void CustomSpawnPlayer() {
+	Players[G_ThePlayerId].IsSpawned = True;
+}
+
+
+Void ComputeEnergyPlayers() {
+	declare Integer[Integer] TimesOnMap = Medals::GetTimesOnMap();
+	declare Integer FinalEnergy 	= TimesOnMap[TMC_MEDAL_GOLD]*4;
+
+	if(FinalEnergy <= 10000) {
+		FinalEnergy = 10000;
+	}
+	G_EnergyForPlayer  = S_TimeLimit*1000;
+}
+
+Void SetPlayerState(Integer _State) {
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Integer[Integer] 	Net_PlayersState 		for UI;
+	declare netwrite Integer 			Net_CurPlayerIndex 		for UI;
+	Net_PlayersState[Net_CurPlayerIndex] = _State;
+}
+
+Void ComputeCustomRaceTime() {
+	G_CustomRaceTime = Now - Players[G_ThePlayerId].RaceStartTime;
+}
+
+Void UpdateCheckpoints() {
+	G_CheckpointsUpdate += 1;
+	if (G_CheckpointsUpdate > 10000000) G_CheckpointsUpdate = 0;
+}
+
+Void EliminatePlayer() {
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Integer 					Net_CurPlayerIndex 		for UI;
+	// declare netwrite Integer[Integer] 			Net_BestTimePlayers 	for UI;
+	declare netwrite Integer[Integer][Integer] 	Net_AllPlayersCpTimes 	for UI;
+	declare netwrite Integer[Integer] 			Net_EnergyLeftPlayers 	for UI;
+	
+	for(I, 0, Net_AllPlayersCpTimes.count-1) {
+		Net_AllPlayersCpTimes[I][Net_CurPlayerIndex] = C_HOTSEATSCORE_NOSCORE;
+	}
+	UpdateCheckpoints();
+	
+	Net_EnergyLeftPlayers[Net_CurPlayerIndex] 	= 0;
+	
+	// if(_HasGiveUp) {
+		// Net_BestTimePlayers[Net_CurPlayerIndex] 	= C_HOTSEATSCORE_NOSCORE;
+		// Net_EnergyLeftPlayers[Net_CurPlayerIndex] 	= 0;
+	// }
+}
+
+Boolean PlayerHasScore(Integer _PlayerIndex) {
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Integer[Integer] 	Net_BestTimePlayers 	for UI;
+	return Net_BestTimePlayers[_PlayerIndex] != C_HOTSEATSCORE_NOSCORE;
+}
+
+Integer GetNbPlayerHasScore() {
+	declare Integer NbPlayerNoScore = 0;
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Integer[Integer] 	Net_BestTimePlayers 	for UI;
+	
+	for(I, 0, G_NbPlayer-1) {
+		if(PlayerHasScore(I)) {
+			NbPlayerNoScore += 1;
+		}
+	}
+	return NbPlayerNoScore;
+}
+
+Boolean CheckNobodyHasScore() {
+	declare Boolean NobodyHasScore = False;
+	if(GetNbPlayerHasScore() == 0) {
+		NobodyHasScore = True;
+	}
+	return NobodyHasScore;
+}
+
+Boolean CheckEverybodyHasScore() {
+	declare Boolean EverybodyHasScore = False;
+	if(GetNbPlayerHasScore() == G_NbPlayer) {
+		EverybodyHasScore = True;
+	}
+	return EverybodyHasScore;
+}
+
+
+Void ResetCpCurPlayer() {
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Integer 					Net_CurPlayerIndex 			for UI;
+	declare netwrite Integer[Integer] 			Net_TableScore 				for UI;
+	declare netwrite Integer[Integer][Integer] 	Net_AllPlayersCpTimes 		for UI;
+	
+	for(I, 0, Net_AllPlayersCpTimes.count-1) {
+		for(J, 0, Net_AllPlayersCpTimes[I].count-1) {
+			if(J == Net_CurPlayerIndex) {
+				Net_AllPlayersCpTimes[I][J] = C_HOTSEATSCORE_NOSCORE;
+			}
+		}
+	}
+	UpdateCheckpoints();
+}
+
+Void ResetCpPlayers() {
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Integer[Integer] 			Net_TableScore 				for UI;
+	declare netwrite Integer[Integer] 			Net_PlayersLastCpTime		for UI;
+	declare netwrite Integer[Integer][Integer] 	Net_AllPlayersCpTimes 		for UI;
+	declare netwrite Integer[Integer]		 	Net_PlayersLastCpIndex		for UI;
+	
+	for(I, 0, G_NbPlayer-1) {
+		Net_PlayersLastCpTime[I] 	= -1;
+		Net_PlayersLastCpIndex[I]  	= -1;
+	}
+	
+	G_PlayerPassedCheckpoint.clear();
+	G_NextCheckpointTime = 0;
+	for(I, 0, Net_AllPlayersCpTimes.count-1) {
+		if(!G_PlayerPassedCheckpoint.existskey(I)) {
+			G_PlayerPassedCheckpoint[I] = Integer[Integer];
+		}
+	}
+	// log("START RACE: "^G_PlayerPassedCheckpoint);
+}
+
+Void SaveBestPlayerCpTimes() {
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Integer 					Net_CurPlayerIndex 		for UI;
+	declare netwrite Integer[Integer][Integer] 	Net_AllPlayersCpTimes 	for UI;
+	
+	if(PlayerHasScore(Net_CurPlayerIndex)) {
+		for(I, 0, Net_AllPlayersCpTimes.count-1) {
+			G_SpareCpCurPlayer[I] = Net_AllPlayersCpTimes[I][Net_CurPlayerIndex];
+			Net_AllPlayersCpTimes[I][Net_CurPlayerIndex] = -1; 
+		}
+		UpdateCheckpoints();
+	} else {
+		G_SpareCpCurPlayer.clear();
+	}
+}
+
+Integer GetCurPlayerRanking() {
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Integer 					Net_CurPlayerIndex 		for UI;
+	declare netwrite Integer[Integer]			Net_TableScore			for UI;
+	
+	foreach(IndexRank => IndexPlayer in Net_TableScore) {
+		if(Net_CurPlayerIndex == IndexPlayer) {
+			return IndexRank;
+		} 
+	}
+	return -1;
+}
+
+Void InitNames() {
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Text[Integer]	Net_IndexToName for UI;
+	declare netwrite Vec3[Integer]	Net_IndexToColor for UI;
+	
+	Net_IndexToName = G_IndexToName;
+	Net_IndexToColor = G_IndexToColorVec;
+	//log("0 - Net_IndexToName: " ^ Net_IndexToName);
+}
+
+Integer GetCheckpointIndex() {
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Integer Net_CheckpointIndex		for UI;
+	return Net_CheckpointIndex;
+}
+
+Void SetCheckpointIndex(Integer _Integer) {
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Integer Net_CheckpointIndex		for UI;
+	Net_CheckpointIndex = _Integer;
+}
+
+Void RecordCheckpointTime() {
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Integer 					Net_CurPlayerIndex 		for UI;
+	declare netwrite Integer[Integer][Integer] 	Net_AllPlayersCpTimes 	for UI;
+	declare netwrite Integer					Net_CheckpointIndex		for UI;
+
+	if(!Net_AllPlayersCpTimes.existskey(Net_CheckpointIndex)) {
+		Net_AllPlayersCpTimes[Net_CheckpointIndex] = Integer[Integer];
+		G_PlayerPassedCheckpoint[Net_CheckpointIndex] = Integer[Integer];
+		G_NextCheckpointTime = 0;
+	}
+	
+	Net_AllPlayersCpTimes[Net_CheckpointIndex][Net_CurPlayerIndex] = Players[G_ThePlayerId].CurRace.Time;
+	UpdateCheckpoints();
+}
+
+Text ConstructPopupHeader(Integer _NotifType) {
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Integer 			Net_CurPlayerIndex 		for UI;
+
+	if(_NotifType == C_NOTIFTYPE_PLAYING) {
+		//L16N Popup in-game notifying the player
+		return _("It is your turn to play");
+	} else if(_NotifType == C_NOTIFTYPE_GIVEUP) {
+		//L16N Popup in-game notifying the player
+		return _("You have given up");
+	} else if(_NotifType == C_NOTIFTYPE_NEWRANK) {
+		//L16N Title for a final screen
+		return _("End of the race");
+	} else if(_NotifType == C_NOTIFTYPE_NOENERGY) {
+		//L16N Title for a final screen
+		return _("End of the race");
+	} else if(_NotifType == C_NOTIFTYPE_FIRSTPLACE) {
+		//L16N Title for a final screen
+		return _("End of the race");
+	} else if(_NotifType == C_NOTIFTYPE_SECONDPLACE) {
+		//L16N Title for a popup
+		return _("End of the race");
+	} else if(_NotifType == C_NOTIFTYPE_NONEWRANK) {
+		//L16N Title for a popup
+		return _("End of the race");
+	} else if(_NotifType == C_NOTIFTYPE_ELIMINATES) {
+		//L16N Title for a final screen
+		return _("End of the race");
+	} else if(_NotifType == C_NOTIFTYPE_SAVED) {
+		//L16N Title for a final screen
+		return _("End of the race");
+	} else if(_NotifType == C_NOTIFTYPE_VICTORY) {
+
+		declare netwrite Integer[Integer]	Net_TableScore			for UI;
+		declare Text TeamVictory = G_IndexToName[Net_TableScore[0]];
+		// L16N In this segment, %1 is replaced by a player's name
+		declare Text VictoryText = TL::Compose(_("|Player Victory|%1 wins the game!"), TeamVictory);
+		return VictoryText;
+	}
+	
+	return "UNKNOWN NOTIF: "^_NotifType;
+}
+
+Text ConstructPopupBody(Integer _NotifType) {
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Integer 			Net_CurPlayerIndex 		for UI;
+	declare netwrite Integer[Integer]	Net_TableScore			for UI;
+	if(_NotifType == C_NOTIFTYPE_PLAYING) {
+		//L16N Popup in-game notifying the player
+		return "";
+	} else if(_NotifType == C_NOTIFTYPE_GIVEUP) {
+		//L16N Popup in-game notifying the player
+		return _("Next player");
+	} else if(_NotifType == C_NOTIFTYPE_NEWRANK) {
+		//L16N final screen in-game notifying the player that he has a new position.
+		return "";
+	} else if(_NotifType == C_NOTIFTYPE_NOENERGY) {
+		return _("Next player");
+	} else if(_NotifType == C_NOTIFTYPE_FIRSTPLACE) {
+		return  "";
+	} else if(_NotifType == C_NOTIFTYPE_SECONDPLACE) {
+		//Popup in-game notifying the player
+		return "";
+	} else if(_NotifType == C_NOTIFTYPE_NONEWRANK) {
+		return "";
+	} else if(_NotifType == C_NOTIFTYPE_ELIMINATES) {
+		//Popup in-game notifying the player
+		return _("Next player");
+	} else if(_NotifType == C_NOTIFTYPE_SAVED) {
+		//Popup in-game notifying the player. The player, through the rules of mode, hasn't been eliminated but that was close. Celebration
+		return "";
+	} else if(_NotifType == C_NOTIFTYPE_VICTORY) {
+		declare Text TeamVictory = G_IndexToName[Net_TableScore[0]];
+		
+		// L16N In this segment, %1 is replaced by a player's name
+		declare Text VictoryText = TL::Compose(_("|Player Victory|%1 wins the game!"), TeamVictory);
+		return VictoryText;
+	}
+	
+	return "UNKNOWN NOTIF: "^_NotifType;
+}
+
+Text ConstructValidationMessage(Integer _NotifType) {
+	if(_NotifType == C_NOTIFTYPE_PLAYING) {
+		return _("Continue");
+	} else if(_NotifType == C_NOTIFTYPE_GIVEUP) {
+		return _("Continue");
+	} else if(_NotifType == C_NOTIFTYPE_NEWRANK) {
+		return _("Continue");
+	} else if(_NotifType == C_NOTIFTYPE_NOENERGY) {
+		return _("Continue");
+	} else if(_NotifType == C_NOTIFTYPE_FIRSTPLACE) {
+		return _("Continue");
+	} else if(_NotifType == C_NOTIFTYPE_SECONDPLACE) {
+		return _("Continue");
+	} else if(_NotifType == C_NOTIFTYPE_NONEWRANK) {
+		return _("Continue");
+	} else if(_NotifType == C_NOTIFTYPE_ELIMINATES) {
+		return _("Continue");
+	}
+	
+	return "UNKNOWN NOTIF: "^_NotifType;
+}
+
+
+Text GetNameSlogan(Integer _NotifType) {
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Integer Net_CurPlayerIndex for UI;
+	declare netwrite Integer[Integer] Net_BestTimePlayers for UI;
+	
+	if(_NotifType == C_NOTIFTYPE_FIRSTPLACE || _NotifType == C_NOTIFTYPE_NEWRANK || _NotifType == C_NOTIFTYPE_SAVED) {
+		declare Text RecordText = FlavourText::GetPlayerTime(Net_BestTimePlayers[Net_CurPlayerIndex]);
+		return RecordText;
+	} else {
+		return "";
+	} 
+	
+	return "UNKNOWN NOTIF: "^_NotifType;
+	// return "Trackmania Hotseat";
+}
+
+Text GetScreenImage(Integer _NotifType) {
+	if(_NotifType == C_NOTIFTYPE_NEWRANK) {
+		return C_REWARDSCREEN_OK;
+	} else if(_NotifType == C_NOTIFTYPE_FIRSTPLACE) {
+		return C_REWARDSCREEN_OK;
+	} else if(_NotifType == C_NOTIFTYPE_SAVED) {
+		return C_REWARDSCREEN_OK;
+	} else if(_NotifType == C_NOTIFTYPE_ELIMINATES) {
+		return C_REWARDSCREEN_OK;
+	} else if(_NotifType == C_NOTIFTYPE_NOENERGY) {
+		return C_REWARDSCREEN_GAMEOVER;
+	} else if(_NotifType == C_NOTIFTYPE_VICTORY) {
+		return C_REWARDSCREEN_BRAVO;
+	}
+	
+	return C_REWARDSCREEN_OK;
+}
+
+Text GetScreenSign(Integer _NotifType) {
+	if(_NotifType == C_NOTIFTYPE_NOENERGY || _NotifType == C_NOTIFTYPE_ELIMINATES) {
+		return "-";
+	} else if(_NotifType == C_NOTIFTYPE_GIVEUP){
+		return "";
+	} else {
+		return "+";
+	}
+	
+	return "ERROR";
+}
+
+Vec3 GetScreenColor(Integer _NotifType) {
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Integer Net_CurPlayerIndex 		for UI;
+	declare netwrite Integer[Integer]	Net_TableScore			for UI;
+	if(_NotifType == C_NOTIFTYPE_NEWRANK) {
+		// return Colors::GetColor("BlueLight");
+		return G_IndexToColorVec[Net_CurPlayerIndex];
+	} else if(_NotifType == C_NOTIFTYPE_FIRSTPLACE) {
+		// return Colors::GetColor("BlueLight");
+		return G_IndexToColorVec[Net_CurPlayerIndex];
+	} else if(_NotifType == C_NOTIFTYPE_SAVED) {
+		// return Colors::GetColor("BlueLight");
+		return G_IndexToColorVec[Net_CurPlayerIndex];
+	} else if(_NotifType == C_NOTIFTYPE_ELIMINATES) {
+		return Colors::GetColor("PinkRed");
+	} else if(_NotifType == C_NOTIFTYPE_NOENERGY) {
+		return Colors::GetColor("PinkRed");
+	} else if(_NotifType == C_NOTIFTYPE_VICTORY) {
+		// return Colors::GetColor("BlueLight");
+		declare Integer VictoryIndex = Net_TableScore[0];
+		return G_IndexToColorVec[VictoryIndex];
+		
+	}
+	
+	return <1.0, 1.0, 1.0>;
+}
+
+Void ShowSpecialScreen(Integer _NotifType) {
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Integer Net_CurPlayerIndex for UI;
+
+	declare Text ScreenHeader 		= ConstructPopupHeader(_NotifType);
+	declare Text ScreenBody 		= ConstructPopupBody(_NotifType);
+	declare Text ScreenBg			= GetScreenImage(_NotifType);
+	declare Text Sign				= GetScreenSign(_NotifType);
+	declare Vec3 ScreenColor		= GetScreenColor(_NotifType);
+	declare Text ScreenSlogan		= GetNameSlogan(_NotifType);
+	// declare Text ScreenSlogan		= _("Trackmania Hotseat");
+	
+	//if(_NotifType == 9)
+	//{
+	//}
+	//Game::WaitTime(1200);
+	//log("ScreenHeader: " ^ ScreenHeader);
+	//log("ScreenBody  : " ^ ScreenBody);
+	//log("ScreenBg    : " ^ ScreenBg);
+	//log("Sign        : " ^ Sign);
+	//log("ScreenColor : " ^ ScreenColor);
+	//log("ScreenSlogan: " ^ ScreenSlogan);
+
+	Game::ShowReward(Players[G_ThePlayerId], ScreenHeader, ScreenBody, ScreenSlogan, "to continue", ScreenColor, Sign, True);	 
+}
+
+Void ShowPopup(Integer _NotifType) {
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Integer Net_CurPlayerIndex 		for UI;
+	declare netwrite Integer Net_HotSeat_MessageType 	for UI;
+	
+	Net_HotSeat_MessageType = _NotifType;
+	
+	declare Vec3 ColorVec 			= G_IndexToColorVec[Net_CurPlayerIndex];
+	declare Text PlayerName			= G_IndexToName[Net_CurPlayerIndex];
+	declare Text PopupHeader 		= ConstructPopupHeader(_NotifType);
+	declare Text PopupBody 			= ConstructPopupBody(_NotifType);
+	declare Text ValidationMessage 	= "Continue";
+	
+	Game::SetUIInGameVisibility(False);
+	if(_NotifType == C_NOTIFTYPE_PLAYING) {
+		declare IMGSelect 		= UIButtons::GetImage(CManiaAppEvent::EMenuNavAction::Select);
+		declare IMGCancel 		= UIButtons::GetImage(CManiaAppEvent::EMenuNavAction::Cancel);
+		declare TXTContinue		= UIButtonNamesPopup::GetContinueText();
+		declare TXTChangeName 	= _("Change Name");
+		declare Text[] Inputs 	= [IMGSelect, TXTContinue, IMGCancel, TXTChangeName];
+		UIHotSeat::ShowPopup(IMGPATH^IMG_HOTSEAT, "One after the other", PlayerName, ColorVec, PopupHeader, PopupBody, Inputs);
+	} else {
+		UIHotSeat::ShowPopup(IMGPATH^IMG_HOTSEAT, "One after the other", PlayerName, ColorVec, PopupHeader, PopupBody, ValidationMessage);
+	}
+}
+
+Void InitAPlayer() {
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Integer 					Net_CurPlayerIndex 		for UI;
+	declare netwrite Integer[Integer] 			Net_BestTimePlayers 	for UI;
+	declare netwrite Integer[Integer] 			Net_EnergyLeftPlayers 	for UI;
+	declare netwrite Integer[Integer]			Net_TableScore			for UI;
+	declare netwrite Integer					Net_CheckpointIndex		for UI;
+	declare netwrite Integer[Integer][Integer] 	Net_AllPlayersCpTimes 	for UI;
+	declare netwrite Integer[Integer]			Net_PlayersLastCpTime	for UI;
+	declare netwrite Integer[Integer]			Net_PlayersState		for UI;
+	
+	Net_BestTimePlayers[Net_BestTimePlayers.count] 		= C_HOTSEATSCORE_NOSCORE;
+	Net_EnergyLeftPlayers[Net_EnergyLeftPlayers.count] 	= G_EnergyForPlayer;
+	Net_TableScore[Net_TableScore.count]				= Net_TableScore.count;
+	Net_PlayersLastCpTime[Net_PlayersLastCpTime.count]	= -1;
+	Net_PlayersState[Net_PlayersState.count]			= C_HOTSEAT_PLAYING;
+}
+
+Void InitPlayers() {
+	// ---------------------------------- //
+	// Prepare players
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	// UI.UISequence = CUIConfig::EUISequence::Playing;
+	declare netwrite Integer 					Net_CurPlayerIndex 		for UI;
+	declare netwrite Integer[Integer] 			Net_BestTimePlayers 	for UI;
+	declare netwrite Integer[Integer] 			Net_EnergyLeftPlayers 	for UI;
+	declare netwrite Integer[Integer]			Net_TableScore			for UI;
+	declare netwrite Integer					Net_CheckpointIndex		for UI;
+	declare netwrite Integer[Integer][Integer] 	Net_AllPlayersCpTimes 	for UI;
+	declare netwrite Integer[Integer]			Net_PlayersLastCpTime	for UI;
+	declare netwrite Integer[Integer]			Net_PlayersState		for UI;
+	declare netwrite Integer					Net_CpEventUpdate		for UI;
+	declare netwrite Integer[Integer]			Net_PlayerHasPlayedOnce		for UI;
+	
+	Net_CurPlayerIndex = -1;
+	Net_BestTimePlayers.clear();
+	Net_EnergyLeftPlayers.clear();
+	Net_AllPlayersCpTimes.clear();
+	UpdateCheckpoints();
+	Net_PlayersState.clear();
+	Net_PlayersLastCpTime.clear();
+	Net_TableScore.clear();
+	Net_CheckpointIndex = 0;
+	Net_PlayerHasPlayedOnce.clear();
+	
+	for(I, 0, G_NbPlayer-1) {
+		Net_BestTimePlayers[I] 		= C_HOTSEATSCORE_NOSCORE;
+		Net_EnergyLeftPlayers[I] 	= G_EnergyForPlayer;
+		//log("Net_EnergyLeftPlayers["^I^"]:" ^ Net_EnergyLeftPlayers[I]);
+		Net_TableScore[I]			= I;
+		Net_PlayersLastCpTime[I]	= -1;
+		Net_PlayersState[I]			= C_HOTSEAT_PLAYING;
+	}
+}
+
+Integer[Integer] SortIndexPlayers(Integer[Integer] _TimesIndex, Integer[Integer] _PlayersIndex, Integer[Integer] _PlayerState, Boolean _IsFinal) {
+	declare Min = 0;
+	declare Temp = 0;
+	declare Integer[Integer] PlayersIndex 	= _PlayersIndex;
+	declare Integer[Integer] TimesIndex 	= _TimesIndex;
+	declare Integer Max = -1;
+	
+	for(I, 0, TimesIndex.count-1) {
+		if(TimesIndex[I] > Max) {
+			Max = TimesIndex[I];
+		}
+	}
+	
+	for(I, 0, TimesIndex.count-1) {
+		if(TimesIndex[I] == -1) {
+			TimesIndex[I] = Max + 1;
+		}
+		
+		if(!_IsFinal) {
+			if(_PlayerState[I] == C_HOTSEAT_ELIMINATE) {
+				TimesIndex[I] = Max + 2;
+			}
+		}
+		
+		if(_PlayerState[I] == C_HOTSEAT_GIVEUP) {
+			TimesIndex[I] = Max + 3;
+		}
+	}
+	
+	for(I, 0, TimesIndex.count-1) {
+		Min = I;
+		for(J, I+1, TimesIndex.count-1) {
+			if(TimesIndex[J] < TimesIndex[Min]) {
+				Min = J;
+			}
+		}
+		Temp = TimesIndex[I];
+		TimesIndex[I] = TimesIndex[Min];
+		TimesIndex[Min] = Temp;
+		
+		Temp = PlayersIndex[I];
+		PlayersIndex[I] = PlayersIndex[Min];
+		PlayersIndex[Min] = Temp;
+	}
+	return PlayersIndex;
+}
+
+// Void UpdateTableScoreStartRace() {
+	// declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	// declare netwrite Integer[Integer] Net_TableScore 		for UI;
+	// declare netwrite Integer[Integer] Net_PlayersState		for UI;
+	// for(I, 0, G_NbPlayer-1) {
+		// Net_TableScore[I] = I;
+	// }
+	// Net_TableScore.clear();
+
+	// declare Integer[Integer] PlayerGiveUp;
+	
+	// for(I, 0, G_NbPlayer-1) {
+		// if(!Net_TableScore.exists(I)) {
+			// if(Net_PlayersState[I] != C_HOTSEAT_GIVEUP) {
+				// Net_TableScore[Net_TableScore.count] = I;
+			// } else if(Net_PlayersState[I] == C_HOTSEAT_GIVEUP) {
+				// PlayerGiveUp[PlayerGiveUp.count] = I;
+			// } 
+		// }
+	// }
+	
+	// for(I, 0, PlayerOutOfGame.count-1) {
+		// PlayersIndex[PlayersIndex.count] = PlayerGiveUp[I];
+	// }
+	
+// }
+
+Void UpdateTableScore(Integer _Criteria) {
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Integer 					Net_CurPlayerIndex 		for UI;
+	declare netwrite Integer					Net_CurPlayerUpdate		for UI;
+	declare netwrite Integer[Integer] 			Net_BestTimePlayers 	for UI;
+	declare netwrite Integer[Integer] 			Net_EnergyLeftPlayers 	for UI;
+	declare netwrite Integer[Integer]			Net_TableScore			for UI;
+	declare netwrite Integer[Integer][Integer] 	Net_AllPlayersCpTimes 	for UI;
+	declare netwrite Integer					Net_CheckpointIndex		for UI;
+	declare netwrite Integer[Integer]			Net_PlayersLastCpTime	for UI;
+	declare netwrite Integer[Integer]			Net_PlayersState		for UI;
+	declare netwrite Integer					Net_TableScoreState		for UI;
+	
+	declare Integer[Integer] PlayersIndex;
+	for(I, 0, G_NbPlayer-1) {
+		PlayersIndex[I] = I;
+	}
+	
+	if(_Criteria == C_TABLESCORE_BESTTIME) {
+		PlayersIndex = SortIndexPlayers(Net_BestTimePlayers, PlayersIndex, Net_PlayersState, False);
+		
+		// log(PlayersIndex);
+		// if(!CheckNobodyHasScore()) {
+			// UIHotSeat::SetNobodyHasWon(False);
+		// } else {
+			// UIHotSeat::SetNobodyHasWon(True);
+		// }
+	} else if(_Criteria == C_TABLESCORE_FINAL) {
+		PlayersIndex = SortIndexPlayers(Net_BestTimePlayers, PlayersIndex, Net_PlayersState, True);
+	} else if(_Criteria == C_TABLESCORE_CHECKPOINT){
+		if(GetNbPlayerHasScore() >= 0) {
+			PlayersIndex.clear();
+			
+			declare Integer I = G_PlayerPassedCheckpoint.count-1;
+			while(I >= 0) {
+				if(G_PlayerPassedCheckpoint.existskey(I)) {
+					for(J, 0, G_NbPlayer-1) {
+						if(G_PlayerPassedCheckpoint[I].existskey(J)) {
+							declare Integer PlayerPassedCp = G_PlayerPassedCheckpoint[I][J];
+							if(!PlayersIndex.exists(PlayerPassedCp)) {
+								PlayersIndex[PlayersIndex.count] = PlayerPassedCp;
+							}
+						}
+					}
+				}
+				I -= 1;
+			}
+			
+			//Add the players that hasn't passed cp yet
+			declare Integer[Integer] PlayerOutOfGame;
+			for(I, 0, G_NbPlayer-1) {
+				if(!PlayersIndex.exists(I)) {
+					if(Net_PlayersState[I] != C_HOTSEAT_ELIMINATE && Net_PlayersState[I] != C_HOTSEAT_GIVEUP) {
+						PlayersIndex[PlayersIndex.count] = I;
+					} else {
+						PlayerOutOfGame[PlayerOutOfGame.count] = I;
+					}
+				}
+			}
+			
+			for(I, 0, PlayerOutOfGame.count-1) {
+				PlayersIndex[PlayersIndex.count] = PlayerOutOfGame[I];
+			}
+		}
+	} else if(_Criteria == C_TABLESCORE_DEFAULT) {
+		
+		PlayersIndex.clear();
+		//Default order the players out of game are add up at last
+		declare Integer[Integer] PlayerOutOfGame;
+		for(I, 0, G_NbPlayer-1) {
+			if(!PlayersIndex.exists(I)) {
+				if(Net_PlayersState[I] != C_HOTSEAT_ELIMINATE && Net_PlayersState[I] != C_HOTSEAT_GIVEUP) {
+					PlayersIndex[PlayersIndex.count] = I;
+				} else {
+					PlayerOutOfGame[PlayerOutOfGame.count] = I;
+				}
+			}
+		}
+		
+		for(I, 0, PlayerOutOfGame.count-1) {
+			PlayersIndex[PlayersIndex.count] = PlayerOutOfGame[I];
+		}
+	}
+
+	for(I, 0, G_NbPlayer-1) {
+		Net_TableScore[I] = PlayersIndex[I];
+	}
+	// log("New Table score: "^Net_TableScore);
+	Net_TableScoreState = _Criteria;
+}
+
+Void AddPlayer() {
+	G_NbPlayer += 1;
+	InitAPlayer();
+	
+	UIHotSeatRankings::UpdatePlayerCount(G_NbPlayer);
+	if(G_GamePhase == C_GAMEPHASE_GAME) {
+		UpdateTableScore(C_TABLESCORE_CHECKPOINT);
+	} else if(G_GamePhase == C_GAMEPHASE_PREPARATION){
+		UpdateTableScore(C_TABLESCORE_DEFAULT);
+	} else {
+		UpdateTableScore(C_TABLESCORE_BESTTIME);
+	}
+}
+
+Void HotSeatLoop() {
+	Game::Loop();
+	if(UIHotSeat::PlayerHasGiveUp()) {
+		G_PlayerHasGiveUp = True;
+	}
+	
+	if(UIHotSeat::GetAddNewPlayer()) {
+		if(G_NbPlayer < 8) {
+			AddPlayer();
+		}
+	}
+}
+
+Void HotSeatYield() {
+	yield;
+	HotSeatLoop();
+}
+
+Void WaitScreenAnswerGiveUp() {
+	while(!Game::GetRewardAnswer(Players[G_ThePlayerId])) {
+		HotSeatYield();
+	}
+}
+
+Void WaitScreenAnswer() {
+	Game::FlushRewardAnswer(Players[G_ThePlayerId]);
+	
+	while(!Game::GetRewardAnswer(Players[G_ThePlayerId]) && !G_PlayerHasGiveUp) {
+		HotSeatYield();	
+		// log(Now^">Screen answer");
+	}
+	// log(Now^">Screen answer ok");
+}
+
+Void WaitPlayerPopupAnswer() {
+	while(!UIHotSeat::GetPopUpAnswer() && !G_PlayerHasGiveUp) {
+		HotSeatYield();
+	}
+}
+
+Void WaitPlayerFinalTableAnswer() {
+	while(!UIHotSeat::GetFinalTableAnswer()) {
+		HotSeatYield();
+	}
+}
+
+Void WaitPlayerRestartGameChoice() {
+	while(UIHotSeat::GetRestartGameChoice() == -1) {
+		HotSeatYield();
+	}
+}
+
+Void WaitPlayerValidation() {
+	while(!UIHotSeat::PlayerHasValidate()) {
+		HotSeatYield();
+	}
+}
+
+Void WaitPlayerCount() {
+	while(UIHotSeat::GetNbPlayers() == 0) {
+		HotSeatYield();
+	}
+}
+
+Void WaitDriverMode() {
+	while(UIHotSeat::GetDriverMode() == -1) {
+		HotSeatYield();
+	}
+}
+
+Void CpMlUpdate() {
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Integer Net_CpEventUpdate for UI;
+	Net_CpEventUpdate += 1;
+}
+
+Boolean CheckPlayersPassedCheckpoints() {
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Integer[Integer][Integer] 	Net_AllPlayersCpTimes 	for UI;
+	declare netwrite Integer[Integer]			Net_PlayersLastCpTime	for UI;
+	declare netwrite Integer[Integer]		 	Net_PlayersLastCpIndex	for UI;
+	// declare netwrite Integer					Net_CpEventUpdate		for UI;
+	declare NextTime = -1;
+	
+	if (
+		(G_NextCheckpointTime >= 0 && G_CustomRaceTime >= G_NextCheckpointTime) ||
+		G_PrevCheckpointsUpdate != G_CheckpointsUpdate
+	) {
+		if (G_PrevCheckpointsUpdate != G_CheckpointsUpdate) {
+			G_PrevCheckpointsUpdate = G_CheckpointsUpdate;
+		}
+
+		foreach (CpKey => AllPlayersCpTime in Net_AllPlayersCpTimes) {
+			if (!G_PlayerPassedCheckpoint.existskey(CpKey)) continue;
+			foreach (PlayerKey => CheckpointTime in AllPlayersCpTime) {
+				if ((NextTime == -1 || CheckpointTime < NextTime) && CheckpointTime > G_CustomRaceTime) {
+					NextTime = CheckpointTime;
+				}
+
+				if (
+					CheckpointTime <= G_CustomRaceTime
+					&& CheckpointTime != C_HOTSEATSCORE_NOSCORE
+					&& !G_PlayerPassedCheckpoint[CpKey].exists(PlayerKey)
+				) {
+					G_PlayerPassedCheckpoint[CpKey][G_PlayerPassedCheckpoint[CpKey].count] = PlayerKey;
+					
+					Net_PlayersLastCpTime[PlayerKey] = CheckpointTime;
+					Net_PlayersLastCpIndex[PlayerKey] = CpKey;
+					// Net_CpEventUpdate += 1;
+					// log(Now^">SERVER SIDE UPDATE CHECKPOINT");
+					// log(Now^"> PLAYER "^PlayerKey^" PASSED "^CpKey^" TIME : "^Net_PlayersLastCpTime[PlayerKey]^" Last CP PASSED : "^Net_PlayersLastCpIndex[PlayerKey]);
+					return True;
+				}
+			}
+		}
+		G_NextCheckpointTime = NextTime;
+	}
+	
+	/*
+	for(I, 0, Net_AllPlayersCpTimes.count-1) {
+		for(J, 0, G_NbPlayer-1) {
+			if(Net_AllPlayersCpTimes[I].existskey(J)) {
+				declare CheckpointTime = Net_AllPlayersCpTimes[I][J];
+
+				if(CheckpointTime <= G_CustomRaceTime
+				&& CheckpointTime != C_HOTSEATSCORE_NOSCORE
+				&& G_PlayerPassedCheckpoint.existskey(I)		
+				&& !G_PlayerPassedCheckpoint[I].exists(J)) {
+					
+					G_PlayerPassedCheckpoint[I][G_PlayerPassedCheckpoint[I].count] 	= J;
+					
+					Net_PlayersLastCpTime[J] 										= CheckpointTime;
+					Net_PlayersLastCpIndex[J] 										= I;
+					// Net_CpEventUpdate 												+= 1;
+					// log(Now^">SERVER SIDE UPDATE CHECKPOINT");
+					// log(Now^"> PLAYER "^J^" PASSED "^I^" TIME : "^Net_PlayersLastCpTime[J]^" Last CP PASSED : "^Net_PlayersLastCpIndex[J]);
+					return True;
+				}
+			}
+		}
+	}
+	*/
+	return False;
+}
+
+Void SavePlayerGhost() {
+	if(ScoreMgr == Null) return;
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Integer 			Net_CurPlayerIndex 		for UI;
+	declare Text Context = "HotSeat";
+	//G_GhostPlayers[Net_CurPlayerIndex] <=> Ghosts::GetGhostFromPlayer(Players[G_ThePlayerId], Context);
+	declare CGhost PlayerGhost = ScoreMgr.Playground_GetPlayerGhost(Players[G_ThePlayerId]);
+	//log("PlayerGhost                 : "^ PlayerGhost);
+	//log("Players[G_ThePlayerId].Id   : "^ Players[G_ThePlayerId].Id);
+	//log("MapList[NextMapIndex].MapUid: "^ MapList[NextMapIndex].MapUid);
+	
+	//G_TaskNewRecord = ScoreMgr.Map_SetNewRecord(Players[G_ThePlayerId].Id, MapList[NextMapIndex].MapUid, Context, PlayerGhost);
+	G_GhostPlayers[Net_CurPlayerIndex] <=> PlayerGhost;
+
+	if (G_TaskNewRecord == Null) {
+		log(Now ^ ") [WARNING] : ScoreMgr.Map_SetNewRecord vaut Null");
+		return;
+	}
+	while(G_TaskNewRecord != Null && G_TaskNewRecord.IsProcessing) {
+		yield;
+	}
+
+	if(G_TaskNewRecord != Null && G_TaskNewRecord.HasSucceeded)
+	{
+		//log("["^Now^"] HotSeat SaveGhost HasSucceeded:" ^ G_TaskNewRecord.HasSucceeded);
+		ScoreMgr.TaskResult_Release(G_TaskNewRecord.Id);
+	}
+	else if (G_TaskNewRecord != Null)
+	{
+		//log("["^Now^"] HotSeat SaveGhost HasFailed:   " ^ G_TaskNewRecord.HasFailed);
+	}
+	
+}
+
+Boolean HasPlayerNewRecord() {
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Integer 			Net_CurPlayerIndex 		for UI;
+	declare netwrite Integer[Integer] 	Net_BestTimePlayers 	for UI;
+	if(Players[G_ThePlayerId].CurRace.Time < Net_BestTimePlayers[Net_CurPlayerIndex] ||  Net_BestTimePlayers[Net_CurPlayerIndex] == C_HOTSEATSCORE_NOSCORE) {
+		return True;
+	}
+	return False;
+}
+
+Void SaveNewRecord() {
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Integer 			Net_CurPlayerIndex 		for UI;
+	declare netwrite Integer[Integer] 	Net_BestTimePlayers 	for UI;
+	Net_BestTimePlayers[Net_CurPlayerIndex] = Players[G_ThePlayerId].CurRace.Time;
+	log(Now^">NEW BEST TIME: "^Players[G_ThePlayerId].CurRace.Time);
+}
+
+Boolean CheckPlayerNoEnergy() {
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Integer 			Net_CurPlayerIndex 		for UI;
+	declare netwrite Integer[Integer] 	Net_EnergyLeftPlayers 	for UI;
+	
+	//log("Net_EnergyLeftPlayers["^Net_CurPlayerIndex^"]:" ^ Net_EnergyLeftPlayers[Net_CurPlayerIndex]);
+	return Net_EnergyLeftPlayers[Net_CurPlayerIndex] <= 0;
+}
+
+Void ConsumeEnergyCurPlayer() {
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Integer 			Net_CurPlayerIndex 		for UI;
+	declare netwrite Integer[Integer] 	Net_EnergyLeftPlayers 	for UI;
+	// declare Integer MyPeriod = Now - G_PrevNow;
+	// G_PrevNow = Now;
+	
+	if(G_MyPeriod > 500) return;
+	Net_EnergyLeftPlayers[Net_CurPlayerIndex] -= G_MyPeriod;
+	//log("G_MyPeriod["^G_MyPeriod^"]");
+	//log("Net_EnergyLeftPlayers["^Net_CurPlayerIndex^"]:" ^ Net_EnergyLeftPlayers[Net_CurPlayerIndex]);
+	if(Net_EnergyLeftPlayers[Net_CurPlayerIndex] <= 0) {
+		Net_EnergyLeftPlayers[Net_CurPlayerIndex] = 0;
+	}
+}
+
+// Void GivePlayerBestRaceComparison() {
+	// if(G_BestRacePlayer != Null) {
+		// Players[G_ThePlayerId].Score.BestRace = G_BestRacePlayer;
+	// }
+// }
+
+Void ChoosePlayer() {
+	// ---------------------------------- //
+	// Spawn players for the race
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Integer 					Net_CurPlayerIndex 		for UI;
+	declare netwrite Integer					Net_CurPlayerUpdate		for UI;
+	declare netwrite Integer[Integer] 			Net_BestTimePlayers 	for UI;
+	// declare netwrite Integer[Integer] 			Net_EnergyLeftPlayers 	for UI;
+	declare netwrite Integer[Integer]			Net_PlayersState		for UI;
+	
+	//We start by choosing the playing player
+	declare Integer MaxTime 		= 0;
+	declare Integer PlayerChosen 	= -1;
+	
+	foreach(IndexPlayer => Time in Net_BestTimePlayers) {
+		if(Net_PlayersState[IndexPlayer] != C_HOTSEAT_ELIMINATE && Net_PlayersState[IndexPlayer] != C_HOTSEAT_GIVEUP) {
+			//We take the player with the highest time
+			if(MaxTime <= Time && Time != -1) {
+				MaxTime = Time;
+				PlayerChosen = IndexPlayer;
+			}
+			//Unless a player hasn't time yet
+			else if(Time == -1) {
+				PlayerChosen = IndexPlayer;
+				break;
+			}
+		}
+	}
+	
+	if(PlayerChosen != -1) {
+		Net_CurPlayerIndex 		= PlayerChosen;
+		Net_CurPlayerUpdate 	+= 1;
+	}
+	SetCurPlayerNickname();
+	// GivePlayerBestRaceComparison();
+}
+
+Boolean CheckEndGame() {
+	declare Integer NbPlayerDead = 0;
+	declare Integer AlivePlayerIndex = 0;
+	declare Boolean FinishGame = False;
+	
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	// declare netwrite Integer[Integer] 	Net_EnergyLeftPlayers 	for UI;
+	declare netwrite Integer[Integer] 	Net_BestTimePlayers 	for UI;
+	declare netwrite Integer[Integer]	Net_PlayersState		for UI;
+	
+	foreach(IndexPlayer => State in Net_PlayersState) {
+		if(State == C_HOTSEAT_ELIMINATE || State == C_HOTSEAT_GIVEUP) {
+			NbPlayerDead += 1;	
+		} else {
+			AlivePlayerIndex = IndexPlayer;
+		}
+	}
+	
+	//If all player are Dead
+	if(NbPlayerDead == G_NbPlayer) {
+		FinishGame = True;
+	}
+	
+	//Or if the current winner is the last on the map
+	else if(NbPlayerDead == G_NbPlayer-1) {
+		declare Integer BestTime = -1;
+		declare Integer IndexBestPlayer = -1;
+		
+		foreach(IndexPlayer => Time in Net_BestTimePlayers) {
+			if((BestTime > Time && Time != -1) || BestTime == -1) {
+				BestTime = Time;
+				IndexBestPlayer = IndexPlayer;
+			}
+		}
+		
+		if(AlivePlayerIndex == IndexBestPlayer) {
+			FinishGame = True;
+		}
+	}
+	
+	return FinishGame;
+}
+
+Integer GetLastIndexPlayingPlayer() {
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Integer[Integer]	Net_TableScore			for UI;
+	declare netwrite Integer[Integer] 	Net_BestTimePlayers 	for UI;
+	declare netwrite Integer[Integer]	Net_PlayersState		for UI;
+	
+	declare Integer IndexLastPlayer = 0;
+	foreach(Position => PlayerIndex in Net_TableScore) {
+		if(!(Net_PlayersState[PlayerIndex] == C_HOTSEAT_ELIMINATE || Net_BestTimePlayers[PlayerIndex] == C_HOTSEATSCORE_NOSCORE || Net_PlayersState[PlayerIndex] == C_HOTSEAT_GIVEUP)) {
+			IndexLastPlayer = PlayerIndex;
+		}
+	}
+	return IndexLastPlayer;
+}
+
+Integer GetLastIndexPlayingPlayerWithoutScore() {
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Integer[Integer]	Net_TableScore			for UI;
+	declare netwrite Integer[Integer] 	Net_BestTimePlayers 	for UI;
+	declare netwrite Integer[Integer]	Net_PlayersState		for UI;
+	
+	declare Integer IndexLastPlayer = 0;
+	foreach(Position => PlayerIndex in Net_TableScore) {
+		if(!(Net_PlayersState[PlayerIndex] == C_HOTSEAT_ELIMINATE || Net_PlayersState[PlayerIndex] == C_HOTSEAT_GIVEUP)) {
+			IndexLastPlayer = PlayerIndex;
+		}
+	}
+	return IndexLastPlayer;
+}
+
+Integer GetLastPositionPlayingPlayer() {
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Integer[Integer]	Net_TableScore			for UI;
+	declare netwrite Integer[Integer] 	Net_BestTimePlayers 	for UI;
+	declare netwrite Integer[Integer]	Net_PlayersState		for UI;
+	
+	declare Integer PositionLastPlayer = 0;
+
+	foreach(Position => PlayerIndex in Net_TableScore) {
+		if(!(Net_PlayersState[PlayerIndex] == C_HOTSEAT_ELIMINATE || Net_PlayersState[PlayerIndex] == C_HOTSEAT_GIVEUP)) {
+			PositionLastPlayer = Position;
+		}
+	}
+	return PositionLastPlayer;
+}
+
+Integer GetPenultimatePlayingPlayerIndex() {
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Integer[Integer]	Net_TableScore	for UI;
+	declare Integer LastPosition = GetLastPositionPlayingPlayer();	
+	if(LastPosition > 0)
+		return Net_TableScore[LastPosition-1];
+	else 
+		return Net_TableScore[LastPosition];
+		
+	return -1;
+}
+
+Boolean CheckEndPlayerSurviving() {
+	if(G_PlayerPassedCheckpoint.count == 0) return False;
+
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Integer Net_CurPlayerIndex for UI;
+	
+	if(PlayerHasScore(Net_CurPlayerIndex) || (!PlayerHasScore(Net_CurPlayerIndex) && Net_CurPlayerIndex == GetLastIndexPlayingPlayerWithoutScore())) {
+	// if(PlayerHasScore(Net_CurPlayerIndex)) {
+		declare Integer PenultimatePlayerIndex = GetPenultimatePlayingPlayerIndex();
+		declare Integer[Integer] LastCpThatPlayerHavePassed = G_PlayerPassedCheckpoint[G_PlayerPassedCheckpoint.count-1];
+		declare Boolean PenultimatePlayerHasPassedFinish = LastCpThatPlayerHavePassed.exists(PenultimatePlayerIndex);
+
+		if(PenultimatePlayerHasPassedFinish) {
+			G_SurvivingTimer -= G_MyPeriod;
+			if(G_SurvivingTimer <= 0) {
+				//log("FINISH!");
+				return True;
+			}
+		}
+	}
+	return False;
+}
+
+Void AddCurPlayerHasPlayed() {
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Integer[Integer]	Net_PlayerHasPlayedOnce		for UI;
+	declare netwrite Integer 			Net_CurPlayerIndex 			for UI;
+	if(!Net_PlayerHasPlayedOnce.exists(Net_CurPlayerIndex)) {
+		Net_PlayerHasPlayedOnce[Net_PlayerHasPlayedOnce.count-1] = Net_CurPlayerIndex;
+	}
+}
+
+Boolean HasPlayerPlayedOnce() {
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Integer[Integer]	Net_PlayerHasPlayedOnce	for UI;
+	declare netwrite Integer 			Net_CurPlayerIndex 		for UI;
+	if(Net_PlayerHasPlayedOnce.exists(Net_CurPlayerIndex)) {
+		return True;
+	} else {
+		return False;
+	}
+	return False;
+}
+
+Boolean IsOnePlayerNoScore() {
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Integer[Integer] 	Net_BestTimePlayers 	for UI;
+	
+	foreach(IndexPlayer => Score in Net_BestTimePlayers) {
+		if(Score == C_HOTSEATSCORE_NOSCORE) {
+			return True;
+		}
+	}
+	return False;
+}
+
+Boolean HasPlayerNewRank() {
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Integer[Integer]	Net_TableScore			for UI;
+	declare netwrite Integer 			Net_CurPlayerIndex 		for UI;
+	declare netwrite Integer[Integer]	Net_PlayerHasPlayedOnce	for UI;
+	
+	declare Integer LastPlayerPosition 	= GetLastPositionPlayingPlayer();
+	declare Integer LastPlayerIndex 	= GetLastIndexPlayingPlayer();
+	
+	// log("Current player index: "^Net_CurPlayerIndex^" Last index: "^LastPlayerIndex);
+	
+	// log(LastPlayerPosition);
+	if(!HasPlayerPlayedOnce()) {
+		//Si le joueur qui n'a pas encore de score est encore le dernier
+		if(IsOnePlayerNoScore()) {
+			return True;
+		} else {
+			if(LastPlayerPosition != 0) {
+				if(Net_CurPlayerIndex != LastPlayerIndex) {
+					return True;
+				} else {
+					return False;
+				}
+			} else {
+				return True;
+			}
+		}
+		
+		/*
+		if(LastPlayerPosition != 0) {
+			if(Net_CurPlayerIndex != LastPlayerIndex) {
+				return True;
+			} else {
+				return False;
+			}
+		} else {
+			return True;
+		}
+		*/
+	} else {
+		//Si le joueur a un score et n'est plus le dernier
+		if(Net_CurPlayerIndex != LastPlayerIndex) {
+			return True;
+		}
+	}
+	
+	return False;
+}
+
+Void LoadGhost() {
+	Ghosts::RemoveAllGhosts();
+
+	// ---------------------------------- //
+	// Spawn players for the race
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Integer 			Net_CurPlayerIndex 		for UI;
+	declare netwrite Integer			Net_CurPlayerUpdate		for UI;
+	declare netwrite Integer[Integer] 	Net_BestTimePlayers 	for UI;
+	declare netwrite Integer[Integer] 	Net_EnergyLeftPlayers 	for UI;
+	declare netwrite Integer[Integer]	Net_PlayersState		for UI;
+	declare netwrite Integer[Integer]	Net_TableScore			for UI;
+	
+	declare Integer PenultimatePlayerIndex		= GetPenultimatePlayingPlayerIndex();
+	
+	//We load the best ghosts except the current player
+	for(I, 0, G_NbPlayer-1) {
+		if(Net_PlayersState[I] != C_HOTSEAT_ELIMINATE && Net_PlayersState[I] != C_HOTSEAT_GIVEUP) {
+			if(I != Net_CurPlayerIndex) {
+				if(G_GhostPlayers.existskey(I)) {
+					declare Tmp = Ghosts::LoadGhostOnMap(G_GhostPlayers[I], False);
+
+					if(I == PenultimatePlayerIndex) {
+						SetOpponentForUI(G_GhostPlayers[I]);
+						declare Text OpponentName = G_IndexToName[I];
+						// log("Set opponent name: "^G_IndexToName[I]);
+						Game::SetOpponentName(OpponentName);
+					}
+				}
+			}
+		}
+	}
+}
+
+Void InitRace() {
+	
+}
+
+
+

@@ -1,0 +1,196 @@
+#Include "Libs/Nadeo/Common/ManialinkTools/Manialink3WPrevAnims.Script.txt"			as Manialink
+#Include "TextLib"												as TextLib
+#Include "Libs/Nadeo/MP4/Common/ManialinkTools/FontManager.Script.txt" 			as Font
+
+#Const Label_Score_HiddenPos	<15., 0.>
+#Const Label_Score_ShownPos		<0., 0.>
+#Const Label_Zone_HiddenPos		<-41., 0.>
+#Const Label_Zone_ShownPos		<-13., 0.>
+#Const QuadSize					<48.5, 14.>
+#Const ContourSize				0.4
+
+Text Build() {
+	declare Text SubFont = Font::GetFontName("SubTitle");
+	declare Text MLText = """
+<manialink version="3" name="L_RankingModule">
+	<frame id="Frame_All"  pos="136 73.4" z-index="20" hidden="0">
+
+		<quad id="Quad_Section" scriptevents="1" halign="right" valign="center" pos="24.0 0" size="{{{QuadSize[0]}}} {{{QuadSize[1]}}}"  opacity="0.75" bgcolor="000"/>
+		<label id="Label_PlayerName"  halign="left"   valign="center" textfont="{{{SubFont}}}" pos="-22 3" z-index="2" textsize="2" textcolor="fff" text="PlayerName" size="30 0"/>
+		<quad id="Quad_Flag" halign="right" valign="center" pos="22.0 2.9" z-index="2" size="6.5 5.5" bgcolor="00F" image="{{{LocalUser.CountryFlagUrl}}}"/>
+
+
+
+		<frame id="Frame_InfoRanking" z-index="1">
+			<frame id="Clip_Score" halign="center" valign="center" size="16.6 4" pos="-16.0 -2">
+				<label id="Label_Score" halign="center" valign="center" textfont="{{{SubFont}}}" textsize="2" textcolor="ff3" opacity="1." text="393 SP" size="20 0" pos="{{{Label_Score_ShownPos[0]}}} {{{Label_Score_ShownPos[1]}}}"/>
+			</frame>
+			<quad halign="center" valign="center" pos="-7.5 -2" z-index="1" size="0.4 4.0"  opacity="1.0" bgcolor="fff"/>
+			<frame id="Clip_Zone" halign="center" valign="center" size="31 4" pos="8.3 -2 1">
+				<label id="Label_Zone"  halign="left" valign="center" textfont="{{{SubFont}}}" textsize="1" textcolor="fff" opacity="1." text="Paris [France]" size="30 0" pos="{{{Label_Zone_ShownPos[0]}}} {{{Label_Zone_ShownPos[1]}}}"/>
+			</frame>
+		</frame>
+
+
+		<frame id="Frame_BarreGlobal" pos="24 -10">
+			<quad halign="right" valign="top" size="48.5 0.3" bgcolor="fff"/>
+			<quad halign="right" valign="bottom" size="6 0.2" bgcolor="fff"/>
+		</frame>
+	</frame>
+	
+	
+	<script><!--
+		#Const C_TimeNextZone  4500
+		
+		{{{Manialink::GetIncludes()}}}
+		
+		declare Text[]			G_ZoneNames;
+		declare Text[]			G_ZoneScores;
+		declare Integer			G_ZoneFocus;
+		declare Integer			G_TimeNextZone;
+		declare Boolean			G_InfoRankingIsShow;
+
+		{{{Manialink::Load()}}}
+	
+		Void UpdateAll()
+		{
+			declare CMlFrame Frame_All <=> (Page.MainFrame.GetFirstChild("Frame_All")	as CMlFrame);
+			//Frame_All.Visible = _Visibility;
+		}
+
+		Void ShowInfoRanking()
+		{
+			declare CMlFrame Frame_InfoRanking <=> (Page.MainFrame.GetFirstChild("Frame_InfoRanking")	as CMlFrame);
+			declare CMlLabel Label_Score       <=> (Frame_InfoRanking.GetFirstChild("Label_Score")	as CMlLabel);
+			declare CMlLabel Label_Zone        <=> (Frame_InfoRanking.GetFirstChild("Label_Zone")	as CMlLabel);
+
+			declare Integer AnimationTime = 1000;
+
+			declare Vec2 NewFramePosition2 = {{{Label_Zone_ShownPos}}};
+			LibManialink_SetTargetPosition(Label_Zone, NewFramePosition2);
+			LibManialink_PresetAnim(Label_Zone, AnimationTime, "EaseInOutBack");
+		}
+		
+		Void HideInfoRanking()
+		{
+			declare CMlFrame Frame_InfoRanking <=> (Page.MainFrame.GetFirstChild("Frame_InfoRanking")	as CMlFrame);
+			declare CMlLabel Label_Score       <=> (Frame_InfoRanking.GetFirstChild("Label_Score")	as CMlLabel);
+			declare CMlLabel Label_Zone        <=> (Frame_InfoRanking.GetFirstChild("Label_Zone")	as CMlLabel);
+
+			declare Integer AnimationTime = 1000;
+
+			declare Vec2 NewFramePosition2 = {{{Label_Zone_HiddenPos}}};
+			LibManialink_SetTargetPosition(Label_Zone, NewFramePosition2);
+			LibManialink_PresetAnim(Label_Zone, AnimationTime, "EaseInOutBack");
+		}
+
+		Void UpdateInfos()
+		{
+			declare CMlFrame Frame_InfoRanking <=> (Page.MainFrame.GetFirstChild("Frame_InfoRanking")	as CMlFrame);
+			declare CMlLabel Label_Score       <=> (Frame_InfoRanking.GetFirstChild("Label_Score")	as CMlLabel);
+			declare CMlLabel Label_Zone        <=> (Frame_InfoRanking.GetFirstChild("Label_Zone")	as CMlLabel);
+
+			if (G_ZoneNames.count == 0) {
+				return;
+			}
+			Label_Zone.SetText(G_ZoneNames[G_ZoneFocus]);
+			Label_Score.SetText(G_ZoneScores[G_ZoneFocus]);
+		}
+
+		Void Init()
+		{
+			G_ZoneNames.clear();
+			G_ZoneScores.clear();
+
+			G_InfoRankingIsShow = True;
+			G_ZoneFocus    = 0;
+			G_TimeNextZone = Now + C_TimeNextZone;
+			UpdateInfos();
+		}
+
+		Void NextZone()
+		{
+			if(G_InfoRankingIsShow)
+			{
+				G_TimeNextZone = Now + 700;
+				HideInfoRanking();
+			}
+			else
+			{
+				if(G_ZoneNames.count != 0) {
+
+					if(G_ZoneFocus >= G_ZoneNames.count-1) G_ZoneFocus = 0;
+					else G_ZoneFocus += 1;
+				
+					UpdateInfos();
+
+					ShowInfoRanking();
+					G_TimeNextZone = Now + C_TimeNextZone;
+				}
+			}
+			G_InfoRankingIsShow = !G_InfoRankingIsShow;
+		}
+
+		main() {
+			
+			Init();
+
+			while(True) {
+				
+				yield;
+				if(! PageIsVisible) continue;
+				LibManialink_AnimLoop();
+				
+
+				if(G_TimeNextZone < Now && G_TimeNextZone != -1) NextZone();
+
+				foreach(Event in PendingEvents) {
+					switch(Event.Type) {
+
+						case CMlEvent::Type::MenuNavigation: {
+							switch(Event.MenuNavAction) {
+								case CMlEvent::EMenuNavAction::Action1 : {
+									if(G_InfoRankingIsShow) HideInfoRanking();
+									else					ShowInfoRanking();
+									G_InfoRankingIsShow = !G_InfoRankingIsShow;
+								}
+								case CMlEvent::EMenuNavAction::Cancel : {
+								}
+							}
+						}
+						case CMlEvent::Type::PluginCustomEvent: {
+							
+							switch(Event.CustomEventType) {
+								case "Show" : {
+									SendCustomEvent("Ranking_GetRanking", Text[]);
+								}
+								case "Hide" : {
+									SendCustomEvent("DetachPage", ["RankingModule"]);
+								}
+								case "SetPosition" : {
+									declare CMlFrame  Frame_All    <=> (Page.GetFirstChild("Frame_All") as CMlFrame);
+									//declare Text[] RankingModuleName for Page;
+								}
+								case "RankingSent" : {
+									declare Text	Ranking_ZoneScores	for Page;
+									declare Text[]	Ranking_ZoneTexts	for Page;
+									G_ZoneNames = Ranking_ZoneTexts;
+									G_ZoneScores.clear();
+									foreach(Zone in G_ZoneNames) {
+										G_ZoneScores.add(Ranking_ZoneScores);
+									}
+									G_ZoneFocus = 0;
+									G_TimeNextZone = Now + 700;
+									UpdateInfos();
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	--></script>
+</manialink>
+	""";
+	return MLText;
+}

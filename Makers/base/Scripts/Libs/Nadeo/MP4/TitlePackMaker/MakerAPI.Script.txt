@@ -1,0 +1,345 @@
+#Include "Libs/Nadeo/Common/Core/MenuLayers.Script.txt"											as Layers
+#Include "Libs/Nadeo/Common/Core/Logger.Script.txt"												as Logger
+#Include "TextLib"																			as TextLib
+#Include "Libs/Nadeo/MP4/TitlePackMaker/Components/Component_Campaign/CampaignAPI.Script.txt"	as CampaignAPI
+#Include "Libs/Nadeo/MP4/TitlePackMaker/XMLController.Script.txt"								as XMLController
+#Include "Libs/Nadeo/MP4/Common/Components/TrackBrowser/TrackBrowserAPI.Script.txt"				as TrackBrowserAPI
+
+#Const C_CampaignMaps	"Campaigns\\"
+#Const C_MovedMaps		"CampaignBin\\"
+#Const C_EnviroToModel	["Storm" => "ArenaPlayer", "Canyon" => "CanyonCar", "Valley" => "ValleyCar"
+												 , "Stadium" => "StadiumCar", "Lagoon" => "LagoonCar"]
+
+declare Boolean	G_GenerationSucceded;
+declare Text	G_GenerationErrorMessage;
+declare Boolean	G_WarningMapMoved;
+declare Text	G_ContextName;
+
+Boolean BaseAssertsPassed()
+{
+	if (TitleEdition == Null) {
+		Logger::Warn("Maker pas en mode maker");
+		return False;
+	}
+	declare PackCreator <=> TitleEdition.PackCreator;
+	if (PackCreator == Null) {
+		Logger::Warn("Maker pas en état de création");
+		return False;
+	}
+	if (TitleEdition.TitleMaker == Null) {
+		Logger::Warn("Maker sans API pour créer");
+		return False;
+	}
+	if (TitleEdition.EditedTitleInfo.TitleId^"" == LoadedTitle.TitleId) {
+		Logger::Warn("Maker essaie de se créer lui-même. Interruption");
+		return False;
+	}
+	return True;
+}
+
+Boolean IsNewTitlePack()
+{
+	if (TitleEdition != Null && !TitleEdition.File_Exists("Media/XML/User/Resources.xml", CTitleEdition::EDrive::Title)) {
+		TitleEdition.File_WriteText("Media/XML/User/Resources.xml",
+					"""<folders>
+	<folder name="Actions" public="false" internal="true"/>
+	<folder name="Blocks" public="false" internal="true"/>
+	<folder name="Items" public="false" internal="true"/>
+	<folder name="Maps" public="false" internal="true"/>
+	<folder name="Media" public="false" internal="true"/>
+	<folder name="Modules" public="false" internal="true"/>
+	<folder name="Replays" public="false" internal="true"/>
+	<folder name="Scripts" public="false" internal="true"/>
+	<folder name="Skins" public="false" internal="true"/>
+</folders>""");
+	}
+	declare Text	Maker_TitlePackStateFromStation			for LocalUser;
+	declare Boolean Maker_RefreshTitlePackStateFromStation	for LocalUser;
+	if (!Maker_RefreshTitlePackStateFromStation || !BaseAssertsPassed()) {
+		Maker_TitlePackStateFromStation = "Load";
+		return False;
+	} else {
+		Maker_RefreshTitlePackStateFromStation = False;
+	}
+	if (Maker_TitlePackStateFromStation == "Load") {
+		return False;
+	} else {
+		Maker_TitlePackStateFromStation = "Load";
+		return True;
+	}
+	return True;
+}
+
+Boolean IsInMakerSMMode()
+{
+	if (TitleEdition != Null && TitleEdition.TitleMaker != Null &&
+		TitleEdition.TitleMaker.BaseTitleId == "SMStorm") {
+		declare Text ProjectEnviro for LocalUser;
+		ProjectEnviro = "Storm";
+		return True;
+	}
+	return False;
+}
+
+Void SaveState(Text _TitlePackXMLAddOn)
+{
+	if (TitleEdition != Null) {
+		declare Text ProjectEnviro for LocalUser;
+		if ((TitleEdition.TitleMaker != Null) && (ProjectEnviro == "" || ProjectEnviro == "TMAll")) {
+			ProjectEnviro = TextLib::SubString(TitleEdition.TitleMaker.BaseTitleId, 2, TextLib::Length(TitleEdition.TitleMaker.BaseTitleId) - 2);
+		}
+		declare LayerToGet <=> Layers::Get("Resources");
+		TitleEdition.EditedTitleInfo.DisplayName = (LayerToGet.LocalPage.GetFirstChild("ProjectName") as CMlEntry).Value;
+		TitleEdition.EditedTitleInfo.Description = (LayerToGet.LocalPage.GetFirstChild("ProjectDescription") as CMlTextEdit).Value;
+		TitleEdition.EditedTitleInfo.DownloadUrl = (LayerToGet.LocalPage.GetFirstChild("DownloadURL") as CMlEntry).Value;
+		TitleEdition.SaveTitleDesc();
+		TitleEdition.File_WriteText("Media/XML/HorizonLoadFile.xml", _TitlePackXMLAddOn);
+	}
+}
+
+Text Load()
+{
+	if (TitleEdition != Null && TitleEdition.File_ReadText("Media/XML/HorizonLoadFile.xml") != "") {
+		return TitleEdition.File_ReadText("Media/XML/HorizonLoadFile.xml");
+	} else {
+		Logger::Log("Maker pas en état de récupérer le fichier de load");
+		Logger::Log("TitleEdition : " ^ TitleEdition);
+		Logger::Log("TitleEdition.File_ReadText(\"Media/XML/HorizonLoadFile.xml\") : " ^ TitleEdition.File_ReadText("Media/XML/HorizonLoadFile.xml"));
+	}
+	return "";
+}
+
+Void FetchFromUserDir(Text _FileToImport)
+{
+	declare Boolean IsInUserDir = TitleEdition.File_Exists(_FileToImport, CTitleEdition::EDrive::User);
+	if (IsInUserDir) {
+		TitleEdition.File_ImportFromUser(_FileToImport);
+		wait(TitleEdition.Dialog_IsFinished);
+	}
+}
+
+Text SystemImport(Text _FileToImport)
+{
+	if (_FileToImport == "") {
+		return "";
+	}
+	declare Text AbbreviatedText = TextLib::SubString(_FileToImport, 7, TextLib::Length(_FileToImport) - 7);
+	FetchFromUserDir(_FileToImport);
+	return AbbreviatedText;
+}
+
+Void CopyAllReplays(Text _OriginFolder, Text _MapEndName, Text _DestinationFolder, Boolean _KeepOriginalCopy)
+{
+	declare Text[] NameParticles	= TextLib::Split(".", _MapEndName);
+	declare Text ReplayNameBegin	= NameParticles[0];
+	declare Text ReplayNameEnd		= ".Replay.Gbx";
+	declare Text OptionalReplayName	= ReplayNameBegin ^ ReplayNameEnd;
+	if (TitleEdition != Null && TitleEdition.File_Exists(_OriginFolder ^ OptionalReplayName, CTitleEdition::EDrive::Title)) {
+		// Move MapName.Replay.Gbx
+		TitleEdition.File_Move(_OriginFolder ^ OptionalReplayName, _DestinationFolder, _KeepOriginalCopy);
+	}
+	if (G_ContextName != "") {
+		declare Text CorrectReplayName	= ReplayNameBegin ^ "_" ^ G_ContextName ^ ReplayNameEnd;
+		if (TitleEdition != Null && TitleEdition.File_Exists(_OriginFolder ^ CorrectReplayName, CTitleEdition::EDrive::Title)) {
+			// Move MapName.Replay.Gbx
+			TitleEdition.File_Move(_OriginFolder ^ CorrectReplayName, _DestinationFolder, _KeepOriginalCopy);
+		}
+	}
+}
+
+Text MoveCampaignMap(Text _MapOriginPath, Text _MapDestinationFolder, Boolean _KeepOriginalCopy) {
+	declare Boolean KeepOriginalCopy = _KeepOriginalCopy;
+	declare Text[] MapSplitPaths	= TextLib::Split("/\\", _MapOriginPath);
+	if (MapSplitPaths.existskey(0) && MapSplitPaths[0] == "Campaigns") { // TODO : Mettre "Campaigns" en tant que constante
+		KeepOriginalCopy = False;
+	}
+	declare Text MapEndName			= _MapOriginPath;
+	if (MapSplitPaths.count != 0) {
+		MapEndName = MapSplitPaths[MapSplitPaths.count - 1];
+		assert(MapSplitPaths.removekey(MapSplitPaths.count - 1));
+	}
+	declare Text MapDestinationPath	= _MapDestinationFolder ^ MapEndName;
+	declare Text DestinationFolder	= TrackBrowserAPI::FullPath(_MapDestinationFolder);
+	declare Text OriginPath			= TrackBrowserAPI::FullPath(_MapOriginPath);
+	if (TitleEdition != Null && TitleEdition.File_Exists(OriginPath, CTitleEdition::EDrive::Title)) {
+		TitleEdition.File_Move(OriginPath, DestinationFolder, KeepOriginalCopy);
+		declare Text OriginFolder = TrackBrowserAPI::FullPath(TextLib::Join("\\", MapSplitPaths) ^ "\\");
+		CopyAllReplays(OriginFolder, MapEndName, DestinationFolder, KeepOriginalCopy);
+	} else {
+		return "";
+	}
+	return MapDestinationPath;
+}
+
+Void RemoveAllExtraMaps()
+{
+	declare Boolean IsActivated = CampaignAPI::IsActivated();
+	if (!IsActivated) return;
+	declare Text[] AllMapPaths = CampaignAPI::GetAllMapPaths();
+	TrackBrowserAPI::FetchData(C_CampaignMaps, False, True);
+	wait(TrackBrowserAPI::HasFetched());
+	TrackBrowserAPI::MapInfoIteration_Begin();
+	while (!TrackBrowserAPI::MapInfoIteration_IsOver()) {
+		declare CMapInfo MapInfo <=> TrackBrowserAPI::MapInfoIteration_GetMapInfo();
+		if (!AllMapPaths.exists(MapInfo.FileName)) {
+			if (MoveCampaignMap(MapInfo.FileName, C_MovedMaps, False) != "") {
+				G_WarningMapMoved = True;
+			}
+		}
+		TrackBrowserAPI::MapInfoIteration_Next();
+	}
+}
+
+Void CopyCampaignMaps()
+{
+	declare Boolean IsActivated = CampaignAPI::IsActivated();
+	if (!IsActivated) {
+		TitleEdition.SetTitleCampaign(0, G_ContextName, "", False);
+	} else {
+		foreach(CategoryIndex => Category in CampaignAPI::GetMapsPath()) {
+			foreach(MapIndex => Map in Category) {
+				if (Map == "") continue;
+				declare Text MapDestinationFolder = C_CampaignMaps ^ CategoryIndex ^ "\\";
+				declare Text NewMapPath;
+				NewMapPath = MoveCampaignMap(Map, MapDestinationFolder, True);
+				CampaignAPI::PlaceMap(NewMapPath, CategoryIndex, MapIndex);
+			}
+		}
+		TitleEdition.SetTitleCampaign(0, G_ContextName, C_CampaignMaps, True);
+	}
+}
+
+Void PrepareGeneration()
+{
+	G_WarningMapMoved = False;
+	G_ContextName = CampaignAPI::GetContextName();
+	RemoveAllExtraMaps();
+	CopyCampaignMaps();
+}
+
+Boolean HasWarningsMapMoved()
+{
+	return G_WarningMapMoved;
+}
+
+Void PackChecks(CPackCreator _PackCreator,
+		CPackCreatorPack _CurrentPack,
+		CPackCreatorTitleInfo _TitleInfo)
+{
+	if (_CurrentPack == Null) {
+		_PackCreator.RegisterPackForEditedTitle();
+		wait(!_PackCreator.RegisterPack_IsInProgess);
+	}
+	if (_CurrentPack == Null) {
+		Dialog_Message(_("Could not register the pack"));
+		return;
+	}
+	if (_TitleInfo.DisplayName == "") {
+		_TitleInfo.DisplayName = TitleEdition.EditedTitleId;
+	}
+	if (_TitleInfo.Description == "") {
+		_TitleInfo.Description = TextLib::Compose(_("Made in maker '%1'."), LoadedTitle.Name);
+	}
+}
+
+Void ManagePackaging(CPackCreatorTitleInfo _TitleInfo)
+{
+	declare Text ProjectEnviro		for LocalUser;
+	declare Text PlayerModel			= "";
+	if (C_EnviroToModel.existskey(ProjectEnviro)) {
+		PlayerModel = C_EnviroToModel[ProjectEnviro];
+	}
+	declare Text StationLogos		for LocalUser;
+	declare Text AbbrevStationLogos		= SystemImport(StationLogos);
+	declare Text StationImage		for LocalUser;
+	declare Text AbbrevStationImage		= SystemImport(StationImage);
+	declare Text Logo				for LocalUser;
+	declare Text AbbrevLogo				= SystemImport(Logo);
+	declare Text BackgroundVideo	for LocalUser;
+	declare Text AbbrevBackgroundVideo	= SystemImport(BackgroundVideo);
+	declare Text BackgroundImage	for LocalUser;
+	declare Text AbbrevBackgroundImage	= SystemImport(BackgroundImage);
+	declare Text TitleMusic			for LocalUser;
+	declare Text AbbrevTitleMusic		= SystemImport(TitleMusic);
+	_TitleInfo.Packaging_LogosFileName	= AbbrevStationLogos;
+	_TitleInfo.Packaging_ImageFileName	= AbbrevStationImage;
+	_TitleInfo.ForcedPlayerModel		= PlayerModel;
+	_TitleInfo.Menus_MusicFileName		= AbbrevTitleMusic;
+	_TitleInfo.Station_ManialinkUrl = "";
+}
+
+Void GeneratePack(CPackCreator _PackCreator,
+		CPackCreatorPack _CurrentPack,
+		CPackCreatorTitleInfo _TitleInfo,
+		Text _TitlePackXMLAddOn)
+{
+	declare PackIdent	= _PackCreator.Build_Begin(_CurrentPack, _TitleInfo);
+	TitleEdition.File_WriteText("Media/XML/HorizonAddOn.xml", _TitlePackXMLAddOn);
+	
+	XMLController::LoadResourcesFolderFromXML();
+	declare Text[] ResourcesFolders = XMLController::GetResourcesFolders();
+	if(ResourcesFolders.count <= 0) {
+		// log("add default ResourcesFolders");
+		_PackCreator.Build_AddFolder(PackIdent, "Actions/", False, True, False, False);
+		_PackCreator.Build_AddFolder(PackIdent, "Blocks/", False, True, False, False);
+		_PackCreator.Build_AddFolder(PackIdent, "Items/", False, True, False, False);
+		_PackCreator.Build_AddFolder(PackIdent, "Maps/", False, True, False, False);
+		_PackCreator.Build_AddFolder(PackIdent, "Media/", False, True, False, False);
+		_PackCreator.Build_AddFolder(PackIdent, "Modules/", False, True, False, False);
+		_PackCreator.Build_AddFolder(PackIdent, "Replays/", False, True, False, False);
+		_PackCreator.Build_AddFolder(PackIdent, "Scripts/", False, True, False, False);
+		_PackCreator.Build_AddFolder(PackIdent, "Skins/", False, True, False, False);
+	} else {
+		// log("add specific ResourcesFolders :");
+		foreach(FolderName in ResourcesFolders) {
+			declare Boolean FolderIsPublic = XMLController::FolderIsPublic(FolderName);
+			declare Boolean FolderIsInternal = XMLController::FolderIsInternal(FolderName);
+			// log("     "^FolderName^FolderIsPublic^FolderIsInternal);
+			_PackCreator.Build_AddFolder(PackIdent, FolderName, FolderIsPublic, FolderIsInternal, False, False);
+		}
+	}
+	
+	// TODO : nettoyer ça dans le cas du maker SMStorm.
+
+	_PackCreator.Build_AddFile(PackIdent, "Scripts/MapTypes/TrackMania/Race.Script.txt", False, True, False); // TODO : Comprendre comment on peut se débarasser de cette ligne
+	_PackCreator.Build_AddFile(PackIdent, "Scripts/Modes/TrackMania/HotSeat.Script.txt", False, True, False); // TODO : Comprendre comment on peut se débarasser de cette ligne
+	_PackCreator.Build_AddFile(PackIdent, "Scripts/Modes/TrackMania/SingleMap.Script.txt", False, True, False); // TODO : Comprendre comment on peut se débarasser de cette ligne
+	_PackCreator.Build_AddFile(PackIdent, "Scripts/Modes/TrackMania/VersusReplay.Script.txt", False, True, False); // TODO : Comprendre comment on peut se débarasser de cette ligne
+	_PackCreator.Build_Generate(PackIdent, False);
+	wait(_PackCreator.Build_IsGenerated(PackIdent));
+
+	G_GenerationSucceded = (_PackCreator.Build_ErrorMessage(PackIdent) == "");
+	G_GenerationErrorMessage = _PackCreator.Build_ErrorMessage(PackIdent);
+	_PackCreator.Build_End(PackIdent);
+}
+
+Void LaunchGeneration(Text _TitlePackXMLAddOn)
+{
+	if (!BaseAssertsPassed()) {
+		TitleEdition.File_WriteText("Media/XML/HorizonAddOn.xml", _TitlePackXMLAddOn);
+		return;
+	}
+	declare PackCreator <=> TitleEdition.PackCreator;
+	declare CurrentPack <=> PackCreator.CurrentPack;
+	declare TitleInfo <=> TitleEdition.EditedTitleInfo;
+	PackChecks(PackCreator, CurrentPack, TitleInfo);
+	TitleInfo.Menus_ManiaAppFileName = "Media/Apps/MainMenuLagoon.Script.txt";
+	ManagePackaging(TitleInfo);
+	GeneratePack(PackCreator, CurrentPack, TitleInfo, _TitlePackXMLAddOn);
+	if (G_GenerationSucceded) {
+		declare Boolean TitleWasMadeOnce for LocalUser;
+		TitleWasMadeOnce = True;
+		SaveState(XMLController::GenerateXML());
+		return;
+	}
+}
+
+Boolean GenerationSucceded()
+{
+	return G_GenerationSucceded;
+}
+
+Text GenerationErrorMessage()
+{
+	return G_GenerationErrorMessage;
+}

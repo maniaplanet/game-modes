@@ -1,0 +1,196 @@
+#Include "Libs/Nadeo/Common/Core/MenuLayers.Script.txt"													as Layers
+#Include "Libs/Nadeo/Common/Core/Pages.Script.txt"														as Pages
+#Include "Libs/Nadeo/Common/Core/Logger.Script.txt"														as Logger
+#Include "TextLib"																					as TextLib
+#Include "MathLib"																					as MathLib
+
+#Include "Libs/Nadeo/MP4/Common/Components/ListDisplayer/ListDisplayerController_Menu.Script.txt"								as ListDisplayer
+
+//Plugins
+#Include "Libs/Nadeo/MP4/TPLagoon/Components/G_BarreSection/BarreSectionController.Script.txt"			as BarreSectionController
+#Include "Libs/Nadeo/MP4/TPLagoon/Components/RecordCenter/RecordsHandler.Script.txt"					as RecordHandler
+#Include "Libs/Nadeo/MP4/TPLagoon/Components/Solo/SoloAPI.Script.txt"									as SoloAPI
+
+//Layers
+#Include "Libs/Nadeo/MP4/TPLagoon/Components/RecordCenter/LBRecordCenter.Script.txt"					as RecordCenter
+#Include "Libs/Nadeo/MP4/TPLagoon/Components/RecordCenter/LBRecordCenterDetails.Script.txt"				as RecordCenterDetails
+
+// HACKed
+
+declare Boolean G_IsRunning;
+
+Boolean IsRunning()
+{
+	return G_IsRunning;
+}
+
+Void WarnNotEnoughParams(CManiaAppEvent _Event) {
+	Logger::Warn("[Menucontroller] event "^_Event.CustomEventType^": not enough params ["^_Event.CustomEventData^"]");
+}
+
+Void Build(Text _LayerName, Boolean _Attach) {
+
+	declare Text MLText;
+	switch(_LayerName) {
+		case("RecordCenter"):{
+			MLText = RecordCenter::Build();
+		}
+		case("RecordCenterDetails"):{
+			MLText = RecordCenterDetails::Build();
+		}
+	}
+
+	if(MLText == "") {
+		Logger::Warn("Unknown Page: "^_LayerName);
+		return;
+	}
+	
+	Layers::Create(_LayerName, MLText);
+	
+	declare CUILayer Layer <=> Layers::Get(_LayerName);
+	declare Text Page_LayerName for Layer.LocalPage;
+
+	Page_LayerName = _LayerName;
+	if(_Attach) Layers::Attach(_LayerName);
+}
+
+Void Build(Text _LayerName) {
+	Build(_LayerName, False);
+}
+
+Void Load() {
+	G_IsRunning = False;
+	Build("RecordCenter");
+	Build("RecordCenterDetails");
+
+	BarreSectionController::AddConfiguration("RecordCenter", _("Buddies"), Text[], Text[], Text[], "RecordCenter");
+
+	BarreSectionController::AddConfiguration("RecordCenterDetails", _("|Noun, plural|Records"),
+							Text[], Text[]);
+
+	Pages::Compose("RecordCenter", ["RecordCenter", "BarreSection"]);
+	Pages::Compose("RecordCenterDetails", ["RecordCenterDetails", "BarreSection"]);
+}
+
+Void AddConfiguration(Text[] _SoloSections, Text[] _SoloSectionImages)
+{
+	BarreSectionController::AddConfiguration("RecordCenter", _("Buddies"), _SoloSections, _SoloSectionImages, Text[], "RecordCenter");
+
+	BarreSectionController::AddConfiguration("RecordCenterDetails", _("|Noun, plural|Records"), _SoloSections, _SoloSectionImages, Text[], "");
+}
+
+
+Void Show() {
+	if (G_IsRunning) {
+		Logger::Warn("RecordCenter déjà visible, méthode Hide appelée une fois de trop");
+		return;
+	}
+	BarreSectionController::SetConfiguration("RecordCenter");
+	G_IsRunning = True;
+	Pages::GotoNext("RecordCenter");
+	/* HACK ICI : Les records sont fakés */
+	declare Text[Text][] RequestedRecordsResume;
+	declare Text[] Names = ["PLAYER", "PLAYER", "PLAYER", "PLAYER", "PLAYER", "PLAYER", "PLAYER", "PLAYER", "PLAYER", "PLAYER",
+							"PLAYER", "PLAYER", "PLAYER", "PLAYER", "PLAYER", "PLAYER", "PLAYER", "PLAYER", "PLAYER", "PLAYER"];
+	for (I, 0, 19) {
+		declare Integer BestRecordCount = MathLib::Rand(1, 60);
+		declare Integer OpponentBestRecordCount = MathLib::Rand(1, 60);
+		RequestedRecordsResume.add(
+		[
+		"Category1" => TextLib::ToText(BestRecordCount),
+		"Category2" => TextLib::ToText(OpponentBestRecordCount),
+		"CoreInfo" => "userdata",
+		"Flag"		=> LocalUser.CountryFlagUrl, // TODO : Changer cette donnée
+		"Category0" => Names[I],
+		"Category3" => "140"]);
+	}
+	/* --- */
+	ListDisplayer::ChangeData("RecordCenter", RequestedRecordsResume);
+}
+
+Void Hide(Boolean _ForceStop) {
+	if (!G_IsRunning) {
+		if (!_ForceStop) {
+			Logger::Warn("RecordCenter déjà caché, méthode Hide appelée une fois de trop");
+		}
+		return;
+	}
+	G_IsRunning = False;
+	//if(!_ForceStop)
+	//{
+	//}
+
+	Pages::GotoPrevious();
+	if (Pages::GetCurrentPageName() == "RecordCenter") {
+		// On etait dans les RecordCenterDetails
+		Pages::GotoPrevious();
+	}
+}
+
+Void Hide() {
+	Hide(False);
+}
+
+Void ForceHide() {
+	Hide(True);
+}
+
+Void Loop() {
+	if (!G_IsRunning) return;
+
+	foreach(Event in PendingEvents) {
+		if(Event.Type != CManiaAppEvent::EType::LayerCustomEvent) continue;
+		switch(Event.CustomEventType) {
+			case "RecordCenterDetailsStart": {
+				if (Event.CustomEventData.count != 5) {
+					continue;
+				}
+				declare BuddyLogin			= Event.CustomEventData[0];
+				declare SelectedFilter		= Event.CustomEventData[1];
+				declare BuddyName			= Event.CustomEventData[2];
+				declare BuddyWins			= Event.CustomEventData[3];
+				declare YourWins			= Event.CustomEventData[4];
+				LayerCustomEvent(Layers::Get("RecordCenterDetails"), "BuddyLoaded", [BuddyLogin, SelectedFilter, BuddyName, BuddyWins, YourWins]);
+				Pages::GotoNext("RecordCenterDetails");
+			}
+			case "RecordCenter_Back": {
+				Pages::GotoPrevious();
+			}
+			case "GetRecordsResume": {
+				declare SelectedFilter 		= Event.CustomEventData[0];
+				declare FromOutside 		= Event.CustomEventData[1];
+				// GetRecordsResume(SelectedFilter, FromOutside);
+				RecordHandler::LoadRecordsTaskResult(SelectedFilter, FromOutside);
+			}
+			case "GetBuddiesMapsRecord": {
+				declare Text CampaignId = SoloAPI::Get_CampaignId();
+				RecordHandler::GetBuddiesMapsRecord(CampaignId);
+			}
+			case "GetRecords": {
+				declare SelectedFilter 		= Event.CustomEventData[0];
+				declare BuddyLogin 			= Event.CustomEventData[1];
+				declare SelectedGroup 		= Event.CustomEventData[2];
+				declare FromOutside 		= Event.CustomEventData[3];
+				declare BuddyName		 	= Event.CustomEventData[4];
+				// GetRecords(SelectedFilter, BuddyLogin, SelectedGroup, FromOutside);
+				RecordHandler::LoadRecordsTaskResult(SelectedFilter, BuddyLogin, SelectedGroup, FromOutside, BuddyName);
+			}
+			case "RecordPlayTrack": {
+				declare MapPath				= Event.CustomEventData[0];
+				declare Difficulty			= Event.CustomEventData[1];
+				declare Environment			= Event.CustomEventData[2];
+				declare GhostUrl			= Event.CustomEventData[3];
+				RecordHandler::RecordPlayTrack(MapPath, Difficulty, Environment, GhostUrl);
+			}
+			case "ReleaseRecordsTaskResult":
+			{
+				RecordHandler::ReleaseRecordsTaskResult(Event.CustomEventData[0]);
+			}
+		}
+	}
+}
+
+Text GenerateXML ()
+{
+	return "";
+}

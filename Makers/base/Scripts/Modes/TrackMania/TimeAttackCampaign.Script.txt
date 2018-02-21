@@ -1,0 +1,111 @@
+/**
+ *	Time Attack mode
+ */
+
+#Extends "Modes/TrackMania/ModeBase.Script.txt"
+
+#Const	CompatibleMapTypes	"Race"
+#Const	Version		"2016-11-24"
+#Const	ScriptName	"TimeAttack.Script.txt"
+
+
+// ---------------------------------- //
+// Extend
+// ---------------------------------- //
+***StartMap***
+***
+UIManager.UIAll.UISequence = CUIConfig::EUISequence::Playing;
+UIManager.HoldLoadingScreen = False;
+// ---------------------------------- //
+// Spawn players for the race
+foreach (Player in Players) {
+	StartRace(Player);
+}
+***
+
+***PlayLoop***
+***
+// ---------------------------------- //
+// Manage events
+foreach (Event in PendingEvents) {
+	PassOn(Event);
+	// ---------------------------------- //
+	// Waypoint
+	if (Event.Type == CTmModeEvent::EType::WayPoint) {
+		if (Event.IsEndRace) {
+			LaunchReplaySequence();
+			WaitTime(500);
+			//LaunchPlayingSequence();
+			//StartRace(Players[0]);
+		}
+	}
+	// ---------------------------------- //
+	// GiveUp
+	else if (Event.Type == CTmModeEvent::EType::GiveUp) {
+			LaunchPlayingSequence();
+		//StartRace(Event.Player);
+	}
+}
+
+***
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+Void StartRace(CTmPlayer _Player) {
+	if (_Player == Null) return;
+	_Player.IsSpawned 				= True;
+	_Player.RaceStartTime 			= Now + 3000;
+}
+
+Void WaitTime(Integer _Duration) {
+	if (_Duration <= 0) {
+		yield;
+		return;
+	}
+	declare EndTime = Now + _Duration;
+	wait(Now >= EndTime);
+}
+
+Boolean StartReplaySequence() {
+	foreach(Player in Players) {
+		declare UI <=> UIManager.GetUI(Player);
+		if(UI.UISequence != CUIConfig::EUISequence::EndRound) {
+			UI.UISequence = CUIConfig::EUISequence::EndRound;
+			UI.SpectatorObserverMode = CUIConfig::EObserverMode::Forced;
+			UI.SpectatorForceCameraType = 0;
+			return True;
+		}
+	}
+	return False;
+}
+
+Void SetReplayGhostFocus(Ident _GhostIdent , CTmPlayer _Player) {
+	declare UI <=> UIManager.GetUI(_Player);
+	if(_GhostIdent != NullId) {
+		UI.SpectatorForcedTarget = _GhostIdent;
+	}
+}
+Void SetGhost(CTmPlayer _Player)
+{
+	declare CGhost MyGhost = ScoreMgr.Playground_GetPlayerGhost(_Player);
+	SetReplayGhostFocus(MyGhost.Id, _Player);
+	RaceGhost_Add(MyGhost, True);
+}
+
+Void LaunchReplaySequence() {
+
+	if(StartReplaySequence()) {
+		foreach(Player in Players) {
+			SetGhost(Player);
+			Player.IsSpawned = False;
+		}
+	}
+}
+
+Void LaunchPlayingSequence() {
+	foreach(Player in Players) {
+		declare UI <=> UIManager.GetUI(Player);
+		UI.UISequence = CUIConfig::EUISequence::Playing;
+	}
+}

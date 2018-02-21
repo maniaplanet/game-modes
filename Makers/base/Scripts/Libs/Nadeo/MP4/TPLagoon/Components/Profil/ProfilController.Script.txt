@@ -1,0 +1,222 @@
+#Include "Libs/Nadeo/Common/Core/MenuLayers.Script.txt"											as Layers
+#Include "Libs/Nadeo/Common/Core/Pages.Script.txt"												as Pages
+#Include "Libs/Nadeo/Common/Core/Logger.Script.txt"												as Logger
+#Include "Libs/Nadeo/Common/Core/SectionsManager.Script.txt"										as SectionsManager
+#Include "Libs/Nadeo/MP4/TPLagoon/Components/G_BarreSection/BarreSectionController.Script.txt"	as BarreSectionController
+#Include "TextLib"																			as TextLib
+#Include "Libs/Nadeo/MP4/Common/Components/SoundBrowser/SoundBrowserController.Script.txt"		as SoundBrowserController
+
+//Layers
+#Include "Libs/Nadeo/MP4/TPLagoon/Components/Profil/LBProfil.Script.txt"					as LBProfil
+#Include "Libs/Nadeo/MP4/TPLagoon/Components/Profil/LBAdvanced.Script.txt"					as LBAdvanced
+#Include "Libs/Nadeo/MP4/TPLagoon/Components/Profil/LBStats.Script.txt"						as LBStats
+
+#Const C_LayerProfil      "Profil"
+#Const C_LayerAdvanced    "Advanced"
+#Const C_LayerStats       "Stats"
+#Const C_Index_NickName            0
+#Const C_Index_Avatar              1
+#Const C_Index_Horn                2
+#Const C_Index_Location            3
+#Const C_Index_ClubLink            4
+#Const C_Index_Description         5
+#Const C_Index_Login               6
+#Const C_Index_Password            7
+#Const C_Index_Email               8
+#Const C_Index_MPMail              9
+#Const C_Index_Groups              10
+#Const C_Index_Profil              0
+#Const C_Index_Stats               1
+#Const C_Index_Advan               2
+#Const C_Index_EditingTime         0
+#Const C_Index_SoloTime            1
+#Const C_Index_OnlineTime          2
+#Const C_Index_PlayTime            3
+#Const C_Index_ResetCount          4
+#Const C_Index_FinishCount         5
+#Const C_Index_MostEdited          6
+#Const C_Index_MostPlayedSolo      7
+#Const C_Index_MostPlayedOnline    8
+#Const C_Index_MostPlayed          9
+#Const C_Index_NbChallPlayed       10
+
+declare Integer G_BarreClickId;
+
+Void Back() {
+
+}
+
+Void Build(Text _LayerName, Boolean _Attach) {
+
+	declare Text MLText;
+	switch(_LayerName) {
+		case(C_LayerProfil):{
+			MLText = LBProfil::Build();
+		}
+		case(C_LayerAdvanced):{
+			MLText = LBAdvanced::Build();
+		}
+		case(C_LayerStats):{
+			MLText = LBStats::Build();
+		}
+	}
+
+	if(MLText == "") {
+		Logger::Warn("Unknown Page: "^_LayerName);
+		return;
+	}
+	
+	Layers::Create(_LayerName, MLText);
+	
+	declare CUILayer Layer <=> Layers::Get(_LayerName);
+	declare Text Page_LayerName for Layer.LocalPage;
+	
+	Page_LayerName = _LayerName;
+	if(_Attach) Layers::Attach(_LayerName);
+}
+
+Void Build(Text _LayerName) {
+	Build(_LayerName, False);
+
+}
+
+Void Load() {
+	Build(C_LayerProfil);
+	Build(C_LayerAdvanced);
+	Build(C_LayerStats);
+	//Build(C_LayerProfil);
+	Pages::Compose("ProfilMain",    [C_LayerProfil, "BarreSection"]);
+	Pages::Compose(C_LayerAdvanced, [C_LayerAdvanced, "BarreSection"]);
+	Pages::Compose(C_LayerStats,    [C_LayerStats, "BarreSection"]);
+	declare Text[] SoloSections			= [_("Profile"), _("Advanced"), _("Statistics")];
+	//BarreSectionController::AddConfiguration("ProfilMain", "Profil", SoloSections, Text[], Text[], "Profil");
+	BarreSectionController::AddConfiguration("ProfilMain", _("Profile"), SoloSections, Text[]);
+	//SectionsManager::AddSection("Profil", "ProfilMain", "Profil", <0.,0.,0.>);
+}
+
+Void UpdateValues(Text _LayerName, Text[Integer] Values){
+
+	declare CUILayer LayerToSend <=> Layers::Get(_LayerName);
+	if(LayerToSend == Null) return;
+	declare Text[Integer] Net_FormDisplayer_ValueToChange  for LayerToSend.LocalPage;
+	Net_FormDisplayer_ValueToChange = Values;
+	LayerCustomEvent(LayerToSend, "FormDisplayer_UpdateValues", [""]);
+}
+
+Text GetLastZone()
+{
+	declare Text[] Zones = TextLib::Split("|", LocalUser.ZonePath);
+	return Zones[Zones.count -1];
+}
+
+Void Loop() {
+	foreach(Event in PendingEvents) {
+		if(Event.Type != CManiaAppEvent::EType::LayerCustomEvent) continue;
+		switch(Event.CustomEventType) {
+			case "BarreSec_Click": {
+				declare Text BarreClickId = Event.CustomEventData[0];
+				//log("BarreClickId: "^ BarreClickId);
+				G_BarreClickId = TextLib::ToInteger(BarreClickId);
+				switch(G_BarreClickId)
+				{
+					case C_Index_Profil: {
+						Pages::GotoNext("ProfilMain");
+					}
+					case C_Index_Stats: {
+						Pages::GotoNext(C_LayerAdvanced);
+					}
+					case C_Index_Advan: {
+						Pages::GotoNext(C_LayerStats);
+					}
+				}
+
+			}
+			case "UpdateValues_Profil": {
+				G_BarreClickId = 0;
+				declare Text[Integer] Values;
+				declare Text NickName    = LocalUser.Name;
+				declare Text Avatar      = "";
+				declare Text Horn        = "(default Horns)";
+				declare Text Location    = GetLastZone();
+				declare Text ClubLink    = "";
+				declare Text Description = "Ceci est ma description";
+				declare Text Login       = LocalUser.Login;
+				declare Text Password    = "******";
+				declare Text Email       = "abc@mail.com";
+				declare Text MPMail      = "yes";
+				declare Text Groups      = "add";
+				Values = [	C_Index_NickName    => NickName, 
+							C_Index_Avatar      => Avatar, 
+							C_Index_Horn        => Horn, 
+							C_Index_Location    => Location, 
+							C_Index_ClubLink    => ClubLink, 
+							C_Index_Description => Description, 
+							C_Index_Login       => Login, 
+							C_Index_Password    => Password, 
+							C_Index_Email       => Email,
+							C_Index_MPMail      => MPMail,
+							C_Index_Groups      => Groups];
+				UpdateValues(C_LayerProfil, Values);
+			}
+			case "UpdateValues_Advanced": {
+
+			}
+			case "UpdateValues_Stats": {
+				declare Text[Integer] Values;
+				declare Text EditingTime      = "0:05|1:03|0:26";
+				declare Text SoloTime         = "51:29|28:18|1:54";
+				declare Text OnlineTime       = "4:33|0:21|0:10";
+				declare Text PlayTime         = "56:08|28:19|2:04";
+				declare Text ResetCount       = "2|1|0";
+				declare Text FinishCount      = "2|1|0";
+				declare Text MostEdited       = "CanyonEmpty2IsTheNameMap / arnmis / Canyon";
+				declare Text MostPlayedSolo   = "CanyonEmpty / arnmis / Canyon";
+				declare Text MostPlayedOnline = "A02 / Nadeo / Canyon";
+				declare Text MostPlayed       = "CanyonEmpty / arnmis / Canyon";
+				declare Text NbChallPlayed    = "27";
+				Values = [	C_Index_EditingTime        => EditingTime, 
+							C_Index_SoloTime           => SoloTime, 
+							C_Index_OnlineTime         => OnlineTime, 
+							C_Index_PlayTime           => PlayTime, 
+							C_Index_ResetCount         => ResetCount, 
+							C_Index_FinishCount        => FinishCount, 
+							C_Index_MostEdited         => MostEdited, 
+							C_Index_MostPlayedSolo     => MostPlayedSolo, 
+							C_Index_MostPlayedOnline   => MostPlayedOnline,
+							C_Index_MostPlayed         => MostPlayed,
+							C_Index_NbChallPlayed      => NbChallPlayed];
+				UpdateValues(C_LayerStats, Values);
+			}
+			case "ProfilEvent_Button": {
+				declare Integer ButtonIndex = TextLib::ToInteger(Event.CustomEventData[0]);
+				log("ButtonIndex: "^ ButtonIndex);
+				switch(ButtonIndex)
+				{
+					case C_Index_Avatar: {
+
+					}
+					case C_Index_Horn: {
+
+					}
+					case C_Index_Location: {
+
+					}
+					case C_Index_Groups: {
+
+					}
+				}
+
+			}
+			case "AdvancedEvent_Button": {
+				declare Integer ButtonIndex = TextLib::ToInteger(Event.CustomEventData[0]);
+				log("ButtonIndex: "^ ButtonIndex);
+
+			}
+		}
+	}
+}
+
+Text GenerateXML ()
+{
+	return "";
+}

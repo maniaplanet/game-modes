@@ -1,0 +1,189 @@
+#Include "Libs/Nadeo/Common/Core/Logger.Script.txt"	as Logger
+#Include "TextLib"								as TextLib
+#Include "Libs/Nadeo/MP4/Common/GlobalVariables.Script.txt"	as GlobalVariables
+
+#Include "Libs/Nadeo/MP4/Common/Components/TrackBrowser/TrackBrowserAPI.Script.txt" as TrackBrowserAPI
+
+#Const C_XmlPathTM	[	"TestCampaign"	=> "file://Media/MEDIABROWSER_HiddenResources/MakerTM/XML/CampaignXMLs/TestCampaign.xml",
+						"NewCampaign"	=> "file://Media/MEDIABROWSER_HiddenResources/MakerTM/XML/CampaignXMLs/NewCampaign.xml"]
+#Const C_XmlPathSM	[	"TestCampaign"	=> "file://Media/MEDIABROWSER_HiddenResources/MakerSM/XML/CampaignXMLs/TestCampaign.xml",
+						"NewCampaign"	=> "file://Media/MEDIABROWSER_HiddenResources/MakerSM/XML/CampaignXMLs/NewCampaign.xml"]
+
+declare Integer G_UnlockConditionType;
+
+declare Text[]				G_Categories;
+declare Text[][]			G_MapsPerCategory;
+declare Text[Text][][]		G_MapMetadata;
+declare Text[Text][][]		G_UnlockConditions;
+declare Integer[][Text][]	G_CardTypeGroups;
+declare Text				G_Color;
+declare Boolean				G_IsActive;
+declare Boolean				G_AllowEvaluate;
+declare Text				G_ContextName;
+declare Text				G_ScriptName;
+declare Text[Text]			G_XmlPath;
+
+Void Load()
+{
+	declare Text[Text][Integer] BaseFiles = [GlobalVariables::LaunchContext_Maker() => C_XmlPathTM,
+											GlobalVariables::LaunchContext_MakerSM() => C_XmlPathSM];
+	G_XmlPath = BaseFiles[GlobalVariables::GetLaunchContext()];
+}
+
+Text Private_LoadTrackAttribute(CXmlNode _TrackNode, Text _KeyValue, Text _DefaultValue)
+{
+	if (_TrackNode == Null) return _DefaultValue;
+	declare Result = _TrackNode.GetAttributeText(_KeyValue, "-");
+	if (Result == "-") {
+		declare ChildNode <=> _TrackNode.GetFirstChild(_KeyValue);
+		if (ChildNode == Null) {
+			return _DefaultValue;
+		}
+		Result = ChildNode.TextContents;
+	}
+	return Result;
+}
+
+Void AnalyzeXML(Text _XML)
+{
+	if (_XML == "")
+	{
+		return;
+	}
+	declare Document				<=> Xml.Create(_XML);
+	declare Campaign				<=> Document.Root;
+	G_Color = Campaign.GetAttributeText("color", "FF0");
+	G_IsActive = Campaign.GetAttributeBoolean("activated", True);
+	G_AllowEvaluate = Campaign.GetAttributeBoolean("allowevaluate", False);
+	G_ContextName	= Campaign.GetAttributeText("contextname", "");
+	G_ScriptName	= Campaign.GetAttributeText("scriptname", "");
+	if (Campaign.Name == "Solo") {
+		Campaign = Campaign.GetFirstChild("campaign");
+	}
+	declare CampaignType = Campaign.GetAttributeText("type", "");
+	declare CategoriesNode 			<=> Campaign.GetFirstChild("categories");
+	if (CategoriesNode == Null) {
+		Logger::Warn("Node categories non presente dans le XML de campagne");
+		Xml.Destroy(Document);
+		return;
+	}
+	G_Categories.clear();
+	G_MapsPerCategory.clear();
+	G_MapMetadata.clear();
+	G_UnlockConditions.clear();
+	G_CardTypeGroups.clear();
+	foreach(CategoryKey => Category in CategoriesNode.Children)
+	{
+		declare CategoryName = Category.GetAttributeText("name", "");
+		G_Categories.add(CategoryName);
+		G_MapsPerCategory.add(Text[]);
+		G_MapMetadata.add(Text[Text][]);
+		G_UnlockConditions.add(Text[Text][]);
+		G_CardTypeGroups.add(["MultiLap" => Integer[]]);
+		foreach(TrackKey => Track in Category.Children)
+		{
+			declare TrackPath = Private_LoadTrackAttribute(Track, "path", "");
+			G_MapsPerCategory[CategoryKey].add(TrackPath);
+			declare Text[Text] Metadata;
+			if (TrackPath != "") {
+				Metadata = TrackBrowserAPI::GetMetadata(TrackPath);
+			}
+			G_MapMetadata[CategoryKey].add(Metadata);
+
+			G_UnlockConditions[CategoryKey].add(["MedalNumber" => "0", "MedalType" => "Gold"]);
+			foreach(UnlockCondition in Track.Children)
+			{
+				if (UnlockCondition.GetAttributeInteger("id", 0) == G_UnlockConditionType)
+				{
+					G_UnlockConditions[CategoryKey][TrackKey]["MedalNumber"] = UnlockCondition.GetAttributeText("medalnb", "0");
+					G_UnlockConditions[CategoryKey][TrackKey]["MedalType"] = UnlockCondition.GetAttributeText("medaltype", "Bronze");
+				}
+			}
+
+			if (Track.GetAttributeBoolean("multilap", False)) {
+				G_CardTypeGroups[CategoryKey]["MultiLap"].add(TrackKey + 1); // Counts from 1 to N. This way, 5 is a multilap for example
+			}
+		}
+	}
+	Xml.Destroy(Document);
+}
+
+Void ReadCampaign(Text _CampaignType, Integer _UnlockConditionType)
+{
+	G_UnlockConditionType = _UnlockConditionType;
+	if (!G_XmlPath.existskey(_CampaignType))
+	{
+		Logger::Warn("ERREUR DE LECTURE DE CAMPAGNE : LE TYPE DE CAMPAGNE PROPOSE N'EST PAS COMPATIBLE");
+		return;
+	}
+	declare GetRequest				<=> Http.CreateGet(G_XmlPath[_CampaignType]);
+	wait(GetRequest.IsCompleted);
+	if (GetRequest.StatusCode != 200)
+	{
+		Logger::Warn("ERREUR DE LECTURE DE CAMPAGNE : LE FICHIER N'A PAS ETE TROUVE");
+		return;
+	}
+	AnalyzeXML(GetRequest.Result);
+	Http.Destroy(GetRequest);
+}
+
+Void GetCampaignNames()
+{
+	foreach (CampaignType => FileName in G_XmlPath)
+	{
+		declare GetRequest				<=> Http.CreateGet(FileName);
+		wait(GetRequest.IsCompleted);
+		if (GetRequest.StatusCode != 200)
+		{
+			Logger::Warn("ERREUR DE LECTURE DE CAMPAGNE : LE FICHIER N'A PAS ETE TROUVE (affectation des noms dans la campagne)");
+			return;
+		}
+		declare Document				<=> Xml.Create(GetRequest.Result);
+		declare Campaign				<=> Document.Root;
+		declare CampaignName			= Campaign.GetAttributeText("type", "");
+		Xml.Destroy(Document);
+		Http.Destroy(GetRequest);
+	}
+}
+
+Text[]				GetCategories() {
+	return G_Categories;
+}
+
+Text[][]			GetMapsPerCategory() {
+	return G_MapsPerCategory;
+}
+
+Text[Text][][]		GetMapMetadata() {
+	return G_MapMetadata;
+}
+
+Text[Text][][]		GetUnlockConditions() {
+	return G_UnlockConditions;
+}
+
+Integer[][Text][]	GetCardTypeGroups() {
+	return G_CardTypeGroups;
+}
+
+Text GetColor() {
+	return G_Color;
+}
+
+Boolean IsActive() {
+	return G_IsActive;
+}
+
+Boolean GetAllowEvaluate() {
+	return G_AllowEvaluate;
+}
+
+Text GetContextName()
+{
+	return G_ContextName;
+}
+
+Text GetScriptName()
+{
+	return G_ScriptName;
+}

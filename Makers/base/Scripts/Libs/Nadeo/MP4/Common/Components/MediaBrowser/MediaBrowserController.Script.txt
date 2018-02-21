@@ -1,0 +1,542 @@
+#Include "Libs/Nadeo/Common/Core/MenuLayers.Script.txt"												as Layers
+#Include "Libs/Nadeo/Common/Core/Pages.Script.txt"													as Pages
+#Include "Libs/Nadeo/Common/Core/Logger.Script.txt"													as Logger
+#Include "Libs/Nadeo/Common/Core/SectionsManager.Script.txt"											as SectionsManager
+#Include "TextLib"																					as TextLib
+#Include "Libs/Nadeo/MP4/Common/GlobalVariables.Script.txt"											as GlobalVariables
+#Include "Libs/Nadeo/Common/Core/LBController.Script.txt"											as LBController
+
+#Include "Libs/Nadeo/MP4/Common/Components/MediaDisplayer/LBMediaDisplayer.Script.txt"										as MediaCardDisplayer
+
+#Include "Libs/Nadeo/MP4/TPLagoon/Components/G_BarreSection/BarreSectionController.Script.txt"		as BarreSectionController
+
+#Const C_AuthorizedBrowsers			["ModBrowser", "TrackBrowser", "ReplayBrowser", "MatchSettingsBrowser", "ScriptBrowser"]
+
+declare Boolean[Text]				G_IsRunning;
+declare Boolean[Text]				G_IsRequestingFolderOpening;
+declare Boolean[Text]				G_IsRequestingFolderBack;
+declare Boolean[Text]				G_IsRequestingRefreshFolder;
+declare Boolean[Text]				G_IsRequestingOpenInExplorer;
+declare Boolean[Text]				G_IsRequestingSwitchFlatten;
+declare Boolean[Text]				G_IsRequestingSortByDateName;
+declare Boolean[Text]				G_IsRequestingSortAscDesc;
+declare Boolean[Text]				G_IsRequestingInputPageUp;
+declare Boolean[Text]				G_IsRequestingInputPageDown;
+declare Boolean[Text]				G_IsRequestingSteamWorkshop;
+declare Text[Text]					G_SteamWorkshopMediaName;
+declare Text[Text]					G_FolderOpeningPath;
+declare Text[][Text]				G_ListOfSelectedPaths;
+declare Boolean[Text]				G_IsInMultiSelectMode;
+declare Boolean[Text]				G_SteamWorkshop;
+
+Boolean IsRunning(Text _BrowserName)
+{
+	if (!G_IsRunning.existskey(_BrowserName)) {
+		return False;
+	}
+	//log("G_IsRunning["^_BrowserName^"]: "^ G_IsRunning[_BrowserName]);
+	return G_IsRunning[_BrowserName];
+}
+
+Void Load(Text _MLText, Text _PageName, Text _BrowserName, Text _MediaTitle)
+{
+	LBController::Build(_BrowserName, _MLText);
+	if (GlobalVariables::GetLaunchContext() == GlobalVariables::LaunchContext_Title()) {
+		BarreSectionController::AddConfiguration(_BrowserName, _MediaTitle,
+							Text[],
+							Text[]);
+		Pages::Compose(_PageName, [_BrowserName, "BarreSection"]);
+	} else {
+		Pages::Compose(_PageName, [_BrowserName]);
+	}
+}
+
+Void UpdateSelectedPaths(Text _BrowserName)
+{
+	declare CUILayer 		LayerToSend	= Layers::Get(_BrowserName);
+	if (LayerToSend == Null) {
+		Logger::Warn("Layer non trouvée dans UpdateSelectedPaths : " ^ _BrowserName);
+		return;
+	}
+	declare Text[] MediaBrowser_ListOfSelectedPaths		for LayerToSend.LocalPage;
+	declare Boolean	MediaBrowser_IsInMultiSelectMode	for LayerToSend.LocalPage;
+	declare Boolean MediaBrowser_RefreshSelectedPaths	for LayerToSend.LocalPage;
+	MediaBrowser_ListOfSelectedPaths	= G_ListOfSelectedPaths[_BrowserName];
+	MediaBrowser_IsInMultiSelectMode	= G_IsInMultiSelectMode[_BrowserName];
+	MediaBrowser_RefreshSelectedPaths	= True;
+}
+
+Void UpdateSteamWorkshop(Text _BrowserName)
+{
+	declare CUILayer 		LayerToSend	= Layers::Get(_BrowserName);
+	if (LayerToSend == Null) {
+		Logger::Warn("Layer non trouvée dans UpdateSteamWorkshop : " ^ _BrowserName);
+		return;
+	}
+	declare Boolean	MediaBrowser_SteamWorkshop			for LayerToSend.LocalPage;
+	declare Boolean MediaBrowser_RefreshWorkshop		for LayerToSend.LocalPage;
+	MediaBrowser_SteamWorkshop		= G_SteamWorkshop[_BrowserName];
+	MediaBrowser_RefreshWorkshop	= True;
+}
+
+Void UpdateData(Text _BrowserName, Text _FolderPath, Text[Text][] _MainData, Text[][][] _LineData, Text[][] _LineLogos, Integer _CurrentPageIndex, Integer _MaxPages)
+{
+	declare CUILayer 		LayerToSend	= Layers::Get(_BrowserName);
+	if (LayerToSend == Null) {
+		Logger::Warn("Layer non trouvée dans UpdateData : " ^ _BrowserName);
+		return;
+	}
+	declare Text MediaBrowser_FolderPath				for LayerToSend.LocalPage;
+	declare Boolean MediaBrowser_AnnounceNoMedia		for LayerToSend.LocalPage;
+	declare Text MediaBrowser_NoMediaMessage			for LayerToSend.LocalPage;
+	declare Integer MediaBrowser_CurrentPageIndex		for LayerToSend.LocalPage;
+	declare Integer MediaBrowser_MaxPages				for LayerToSend.LocalPage;
+	declare Boolean MediaBrowser_RefreshMediaData		for LayerToSend.LocalPage;
+	if (_MainData.count == 0 && _FolderPath != _("Loading...")) { // Léger HACK
+		MediaBrowser_AnnounceNoMedia		= True;
+		MediaBrowser_NoMediaMessage			= _("No appropriate media was found in this folder.");
+	} else {
+		MediaBrowser_AnnounceNoMedia		= False;
+	}
+	MediaBrowser_CurrentPageIndex			= _CurrentPageIndex;
+	MediaBrowser_MaxPages					= _MaxPages;
+	MediaBrowser_RefreshMediaData			= True;
+	if (MediaBrowser_FolderPath != _FolderPath) {
+		MediaBrowser_FolderPath				= _FolderPath;
+		MediaCardDisplayer::Update(_BrowserName, _MainData, _LineData, _LineLogos, -2);
+	} else {
+		MediaCardDisplayer::Update(_BrowserName, _MainData, _LineData, _LineLogos, -1);
+	}
+}
+
+Void UpdateData(Text _BrowserName, Text _FolderPath, Text[Text][] _MainData, Text[][][] _LineData, Integer _CurrentPageIndex, Integer _MaxPages)
+{
+	declare CUILayer 		LayerToSend	= Layers::Get(_BrowserName);
+	if (LayerToSend == Null) {
+		Logger::Warn("Layer non trouvée dans UpdateData : " ^ _BrowserName);
+		return;
+	}
+	declare Text MediaBrowser_FolderPath				for LayerToSend.LocalPage;
+	declare Integer MediaBrowser_CurrentPageIndex		for LayerToSend.LocalPage;
+	declare Integer MediaBrowser_MaxPages				for LayerToSend.LocalPage;
+	declare Boolean MediaBrowser_RefreshMediaData		for LayerToSend.LocalPage;
+	MediaBrowser_RefreshMediaData			= True;
+	MediaBrowser_CurrentPageIndex			= _CurrentPageIndex;
+	MediaBrowser_MaxPages					= _MaxPages;
+	if (MediaBrowser_FolderPath != _FolderPath) {
+		MediaBrowser_FolderPath				= _FolderPath;
+		MediaCardDisplayer::Update(_BrowserName, _MainData, _LineData, -2);
+	} else {
+		MediaCardDisplayer::Update(_BrowserName, _MainData, _LineData, -1);
+	}
+}
+
+Void UpdateData(Text _BrowserName, Text _FolderPath, Text[Text][] _MainData, Text[][][] _LineData)
+{
+	UpdateData(_BrowserName, _FolderPath, _MainData, _LineData, -1, -2);
+}
+
+Void UpdateBrowser(Text _BrowserName, Text _EventNamePrefix, Text[] _ButtonNames, Text _MediaTitle, Text[] _SecondaryButtonNames, Text _AddToListButtonName)
+{
+	UpdateData(_BrowserName, _("Loading..."), Text[Text][], Text[][][], Text[][], -1, -2);
+	// TODO : Ajouter le throbber
+	declare CUILayer 		LayerToSend	= Layers::Get(_BrowserName);
+	if (LayerToSend == Null) {
+		Logger::Warn("Layer non trouvée dans UpdateBrowser : " ^ _BrowserName);
+		return;
+	}
+	LayerCustomEvent(LayerToSend, "Show", Text[]);
+	declare Text MediaBrowser_EventNamePrefix	for LayerToSend.LocalPage;
+	declare Text[] MediaBrowser_ButtonNames		for LayerToSend.LocalPage;
+	declare Text MediaBrowser_MediaTitle		for LayerToSend.LocalPage;
+	declare Text[] MediaBrowser_SecondaryButtonNames	for LayerToSend.LocalPage;
+	declare Text MediaBrowser_AddToListButtonName	for LayerToSend.LocalPage;
+	declare Boolean MediaBrowser_Refresh		for LayerToSend.LocalPage;
+	MediaBrowser_EventNamePrefix		= _EventNamePrefix;
+	MediaBrowser_ButtonNames			= _ButtonNames;
+	MediaBrowser_MediaTitle				= _MediaTitle;
+	MediaBrowser_SecondaryButtonNames	= _SecondaryButtonNames;
+	MediaBrowser_AddToListButtonName	= _AddToListButtonName;
+	MediaBrowser_Refresh				= True;
+}
+
+Void Show(Text _BrowserName, Text _PageName, Text _EventNamePrefix, Text[] _ButtonNames, Text _MediaTitle, Text[] _SecondaryButtonNames, Text _AddToListButtonName)
+{
+	if (IsRunning(_BrowserName)) {
+		Logger::Warn("Le " ^ _BrowserName ^ " est déjà en train de tourner, méthode Show appelée une fois de trop");
+		return;
+	}
+	if (GlobalVariables::GetLaunchContext() == GlobalVariables::LaunchContext_Title()) {
+		BarreSectionController::SetConfiguration(_BrowserName);
+	}
+	G_IsRunning[_BrowserName]					= False;
+	G_IsRequestingFolderOpening[_BrowserName]	= False;
+	G_IsRequestingFolderBack[_BrowserName]		= False;
+	G_IsRequestingRefreshFolder[_BrowserName]	= False;
+	G_IsRequestingOpenInExplorer[_BrowserName]	= False;
+	G_IsRequestingSwitchFlatten[_BrowserName]	= False;
+	G_IsRequestingSortByDateName[_BrowserName]	= False;
+	G_IsRequestingSortAscDesc[_BrowserName]		= False;
+	G_IsRequestingInputPageUp[_BrowserName]		= False;
+	G_IsRequestingInputPageDown[_BrowserName]	= False;
+	G_IsRequestingSteamWorkshop[_BrowserName]	= False;
+	G_SteamWorkshopMediaName[_BrowserName]		= "";
+	G_FolderOpeningPath[_BrowserName]			= "";
+	G_ListOfSelectedPaths[_BrowserName]			= Text[];
+	G_IsInMultiSelectMode[_BrowserName]			= False;
+	G_SteamWorkshop[_BrowserName]				= False;
+	if (TitleControl.CanPublishFiles && C_AuthorizedBrowsers.exists(_BrowserName)) {
+		G_SteamWorkshop[_BrowserName]			= False;
+	}
+	UpdateSteamWorkshop(_BrowserName);
+	UpdateSelectedPaths(_BrowserName);
+	UpdateBrowser(_BrowserName, _EventNamePrefix, _ButtonNames, _MediaTitle, _SecondaryButtonNames, _AddToListButtonName);
+	Pages::GotoNext(_PageName);
+}
+
+Void Show(Text _BrowserName, Text _PageName, Text _EventNamePrefix, Text[] _ButtonNames, Text _MediaTitle, Text[] _SecondaryButtonNames)
+{
+	Show(_BrowserName, _PageName, _EventNamePrefix, _ButtonNames, _MediaTitle, _SecondaryButtonNames, "");
+}
+
+Void Show(Text _BrowserName)
+{
+	if (IsRunning(_BrowserName)) {
+		Logger::Warn("Le " ^ _BrowserName ^ " est déjà en train de tourner, méthode Show appelée une fois de trop");
+		return;
+	}
+	if (GlobalVariables::GetLaunchContext() == GlobalVariables::LaunchContext_Title()) {
+		BarreSectionController::SetConfiguration(_BrowserName);
+	}
+	G_IsRunning[_BrowserName]					= False;
+	G_IsRequestingFolderOpening[_BrowserName]	= False;
+	G_IsRequestingFolderBack[_BrowserName]		= False;
+	G_IsRequestingRefreshFolder[_BrowserName]	= True;
+	G_IsRequestingOpenInExplorer[_BrowserName]	= False;
+	G_IsRequestingSwitchFlatten[_BrowserName]	= False;
+	G_IsRequestingSortByDateName[_BrowserName]	= False;
+	G_IsRequestingSortAscDesc[_BrowserName]		= False;
+	G_IsRequestingInputPageUp[_BrowserName]		= False;
+	G_IsRequestingInputPageDown[_BrowserName]	= False;
+	G_IsRequestingSteamWorkshop[_BrowserName]	= False;
+	G_SteamWorkshopMediaName[_BrowserName]		= "";
+	G_ListOfSelectedPaths[_BrowserName]			= Text[];
+	G_IsInMultiSelectMode[_BrowserName]			= False;
+	G_SteamWorkshop[_BrowserName]				= False;
+	if (TitleControl.CanPublishFiles && C_AuthorizedBrowsers.exists(_BrowserName)) {
+		G_SteamWorkshop[_BrowserName]			= False;
+	}
+	UpdateSteamWorkshop(_BrowserName);
+	UpdateSelectedPaths(_BrowserName);
+	// TODO : Ajouter le throbber
+	declare CUILayer 		LayerToSend	= Layers::Get(_BrowserName);
+	if (LayerToSend == Null) {
+		Logger::Warn("Layer non trouvée dans Show : " ^ _BrowserName);
+		return;
+	}
+	LayerCustomEvent(LayerToSend, "Show", Text[]);
+	declare Text MediaBrowser_EventNamePrefix	for LayerToSend.LocalPage;
+	declare Text[] MediaBrowser_ButtonNames		for LayerToSend.LocalPage;
+	declare Text MediaBrowser_MediaTitle		for LayerToSend.LocalPage;
+	declare Text[] MediaBrowser_SecondaryButtonNames	for LayerToSend.LocalPage;
+	declare Text MediaBrowser_AddToListButtonName	for LayerToSend.LocalPage;
+	UpdateBrowser(_BrowserName, MediaBrowser_EventNamePrefix, MediaBrowser_ButtonNames,
+		MediaBrowser_MediaTitle, MediaBrowser_SecondaryButtonNames, MediaBrowser_AddToListButtonName);
+}
+
+Void MakeIdle(Text _BrowserName)
+{
+	G_IsRunning[_BrowserName]					= False;
+}
+
+Void Hide(Text _BrowserName, Boolean _ForceStop) {
+	if (!IsRunning(_BrowserName)) {
+		if (!_ForceStop) {
+			Logger::Warn("Le " ^ _BrowserName ^ " ne tourne plus, méthode Hide appelée une fois de trop");
+			return;
+		}
+	}
+	G_IsRunning[_BrowserName]					= False;
+	G_IsRequestingFolderOpening[_BrowserName]	= False;
+	G_IsRequestingFolderBack[_BrowserName]		= False;
+	G_IsRequestingRefreshFolder[_BrowserName]	= False;
+	G_IsRequestingOpenInExplorer[_BrowserName]	= False;
+	G_IsRequestingSwitchFlatten[_BrowserName]	= False;
+	G_IsRequestingSortByDateName[_BrowserName]	= False;
+	G_IsRequestingSortAscDesc[_BrowserName]		= False;
+	G_IsRequestingInputPageUp[_BrowserName]		= False;
+	G_IsRequestingInputPageDown[_BrowserName]	= False;
+	G_IsRequestingSteamWorkshop[_BrowserName]	= False;
+	G_SteamWorkshopMediaName[_BrowserName]		= "";
+}
+
+Void Hide(Text _BrowserName) {
+	Hide(_BrowserName, False);
+}
+
+Void ForceHide(Text _BrowserName) {
+	Hide(_BrowserName, True);
+}
+
+Boolean IsRequestingFolderOpening(Text _BrowserName) {
+	if (!G_IsRequestingFolderOpening.existskey(_BrowserName)) {
+		return False;
+	}
+	if (G_IsRequestingFolderOpening[_BrowserName]) {
+		G_IsRequestingFolderOpening[_BrowserName] = False;
+		return True;
+	}
+	return G_IsRequestingFolderOpening[_BrowserName];
+}
+
+Boolean IsRequestingFolderBack(Text _BrowserName) {
+	if (!G_IsRequestingFolderBack.existskey(_BrowserName)) {
+		return False;
+	}
+	if (G_IsRequestingFolderBack[_BrowserName]) {
+		G_IsRequestingFolderBack[_BrowserName] = False;
+		return True;
+	}
+	return False;
+}
+
+Boolean IsRequestingRefreshFolder(Text _BrowserName)
+{
+	if (!G_IsRequestingRefreshFolder.existskey(_BrowserName)) {
+		return False;
+	}
+	if (G_IsRequestingRefreshFolder[_BrowserName]) {
+		G_IsRequestingRefreshFolder[_BrowserName] = False;
+		return True;
+	}
+	return False;
+}
+
+Boolean IsRequestingOpenInExplorer(Text _BrowserName)
+{
+	if (!G_IsRequestingOpenInExplorer.existskey(_BrowserName)) {
+		return False;
+	}
+	if (G_IsRequestingOpenInExplorer[_BrowserName]) {
+		G_IsRequestingOpenInExplorer[_BrowserName] = False;
+		return True;
+	}
+	return False;
+}
+
+Boolean IsRequestingSwitchFlatten(Text _BrowserName)
+{
+	if (!G_IsRequestingSwitchFlatten.existskey(_BrowserName)) {
+		return False;
+	}
+	if (G_IsRequestingSwitchFlatten[_BrowserName]) {
+		G_IsRequestingSwitchFlatten[_BrowserName] = False;
+		return True;
+	}
+	return False;
+}
+
+Boolean IsRequestingSortByDateName(Text _BrowserName)
+{
+	if (!G_IsRequestingSortByDateName.existskey(_BrowserName)) {
+		return False;
+	}
+	if (G_IsRequestingSortByDateName[_BrowserName]) {
+		G_IsRequestingSortByDateName[_BrowserName] = False;
+		return True;
+	}
+	return False;
+}
+
+Boolean IsRequestingSortAscDesc(Text _BrowserName)
+{
+	if (!G_IsRequestingSortAscDesc.existskey(_BrowserName)) {
+		return False;
+	}
+	if (G_IsRequestingSortAscDesc[_BrowserName]) {
+		G_IsRequestingSortAscDesc[_BrowserName] = False;
+		return True;
+	}
+	return False;
+}
+
+Boolean IsRequestingInputPageUp(Text _BrowserName)
+{
+	if (!G_IsRequestingInputPageUp.existskey(_BrowserName)) {
+		return False;
+	}
+	if (G_IsRequestingInputPageUp[_BrowserName]) {
+		G_IsRequestingInputPageUp[_BrowserName] = False;
+		return True;
+	}
+	return False;
+}
+
+Boolean IsRequestingInputPageDown(Text _BrowserName)
+{
+	if (!G_IsRequestingInputPageDown.existskey(_BrowserName)) {
+		return False;
+	}
+	if (G_IsRequestingInputPageDown[_BrowserName]) {
+		G_IsRequestingInputPageDown[_BrowserName] = False;
+		return True;
+	}
+	return False;
+}
+
+Boolean IsRequestingSteamWorkshop(Text _BrowserName)
+{
+	if (!G_IsRequestingSteamWorkshop.existskey(_BrowserName)) {
+		return False;
+	}
+	if (G_IsRequestingSteamWorkshop[_BrowserName]) {
+		G_IsRequestingSteamWorkshop[_BrowserName] = False;
+		return True;
+	}
+	return False;
+}
+
+Text RequestingSteamWorkshopMediaName(Text _BrowserName)
+{
+	if (!G_IsRequestingSteamWorkshop.existskey(_BrowserName)) {
+		return "";
+	}
+	declare Result = G_SteamWorkshopMediaName[_BrowserName];
+	G_SteamWorkshopMediaName[_BrowserName] = "";
+	return Result;
+}
+
+
+Text FolderOpeningPath(Text _BrowserName) {
+	if (!G_FolderOpeningPath.existskey(_BrowserName)) {
+		return "";
+	}
+	return G_FolderOpeningPath[_BrowserName];
+}
+
+Boolean HasPathsList(Text _BrowserName) {
+	return (G_ListOfSelectedPaths[_BrowserName].count > 1);
+}
+
+Text[] GetPathsList(Text _BrowserName) {
+	return G_ListOfSelectedPaths[_BrowserName];
+}
+
+Void AddToList(Text _BrowserName, Text _Path)
+{
+	if (G_ListOfSelectedPaths[_BrowserName].exists(_Path)) {
+		assert(G_ListOfSelectedPaths[_BrowserName].remove(_Path));
+	} else {
+		G_ListOfSelectedPaths[_BrowserName].add(_Path);
+	}
+	UpdateSelectedPaths(_BrowserName);
+}
+
+Void MultiSelectSwitch(Text _BrowserName)
+{
+	if (G_IsInMultiSelectMode.existskey(_BrowserName) && G_IsInMultiSelectMode[_BrowserName]) {
+		G_IsInMultiSelectMode[_BrowserName] = False;
+	} else {
+		G_IsInMultiSelectMode[_BrowserName] = True;
+	}
+	UpdateSelectedPaths(_BrowserName);
+}
+
+Void SelectAll(Text _BrowserName)
+{
+	declare Text[] AllPaths;
+	foreach (Path in AllPaths) {
+		if (!G_ListOfSelectedPaths[_BrowserName].exists(Path)) {
+			G_ListOfSelectedPaths[_BrowserName].add(Path);
+		}
+	}
+	UpdateSelectedPaths(_BrowserName);
+}
+
+Void SteamWorkshop(Text _BrowserName, Text _MediaName)
+{
+	declare Boolean CanUseSteamWorkshop;
+	CanUseSteamWorkshop = TitleControl.CanPublishFiles && C_AuthorizedBrowsers.exists(_BrowserName);
+	CanUseSteamWorkshop = CanUseSteamWorkshop && (_MediaName != "");
+	declare EndOfMediaName = TextLib::SubText(_MediaName, TextLib::Length(_MediaName) - 1, 1);
+	CanUseSteamWorkshop = CanUseSteamWorkshop && (EndOfMediaName != "\\");
+	if (CanUseSteamWorkshop) {
+		G_IsRequestingSteamWorkshop[_BrowserName]	= True;
+		G_SteamWorkshopMediaName[_BrowserName]		= _MediaName;
+	}
+}
+
+Void CommonLoop()
+{
+	foreach(Event in PendingEvents) {
+		if (Event.Type != CManiaAppEvent::EType::LayerCustomEvent) continue;
+		switch(Event.CustomEventType) {
+			case "MediaBrowser_StartRunning" : {
+				declare Text BrowserName = Event.CustomEventData[0];
+				G_IsRunning[BrowserName]					= True;
+			}
+			case "MediaBrowser_MakeIdle" : {
+				declare Text BrowserName = Event.CustomEventData[0];
+				MakeIdle(BrowserName);
+			}
+			case "MediaBrowser_StopRunning" : {
+				declare Text BrowserName = Event.CustomEventData[0];
+				ForceHide(BrowserName);
+			}
+		}
+	}
+}
+
+Void Loop(Text _BrowserName) {
+	foreach(Event in PendingEvents) {
+		if(Event.Type != CManiaAppEvent::EType::LayerCustomEvent) continue;
+		switch(Event.CustomEventType) {
+			case "MediaCardDisplayer_FolderOpen" : {
+				declare Text Path = Event.CustomEventData[0];
+				G_IsRequestingFolderOpening[_BrowserName]	= True;
+				G_FolderOpeningPath[_BrowserName]			= Path;
+			}
+			case "MediaBrowser_FolderBack" : {
+				G_IsRequestingFolderBack[_BrowserName]		= True;
+			}
+			case "MediaBrowser_RefreshFolder" : {
+				G_IsRequestingRefreshFolder[_BrowserName]	= True;
+			}
+			case "MediaBrowser_OpenInExplorer" : {
+				G_IsRequestingOpenInExplorer[_BrowserName]	= True;
+			}
+			case "MediaBrowser_SwitchFlatten" : {
+				G_IsRequestingSwitchFlatten[_BrowserName]	= True;
+			}
+			case "MediaBrowser_CallSteamWorkshop" : {
+				SteamWorkshop(_BrowserName, Event.CustomEventData[0]);
+			}
+			case "MediaBrowser_SortByDateName" : {
+				G_IsRequestingSortByDateName[_BrowserName]	= True;
+			}
+			case "MediaBrowser_SortAscDesc" : {
+				G_IsRequestingSortAscDesc[_BrowserName]		= True;
+			}
+			case "MediaBrowser_AddToList" : {
+				declare Path = Event.CustomEventData[0];
+				AddToList(_BrowserName, Path);
+			}
+			case "MediaBrowser_InputPageUp" : {
+				G_IsRequestingInputPageUp[_BrowserName]		= True;
+			}
+			case "MediaBrowser_InputPageDown" : {
+				G_IsRequestingInputPageDown[_BrowserName]	= True;
+			}
+			case "MediaBrowser_MultiSelectSwitch" : {
+				MultiSelectSwitch(_BrowserName);
+			}
+			case "MediaBrowser_SelectAll" : {
+				if (G_IsInMultiSelectMode.existskey(_BrowserName) && G_IsInMultiSelectMode[_BrowserName]) {
+					G_IsInMultiSelectMode[_BrowserName] = False;
+				} else {
+					G_IsInMultiSelectMode[_BrowserName] = True;
+				}
+			}
+		}
+	}
+}

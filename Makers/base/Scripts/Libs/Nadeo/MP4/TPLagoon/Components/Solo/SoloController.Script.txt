@@ -1,0 +1,225 @@
+#Include "Libs/Nadeo/Common/Core/MenuLayers.Script.txt"											as Layers
+#Include "Libs/Nadeo/Common/Core/Pages.Script.txt"												as Pages
+#Include "Libs/Nadeo/Common/Core/Logger.Script.txt"												as Logger
+#Include "Libs/Nadeo/Common/Core/SectionsManager.Script.txt"										as SectionsManager
+#Include "TextLib"																			as TextLib
+#Include "Libs/Nadeo/MP4/Common/LoadingScreen.Script.txt"										as LoadingScreen
+
+#Include "Libs/Nadeo/MP4/TPLagoon/XMLController.Script.txt"										as XMLController
+#Include "Libs/Nadeo/MP4/TPLagoon/Components/G_BarreSection/BarreSectionController.Script.txt"	as BarreSectionController
+#Include "Libs/Nadeo/MP4/TPLagoon/Components/RecordCenter/RecordsController.Script.txt"			as RecordsController
+#Include "Libs/Nadeo/MP4/Common/Components/MediaDisplayer/LBMediaDisplayer.Script.txt"									as MediaCardDisplayer
+#Include "Libs/Nadeo/MP4/Common/Components/DialogBox/DialogBoxController.Script.txt"			as DialogBoxController
+
+//APIs
+#Include "Libs/Nadeo/MP4/TPLagoon/Components/Solo/SoloAPI.Script.txt"							as SoloAPI
+
+//Layers
+#Include "Libs/Nadeo/MP4/TPLagoon/Components/Solo/LBSolo.Script.txt"							as LBSolo
+#Include "Libs/Nadeo/MP4/TPLagoon/Components/Solo/LBBlackScreen.Script.txt"						as LBBlackScreen
+
+#Const C_LBRankingPage		    "RankingPage"
+
+declare Integer	G_CurrentSectionIndex;
+declare Boolean	G_SoloAllowEvaluate;
+
+Vec3 GetColor() {
+	declare Text[Text] Colors = XMLController::Get_Color_Sections();
+	if (!Colors.existskey("Solo")) {
+		Logger::Warn("Couleur non trouvée dans le Solo");
+		return <1., 1., 0.>;
+	}
+	return TextLib::ToColor(Colors["Solo"]);
+}
+
+Void Build(Text _LayerName, Boolean _Attach) {
+
+	declare Text MLText;
+	switch(_LayerName) {
+		case("Solo"):{
+			MLText = LBSolo::Build(G_SoloAllowEvaluate);
+		}
+		case("BlackScreen"):{
+			MLText = LBBlackScreen::Build(G_SoloAllowEvaluate);
+		}
+	}
+
+	if(MLText == "") {
+		Logger::Warn("Unknown Page: " ^ _LayerName);
+		return;
+	}
+
+	Layers::Create(_LayerName, MLText);
+
+	declare CUILayer Layer <=> Layers::Get(_LayerName);
+	declare Text Page_LayerName for Layer.LocalPage;
+
+	Page_LayerName = _LayerName;
+	if(_Attach) Layers::Attach(_LayerName);
+}
+
+Void Build(Text _LayerName) {
+	Build(_LayerName, False);
+}
+
+Void Init()
+{
+	G_CurrentSectionIndex = 0;
+}
+
+Void SetBarreTextInfo()
+{
+	declare Text[] PlayerMedalInfos = SoloAPI::GetPlayerMedalInfos();
+	BarreSectionController::SetText(PlayerMedalInfos);
+	if (Pages::GetCurrentPageName() == "SoloMain") {
+		declare Text[] SoloSectionImages	= SoloAPI::GetSoloSectionImages();
+		BarreSectionController::SetLogos("SoloMain", SoloSectionImages);
+	}
+}
+
+Void UpdateInfoCampaign()
+{
+	declare Text[Text][]	Data		= SoloAPI::GetSectionMainData(G_CurrentSectionIndex);
+	declare Text[][][]		LineData	= SoloAPI::GetSectionLineData(G_CurrentSectionIndex);
+	MediaCardDisplayer::Update("Solo", Data, LineData);
+	SetBarreTextInfo();
+}
+
+Void Load() {
+	declare SectionColor	= GetColor();
+	G_SoloAllowEvaluate		= SoloAPI::Get_SoloAllowEvaluate();
+	Init();
+	SoloAPI::Load();
+	declare Text[] SoloSections			= SoloAPI::GetSoloSections();
+	declare Text[] SoloSectionImages	= SoloAPI::GetSoloSectionImages();
+	BarreSectionController::AddConfiguration("SoloMain",
+							//L16N Name for the main menu button, designates the one-player campaign
+							_("Solo"), SoloSections, SoloSectionImages, Text[], "SoloCampaign");
+	RecordsController::AddConfiguration(SoloSections, SoloSectionImages);
+
+
+	Build("Solo");
+	Build("BlackScreen");
+	Pages::Compose("SoloMain", [C_LBRankingPage, "Solo", "BarreSection", "BlackScreen"]);
+	SectionsManager::AddSection("Solo", "SoloMain", "Solo", SectionColor);
+	UpdateInfoCampaign();
+}
+
+Void SetBlackScreenVisibility(Boolean _Visibility)
+{
+	declare CUILayer LayerToSend = Layers::Get("BlackScreen");
+	if(LayerToSend == Null) return;
+	if(_Visibility)
+	{
+		LayerCustomEvent(LayerToSend, "ShowBlackScreen", [""]);
+	}
+	else
+	{
+		LayerCustomEvent(LayerToSend, "HideBlackScreen", [""]);
+	}
+}
+
+Void SendRanking()
+{
+	declare CUILayer LayerToSend = Layers::Get("Solo");
+	if(LayerToSend == Null) return;
+	declare Text      Top_ZoneRank       for LayerToSend.LocalPage;
+	declare Text[]    Top_Name           for LayerToSend.LocalPage;
+	declare Integer[] Top_Ranks			 for LayerToSend.LocalPage;
+	declare Integer[] Top_Time           for LayerToSend.LocalPage;
+	declare Boolean	  Top_CanGoLeft		 for LayerToSend.LocalPage;
+	declare Boolean	  Top_CanGoRight	 for LayerToSend.LocalPage;
+
+	Top_ZoneRank       = SoloAPI::Get_List_Top_ZoneRank();
+	Top_Name           = SoloAPI::Get_List_Top_Name();
+	Top_Time           = SoloAPI::Get_List_Top_Time();
+	Top_Ranks		   = SoloAPI::Get_List_Top_Ranks();
+	Top_CanGoLeft	   = SoloAPI::List_CanGoLeft();
+	Top_CanGoRight	   = SoloAPI::List_CanGoRight();
+
+	LayerCustomEvent(LayerToSend, "UpdateRanking", [""]);
+}
+
+Void HideRecordCenter()
+{
+	if (RecordsController::IsRunning()) RecordsController::ForceHide();
+}
+
+Void Loop() {
+	SoloAPI::LoopAllMapRankingData();
+	if (SoloAPI::IsAllRankingDataReady()) {
+		SendRanking();
+	}
+	foreach(Event in PendingEvents) {
+		if(Event.Type != CManiaAppEvent::EType::LayerCustomEvent) continue;
+		switch(Event.CustomEventType) {
+			case "Solo_PlayMap": {
+				declare Text MapPath       = Event.CustomEventData[0];
+				declare Text ThumbnailPath = Event.CustomEventData[1];
+				
+				//declare CMapInfo MapInfo = SoloAPI::Private_GetMapInfoFromPath(MapPath);
+				LoadingScreen::SetLoadingType(0, ThumbnailPath);
+				SetBlackScreenVisibility(True);
+				SoloAPI::PlayAndManageMap(MapPath);
+				LayerCustomEvent(Layers::Get("Solo"), "UpdateGlobalButtons", Text[]);
+				SetBlackScreenVisibility(False);
+
+				UpdateInfoCampaign();
+			}
+			case "Solo_Show": {
+				Layers::SetVisibility("Solo", False);
+			}
+			case "Solo_LockedMessage" : {
+				declare Integer MapIndex = TextLib::ToInteger(Event.CustomEventData[0]);
+				//L16N Notice on a pop-up window, generally gives unlocking conditions
+				DialogBoxController::ShowMessage(_("Information"), SoloAPI::GetMessage(G_CurrentSectionIndex, MapIndex));
+			}
+			case "Solo_GetRanking": {
+				declare Integer MapIndex = TextLib::ToInteger(Event.CustomEventData[0]);
+				SoloAPI::FetchAllMapRankingData(G_CurrentSectionIndex, MapIndex, SoloAPI::List_GetZoneRanking());
+				SendRanking();
+			}
+			case "Solo_PageDown": {
+				declare Integer MapIndex = TextLib::ToInteger(Event.CustomEventData[0]);
+				if (SoloAPI::List_CanGoLeft() && !SoloAPI::IsFetchingData()) {
+					SoloAPI::List_PageDown();
+					SoloAPI::FetchAllMapRankingData(G_CurrentSectionIndex, MapIndex, SoloAPI::List_GetZoneRanking());
+				}
+			}
+			case "Solo_PageUp": {
+				declare Integer MapIndex = TextLib::ToInteger(Event.CustomEventData[0]);
+				if (SoloAPI::List_CanGoRight() && !SoloAPI::IsFetchingData()) {
+					SoloAPI::List_PageUp();
+					SoloAPI::FetchAllMapRankingData(G_CurrentSectionIndex, MapIndex, SoloAPI::List_GetZoneRanking());
+				}
+			}
+			case "BarreSec_Click": {
+				declare Integer BarreClickId = TextLib::ToInteger(Event.CustomEventData[0]);
+				if (BarreClickId == 0) {
+					Layers::SetVisibility(C_LBRankingPage, True);
+					Layers::SetVisibility("Solo", False);
+					HideRecordCenter();
+				} else {
+					G_CurrentSectionIndex = BarreClickId - 1;
+					HideRecordCenter();
+					Layers::SetVisibility("Solo", True);
+					declare CUILayer LayerToSend = Layers::Get("Solo");
+					LayerCustomEvent(LayerToSend, "ShowSoloFrame", [""]);
+					//Pages::GotoNext("SoloMain");
+					Layers::SetVisibility(C_LBRankingPage, False);
+					UpdateInfoCampaign();
+				}
+			}
+			case "RecordCenterStart": {
+				Layers::SetVisibility(C_LBRankingPage, False);
+				Layers::SetVisibility("Solo", False);
+				RecordsController::Show();
+			}
+		}
+	}
+}
+
+Text GenerateXML ()
+{
+	return "";
+}

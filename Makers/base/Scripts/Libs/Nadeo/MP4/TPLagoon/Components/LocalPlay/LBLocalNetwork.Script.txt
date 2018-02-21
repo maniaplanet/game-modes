@@ -1,0 +1,154 @@
+#Include "Libs/Nadeo/MP4/Common/Components/ListDisplayer/LBListDisplayer.Script.txt"		as ListDisplayer
+#Include "Libs/Nadeo/MP4/Common/ManialinkTools/FontManager.Script.txt" 		as Font
+#Include "TextLib"											as TextLib
+
+#Const C_ImgBase	"file://Media/MEDIABROWSER_HiddenResources/Common/Images/Ingame/"
+
+Text Build() {
+	ListDisplayer::Init(	["Text"   , "Text"     , "Integer"   , "Text"   ],
+							[_("Name"), _("Author"), _("Players"), _("Mode")],
+							[<-97.7, 0.>,<-52.7, 0.>, <14.7, 0.>, <43.0, 0.>],
+							[<22., 8.0>, <28., 8.0>, <21., 8.0>, <12., 8.0>],
+							//L16N |Infinitive| In a popup, a button to join the selected server
+							[_("Join")],
+							//L16N |Infinitive| In a popup, a button to start making a new server
+							[_("Create")]);
+
+	declare Text    IMG_ModeCup    = C_ImgBase ^ "Multiplayer/Serveur_Mode_Cup.dds";
+	declare Text    IMG_Level      = C_ImgBase ^ "Multiplayer/Server_Level2.dds";
+	declare Text	MainFont       = Font::GetFontName("Main");
+	declare Vec2    SizeServerInfo = <197.7, 95.>;
+	declare Text    LabelPlayers   = TextLib::GetTranslatedText(_("Players"));
+	declare Text    LabelMaps      = TextLib::GetTranslatedText(_("Maps"));
+
+	declare Integer ServerInfo_Count_InstancesPlayerY = 10;
+	declare Integer ServerInfo_Count_InstancesPlayerX = 1;
+	declare Real	ServerInfo_PosXFirstPlayer        = -10.8;
+	declare Real	ServerInfo_PosYFirstPlayer        = -33.;
+	declare Real	ServerInfo_SizeXQuad              = 40.;
+	declare Real	ServerInfo_SizeYQuad              = 7.;
+	declare Real	ServerInfo_MarginY_ButtonPlayer   = 0.3;
+	declare Real	ServerInfo_MarginX_ButtonPlayer   = 4.0;
+
+	declare Text    IMGButton          = "file://Media/MEDIABROWSER_HiddenResources/Common/Images/Menus/Buttons/Button_Scroll_v.dds";
+
+	declare Vec2	MainActionPosition = <-87.3, -28.7>;
+
+
+
+	declare Text MLText = """
+<manialink version="3" name="LocalNetwork">
+{{{ListDisplayer::ManialinkFrameModels()}}}
+	
+
+	<frame id="Frame_All">
+{{{ListDisplayer::ManialinkMainBody()}}}
+
+		
+
+	</frame>
+
+	<script><!--
+		#Include "TextLib" as LocalNetwork_TextLib
+{{{ListDisplayer::Includes()}}}
+
+	
+
+
+	Text ListDisplayer_ConvertToImageUrl(Integer _QuadId) {
+		switch(_QuadId) {
+			case 0: {
+				return {{{dump(IMG_ModeCup)}}};
+			}
+			case 1: {
+				return {{{dump(IMG_Level)}}};
+			}
+		}
+		return "";
+	}
+
+	Void ListDisplayer_Input_Action1()
+	{
+		SendCustomEvent("LocalNetworkCreate", Text[]);
+	}
+
+	Void ListDisplayer_Input_Select(Text[Text] _Data) {
+		SendCustomEvent("LocalNetwork_SelectServer", [_Data["CoreData"]]);
+	}
+
+{{{ListDisplayer::Declares()}}}
+
+	Void ShowPage()
+	{
+		EnableMenuNavigation(True,False,Null,1);
+		SendCustomEvent("LocalNetwork_GetServers", [""]);
+	}
+
+	Void Init()
+	{
+
+	}
+
+	main() {
+		ListDisplayer_Init();
+		while(True) {
+
+			yield;
+			if(! PageIsVisible) continue;
+			ListDisplayer_Loop();
+
+			foreach(Event in PendingEvents) {
+				switch(Event.Type) {
+
+					case CMlEvent::Type::MenuNavigation: {
+						switch(Event.MenuNavAction) {
+							case CMlEvent::EMenuNavAction::Cancel : {
+								SendCustomEvent("GotoPrevious", [""]);
+							}
+							case CMlEvent::EMenuNavAction::PageUp : {
+								SendCustomEvent("Barre_PageUp", [""]);
+							}
+							case CMlEvent::EMenuNavAction::PageDown : {
+								SendCustomEvent("Barre_PageDown", [""]);
+							}
+						}
+					}
+					case CMlEvent::Type::MouseClick: {
+						if (Event.ControlId == "ListRefresh")
+						{
+							SendCustomEvent("LocalNetwork_GetServers", [""]);
+						}
+						declare EventIdSplit = LocalNetwork_TextLib::Split("_", Event.ControlId);
+						if ((EventIdSplit.count > 0) && (EventIdSplit[0] == "SecondaryButton"))
+						{
+							SendCustomEvent("LocalNetworkCreate", Text[]);
+							continue;
+						}
+					}
+					case CMlEvent::Type::PluginCustomEvent: {
+
+						switch(Event.CustomEventType) {
+							case "Show" : {
+								ShowPage();
+								SendCustomEvent("UpdateBarreSection", ["LocalNetwork"]);
+								SendCustomEvent("GetServers", ["LocalNetwork"]);
+								ListDisplayer_Show();
+							}
+							case "Back" : {
+								SendCustomEvent("GotoPrevious", [""]);
+							}
+							case "Hide" : {
+								EnableMenuNavigation(True,False,Null,0);
+								SendCustomEvent("DetachPage", ["LocalNetwork"]);
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	--></script>
+</manialink>	""";
+	
+	return MLText;
+}

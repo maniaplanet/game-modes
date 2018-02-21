@@ -1,0 +1,139 @@
+#Include "Libs/Nadeo/Common/ManiascriptTools/Dump.Script.txt"			as DumpTools
+
+#Const C_DefaultPlatform		0 // PC
+#Const C_Platforms [
+	"PC"	=> 0,	///< Take care before changing this number, it is linked to the index of the C_BUTTONS_MENU, etc arrays !
+	"PS4"	=> 1,	///< Take care before changing this number, it is linked to the index of the C_BUTTONS_MENU, etc arrays !
+	"XB1"	=> 2	///< Take care before changing this number, it is linked to the index of the C_BUTTONS_MENU, etc arrays !
+]
+#Const C_PadBase	 "file://Media/MEDIABROWSER_HiddenResources/Common/Images/PadButtons/"
+
+declare Text[] G_FramesToHide;
+
+Integer GetPlatform(Text _Platform) {
+	if (!C_Platforms.existskey(_Platform)) return C_DefaultPlatform;
+	return C_Platforms[_Platform];
+}
+
+Void Init(Text[] _FramesToHide)
+{
+	G_FramesToHide = _FramesToHide;
+}
+
+Void Init()
+{
+	Init(Text[]);
+}
+
+Text Includes()
+{
+	return """
+	#Const C_BUTTONS_MENU [
+			"Button_Select"   =>["Enter"     ,"Cross"			, "A"			   ],
+			"Button_Cancel"   =>["Backspace" ,"Circle"			, "B"			   ],
+			"Button_Action2"  =>["Fin"       ,"Triangle"	    , "Y"			   ],
+			"Button_Action1"  =>["Home"      ,"Square"			, "X"			   ],
+			"Button_PageUp"   =>["Pageup"    ,"L1"				, "LB"			   ],
+			"Button_PageDown" =>["Pagedown"  ,"R1"				, "RB"			   ],
+			"Button_AppMenu"  =>["Echap"     ,"Options"		    , "Menu"		   ],
+			"Button_Down"     =>[""          ,"Editor_DPadDown" , "Editor_DPadDown"]
+		]
+	""";
+}
+
+Text Declares()
+{
+	return """
+//<script>
+	declare Integer	G_Private_ButtonImg_LastInputPlatform;
+	declare Text[]	G_Private_ButtonImg_FramesToHide;
+
+	Void Private_Lib_ButtonImg_UpdateLastInputPlatform()
+	{
+		if(Input.PendingEvents.count != 0) {
+			declare CInputPad::EPadType PadType = Input.PendingEvents[Input.PendingEvents.count-1].Pad.Type;
+			switch (PadType) {
+				case CInputPad::EPadType::Keyboard 		: G_Private_ButtonImg_LastInputPlatform = {{{GetPlatform("PC")}}};
+				case CInputPad::EPadType::PlayStation 	: G_Private_ButtonImg_LastInputPlatform = {{{GetPlatform("PS4")}}};
+				case CInputPad::EPadType::XBox 			: G_Private_ButtonImg_LastInputPlatform = {{{GetPlatform("XB1")}}};
+				default 								: G_Private_ButtonImg_LastInputPlatform = {{{GetPlatform("PC")}}};
+			}
+		}
+	}
+
+	Void Private_Lib_ButtonImg_ShowButtons()
+	{
+		foreach(Button => ButtonList in C_BUTTONS_MENU) {
+			declare CMlQuad Quad_Button <=> (Page.MainFrame.GetFirstChild(Button)	as CMlQuad);
+			if(Quad_Button == Null) continue;
+			declare Text Platform;
+			switch (G_Private_ButtonImg_LastInputPlatform) {
+				case 0 : {
+					Platform = "PC";
+					Quad_Button.Hide();
+				}
+				case 1 : {
+					Platform = "PS4";
+					Quad_Button.Show();
+				}
+				case 2 : {
+					Platform = "XB1";
+					Quad_Button.Show();
+				}
+				default : {
+					Platform = "PC";
+					Quad_Button.Hide();
+				}
+			}
+			declare Text ButtonPath = "{{{C_PadBase}}}" ^ Platform^"/"^C_BUTTONS_MENU[Button][G_Private_ButtonImg_LastInputPlatform]^".dds";
+			Quad_Button.ChangeImageUrl(ButtonPath);
+		}
+	}
+
+	Void Private_Lib_ButtonImg_HideFrames()
+	{
+		foreach(MyFrame in G_Private_ButtonImg_FramesToHide) {
+			declare CMlFrame Frame_ToHide <=> (Page.MainFrame.GetFirstChild(MyFrame)	as CMlFrame);
+			switch (G_Private_ButtonImg_LastInputPlatform) {
+				case 0 : {
+					Frame_ToHide.Show();
+				}
+				case 1 : {
+					Frame_ToHide.Hide();
+				}
+				case 2 : {
+					Frame_ToHide.Hide();
+				}
+				default : {
+					Frame_ToHide.Show();
+				}
+			}
+		}
+	}
+
+	Void Private_Lib_ButtonImg_Refresh()
+	{
+		Private_Lib_ButtonImg_UpdateLastInputPlatform();
+		Private_Lib_ButtonImg_ShowButtons();
+		Private_Lib_ButtonImg_HideFrames();
+	}
+
+	Void Lib_ButtonImg_Init()
+	{
+		G_Private_ButtonImg_LastInputPlatform	= 0; // PC
+		G_Private_ButtonImg_FramesToHide		= {{{DumpTools::CustomDump(G_FramesToHide)}}};
+	}
+
+	Void Lib_ButtonImg_Loop()
+	{
+		if (Input.PendingEvents.count != 0) {
+			Private_Lib_ButtonImg_Refresh();
+		}
+	}
+
+	Void Lib_ButtonImg_Show()
+	{
+		Private_Lib_ButtonImg_Refresh();
+	}
+	""";
+}

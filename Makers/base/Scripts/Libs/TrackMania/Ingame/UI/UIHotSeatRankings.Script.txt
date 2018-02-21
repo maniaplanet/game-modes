@@ -1,0 +1,635 @@
+/** 
+ *	In-Game UI library
+ */
+
+#Const Version		"2015-01-07"
+#Const ScriptName	"HotSeatUI_DynaRanking.Script.txt"
+
+#Include "TextLib" as TL
+#Include "Libs/Nadeo/Common/Ingame/IngameLayers.Script.txt" 					as Layers
+#Include "Libs/Nadeo/Common/ManialinkTools/Manialink3WPrevAnims.Script.txt"	as Manialink
+#Include "Libs/Nadeo/MP4/Common/ManialinkTools/FontManager.Script.txt" 		as Font
+#Include "Libs/Nadeo/MP4/Common/Colors.Script.txt" 			as Colors
+
+#Const ImgPath					"file://Media/MEDIABROWSER_HiddenResources/Common/Images/Ingame/"
+#Const SOUNDPATH				"file://Media/Sounds/TPLagoon/"
+
+#Const ImgPlayerCurrent			"playerline-currentplayer.dds"
+#Const ImgPlayerBg				"menu-bg-1.dds"
+
+#Const C_ImgGas					"gas.dds"
+#Const C_ImgGasNormal			"gas2.dds"
+#Const C_ImgBg	   				"slot-medium-bg.dds"
+#Const C_ImgFg	   				"slot-medium-fg.dds"
+#Const C_ImgHotSeat				"mode-hotseat.dds"
+
+#Const SOUND_GAS 				"state-freewheel.ogg"
+
+#Const MODE_COLORID_MULTIPLAYER	1
+
+
+#Const  C_MaxPlayerCount		8
+
+// HERE TO SET THE UI MARGINS FOR THE "90%"
+// 1. = 10% Vertically & 10% Horizontally (16/9)
+#Const C_MARGINS_GLOBALRATIO	1.
+#Const C_RATIO 	12.962
+
+declare Ident G_ThePlayerId;
+
+Void Private_CreateLayerDynaRanking(Integer _EnergyMax)
+{
+	declare SizeX 					= 81.3;
+	declare SizeY 					= 10.0;
+	
+	declare Separator				= 0.5;
+	declare QuadSizeY 				= SizeY - Separator;
+	declare GaugeSizeY 				= SizeY - Separator-3.7;
+	declare QuadSizeYBig			= SizeY*2 - Separator;
+	declare BigSizeX				= SizeX * 0.8666666667;
+	declare RankSizeX				= 15.5;
+	declare QuadSizeX				= BigSizeX - RankSizeX;
+	declare PlayingIconSizeX		= 6.;
+	declare TitleSizeY				= QuadSizeYBig * 1.33;	
+	declare TitleSizeX				= TitleSizeY * 2.;
+	declare GasSize					= QuadSizeYBig * 0.95;
+	
+	declare MarginRatio				= 1. * C_MARGINS_GLOBALRATIO;
+	declare MarginY					= 9. 	* MarginRatio;
+	
+	declare OpacityShadow 			= 0.55;
+	
+	declare Text IMG_RankGauge = ImgPath ^ "Modes/HotSeat_RankGauge2.dds";
+	declare Text IMG_Jerrican  = ImgPath ^ "Modes/HotSeat_Jerrican.dds";
+	declare Text IMG_Arrow     = ImgPath ^ "Modes/HotSeat_ArrowRank.dds";
+	
+	
+	declare MainFont 				= Font::GetFontName("Main");
+	declare MainSmallFont			= Font::GetFontName("MainSmall");
+	declare ColorXmlRed				= Colors::GetColorXml("Red");
+	
+	declare Text MLText;
+
+	MLText ^= """
+<manialink version="3" name="Modes:UIHotSeatRankings">
+
+	<framemodel id="Frame_Line">
+		<quad id="Quad_Line0" halign="center" valign="top"    size="{{{RankSizeX + QuadSizeX}}} 0.2" z-index="0" pos="0. 0.0"  opacity="0.5" bgcolor="fff" />
+		<quad id="Quad_Line1" halign="right"  valign="bottom" size="6.7 0.6" z-index="0" pos="{{{(RankSizeX + QuadSizeX)/2.}}} 0."  opacity="0.5" bgcolor="fff" />
+	</framemodel>
+	
+	<frame id="Frame_MainUI" 		pos="{{{166.0-SizeX}}} {{{106.5 - MarginY}}}" z-index="-5" hidden="1">
+		<quad	id="Quad_Lowgas" 	pos="{{{BigSizeX-0.33}}} {{{-SizeY-0.33}}} .2" 	size="{{{GasSize}}} {{{GasSize}}}" valign="center" halign="right" image="{{{ImgPath^C_ImgGas}}}" colorize="{{{ColorXmlRed}}}" hidden="0"/>
+		
+		<quad 	id="Quad_BgMain" 			pos="0.     {{{-Separator}}}" z-index=".1" 	size="{{{BigSizeX}}} 	{{{QuadSizeYBig}}}" 						halign="left" 		image="{{{ImgPath^C_ImgBg}}}" />
+		<quad 	id="Quad_Title" 			pos="2.     {{{-SizeY-0.33}}}" z-index=".3" 	size="{{{TitleSizeX}}} {{{TitleSizeY}}}"  		valign="center"		halign="left" 		image="{{{ImgPath^C_ImgHotSeat}}}" colorize="{{{Colors::GetModeColorXml(MODE_COLORID_MULTIPLAYER)}}}" />
+		<quad 	id="Quad_TitleGradient"  	pos="0.	 {{{-Separator}}}" z-index=".5" 	size="{{{BigSizeX}}}   {{{QuadSizeYBig}}}"  	valign="top" 		halign="left" 		opacity="{{{OpacityShadow}}}" image="{{{ImgPath^C_ImgFg}}}"/>
+		
+		<quad 	pos="0  	 0" z-index="	0" 	size="{{{SizeX}}} {{{SizeY}}}" halign="left" image="{{{ImgPath^ImgPlayerBg}}}" />
+		<quad 	pos="0  	 {{{-SizeY}}}" z-index="-0" 	size="{{{SizeX}}} {{{SizeY}}}" halign="left" image="{{{ImgPath^ImgPlayerBg}}}" />
+		<quad 	pos="0  	 {{{-2.*SizeY}}}" z-index="-0" 	size="{{{SizeX}}} {{{SizeY}}}" halign="left" image="{{{ImgPath^ImgPlayerBg}}}" />
+		
+
+		<frame 	id="Frame_Players" 	pos="0. -{{{SizeY * 3.5}}}" z-index=" 1">
+			<frame id="Frame_CurrentPlayer" pos="{{{RankSizeX-10}}} {{{-Separator*0.5}}}" >
+				<quad 	id="Quad_Bg" 			pos="-8.3  	0" z-index=".6" 	size="{{{PlayingIconSizeX}}} {{{SizeY-0.4}}}" 	valign="center" halign="center" bgcolor="000" opacity="0.5" style="Bgs1" substyle="BgDialogBlur" bluramount="0.0"/>
+				<quad 	id="Quad_PlayingIcon"	pos="-8.3  	0" z-index=".7" 	size="{{{PlayingIconSizeX}}} {{{SizeY-6.}}}" 	valign="center" halign="center" image="{{{IMG_Arrow}}}"	keepratio="Fit" />
+			</frame>
+			
+			<quad 	id="Quad_Jerrican"			pos="62.     23.8" z-index=".1" 	size="10. 10." halign="center" image="{{{IMG_Jerrican}}}" keepratio="Fit" />
+			<quad 	id="Quad_BGJerrican" 		pos="62.7    27.3" z-index=".1" 	size="15.2 17.3" halign="center" bgcolor="000" opacity="0.3"/>
+			<label 	id="Label_ModeName" 		pos="-0.8 12.0" z-index="1." 	size="40" 	halign="left" 	valign="center" textprefix="$t" text="{{{_("Hot Seat")}}}" textsize="4." />
+			<frameinstance modelid="Frame_Line" pos="35.5 6.8" z-index="1." id="Frame_LineUp"/>
+	""";
+		for(I, 0, C_MaxPlayerCount-1) {
+
+			MLText^="""
+				<frame id="Frame_PlayerInfo" 				pos="0 0" z-index="0">
+					<frame id="Frame_Rank{{{I}}}" 			pos="{{{RankSizeX}}} 			{{{-(I*SizeY) - Separator*0.5}}}" hidden="1">
+						<frame	pos="0 0" z-index="0">
+							<quad 	id="Quad_Line{{{I}}}"  		pos="-4 						0"		z-index=".4" 	size="0.4 7." 	bgcolor="fff" valign="center" halign="center" 	opacity="0.3"/>
+							<quad 	id="Quad_BgRank{{{I}}}"  	pos="0 							0" 		z-index=".1" 	size="{{{RankSizeX}}} 		{{{QuadSizeY}}}" 	bgcolor="0007" valign="center" halign="right" 	opacity="0." image="{{{ImgPath^C_ImgBg}}}"/>
+							<quad 	id="Quad_GradRank{{{I}}}"  	pos="0 							0" 		z-index=".5" 	size="{{{RankSizeX}}} 		{{{QuadSizeY}}}" 	bgcolor="0007" valign="center" halign="right" 	opacity="{{{0.}}}" image="{{{ImgPath^C_ImgFg}}}"/>
+							<label 	id="Label_Rank{{{I}}}" 		pos="-6.7 						0.66"	z-index="5." 	size="10 10" 	halign="right" 	valign="center" text="{{{I+1}}}" textsize="3" scale="1." />
+						</frame>
+					</frame>
+					<frame id="Frame_Player{{{I}}}" 		pos="{{{RankSizeX + QuadSizeX}}}		{{{-(I*SizeY) - Separator*0.5}}}" z-index="1" hidden="1">
+						<quad 	id="Quad_aAa{{{I}}}"		pos="{{{QuadSizeX+0.0}}}	0.0"   z-index="3." 	size="{{{RankSizeX+QuadSizeX-0.6}}} {{{QuadSizeY+6.}}}" valign="center" halign="right" opacity="0." image="{{{IMG_RankGauge}}}" keepratio="Fit"/>
+						<quad 	id="Quad_aAa{{{I}}}"		pos="{{{QuadSizeX+0.0}}}	0.0"   z-index="0." 	size="{{{RankSizeX+QuadSizeX-0.6}}} {{{QuadSizeY}}}" valign="center" halign="right" opacity="0.2" bgcolor="000" keepratio="Fit"  style="Bgs1" substyle="BgDialogBlur" bluramount="0.0"/>
+						
+						<quad 	id="Quad_Bgs1"  			pos="-2 						-2.6" z-index="1." 	size="{{{QuadSizeX}}} 		{{{0.5}}}" 	valign="center" halign="left"  bgcolor="000"	opacity="0.6"  style="Bgs1" substyle="BgDialogBlur" bluramount="0.1"/>
+						<quad 	id="Quad_Bg{{{I}}}"  		pos="-2 						-2.6" z-index="4." 	size="{{{QuadSizeX}}} 		{{{0.5}}}" 	valign="center" halign="left"  bgcolor="fff"	opacity="{{{OpacityShadow}}}"/>
+						<quad 	id="Quad_Gauge{{{I}}}"  	pos="-2			 				-2.6" z-index=".4" 	size="{{{QuadSizeX}}} 		{{{0.5}}}" 	bgcolor="0007" valign="center" halign="left" />
+						<label 	id="Label_Name{{{I}}}" 		pos="0 							0" z-index=".26.6" 	size="160 10" 	halign="left" 	valign="center" textsize="1.0" scale="1.0"/>
+						<label 	id="Label_Cp{{{I}}}" 		pos="{{{QuadSizeX-26}}} 		0" z-index=".33.6" 	size="160 10" 	halign="left" 	valign="center" text="CP:" style="TextButtonBig" textsize="1" textfont="{{{MainSmallFont}}}" hidden="1"/>
+						<label 	id="Label_State{{{I}}}" 	pos="{{{QuadSizeX-4.5}}} 		0" z-index=".66.6" 	size="160 10" 	halign="right" 	valign="center" text="--:--.--" style="TextButtonBig" textsize="1.5" textfont="{{{MainFont}}}"/>
+					</frame>
+				</frame>
+				<quad 		id="Quad_Strong{{{I}}}" 	pos="0.  {{{-(I*SizeY) - Separator*0.5}}}" 	size="{{{SizeX}}} {{{SizeY}}}" halign="left" valign="center" image="{{{ImgPath^ImgPlayerBg}}}" hidden="1"/>
+			""";
+		}
+	MLText ^= """	
+		</frame>
+	</frame>
+	
+	<script><!--
+		{{{Manialink::GetIncludes()}}}
+		
+		#Const C_HOTSEAT_PLAYING		0
+		#Const C_HOTSEAT_ELIMINATE		1
+		#Const C_HOTSEAT_SURVIVING		2
+		#Const C_HOTSEAT_GIVEUP			3
+		
+		#Const C_TABLESCORE_BESTTIME	0
+		#Const C_TABLESCORE_CHECKPOINT	1
+		#Const C_TABLESCORE_DEFAULT		2
+		#Const C_TABLESCORE_FINAL		3
+
+		#Const C_HOTSEATSCORE_NOSCORE	-1
+		
+		#Const COLOR_BLUE 				0
+		#Const COLOR_RED 				1
+		#Const COLOR_GREEN 				2
+		#Const COLOR_PURPLE 			3
+		#Const COLOR_PINK 				4
+		#Const COLOR_CYAN 				5
+		#Const COLOR_BLACK 				6
+		#Const COLOR_WHITE 				7
+		
+		// declare CMlLabel[Integer] Label_Time;
+		declare CMlLabel[Integer] Label_State;
+		declare CMlLabel[Integer] Label_Cp;
+		declare CMlLabel[Integer] Label_Name;
+		declare CMlLabel[Integer] Label_Rank;
+		declare CMlQuad	[Integer] Quad_Bg;
+		declare CMlQuad	[Integer] Quad_Gauge;
+		declare CMlFrame[Integer] Frame_Player;	
+		declare CMlFrame[Integer] Frame_Rank;	
+		declare CMlQuad	[Integer] Quad_Strong;
+		
+		{{{Manialink::Load()}}}
+		
+		Void DisplayNoScorePlayer(Integer _PlayerIndex, Integer _PlayerState) {
+			if(_PlayerState == C_HOTSEAT_PLAYING) {
+				Label_State[_PlayerIndex].Value = "--:--.--";
+				Label_Cp[_PlayerIndex].Visible = False;
+				Frame_Player[_PlayerIndex].Visible = True;
+				// Frame_Rank	[_PlayerIndex].Visible = True;
+				// Quad_Strong	[_PlayerIndex].Visible = True;
+			} else if(_PlayerState == C_HOTSEAT_ELIMINATE || _PlayerState == C_HOTSEAT_GIVEUP) {
+				// Label_State[_PlayerIndex].Value = "Out of game";
+				// Label_Cp[_PlayerIndex].Visible = False;
+				// log("SET FALSE>"^_PlayerIndex);
+				Frame_Player[_PlayerIndex].Visible = False;
+				// Frame_Rank	[_PlayerIndex].Visible = False;
+				// Quad_Strong	[_PlayerIndex].Visible = False;
+			}
+		}
+		
+		main() {
+			declare CMlFrame 	Frame_MainUI 			<=> (Page.MainFrame.GetFirstChild("Frame_MainUI") 			as CMlFrame);
+			declare CMlFrame 	Frame_CurrentPlayer 	<=> (Page.MainFrame.GetFirstChild("Frame_CurrentPlayer") 	as CMlFrame);
+			
+			declare CMlQuad 	Quad_Lowgas 			<=> (Page.MainFrame.GetFirstChild("Quad_Lowgas") 			as CMlQuad);
+		
+			for(I, 0, {{{C_MaxPlayerCount-1}}}) {
+				Label_Cp[I]					<=> (Page.MainFrame.GetFirstChild("Label_Cp"^I) 				as CMlLabel);
+				// Label_Time[I]				<=> (Page.MainFrame.GetFirstChild("Label_Time"^I) 				as CMlLabel);
+				Label_State[I]				<=> (Page.MainFrame.GetFirstChild("Label_State"^I) 				as CMlLabel);
+				Label_Name[I]				<=> (Page.MainFrame.GetFirstChild("Label_Name"^I) 				as CMlLabel);
+				Label_Rank[I]				<=> (Page.MainFrame.GetFirstChild("Label_Rank"^I) 				as CMlLabel);
+				Quad_Bg[I]					<=> (Page.MainFrame.GetFirstChild("Quad_Bg"^I) 					as CMlQuad);
+				Quad_Gauge[I]				<=> (Page.MainFrame.GetFirstChild("Quad_Gauge"^I) 				as CMlQuad);
+				Frame_Player[I]				<=> (Page.MainFrame.GetFirstChild("Frame_Player"^I) 			as CMlFrame);
+				Frame_Rank[I]				<=> (Page.MainFrame.GetFirstChild("Frame_Rank"^I) 				as CMlFrame);
+				Quad_Strong[I]				<=> (Page.MainFrame.GetFirstChild("Quad_Strong"^I) 				as CMlQuad);
+			}
+			
+			Quad_Lowgas.Blend = CMlQuad::EBlendMode::Add;
+			
+			declare netread 	Text[Integer]			Net_IndexToName 			for UI;
+			declare 			Text[Integer]			Pre_IndexToName				for UI;
+			declare netread 	Vec3[Integer]			Net_IndexToColor 			for UI;
+			
+			declare netread 	Integer[Integer] 		Net_BestTimePlayers 		for UI;
+			declare netread 	Integer[Integer] 		Net_EnergyLeftPlayers 		for UI;
+			declare netread 	Integer[Integer]		Net_TableScore				for UI;
+			declare netread 	Integer 				Net_CurPlayerIndex 			for UI;
+			declare netread 	Boolean 				Net_RaceOn 					for UI;
+			declare netread 	Integer[Integer]   		Net_PlayersState  			for UI;
+			declare netread 	Integer					Net_CpEventUpdate			for UI;
+			declare netread Integer[Integer][Integer] 	Net_AllPlayersCpTimes 		for UI;
+			declare netread Integer[Integer] 			Net_PlayersLastCpTime		for UI;
+			declare netread Integer						Net_TableScoreState			for UI;
+			
+			declare netread Integer[Integer]		 	Net_PlayersLastCpIndex		for UI;
+			
+			declare netread 	Integer 				Net_NbPlayer 				for UI;
+			declare				Integer					Pre_NbPlayers;
+			declare netwrite 	Boolean 				Net_GameIsInit 				for UI;
+			
+			declare 			Integer[Integer] 		Pre_PlayersLastCpTime;
+			declare 		 	Integer					Pre_CurPlayerIndex;
+			declare 		 	Integer[Integer]		Pre_TableScore;
+			declare				Integer[Integer]		Pre_EnergyLeftPlayers;
+			declare				Integer					Pre_CpEventUpdate;
+			declare				Integer[Integer]		PlayerToRank;
+			declare				Integer					Pre_CurPlayerIndexPadColor = -1;
+			
+			declare				Integer					PlayerOutOfGame;
+			
+			declare WaitToUpdatePadColor 	= Now + 3000;
+			declare Pre_PadCount			= 0;
+			declare UpdatePadColor			= False;
+			declare Vec3 CurrentPadColor	= <1.0, 0.0, 0.0>;
+			declare	PrevRaceState = InputPlayer.RaceState;
+			declare Integer EnergyMax = {{{_EnergyMax}}};
+			declare netwrite Integer Net_EnergyMax for UI;
+			Net_EnergyMax = EnergyMax;
+			
+			while (True) {
+				yield;
+				if(InputPlayer == Null || !PageIsVisible) continue;
+				LibManialink_AnimLoop();
+				
+				
+				//TO SET THE PAD COLOR ACCORDING TO THE CURRENT PLAYER
+				if(Pre_CurPlayerIndexPadColor != Net_CurPlayerIndex && Net_CurPlayerIndex > -1) {
+					if(Net_IndexToColor.existskey(Net_CurPlayerIndex)) {
+						CurrentPadColor = Net_IndexToColor[Net_CurPlayerIndex];
+						
+						//On extrêmise les couleurs pour les pads qu'on a vu un peu palot ou pas fonctionner avec Colors
+						if(Net_CurPlayerIndex == COLOR_RED) {
+							CurrentPadColor = <1.0, 0.0, 0.0>;
+						} else if(Net_CurPlayerIndex == COLOR_BLUE) {
+							CurrentPadColor = <0.1, 0.3, 1.0>;
+						} else if(Net_CurPlayerIndex == COLOR_GREEN) {
+							CurrentPadColor = <0.0, 1.0, 0.0>;
+						} else if(Net_CurPlayerIndex == COLOR_BLACK) {
+							CurrentPadColor = <0.3, 0.3, 0.3>;
+						} else if(Net_CurPlayerIndex == COLOR_WHITE) {
+							CurrentPadColor = <1.0, 1.0, 1.0>;
+						} else if(Net_CurPlayerIndex == COLOR_PURPLE) {
+							CurrentPadColor = <0.666, 0.377, 0.936>;
+						}
+					}
+					UpdatePadColor = True;
+					Pre_CurPlayerIndexPadColor = Net_CurPlayerIndex;
+				}
+				
+				if(Pre_PadCount != Input.Pads.count) {
+					UpdatePadColor = True;
+					Pre_PadCount = Input.Pads.count;
+				}
+				
+				//On change la couleur des pads si la couleur change ou le nombre de pads change
+				if(UpdatePadColor) {
+					foreach(PadIndex => Pad in Input.Pads)  {
+						Pad.SetColor(CurrentPadColor);
+					}
+					UpdatePadColor = False;
+				}
+				
+				if(PrevRaceState != InputPlayer.RaceState)
+				{
+					PrevRaceState = InputPlayer.RaceState;
+					if(PrevRaceState != CTmMlPlayer::ERaceState::Running)
+					{
+						//	if(M_SoundGas.IsPlaying) 
+						//		M_SoundGas.Stop();
+					}
+				}
+				
+				foreach(Index => Name in Net_IndexToName) {
+					if(Pre_IndexToName.existskey(Index)) {
+						if(Name != Pre_IndexToName[Index]) {
+							Label_Name[Index].Value	= Net_IndexToName[Index];
+							Pre_IndexToName[Index] = Name;
+						}
+					} else {
+						Label_Name[Index].Value	= Net_IndexToName[Index];
+						Pre_IndexToName[Index] = Name;
+					}
+				}
+				
+				if(Pre_NbPlayers != Net_NbPlayer && Net_NbPlayer > 0)  {
+					Frame_MainUI.Visible = True;
+					declare Boolean OneIsOut = False;
+					for(I, 0, Net_NbPlayer-1) {
+						Label_Name[I]	.Value		= Net_IndexToName[I];
+						//Quad_Bg[I]		.BgColor 	= Net_IndexToColor[I];
+						Quad_Bg[I]		.BgColor 	= <0.9, 0.9, 0.9>;
+						Quad_Bg[I]		.Opacity 	= 1.;
+						
+						Quad_Gauge[I]	.BgColor 	= <0., 0., 0.>;
+						Quad_Gauge[I]	.Opacity 	= 0.8;
+						
+						declare CurrEnergy 			= Net_EnergyLeftPlayers[I];
+						declare Real GaugeRatio 	= CurrEnergy * 1.0 / EnergyMax * 1.0;
+						Quad_Gauge[I]	.Size.X 	= (1 - GaugeRatio) * {{{QuadSizeX}}};
+						
+						Pre_EnergyLeftPlayers[I] 	= Net_EnergyLeftPlayers[I];
+						Pre_PlayersLastCpTime[I] 	= Net_PlayersLastCpTime[I];
+						if(I <= 2)		 			Label_Rank[I].TextColor 	= <1., 1., 0.>;
+						// if(I == Net_NbPlayer-1) 	Label_Rank[I].TextColor 	= <1., 0., 0.>;
+						if(Net_PlayersState[I] == C_HOTSEAT_PLAYING || Net_PlayersState[I] == C_HOTSEAT_SURVIVING) {
+							// log("Case 1: "^I^" "^Net_PlayersState[I]);
+							Frame_Player[I].Visible = True;
+							Frame_Rank	[I].Visible = True;
+							Quad_Strong	[I].Visible = True;
+						} else {
+							OneIsOut = True;
+							// log("Case 2: "^I^" "^Net_PlayersState[I]);
+							Frame_Player[I].Visible = False;
+							// Frame_Rank	[I].Visible = False;
+							// Quad_Strong	[I].Visible = False;
+						}
+
+						foreach(IndexRank => IndexPlayer in Net_TableScore) {
+							PlayerToRank[IndexPlayer] = IndexRank;
+						}
+						
+						if(!OneIsOut) {
+							LibManialink_SetTargetPosition	(Frame_Player[I], <{{{RankSizeX}}}, -(PlayerToRank[I]*{{{SizeY}}})>);
+							LibManialink_PresetAnim			(Frame_Player[I], 500, "EaseOutBack");
+						}
+						
+						// Pre_TableScore = Net_TableScore;
+						Pre_CurPlayerIndex = Net_CurPlayerIndex;
+					}
+					
+					Pre_NbPlayers = Net_NbPlayer;
+				}
+				
+				if(Net_NbPlayer > 0) {
+					foreach(I => Label in Label_Name) if(I != Net_CurPlayerIndex) Label.Opacity = 1.;
+					foreach(I => Quad in Quad_Bg) if(I != Net_CurPlayerIndex) Quad.Opacity = 1.;
+					declare Speed 		= 0.009;
+					declare CurSin 		= 0.5 + ML::Sin(GameTime*Speed)*0.5;
+					declare MinOpacity 	= 0.1;
+					declare TheOpacity 	= MinOpacity + CurSin * (1-MinOpacity);
+					// Label_Name[Net_CurPlayerIndex].Opacity = TheOpacity;
+					Quad_Bg[Net_CurPlayerIndex].Opacity = -TheOpacity;
+					declare CurrEnergy = Net_EnergyLeftPlayers[Net_CurPlayerIndex];
+
+					declare Real GaugeRatio = CurrEnergy * 1.0 / EnergyMax * 1.0;
+					
+					//log("GaugeRatio: "^ GaugeRatio);
+					Quad_Bg	[Net_CurPlayerIndex].Size.X 		= (GaugeRatio) * {{{QuadSizeX}}};
+					// Pre_EnergyLeftPlayers[Net_CurPlayerIndex] 	= CurrEnergy;
+					
+					// if(GaugeRatio < 0.2)
+					if(Net_PlayersState[Net_CurPlayerIndex] == C_HOTSEAT_SURVIVING)
+					{
+						declare Speed 		= 0.01;
+						declare CurSin 		= 0.5 + ML::Sin(GameTime*Speed)*0.5;
+						declare MinOpacity 	= 0.1;
+						declare TheOpacity 	= MinOpacity + CurSin * (1-MinOpacity);
+						Quad_Lowgas.Opacity = TheOpacity;
+						Quad_Lowgas.ImageUrl = "{{{ImgPath^C_ImgGas}}}";
+						
+						//if(!M_SoundGas.IsPlaying) {
+						//	M_SoundGas.Play();
+						//}
+					}
+					else
+					{
+						Quad_Lowgas.Opacity 		= 1.;
+						Quad_Lowgas.ImageUrl 		= "{{{ImgPath^C_ImgGasNormal}}}";
+						//if(M_SoundGas.IsPlaying) {
+						//	M_SoundGas.Stop();
+						//}
+					}
+
+					foreach(IndexRank => IndexPlayer in Net_TableScore) 
+					{
+						if(Pre_TableScore.existskey(IndexRank)) {
+							if(Pre_TableScore[IndexRank] != Net_TableScore[IndexRank]) 
+							{
+								LibManialink_SetTargetPosition	(Frame_Player[IndexPlayer], <{{{RankSizeX}}}, -(IndexRank*{{{SizeY}}} + {{{Separator*0.5}}})>);
+								LibManialink_PresetAnim			(Frame_Player[IndexPlayer], 500, "EaseOutBack");
+														
+								if(IndexPlayer == Net_CurPlayerIndex) 
+								{
+									LibManialink_SetTargetPosition	(Frame_CurrentPlayer, <{{{RankSizeX-10}}}, -(IndexRank*{{{SizeY}}})>);
+									LibManialink_PresetAnim			(Frame_CurrentPlayer, 500, "EaseOutBack");
+								}
+
+								PlayerToRank[IndexPlayer] = IndexRank;
+								Pre_TableScore[IndexRank] = Net_TableScore[IndexRank];
+							}
+						} else {
+							LibManialink_SetTargetPosition	(Frame_Player[IndexPlayer], <{{{RankSizeX}}}, -(IndexRank*{{{SizeY}}} + {{{Separator*0.5}}})>);
+							LibManialink_PresetAnim			(Frame_Player[IndexPlayer], 500, "EaseOutBack");
+							
+							if(IndexPlayer == Net_CurPlayerIndex) 
+							{
+								LibManialink_SetTargetPosition	(Frame_CurrentPlayer, <{{{RankSizeX-10}}}, -(IndexRank*{{{SizeY}}})>);
+								LibManialink_PresetAnim			(Frame_CurrentPlayer, 500, "EaseOutBack");
+							}
+							
+							PlayerToRank[IndexPlayer] = IndexRank;
+							Pre_TableScore[IndexRank] = Net_TableScore[IndexRank];
+						}
+						
+						if(Net_PlayersState[IndexPlayer] == C_HOTSEAT_GIVEUP || Net_PlayersState[IndexPlayer] == C_HOTSEAT_ELIMINATE) {
+							Frame_Player[IndexPlayer].Visible = False;
+						}
+					}
+				}
+				
+				if(Pre_CurPlayerIndex != Net_CurPlayerIndex) 
+				{
+					LibManialink_SetTargetPosition	(Frame_CurrentPlayer, <{{{RankSizeX-10}}}, -(PlayerToRank[Net_CurPlayerIndex]*{{{SizeY}}})>);
+					LibManialink_PresetAnim			(Frame_CurrentPlayer, 500, "EaseOutBack");
+					Pre_CurPlayerIndex = Net_CurPlayerIndex;
+				}
+				
+				if(Net_TableScoreState == C_TABLESCORE_CHECKPOINT) {
+					if(Pre_CpEventUpdate != Net_CpEventUpdate) {
+						foreach(IndexPlayer => CpTime in Net_PlayersLastCpTime) {
+							if(CpTime != -1 && Net_PlayersState[IndexPlayer] != C_HOTSEAT_ELIMINATE && Net_PlayersState[IndexPlayer] != C_HOTSEAT_GIVEUP) {
+								
+								declare Boolean FirstAtCheckpoint = False;
+								declare Integer BestPlayerCpTime = 0;
+								//If the player is the first one, we already know what to do
+								if(IndexPlayer != Net_TableScore[0]) {
+									
+									//We get the current player's rank
+									declare Integer CurRank = 0;
+									foreach(IndexRankTs => IndexPlayerTs in Net_TableScore) {
+										if(IndexPlayerTs == IndexPlayer) {
+											CurRank = IndexRankTs;
+										}
+									}
+									
+									//We go through the table score in order to get the best player for the current player's Cp
+									declare Integer J = CurRank;
+									declare Integer BestPlayerWithSameCp = Net_TableScore[CurRank];
+									while(J >= 0) {
+										if(Net_PlayersLastCpIndex[Net_TableScore[J]] == Net_PlayersLastCpIndex[IndexPlayer]) {
+											BestPlayerWithSameCp = Net_TableScore[J];
+										}
+										J -= 1;
+									}
+									
+									if(IndexPlayer == BestPlayerWithSameCp) {
+										FirstAtCheckpoint = True;
+									} else {
+										FirstAtCheckpoint = False;
+										BestPlayerCpTime = Net_PlayersLastCpTime[BestPlayerWithSameCp];
+									}
+								} else {
+									FirstAtCheckpoint = True;
+								}
+								
+								//If the player is the first of his CP, then we display his time. Otherwise we compare with the best player time.
+								if(FirstAtCheckpoint) {
+									Label_State[IndexPlayer].Value = TL::TimeToText(CpTime, True);
+									Label_Cp[IndexPlayer].Visible = True;
+									
+									Frame_Player[IndexPlayer].Visible = True;
+									// Frame_Rank	[IndexPlayer].Visible = True;
+									// Quad_Strong	[IndexPlayer].Visible = True;
+									
+									declare Integer CpFinalIndex = Net_PlayersLastCpIndex[IndexPlayer]+1;
+									
+									// If the Cp is the last one
+									if(CpFinalIndex == MapCheckpointPos.count+1) {
+										Label_Cp[IndexPlayer].Value = "Finish";
+									} else {
+										Label_Cp[IndexPlayer].Value = "CP#"^CpFinalIndex;
+									}
+								} else {
+									Label_State[IndexPlayer].Value = "+"^TL::TimeToText(CpTime - BestPlayerCpTime, True);
+									Label_Cp[IndexPlayer].Visible = True;
+									Label_Cp[IndexPlayer].Value = "--";
+									
+									// log(IndexPlayer^" Set frame");
+									Frame_Player[IndexPlayer].Visible = True;
+									// Frame_Rank	[IndexPlayer].Visible = True;
+									// Quad_Strong	[IndexPlayer].Visible = True;
+								}
+								
+							} else {
+								DisplayNoScorePlayer(IndexPlayer, Net_PlayersState[IndexPlayer]);
+							}
+						}
+						Pre_CpEventUpdate = Net_CpEventUpdate;
+					}
+				} else if(Net_TableScoreState == C_TABLESCORE_BESTTIME){
+					if(Net_NbPlayer > 0) {
+						declare Integer TimeBestPlayer = Net_BestTimePlayers[Net_TableScore[0]];
+						foreach(IndexPlayer => BestTime in Net_BestTimePlayers) {
+							if(BestTime != -1) {
+								if(IndexPlayer != Net_TableScore[0]) {
+									Label_State[IndexPlayer].Value = "+"^TL::TimeToText(BestTime - TimeBestPlayer, True);
+									Label_Cp[IndexPlayer].Visible = False;
+									Label_Cp[IndexPlayer].Value = "--";
+								} else {
+									Label_State[IndexPlayer].Value = TL::TimeToText(BestTime, True);
+									Label_Cp[IndexPlayer].Visible = False;
+									Label_Cp[IndexPlayer].Value = "Finish";
+								}
+							} else {
+								DisplayNoScorePlayer(IndexPlayer, Net_PlayersState[IndexPlayer]);
+							}
+						}
+						
+						/*
+						declare Integer CurPlayerTime = Net_PlayersLastCpTime[Net_CurPlayerIndex];
+						if(CurPlayerTime != -1) {
+							if(Net_CurPlayerIndex != Net_TableScore[0]) {
+								Label_State[Net_CurPlayerIndex].Value = "+"^TL::TimeToText(CurPlayerTime - TimeBestPlayer, True);
+								Label_Cp[Net_CurPlayerIndex].Visible = False;
+								Label_Cp[Net_CurPlayerIndex].Value = "--";
+							} else {
+								Label_State[Net_CurPlayerIndex].Value = TL::TimeToText(CurPlayerTime, True);
+								Label_Cp[Net_CurPlayerIndex].Visible = False;
+								Label_Cp[Net_CurPlayerIndex].Value = "Finish";
+							}
+							
+							Frame_Player[Net_CurPlayerIndex].Visible = True;
+							Frame_Rank	[Net_CurPlayerIndex].Visible = True;
+							Quad_Strong	[Net_CurPlayerIndex].Visible = True;
+						} else {
+							DisplayNoScorePlayer(Net_CurPlayerIndex, Net_PlayersState[Net_CurPlayerIndex]);
+						}
+						*/
+					}
+				} else if(Net_TableScoreState == C_TABLESCORE_DEFAULT) {
+					foreach(Position => IndexPlayer in Net_TableScore) {
+						
+						Label_State[IndexPlayer].Value = "--:--.--";
+						if(Net_BestTimePlayers[IndexPlayer] != -1) {
+							Label_Cp[IndexPlayer].Visible = True;
+							Label_Cp[IndexPlayer].Value = "START";
+						} else {
+							Label_Cp[IndexPlayer].Visible = False;
+							Label_Cp[IndexPlayer].Value = "NO SCORE";
+						}
+
+						// if(BestTime != -1) {
+							// if(IndexPlayer != Net_TableScore[0]) {
+								// Label_State[IndexPlayer].Value = "+"^TL::TimeToText(BestTime - TimeBestPlayer, True);
+								// Label_Cp[IndexPlayer].Visible = True;
+								// Label_Cp[IndexPlayer].Value = "--";
+							// } else {
+								// Label_State[IndexPlayer].Value = TL::TimeToText(BestTime, True);
+								// Label_Cp[IndexPlayer].Visible = True;
+								// Label_Cp[IndexPlayer].Value = "Finish";
+							// }
+							
+							// Frame_Player[IndexPlayer].Visible = True;
+							Frame_Rank	[IndexPlayer].Visible = True;
+							Quad_Strong	[IndexPlayer].Visible = True;
+						// } else {
+							// DisplayNoScorePlayer(IndexPlayer, Net_PlayersState[IndexPlayer]);
+						// }
+					}
+				}
+				
+				//Display false players out of game and the last ranks
+				PlayerOutOfGame = 0;
+				foreach(IndexPlayer => State in Net_PlayersState) {
+					if(State == C_HOTSEAT_ELIMINATE || State == C_HOTSEAT_GIVEUP) {
+						PlayerOutOfGame += 1;	
+					}
+				}
+				
+				// log(Net_NbPlayer - PlayerOutOfGame);
+				for(IndexPlayer, Net_NbPlayer - PlayerOutOfGame, Net_NbPlayer-1) {
+					Frame_Rank[IndexPlayer].Visible = False;
+					
+				}
+			}
+		}
+	--></script>
+</manialink>
+	""";
+
+	Layers::Create("HotSeat_DynaRanking", MLText);
+	Layers::Attach("HotSeat_DynaRanking");
+	Layers::SetAnimationTypeOut("HotSeat_DynaRanking", CUILayer::EUILayerAnimation::RightFast);
+}
+
+Void UpdatePlayerCount(Integer _NbPlayer) {
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Integer Net_NbPlayer for UI;
+	Net_NbPlayer = _NbPlayer;
+}
+
+Void Unload() {
+	Layers::Destroy("HotSeat_DynaRanking");
+}
+
+Void SetDynaRankingVisibility(Boolean _Shown) {
+	Layers::SetVisibility("HotSeat_DynaRanking", _Shown);
+}
+
+Void Load(Integer _EnergyMax, Ident _Player) {
+	G_ThePlayerId = _Player;
+	Unload();
+	Private_CreateLayerDynaRanking(_EnergyMax);
+}
+

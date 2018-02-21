@@ -1,0 +1,889 @@
+#Include "Libs/Nadeo/Common/Core/Logger.Script.txt"			as Logger
+
+#Include "Libs/Nadeo/MP4/TitlePackMaker/Components/Component_Campaign/CampaignXmlWriter.Script.txt"			as CampaignXmlWriter
+#Include "Libs/Nadeo/MP4/TitlePackMaker/Components/Component_Campaign/CampaignXmlReader.Script.txt"			as CampaignXmlReader
+#Include "Libs/Nadeo/MP4/Common/SettingsController.Script.txt"												as SettingsController
+#Include "Libs/Nadeo/MP4/Common/Components/TrackBrowser/TrackBrowserAPI.Script.txt"							as TrackBrowserAPI
+#Include "Libs/Nadeo/MP4/Common/GlobalVariables.Script.txt"													as GlobalVariables
+
+#Include "TextLib"										as TextLib
+#Include "MathLib"										as MathLib
+
+#Const C_ImgTrack		"file://Media/MEDIABROWSER_HiddenResources/Common/Images/TrackBrowser/"
+
+#Const C_MedalTypes 	[	"NoMedal"	=> 4,
+							"Bronze"	=> 3,
+							"Silver"	=> 2,
+							"Gold"		=> 1,
+							"Author"	=> 0]
+#Const C_MedalNumbers	[	4			=> "NoMedal",
+							3			=> "Bronze",
+							2			=> "Silver",
+							1			=> "Gold",
+							0			=> "Author"]
+#Const C_SectionNumbers	[	"White"		=> 0,
+							"Green"		=> 1,
+							"Blue"		=> 2,
+							"Red"		=> 3,
+							"Black"		=> 4]
+#Const C_MapRowNumber	5
+#Const NewTrackPatterns	[[10, 15, 19], [5, 10, 14], [0, 5, 9], [-1, 0, 4]]
+
+#Const C_SettingsTypesSM		["ExpandingField"												, "Event"]
+#Const C_ExtraValuesSM			[["", "AscendingScore", "DescendingScore", "NumberOfRespawns"]	, [""]]
+#Const C_SettingsNamesSM		["CampaignType"													, "CampaignScript"]
+
+declare Text[]				G_CampaignSectionColors;
+declare Text[][]			G_MapsPerCategoryReference;
+declare Text[Text][][]		G_UnlockConditionsReference;
+declare Integer[][Text][]	G_CardTypeGroupsReference;
+declare Text[Text][][]		G_MapMetadataReference;
+declare Text				G_Color;
+declare Boolean				G_IsActive;
+
+declare Boolean				G_AllowEvaluate;
+
+declare Text				G_ContextName;
+declare Text				G_ScriptName;
+
+// Erreurs de sections
+declare Integer[] G_ErrorSections_Misplaced;			// Des sections vides ne peuvent pas précéder des sections non vides
+declare Integer[] G_ErrorSections_MapsUnfindable;		// Des sections ne peuvent pas contenir des maps introuvables (déplacées ou supprimées)
+declare Integer[] G_ErrorSections_MapsNotValidated;		// Des sections ne peuvent pas contenir des maps non validées
+declare Integer[] G_ErrorSections_MapsMisplaced;		// Des sections ne peuvent pas contenir des maps mal agencées (Ne respectant pas le système pas lignes)
+declare Integer[] G_ErrorSections_MapsGameplay;			// Des sections ne peuvent pas contenir des maps avec des gameplays différents (AccelCoef, GravityCoef, ControlCoef)
+declare Integer[] G_ErrorSections_MapsEnviro;			// Des sections ne peuvent pas contenir des maps dont les enviros ne font pas partie du titre
+
+Void ResetData()
+{
+	declare Text[][]		MapsPerCategory		for LocalUser;
+	declare Text[]			Categories			for LocalUser;
+	declare Text[Text][][]	MapMetadata			for LocalUser;
+	declare Text[Text][][]	UnlockConditions	for LocalUser;
+	Categories					= Text[];
+	G_CampaignSectionColors		= Text[];
+	MapsPerCategory				= Text[][];
+	UnlockConditions			= Text[Text][][];
+	MapMetadata					= Text[Text][][];
+	G_MapsPerCategoryReference	= Text[][];
+	G_UnlockConditionsReference	= Text[Text][][];
+	G_CardTypeGroupsReference	= Integer[][Text][];
+	G_MapMetadataReference		= Text[Text][][];
+	G_Color						= "ff0";
+	G_IsActive					= True;
+	G_AllowEvaluate				= False;
+	G_ContextName				= "";
+	G_ScriptName				= "";
+}
+
+Text[][] GetMapsPath()
+{
+	declare Text[][] MapsPerCategory for LocalUser;
+	return MapsPerCategory;
+}
+
+Text[] GetAllMapPaths()
+{
+	declare Text[][] MapsPerCategory for LocalUser;
+	declare Text[] Result;
+	foreach (Category in MapsPerCategory) {
+		foreach (Map in Category) {
+			if (Map != "")
+			Result.add(Map);
+		}
+	}
+	return Result;
+}
+
+Boolean CategoryHasNoMaps(Integer _CategoryIndex)
+{
+	declare Text[][]		MapsPerCategory		for LocalUser;
+	if (!MapsPerCategory.existskey(_CategoryIndex)) {
+		return True;
+	}
+	foreach(Map in MapsPerCategory[_CategoryIndex]) {
+		if (Map != "") {
+			return False;
+		}
+	}
+	return True;
+}
+
+Boolean HasNoMaps()
+{
+	declare Text[][]		MapsPerCategory		for LocalUser;
+	foreach (SectionIndex => Section in MapsPerCategory) {
+		if (!CategoryHasNoMaps(SectionIndex)) {
+			return False;
+		}
+	}
+	return True;
+}
+
+Boolean IsActivated()
+{
+	if (!G_IsActive) {
+		return False;
+	}
+	if (HasNoMaps()) {
+		return False;
+	}
+	return True;
+}
+
+Void SetActive(Boolean _IsActive)
+{
+	G_IsActive = _IsActive;
+}
+
+Text Private_GetTime(Integer _SectionIndex, Integer _MapIndex)
+{
+	declare Text[Text][][]	MapMetadata			for LocalUser;
+	if (!MapMetadata[_SectionIndex][_MapIndex].existskey("Time")) {
+		return "--:--";
+	}
+	return MapMetadata[_SectionIndex][_MapIndex]["Time"];
+}
+
+Text Private_GetCoppers(Integer _SectionIndex, Integer _MapIndex)
+{
+	declare Text[Text][][]	MapMetadata			for LocalUser;
+	if (!MapMetadata[_SectionIndex][_MapIndex].existskey("Coppers")) {
+		return "???C";
+	}
+	return MapMetadata[_SectionIndex][_MapIndex]["Coppers"];
+}
+
+Text Private_GetValidated(Integer _SectionIndex, Integer _MapIndex)
+{
+	declare Text[Text][][]	MapMetadata			for LocalUser;
+	if (!MapMetadata[_SectionIndex][_MapIndex].existskey("Validated")) {
+		return "no";
+	}
+	return MapMetadata[_SectionIndex][_MapIndex]["Validated"];
+}
+
+Integer Private_GetMedalType(Integer _SectionIndex, Integer _MapIndex)
+{
+	declare Text[Text][][] UnlockConditions for LocalUser;
+	return C_MedalTypes[UnlockConditions[_SectionIndex][_MapIndex]["MedalType"]];
+}
+
+Integer Private_GetLockedMedalNb(Integer _SectionIndex, Integer _MapIndex)
+{
+	declare Text[][]		MapsPerCategory		for LocalUser;
+	declare Text[Text][][]	UnlockConditions	for LocalUser;
+	declare Integer Result = TextLib::ToInteger(UnlockConditions[_SectionIndex][_MapIndex]["MedalNumber"]);
+	for (IndexCardBeforeThis, 0, _MapIndex - 1) {
+		if (MapsPerCategory[_SectionIndex][IndexCardBeforeThis] == "") {
+			if ((IndexCardBeforeThis / 5) != (_MapIndex / 5)) {
+				Result -= 1;
+			}
+		}
+		if (Result < 0) {
+			Result = 0;
+		}
+	}
+	return Result;
+}
+
+Text Private_GetMapState(Integer _SectionIndex, Integer _MapIndex)
+{
+	declare Text[][] MapsPerCategory for LocalUser;
+	if (!MapsPerCategory[_SectionIndex].existskey(_MapIndex) || MapsPerCategory[_SectionIndex][_MapIndex] == "") {
+		return "NonExistent";
+	}
+	return "Available";
+}
+
+Void Load()
+{
+	CampaignXmlReader::Load();
+	ResetData();
+	CampaignXmlReader::ReadCampaign("TestCampaign", 1);
+
+	G_UnlockConditionsReference	= CampaignXmlReader::GetUnlockConditions();
+	G_CardTypeGroupsReference	= CampaignXmlReader::GetCardTypeGroups();
+	G_MapsPerCategoryReference	= CampaignXmlReader::GetMapsPerCategory();
+	G_MapMetadataReference		= CampaignXmlReader::GetMapMetadata();
+}
+
+Text[] GetCampaignCategories()
+{
+	declare Text[]		Categories			for LocalUser;
+	return Categories;
+}
+
+Text[Text][] GetSectionMainData(Integer _SectionIndex)
+{
+	declare Text[][]		MapsPerCategory		for LocalUser;
+	declare Text[Text][][]	MapMetadata			for LocalUser;
+	declare Text[Text][] Result;
+	if (!MapsPerCategory.existskey(_SectionIndex)) {
+		return Result;
+	}
+	declare Text[] MapsPath = MapsPerCategory[_SectionIndex];
+	foreach(MapIndex => MapPath in MapsPath) {
+		declare Text[Text]	MapMetadataBit	= MapMetadata[_SectionIndex][MapIndex];
+		declare Integer		MedalType		= Private_GetMedalType(_SectionIndex, MapIndex);
+		MapMetadataBit["State"]			= Private_GetMapState(_SectionIndex, MapIndex);
+		MapMetadataBit["MedalType"]		= TextLib::ToText(MedalType);
+		MapMetadataBit["LockMedalNb"]	= TextLib::ToText(Private_GetLockedMedalNb(_SectionIndex, MapIndex));
+		MapMetadataBit["LockMedalType"]	= C_MedalNumbers[MedalType];
+		Result.add(MapMetadataBit);
+	}
+	return Result;
+}
+
+Integer[] GetNewTrackPatterns(Integer _SectionIndex)
+{
+	declare Integer[] Result;
+	declare Text[][] MapsPerCategory for LocalUser;
+	if (!MapsPerCategory.existskey(_SectionIndex)) {
+		return Result;
+	}
+	foreach (MapIndex => Map in MapsPerCategory[_SectionIndex]) {
+		if (Map == "") {
+			Result.add(MapIndex);
+		}
+	}
+	return Result;
+}
+
+Void ResetAllWarnings()
+{
+	G_ErrorSections_Misplaced			.clear();
+	G_ErrorSections_MapsUnfindable		.clear();
+	G_ErrorSections_MapsNotValidated	.clear();
+	G_ErrorSections_MapsMisplaced		.clear();
+	G_ErrorSections_MapsGameplay		.clear();
+	G_ErrorSections_MapsEnviro			.clear();
+}
+
+Integer[] GetWarningMaps_Unfindable(Integer _SectionIndex)
+{
+	declare Integer[] Result;
+	declare Text[][] MapsPerCategory	for LocalUser;
+	declare Text[Text][][] MapMetadata	for LocalUser;
+	if (!MapsPerCategory.existskey(_SectionIndex) || !MapMetadata.existskey(_SectionIndex)) {
+		return Result;
+	}
+	declare Text[] Maps							= MapsPerCategory[_SectionIndex];
+	declare Text[Text][] AllCategoryMetadata	= MapMetadata[_SectionIndex];
+	foreach (MapIndex => Map in Maps) {
+		if (Map != "") {
+			if (!AllCategoryMetadata.existskey(MapIndex)) {
+				Result.add(MapIndex);
+			} else {
+				declare Text[Text] Metadata = AllCategoryMetadata[MapIndex];
+				if (!Metadata.existskey("Path")) {
+					Result.add(MapIndex);
+				}
+			}
+		}
+	}
+	if (Result.count != 0 && !G_ErrorSections_MapsUnfindable.exists(_SectionIndex)) {
+		G_ErrorSections_MapsUnfindable.add(_SectionIndex);
+	}
+	return Result;
+}
+
+Integer[] GetWarningMaps_NotValidated(Integer _SectionIndex)
+{
+	declare Integer[] Result;
+	declare Text[][] MapsPerCategory	for LocalUser;
+	declare Text[Text][][] MapMetadata	for LocalUser;
+	if (!MapsPerCategory.existskey(_SectionIndex) || !MapMetadata.existskey(_SectionIndex)) {
+		return Result;
+	}
+	declare Text[] Maps							= MapsPerCategory[_SectionIndex];
+	declare Text[Text][] AllCategoryMetadata	= MapMetadata[_SectionIndex];
+	foreach (MapIndex => Map in Maps) {
+		if (Map != "") {
+			if (AllCategoryMetadata.existskey(MapIndex)) {
+				declare Text[Text] Metadata = AllCategoryMetadata[MapIndex];
+				if (Metadata.existskey("Validated") && Metadata["Validated"] == "no") {
+					Result.add(MapIndex);
+				}
+			}
+		}
+	}
+	if (Result.count != 0 && !G_ErrorSections_MapsNotValidated.exists(_SectionIndex)) {
+		G_ErrorSections_MapsNotValidated.add(_SectionIndex);
+	}
+	return Result;
+}
+
+Integer[] GetWarningMaps_Misplaced(Integer _SectionIndex)
+{
+	declare Integer[] Result;
+	declare Text[][] MapsPerCategory for LocalUser;
+	if (!MapsPerCategory.existskey(_SectionIndex)) {
+		return Result;
+	}
+	declare Text[] Maps = MapsPerCategory[_SectionIndex];
+	declare Integer BadMapIndex;
+	foreach(NewTrackPattern in NewTrackPatterns) {
+		if (NewTrackPattern[0] != -1 && Maps[NewTrackPattern[0]] == "") {
+			if (BadMapIndex == NewTrackPattern[1]) {
+				BadMapIndex = NewTrackPattern[0];
+				if (!Result.exists(NewTrackPattern[0])) {
+					Result.add(NewTrackPattern[0]);
+				}
+			} else {
+				for (MapIndex, NewTrackPattern[1], NewTrackPattern[2]) {
+					if (Maps[MapIndex] != "") {
+						BadMapIndex = NewTrackPattern[0];
+						if (!Result.exists(NewTrackPattern[0])) {
+							Result.add(NewTrackPattern[0]);
+						}
+						break;
+					}
+				}
+			}
+		}
+		declare Integer[] PotentiallyBadIndexes;
+		for(MapIndex, NewTrackPattern[1], NewTrackPattern[2]) {
+			if (Maps[MapIndex] != "") {
+				foreach(BadIndex in PotentiallyBadIndexes) {
+					if (!Result.exists(BadIndex)) {
+						Result.add(BadIndex);
+					}
+				}
+			}
+			if (Maps[MapIndex] == "") {
+				PotentiallyBadIndexes.add(MapIndex);
+			}
+		}
+	}
+	if (Result.count != 0 && !G_ErrorSections_MapsMisplaced.exists(_SectionIndex)) {
+		G_ErrorSections_MapsMisplaced.add(_SectionIndex);
+	}
+	return Result;
+}
+
+Integer[] GetWarningMaps_Gameplay(Integer _SectionIndex)
+{
+	declare Integer[] Result;
+	declare Text[][] MapsPerCategory	for LocalUser;
+	declare Text[Text][][] MapMetadata	for LocalUser;
+	if (!MapsPerCategory.existskey(_SectionIndex) || !MapMetadata.existskey(_SectionIndex)) {
+		return Result;
+	}
+	declare Text[] Maps							= MapsPerCategory[_SectionIndex];
+	declare Text[Text][] AllCategoryMetadata	= MapMetadata[_SectionIndex];
+	declare Text AccelerationCoef	= TextLib::ToText(SettingsController::Get_AccelerationCoef());
+	declare Text ControlCoef		= TextLib::ToText(SettingsController::Get_ControlCoef());
+	declare Text GravityCoef		= TextLib::ToText(SettingsController::Get_GravityCoef());
+	foreach (MapIndex => Map in Maps) {
+		if (Map != "") {
+			if (AllCategoryMetadata.existskey(MapIndex)) {
+				declare Text[Text] Metadata		= AllCategoryMetadata[MapIndex];
+				if ((Metadata.existskey("AccelCoef") && AccelerationCoef != Metadata["AccelCoef"])
+					|| (Metadata.existskey("ControlCoef") && ControlCoef != Metadata["ControlCoef"])
+					|| (Metadata.existskey("GravityCoef") && GravityCoef != Metadata["GravityCoef"])) {
+					Result.add(MapIndex);
+				}
+			}
+		}
+	}
+	if (Result.count != 0 && !G_ErrorSections_MapsGameplay.exists(_SectionIndex)) {
+		G_ErrorSections_MapsGameplay.add(_SectionIndex);
+	}
+	return Result;
+}
+
+Integer[] GetWarningMaps_Enviro(Integer _SectionIndex)
+{
+	declare Integer[] Result;
+	declare Text[][] MapsPerCategory	for LocalUser;
+	declare Text[Text][][] MapMetadata	for LocalUser;
+	if (!MapsPerCategory.existskey(_SectionIndex) || !MapMetadata.existskey(_SectionIndex)) {
+		return Result;
+	}
+	declare Text[] Maps							= MapsPerCategory[_SectionIndex];
+	declare Text[Text][] AllCategoryMetadata	= MapMetadata[_SectionIndex];
+	declare Text ProjectEnviro for LocalUser;
+	if (ProjectEnviro == "") {
+		return Result;
+	}
+	foreach (MapIndex => Map in Maps) {
+		if (Map != "") {
+			if (AllCategoryMetadata.existskey(MapIndex)) {
+				declare Text[Text] Metadata = AllCategoryMetadata[MapIndex];
+				if (Metadata.existskey("Enviro") &&
+					((ProjectEnviro != "TMAll" && Metadata["Enviro"] != ProjectEnviro) ||
+					(ProjectEnviro == "SMStorm" && Metadata["Enviro"] != ProjectEnviro)) ) {
+					Result.add(MapIndex);
+				}
+			}
+		}
+	}
+	if (Result.count != 0 && !G_ErrorSections_MapsEnviro.exists(_SectionIndex)) {
+		G_ErrorSections_MapsEnviro.add(_SectionIndex);
+	}
+	return Result;
+}
+
+Integer[] GetAllWarningMaps(Integer _SectionIndex)
+{
+	declare Integer[] Result;
+	foreach(WarningMap in GetWarningMaps_Unfindable(_SectionIndex)) {
+		if (!Result.exists(WarningMap)) {
+			Result.add(WarningMap);
+		}
+	}
+	foreach(WarningMap in GetWarningMaps_Misplaced(_SectionIndex)) {
+		if (!Result.exists(WarningMap)) {
+			Result.add(WarningMap);
+		}
+	}
+	foreach(WarningMap in GetWarningMaps_Gameplay(_SectionIndex)) {
+		if (!Result.exists(WarningMap)) {
+			Result.add(WarningMap);
+		}
+	}
+	foreach(WarningMap in GetWarningMaps_Enviro(_SectionIndex)) {
+		if (!Result.exists(WarningMap)) {
+			Result.add(WarningMap);
+		}
+	}
+	declare Text ProjectEnviro for LocalUser;
+	if (ProjectEnviro == "Storm") {
+		return Result;
+	}
+	foreach(WarningMap in GetWarningMaps_NotValidated(_SectionIndex)) {
+		if (!Result.exists(WarningMap)) {
+			Result.add(WarningMap);
+		}
+	}
+	return Result;
+}
+
+Integer[] GetWarningSections()
+{
+	declare Integer[] Result;
+	declare Text[] Categories for LocalUser;
+	declare Text[][] MapsPerCategory for LocalUser;
+	declare Integer[] PotentiallyBadEmptySections;
+	foreach(SectionIndex => Section in Categories) {
+		if (GetAllWarningMaps(SectionIndex).count != 0) {
+			Result.add(SectionIndex);
+		}
+		if (CategoryHasNoMaps(SectionIndex)) {
+			if (SectionIndex < Categories.count - 1) {
+				PotentiallyBadEmptySections.add(SectionIndex);
+			}
+		} else {
+			foreach(BadIndex in PotentiallyBadEmptySections) {
+				G_ErrorSections_Misplaced.add(BadIndex);
+				if (!Result.exists(BadIndex)) {
+					Result.add(BadIndex);
+				}
+			}
+		}
+	}
+	return Result;
+}
+
+Boolean CanPublishXML()
+{
+	ResetAllWarnings();
+	if (GetWarningSections().count == 0) {
+		declare Text ProjectEnviro for LocalUser;
+		return (ProjectEnviro != "SMStorm" || G_ScriptName != "");
+	}
+	return False;
+}
+
+Boolean HasFaultyMaps()
+{
+	if (!CanPublishXML()) {
+		Logger::Warn("CampaignAPI : HasFaultyMaps : CanPublishXML == False");
+	}
+	return (G_ErrorSections_MapsUnfindable.count != 0);
+}
+
+Text PublishXMLError()
+{
+	declare Text Result;
+	declare Text ProjectEnviro for LocalUser;
+	
+	if (G_ErrorSections_MapsUnfindable.count != 0) {
+		declare Text[] Indexes;
+		foreach(Index in G_ErrorSections_MapsUnfindable) {
+			Indexes.add(TextLib::ToText(Index));
+		}
+		//L16N In a pop-up window relating an error when building the solo campaign
+		Result ^= "\t" ^ TextLib::GetTranslatedText("Some maps are unfindable, please try adding them again") ^ "\n";
+	}
+	if (G_ErrorSections_Misplaced.count != 0) {
+		declare Text[] Indexes;
+		foreach(Index in G_ErrorSections_Misplaced) {
+			Indexes.add(TextLib::ToText(Index));
+		}
+		//L16N In a pop-up window relating an error when building the solo campaign
+		Result ^= "\t" ^ TextLib::GetTranslatedText("There is no map inside a section") ^ "\n";
+	}
+	if (G_ErrorSections_MapsMisplaced.count != 0) {
+		declare Text[] Indexes;
+		foreach(Index in G_ErrorSections_MapsMisplaced) {
+			Indexes.add(TextLib::ToText(Index));
+		}
+		//L16N In a pop-up window relating an error when building the solo campaign
+		Result ^= "\t" ^ TextLib::GetTranslatedText("Some maps are misplaced") ^ "\n";
+	}
+	if (G_ErrorSections_MapsGameplay.count != 0) {
+		declare Text[] Indexes;
+		foreach(Index in G_ErrorSections_MapsGameplay) {
+			Indexes.add(TextLib::ToText(Index));
+		}
+		//L16N In a pop-up window relating an error when building the solo campaign
+		Result ^= "\t" ^ TextLib::GetTranslatedText("Some maps don't have the correct gameplay settings (see 'ingame')") ^ "\n";
+	}
+	if (G_ErrorSections_MapsEnviro.count != 0) {
+		declare Text[] Indexes;
+		foreach(Index in G_ErrorSections_MapsEnviro) {
+			Indexes.add(TextLib::ToText(Index));
+		}
+		//L16N In a pop-up window relating an error when building the solo campaign
+		Result ^= "\t" ^ TextLib::GetTranslatedText("Some maps are incompatible with the specified environment") ^ "\n";
+	}
+	if (ProjectEnviro == "Storm") {
+		return Result;
+	}
+	if (G_ErrorSections_MapsNotValidated.count != 0) {
+		declare Text[] Indexes;
+		foreach(Index in G_ErrorSections_MapsNotValidated) {
+			Indexes.add(TextLib::ToText(Index));
+		}
+		//L16N In a pop-up window relating an error when building the solo campaign
+		Result ^= "\t" ^ TextLib::GetTranslatedText("Some maps are not validated") ^ "\n";
+	}
+	return Result;
+}
+
+Text[][][] GetSectionLineData(Integer _SectionIndex)
+{
+	declare Text[][] MapsPerCategory for LocalUser;
+	declare Text[][][] Result;
+	declare Text[Text] YesNoArray = ["no" => "$233$<$t" ^ TextLib::GetTranslatedText("|There is none/There are none|No") ^ "$>",
+	"yes" => "<$t" ^ TextLib::GetTranslatedText("|There is/There are|Yes") ^ "$>"];
+	declare Text IMGTrack	= C_ImgTrack ^ "TrackType.dds";
+	declare Text IMGTime	= C_ImgTrack ^ "LastTime.dds";
+	declare Text IMGValid	= C_ImgTrack ^ "Validated.dds";
+	declare Text IMGReplay	= C_ImgTrack ^ "Replay.dds";
+	declare Text IMGGhosts	= C_ImgTrack ^ "GhostRecord.dds";
+	if (!MapsPerCategory.existskey(_SectionIndex)) {
+		return Result;
+	}
+	declare Text[] MapsPath = MapsPerCategory[_SectionIndex];
+	foreach(MapIndex => MapPath in MapsPath) {
+		if (MapPath == "") {
+			Result.add(Text[][]);
+			continue;
+		}
+		declare Text CourseTime		= Private_GetTime(_SectionIndex, MapIndex);
+		declare Text IsValidated	= Private_GetValidated(_SectionIndex, MapIndex);
+		if (IsValidated == "no") {
+			CourseTime = "$B00$<" ^ TextLib::GetTranslatedText("Not Validated") ^ "$>";
+		}
+
+		declare Text ProjectEnviro for LocalUser;
+		if (ProjectEnviro != "Storm") {
+			Result.add([[TextLib::GetTranslatedText("Validation time : ") ^ CourseTime]
+				//L16N Noun, plural, specific term used to represent the amount of polygons in a map
+						, [TextLib::GetTranslatedText("Coppers : ") ^ Private_GetCoppers(_SectionIndex, MapIndex)]]);
+		} else {
+			//L16N Noun, plural, specific term used to represent the amount of polygons in a map
+			Result.add([[TextLib::GetTranslatedText("Coppers : ") ^ Private_GetCoppers(_SectionIndex, MapIndex)]]);
+		}
+	}
+	return Result;
+}
+
+Text GenerateXML(Text _Color, Boolean _IsActive)
+{
+	declare Text[][]		MapsPerCategory		for LocalUser;
+	declare Text[]			Categories			for LocalUser;
+	declare Text[Text][][]	MapMetadata			for LocalUser;
+	declare Text[Text][][]	UnlockConditions	for LocalUser;
+	declare Integer[][Text][] CardTypeGroups;
+	declare Boolean IsCampaignEmpty = True;
+	foreach (Category in MapsPerCategory)
+	{
+		if (Category.count != 0)
+		{
+			IsCampaignEmpty = False;
+		}
+	}
+	if (IsCampaignEmpty) {
+		return "";
+	}
+	return CampaignXmlWriter::Serialize(Categories, MapsPerCategory, MapMetadata, UnlockConditions,
+		CardTypeGroups, _Color, _IsActive, "Mini", False, G_AllowEvaluate, G_ContextName, G_ScriptName);
+}
+
+Text PublishXML(Text _Color, Boolean _IsActive)
+{
+	declare Text[][]		MapsPerCategory		for LocalUser;
+	declare Text[]			Categories			for LocalUser;
+	declare Text[Text][][]	MapMetadata			for LocalUser;
+	declare Text[Text][][]	UnlockConditions	for LocalUser;
+	declare Integer[][Text][] CardTypeGroups;
+	declare Boolean IsCampaignEmpty = True;
+	foreach (Category in MapsPerCategory)
+	{
+		if (Category.count != 0)
+		{
+			IsCampaignEmpty = False;
+		}
+	}
+	if (IsCampaignEmpty) {
+		return "";
+	}
+	return CampaignXmlWriter::Serialize(Categories, MapsPerCategory, MapMetadata, UnlockConditions,
+		CardTypeGroups, _Color, _IsActive, "Mini", True, G_AllowEvaluate, G_ContextName, G_ScriptName);
+}
+
+Void AnalyzeXML(Text _XML)
+{
+	declare Text[] Categories					for LocalUser;
+	declare Text[][] MapsPerCategory			for LocalUser;
+	declare Text[Text][][] MapMetadata			for LocalUser;
+	declare Text[Text][][] UnlockConditions		for LocalUser;
+	declare Integer[][Text][] CardTypeGroups;
+
+	if (_XML == "")
+	{
+		CampaignXmlReader::ReadCampaign("NewCampaign", 1);
+	} else {
+		CampaignXmlReader::AnalyzeXML(_XML);
+	}
+	G_Color				= CampaignXmlReader::GetColor();
+	G_IsActive			= CampaignXmlReader::IsActive();
+	Categories			= CampaignXmlReader::GetCategories();
+	MapsPerCategory		= CampaignXmlReader::GetMapsPerCategory();
+	MapMetadata			= CampaignXmlReader::GetMapMetadata();
+	UnlockConditions	= CampaignXmlReader::GetUnlockConditions();
+	CardTypeGroups		= CampaignXmlReader::GetCardTypeGroups();
+	G_AllowEvaluate		= False; // HACK : CampaignXmlReader::GetAllowEvaluate();
+	G_ContextName		= CampaignXmlReader::GetContextName();
+	G_ScriptName		= CampaignXmlReader::GetScriptName();
+}
+
+Text GetColor()
+{
+	return G_Color;
+}
+
+Boolean IsActive()
+{
+	return G_IsActive;
+}
+
+Text GetContextName()
+{
+	return G_ContextName;
+}
+
+Text GetScriptName()
+{
+	return G_ScriptName;
+}
+
+Integer Get_SectionNumber(Text _Path)
+{
+	declare Text[][]		MapsPerCategory		for LocalUser;
+	foreach (SectionIndex => Section in MapsPerCategory) {
+		if (Section.exists(_Path)) {
+			return SectionIndex;
+		}
+	}
+	Logger::Warn("Map not found on any section");
+	return -1;
+}
+
+Integer Get_MapIndex(Text _Path)
+{
+	declare Text[][]		MapsPerCategory		for LocalUser;
+	declare Integer SectionIndex = Get_SectionNumber(_Path);
+	if (SectionIndex != -1) {
+		foreach(MapIndex => MapPath in MapsPerCategory[SectionIndex]) {
+			if (MapPath == _Path) {
+				return MapIndex;
+			}
+		}
+	}
+	Logger::Warn("Map not found within the section");
+	return -1;
+}
+
+Void ChangeCategory(Integer _SectionIndex, Text _CategoryType)
+{
+	declare Text[]			Categories			for LocalUser;
+	declare Text[Text][][]	UnlockConditions	for LocalUser;
+	Categories[_SectionIndex] = _CategoryType;
+	UnlockConditions[_SectionIndex] = G_UnlockConditionsReference[C_SectionNumbers[_CategoryType]];
+}
+
+Void CheckCategories()
+{
+	declare Text[][]		MapsPerCategory		for LocalUser;
+	declare Text[Text][][]	MapMetadata			for LocalUser;
+	declare Text[]			Categories			for LocalUser;
+	declare Text[Text][][]	UnlockConditions	for LocalUser;
+	declare Boolean CreateNextCategory;
+	if (Categories.count == 0) {
+		CreateNextCategory = True;
+	} else if (Categories.count == 5) {
+		CreateNextCategory = False;
+	} else {
+		CreateNextCategory = False;
+		foreach(Map in MapsPerCategory[Categories.count - 1]) {
+			if (Map != "") {
+				CreateNextCategory = True;
+				break;
+			}
+		}
+	}
+	if (CreateNextCategory) {
+		Categories.add("White");
+		MapsPerCategory.add(G_MapsPerCategoryReference[0]);
+		MapMetadata.add(G_MapMetadataReference[0]);
+		UnlockConditions.add(G_UnlockConditionsReference[0]);
+	}
+}
+
+Void PlaceMap(Text _Path, Integer _SectionIndex, Integer _MapIndex)
+{
+	declare Text[][]		MapsPerCategory		for LocalUser;
+	declare Text[Text][][]	MapMetadata			for LocalUser;
+	declare Text[]			Categories			for LocalUser;
+	declare Text[Text][][]	UnlockConditions	for LocalUser;
+	MapsPerCategory[_SectionIndex][_MapIndex] = _Path;
+	MapMetadata[_SectionIndex][_MapIndex] = TrackBrowserAPI::GetMetadata(_Path);
+	CheckCategories();
+}
+
+Void MoveMaps(Integer _MovingStartSectionIndex, Integer _MovingDestinationSectionIndex, Integer _MovingStartMapIndex, Integer _MovingDestinationMapIndex)
+{
+	declare Text[][]		MapsPerCategory		for LocalUser;
+	declare Text[Text][][]	MapMetadata			for LocalUser;
+	declare Text			TempPath			= MapsPerCategory[_MovingDestinationSectionIndex][_MovingDestinationMapIndex];
+	declare Text[Text]		TempMetadata		= MapMetadata[_MovingDestinationSectionIndex][_MovingDestinationMapIndex];
+	MapsPerCategory[_MovingDestinationSectionIndex][_MovingDestinationMapIndex]	= MapsPerCategory[_MovingStartSectionIndex][_MovingStartMapIndex];
+	MapMetadata[_MovingDestinationSectionIndex][_MovingDestinationMapIndex]		= MapMetadata[_MovingStartSectionIndex][_MovingStartMapIndex];
+	MapsPerCategory[_MovingStartSectionIndex][_MovingStartMapIndex]				= TempPath;
+	MapMetadata[_MovingStartSectionIndex][_MovingStartMapIndex]					= TempMetadata;
+	CheckCategories();
+}
+
+Void RemoveMap(Integer _SectionIndex, Integer _MapIndex)
+{
+	declare Text[][]		MapsPerCategory		for LocalUser;
+	declare Text[Text][][]	MapMetadata			for LocalUser;
+	MapsPerCategory[_SectionIndex][_MapIndex]	= G_MapsPerCategoryReference[0][_MapIndex];
+	MapMetadata[_SectionIndex][_MapIndex]		= G_MapMetadataReference[0][_MapIndex];
+}
+
+Void RemoveSection(Integer _SectionIndex)
+{
+	declare Text[][]		MapsPerCategory		for LocalUser;
+	declare Text[Text][][]	MapMetadata			for LocalUser;
+	declare Text[]			Categories			for LocalUser;
+	declare Text[Text][][]	UnlockConditions	for LocalUser;
+	if (Categories.count == 0) {
+		Logger::Warn("RemoveSection appelé avec 0 catégories de maps");
+		return;
+	}
+	if (!Categories.existskey(_SectionIndex)) {
+		Logger::Warn("RemoveSection appelé sur une catégorie de map non existante");
+		return;
+	}
+	if (!MapsPerCategory.removekey(_SectionIndex)) {
+		Logger::Warn("RemoveSection : MapsPerCategory non existant(e)");
+		return;
+	}
+	if (!MapMetadata.removekey(_SectionIndex)) {
+		Logger::Warn("RemoveSection : MapMetadata non existant(e)");
+		return;
+	}
+	if (!Categories.removekey(_SectionIndex)) {
+		Logger::Warn("RemoveSection : Categories non existant(e)");
+		return;
+	}
+	if (!UnlockConditions.removekey(_SectionIndex)) {
+		Logger::Warn("RemoveSection : UnlockConditions non existant(e)");
+		return;
+	}
+	if (!Categories.existskey(_SectionIndex)) {
+		Categories.add("White");
+		MapsPerCategory.add(G_MapsPerCategoryReference[0]);
+		MapMetadata.add(G_MapMetadataReference[0]);
+		UnlockConditions.add(G_UnlockConditionsReference[0]);
+	}
+	CheckCategories();
+}
+
+// PARTIE FORM
+
+Text[][] GetChunkAttributeTypes()
+{
+	return [C_SettingsTypesSM];
+}
+
+Text[][] GetChunkAttributeNames()
+{
+	return [C_SettingsNamesSM];
+}
+
+Text[][][] GetChunkAttributeExtraParams()
+{
+	return [C_ExtraValuesSM];
+}
+
+Text[][] GetChunkSettingValues()
+{
+	return [[G_ContextName, G_ScriptName]];
+}
+
+Integer GetCurrentPage()
+{
+	return 1;
+}
+
+Integer GetMaxPages()
+{
+	return 1;
+}
+
+Void SetValueSM(Integer _Id, Text _Value)
+{
+	switch (_Id) {
+		case 0 : {
+			G_ContextName	= _Value;
+		}
+		case 1 : {
+			G_ScriptName	= _Value;
+		}
+	}
+}
+
+Void SetValueTM()
+{
+	G_ScriptName	= "";
+	G_ContextName	= "";
+}
+
+Void SetValue(Integer _Id, Text _Value)
+{
+	switch (GlobalVariables::GetLaunchContext()) {
+		case GlobalVariables::LaunchContext_Maker(): {
+			SetValueTM();
+		}
+		case GlobalVariables::LaunchContext_MakerSM(): {
+			SetValueSM(_Id, _Value);
+		}
+	}
+}

@@ -1,0 +1,176 @@
+#Include "Libs/Nadeo/Common/Core/MenuLayers.Script.txt"												as Layers
+#Include "Libs/Nadeo/Common/Core/Pages.Script.txt"													as Pages
+#Include "Libs/Nadeo/Common/Core/Logger.Script.txt"													as Logger
+#Include "TextLib"																				as TextLib
+
+// APIs
+#Include "Libs/Nadeo/MP4/Common/Components/SoundBrowser/SoundBrowserAPI.Script.txt"					as SoundBrowserAPI
+#Include "Libs/Nadeo/MP4/Common/Components/MediaBrowser/MediaBrowserController.Script.txt"			as MediaBrowserController
+
+//Layers
+#Include "Libs/Nadeo/MP4/Common/Components/SoundBrowser/LBSoundBrowser.Script.txt"					as LBSoundBrowser
+
+#Const C_BrowserName	"SoundBrowser"
+#Const C_PageName		"BrowseSounds"
+//L16N Noun, plural, refers to the music and sound files used in the game
+#Const C_MediaTitle		_("Sounds")
+
+#Const C_Context1		"MakerCampaign"
+#Const C_Context2		"MatchSettingsEditor"
+#Const C_Context3		"LocalPlaySingleMap"
+#Const C_Context4		"EditorsClassicMapEditor"
+#Const C_Context5		"GhostEditor"
+#Const C_Context6		"CustomEditor"
+
+declare Text G_FolderPath;
+
+Void Preview(Text _MediaPath)
+{
+	declare CUILayer LayerToSend <=> Layers::Get("MusicMenu");
+	if(LayerToSend == Null) return;
+	LayerCustomEvent(LayerToSend, "PlayMusic", [_MediaPath]);
+}
+
+Void StopPreview()
+{
+	declare CUILayer LayerToSend <=> Layers::Get("MusicMenu");
+	if(LayerToSend == Null) return;
+	LayerCustomEvent(LayerToSend, "StopMusic", Text[]);
+}
+
+Void Load() {
+	MediaBrowserController::Load(LBSoundBrowser::Build(), C_PageName, C_BrowserName, C_MediaTitle);
+	SoundBrowserAPI::Load();
+}
+
+Void OpenCurrentFolder()
+{
+	SoundBrowserAPI::FetchData(G_FolderPath);
+}
+
+Void OpenInExplorer()
+{
+	if (!OpenFileInExplorer(SoundBrowserAPI::FullPath(G_FolderPath))) {
+		Logger::Warn(C_BrowserName ^ " : OpenFileInExplorer did not function");
+	}
+}
+
+Boolean IsRunning()
+{
+	return MediaBrowserController::IsRunning(C_BrowserName);
+}
+
+Void Show(Text _EventNamePrefix, Text[] _ButtonNames, Text _MediaTitle, Text[] _SecondaryButtonNames)
+{
+	G_FolderPath = "";
+	SoundBrowserAPI::FetchData("");
+	MediaBrowserController::Show(C_BrowserName, C_PageName, _EventNamePrefix, _ButtonNames, _MediaTitle, _SecondaryButtonNames);
+}
+
+Void Show(Text _EventNamePrefix, Text[] _ButtonNames, Text _MediaTitle)
+{
+	Show(_EventNamePrefix, _ButtonNames, _MediaTitle, Text[]);
+}
+
+Void Hide()
+{
+	StopPreview();
+	MediaBrowserController::Hide(C_BrowserName);
+}
+
+Void ForceHide()
+{
+	StopPreview();
+	MediaBrowserController::ForceHide(C_BrowserName);
+}
+
+Text[][] LineDataFromContext(Text _Context, Text[Text] _Metadata)
+{
+	switch(_Context) {
+		case "MakerCampaign" : {
+			return		Text[][];
+		}
+		case "MatchSettingsEditor" : {
+			
+		}
+		case "LocalPlaySingleMap" : {
+			
+		}
+		case "EditorsClassicMapEditor" : {
+			
+		}
+		case "GhostEditor" : {
+			
+		}
+		case "CustomEditor" : {
+			
+		}
+	}
+	return Text[][];
+}
+
+Text[][][] GetLineData(Text _Context)
+{
+	declare Text[][][] Result;
+	declare Text[Text][] MainData = SoundBrowserAPI::GetMainData();
+	foreach (Metadata in MainData) {
+		if (Metadata.existskey("CardType") && Metadata["CardType"] == "Folder") {
+			Result.add(Text[][]);
+		} else {
+			Result.add(LineDataFromContext(_Context, Metadata));
+		}
+	}
+	return Result;
+}
+
+Text[][][] GetLineData()
+{
+	return GetLineData(C_Context1);
+}
+
+Void Loop() {
+	if (SoundBrowserAPI::HasFetched()) {
+		SoundBrowserAPI::UpdateMainData();
+		MediaBrowserController::UpdateData(C_BrowserName, SoundBrowserAPI::FullPath(G_FolderPath), SoundBrowserAPI::GetMainData(), GetLineData(), SoundBrowserAPI::GetCurrentPageIndex(), SoundBrowserAPI::GetMaxPages());
+	}
+	if (MediaBrowserController::IsRunning(C_BrowserName)) {
+		MediaBrowserController::Loop(C_BrowserName);
+	}
+	if (MediaBrowserController::IsRequestingFolderOpening(C_BrowserName)) {
+		G_FolderPath = MediaBrowserController::FolderOpeningPath(C_BrowserName);
+		OpenCurrentFolder();
+	}
+	if (MediaBrowserController::IsRequestingFolderBack(C_BrowserName)) {
+		G_FolderPath = SoundBrowserAPI::FolderParentPath();
+		OpenCurrentFolder();
+	}
+	if (MediaBrowserController::IsRequestingRefreshFolder(C_BrowserName)) {
+		OpenCurrentFolder();
+	}
+	if (MediaBrowserController::IsRequestingOpenInExplorer(C_BrowserName)) {
+		OpenInExplorer();
+	}
+	if (MediaBrowserController::IsRequestingSwitchFlatten(C_BrowserName)) {
+		SoundBrowserAPI::SwitchFlatten();
+		OpenCurrentFolder();
+	}
+	if (MediaBrowserController::IsRequestingSortByDateName(C_BrowserName)) {
+		SoundBrowserAPI::SwitchSortCriterion();
+		OpenCurrentFolder();
+	}
+	if (MediaBrowserController::IsRequestingSortAscDesc(C_BrowserName)) {
+		SoundBrowserAPI::SwitchSortOrder();
+		OpenCurrentFolder();
+	}
+	if (MediaBrowserController::IsRequestingInputPageUp(C_BrowserName)) {
+		SoundBrowserAPI::InputPageUp();
+		MediaBrowserController::UpdateData(C_BrowserName, SoundBrowserAPI::FullPath(G_FolderPath), SoundBrowserAPI::GetMainData(), GetLineData(), SoundBrowserAPI::GetCurrentPageIndex(), SoundBrowserAPI::GetMaxPages());
+	}
+	if (MediaBrowserController::IsRequestingInputPageDown(C_BrowserName)) {
+		SoundBrowserAPI::InputPageDown();
+		MediaBrowserController::UpdateData(C_BrowserName, SoundBrowserAPI::FullPath(G_FolderPath), SoundBrowserAPI::GetMainData(), GetLineData(), SoundBrowserAPI::GetCurrentPageIndex(), SoundBrowserAPI::GetMaxPages());
+	}
+	if (MediaBrowserController::IsRequestingSteamWorkshop(C_BrowserName)) {
+		TitleControl.PublishFile(SoundBrowserAPI::FullPath(MediaBrowserController::RequestingSteamWorkshopMediaName(C_BrowserName)));
+	}
+}

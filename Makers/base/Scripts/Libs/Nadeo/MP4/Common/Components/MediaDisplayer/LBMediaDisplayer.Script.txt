@@ -1,0 +1,1128 @@
+// ATTENTION, UTILISE LibButton_Img
+
+#Include "TextLib"											as TextLib
+#Include "Libs/Nadeo/Common/Core/Logger.Script.txt"				as Logger
+#Include "Libs/Nadeo/Common/Core/MenuLayers.Script.txt"			as Layers
+
+#Include "Libs/Nadeo/MP4/Common/DesignManialinks.Script.txt"	as DesignManialinks
+#Include "Libs/Nadeo/Common/ManialinkTools/2DArrayCardBuilder.Script.txt"		as TwoDArrayCardBuilder
+#Include "Libs/Nadeo/Common/ManialinkTools/Manialink3WPrevAnims.Script.txt"		as Manialink
+#Include "Libs/Nadeo/MP4/Common/ManialinkTools/FontManager.Script.txt"			as Font
+
+#Include "Libs/Nadeo/MP4/Common/GlobalVariables.Script.txt"		as GlobalVariables
+
+#Const C_SizeMediaCards			<41.2,	23.1>
+#Const C_SizeSelectorCards		<46.02,	27.55>
+#Const C_MarginMediaCards		<0.4,	0.4>
+#Const C_SizeMediaListItems		<124.4,	7.43>
+#Const C_MarginMediaListItems	<0.4,	0.4>
+#Const C_CardShadowOpacity		0.1
+#Const C_NonSelectedSecondTOpacity 0.5
+#Const C_IMGSelectorBT			"file://Media/MEDIABROWSER_HiddenResources/Common/Images/Menus/Media/Cards/CadreSelectWOutside.png"
+#Const C_IMGSelectorOver		"file://Media/MEDIABROWSER_HiddenResources/Common/Images/Menus/Media/Cards/CadreOverWOutside.png"
+#Const C_ImgBase				"file://Media/MEDIABROWSER_HiddenResources/Common/Images/Menus/Picto/"
+#Const C_MaxInfoLineLogos		5
+
+#Const C_MultilapIcon			"file://Media/MEDIABROWSER_HiddenResources/Common/Images/Menus/Buttons/Multilap-icon.dds"
+#Const C_NonMultilapIcon		"file://Media/MEDIABROWSER_HiddenResources/Common/Images/Menus/Buttons/Nonmultilap-icon.dds"
+#Const C_FileIcon				"file://Media/MEDIABROWSER_HiddenResources/Common/Images/Menus/Buttons/File-icon.dds"
+#Const C_FolderIcon				"file://Media/MEDIABROWSER_HiddenResources/Common/Images/Menus/Buttons/Folder-icon.dds"
+
+declare	Integer	G_CountX;
+declare	Integer	G_CountY;
+declare Vec2	G_CardFirstPos;
+declare	Boolean	G_IsAuthorLine;
+declare	Boolean	G_IsScroll;
+declare Boolean G_ShowsNonExistentFrames;
+declare Boolean G_CanAddNewMedia;
+declare Vec2	G_AddNewMediaButtonPos;
+declare	Text	G_InfoLineStyle;
+declare Text[]	G_MetadataKeys;
+declare Text[]	G_ButtonNames;
+declare Text[]	G_ButtonLogos;
+declare Text[]	G_ButtonActions;
+declare Text[]	G_ButtonEvents;
+
+declare Real	G_ColoredThumbnailOpacity;
+declare Vec2	G_ContextualMenuPos;
+declare Text	G_MainFont;
+declare Text	G_SubFont;
+
+Text[Text] GetColorCodes()
+{
+	return ["Folder"	=> "183550",
+			"EmptyThumbnail"	=> "201D33",
+			"File"				=> "1E2B54"]; // TODO : Mettre dans Colors.Script.txt
+}
+
+Vec2 Get_SizeSelectorCards()
+{
+	return C_SizeSelectorCards;
+}
+
+Vec2 Get_SizeMediaCards()
+{
+	return C_SizeMediaCards;
+}
+
+Vec2 Get_MarginMediaCards()
+{
+	return C_MarginMediaCards;
+}
+
+Vec2 Get_SizeMediaListItems()
+{
+	return C_SizeMediaListItems;
+}
+
+Vec2 Get_MarginMediaListItems()
+{
+	return C_MarginMediaListItems;
+}
+
+Text Private_ManialinkFrameLineInfo(Text _InfoLineStyle, Text _InfoLineLogoPath, Integer _LineInfoNumber, Real _PositionY, Real _MarginY)
+{
+	declare Text MainPart		= """<label id="MediaCardDisplayer_LineInfo{{{_LineInfoNumber}}}_Label0" halign="left" valign="center" pos="-4 0" size="65 0" textfont="{{{G_MainFont}}}" textsize="1" textcolor="{{{DesignManialinks::GetColorCode_ButtonOutline_Normal()}}}" text="World" opacity="1." textprefix="$t"/>
+""";
+	declare Text SubTitlePart	= """<label id="MediaCardDisplayer_LineInfo{{{_LineInfoNumber}}}_Label1" halign="right"	valign="center" size="20 0" pos="23 0" textfont="{{{G_SubFont}}}" textsize="2" textcolor="{{{DesignManialinks::GetColorCode_ButtonOutline_Normal()}}}" text="1" opacity="1." textprefix="$t"/>
+		<label id="MediaCardDisplayer_LineInfo{{{_LineInfoNumber}}}_Label2" halign="center"	valign="center" size="2 0" pos="24 0" textfont="{{{G_SubFont}}}" textsize="2" textcolor="{{{DesignManialinks::GetColorCode_ButtonOutline_Normal()}}}" text="/" opacity="1." textprefix="$t"/>
+		<label id="MediaCardDisplayer_LineInfo{{{_LineInfoNumber}}}_Label3" halign="left"	valign="center" size="20 0" pos="25 0" textfont="{{{G_SubFont}}}" textsize="2" textcolor="{{{DesignManialinks::GetColorCode_ButtonOutline_Normal()}}}" text="999" opacity="1." textprefix="$t"/>
+""";
+	declare Text[Text] ConditionalPart = ["MainSub" => MainPart ^ SubTitlePart, 
+"Main" => MainPart, "" => MainPart];
+	declare Text ExtraPart;
+	if (_LineInfoNumber == 0) {
+		ExtraPart = """<quad halign="right" valign="center" pos="34.6 {{{_MarginY + 0.3}}}" size="6.2 0.3"  opacity="0.2" bgcolor="{{{DesignManialinks::GetColorCode_ButtonOutline_Normal()}}}"/>""";
+	}
+
+	return """	<frame id="MediaCardDisplayer_LineInfo{{{_LineInfoNumber}}}_Frame" pos="44.6 {{{_PositionY}}}">
+		{{{ExtraPart}}}
+		<quad																halign="right" valign="center" pos="34.6 {{{_MarginY}}}" size="47.2 0.3"  opacity="0.2" bgcolor="{{{DesignManialinks::GetColorCode_ButtonOutline_Normal()}}}"/>
+		<quad id="MediaCardDisplayer_LineInfo{{{_LineInfoNumber}}}_Quad"	halign="right" valign="center" pos="-6 -0.3" size="4 4" image="{{{_InfoLineLogoPath}}}" keepratio="Fit" modulatecolor="{{{DesignManialinks::GetColorCode_ButtonOutline_Normal()}}}"/>
+		{{{ConditionalPart[_InfoLineStyle]}}}
+	</frame>
+""";
+}
+
+Text Private_ManialinkButton(Text _ButtonType, Text _ButtonLogo, Text _ButtonName, Text _ButtonAction, Integer _ButtonIndex, Real _PositionY)
+{
+	declare Text ButtonName = _ButtonName;
+	declare Text ButtonControlId = "MediaCardDisplayer_Button_" ^ _ButtonIndex;
+	if (_ButtonAction == "Select") {
+		if (_ButtonType == "Large") {
+			return DesignManialinks::ManialinkMainButtonLarge(<0.4, _PositionY>, <37., 11.>, ButtonName, _ButtonLogo, "z-index=\"1\"", ButtonControlId) ^ "\n";
+		} else {
+			return DesignManialinks::ManialinkMainButtonSmall(<0.4, _PositionY>, <37., 8.>, ButtonName, _ButtonLogo, "z-index=\"1\"", ButtonControlId) ^ "\n";
+		}
+	}
+	if (_ButtonType == "Large") {
+		return DesignManialinks::ManialinkSecondaryButtonLarge(<0.4, _PositionY>, <37., 11.>, ButtonName, _ButtonLogo, "z-index=\"1\"", _ButtonAction, ButtonControlId) ^ "\n";
+	} else {
+		return DesignManialinks::ManialinkSecondaryButtonSmall(<0.4, _PositionY>, <37., 8.>, ButtonName, _ButtonLogo, "z-index=\"1\"", _ButtonAction, ButtonControlId) ^ "\n";
+	}
+	return "";
+}
+
+Text Private_MenuNavigationActionsHandling() {
+	declare Text Result;
+	foreach (ButtonIndex => ButtonAction in G_ButtonActions)
+	{
+		if (ButtonAction != "") {
+			Result ^= """						case CMlEvent::EMenuNavAction::{{{ButtonAction}}}: {
+							Private_MediaCardDisplayer_Input_Button({{{ButtonIndex}}});
+						}
+""";
+		}
+	}
+	if (Result == "") {
+		return """						case CMlEvent::EMenuNavAction::Select: {
+							continue;
+						}"""; // Gère le cas sans aucun event
+	}
+	return Result;
+}
+
+Void LoadCountsBeforeBuild(Integer _CountX, Integer _CountY)
+{
+	G_CountX = _CountX;
+	G_CountY = _CountY;
+}
+
+Void LoadCardFirstPos(Vec2 _CardFirstPos)
+{
+	G_CardFirstPos = _CardFirstPos;
+}
+
+Void LoadIsAuthorLineBeforeBuild(Boolean _IsAuthorLine)
+{
+	G_IsAuthorLine = _IsAuthorLine;
+}
+
+Void LoadIsScrollBeforeBuild(Boolean _IsScroll)
+{
+	G_IsScroll = _IsScroll; // TODO : UNUSED (De HACK ed)
+}
+
+Void LoadShowsNonExistentFramesBeforeBuild(Boolean _ShowsNonExistentFrames)
+{
+	G_ShowsNonExistentFrames = _ShowsNonExistentFrames;
+}
+
+Void LoadAddNewMediaBeforeBuild(Boolean _CanAddNewMedia, Vec2 _AddNewMediaButtonPos)
+{
+	G_CanAddNewMedia		= _CanAddNewMedia;
+	G_AddNewMediaButtonPos	= _AddNewMediaButtonPos;
+}
+
+Void LoadInfoLineStyleBeforeBuild(Text _InfoLineStyle)
+{
+	G_InfoLineStyle = _InfoLineStyle;
+}
+
+Void LoadMetadataKeysBeforeBuild(Text[] _MetadataKeys)
+{
+	G_MetadataKeys = _MetadataKeys;
+}
+
+Void LoadButtonInfosBeforeBuild(Text[] _ButtonNames, Text[] _ButtonLogos, Text[] _ButtonActions, Text[] _ButtonEvents)
+{
+	G_ButtonNames	= _ButtonNames;
+	G_ButtonLogos	= _ButtonLogos;
+	G_ButtonActions	= _ButtonActions;
+	G_ButtonEvents	= _ButtonEvents;
+}
+
+Void LoadBasicVariablesBeforeBuild()
+{
+	G_ColoredThumbnailOpacity = 1.;
+	if (GlobalVariables::GetLaunchContext() == GlobalVariables::LaunchContext_Maker()) {
+		G_ColoredThumbnailOpacity = 0.5;
+	}
+	G_MainFont				= Font::GetFontName("Main");
+	G_SubFont				= Font::GetFontName("SubTitle");
+}
+
+Void Init(Integer _CountX, Integer _CountY, Vec2 _CardFirstPos, Boolean _IsAuthorLine, Boolean _IsScroll, Boolean _ShowsNonExistentFrames, Boolean _CanAddNewMedia, Vec2 _AddNewMediaButtonPos,
+	Text _InfoLineStyle, Text[] _InfoLineLogos, Text[] _MetadataKeys, Text[] _ButtonNames, Text[] _ButtonLogos, Text[] _ButtonActions, Text[] _ButtonEvents, Vec2 _ContextualMenuPos)
+{
+	LoadCountsBeforeBuild(_CountX, _CountY);
+	LoadCardFirstPos(_CardFirstPos);
+	LoadIsAuthorLineBeforeBuild(_IsAuthorLine);
+	LoadIsScrollBeforeBuild(_IsScroll);
+	LoadShowsNonExistentFramesBeforeBuild(_ShowsNonExistentFrames);
+	LoadAddNewMediaBeforeBuild(_CanAddNewMedia, _AddNewMediaButtonPos);
+	LoadInfoLineStyleBeforeBuild(_InfoLineStyle);
+	LoadMetadataKeysBeforeBuild(_MetadataKeys);
+	LoadButtonInfosBeforeBuild(_ButtonNames, _ButtonLogos, _ButtonActions, _ButtonEvents);
+	TwoDArrayCardBuilder::Init(G_CountX, G_CountY, G_CardFirstPos, C_SizeMediaCards, C_MarginMediaCards);
+	G_ContextualMenuPos = _ContextualMenuPos;
+	LoadBasicVariablesBeforeBuild();
+	DesignManialinks::Init();
+}
+
+Void Init(Integer _CountX, Integer _CountY, Vec2 _CardFirstPos, Boolean _IsAuthorLine, Boolean _IsScroll, Boolean _ShowsNonExistentFrames, Boolean _CanAddNewMedia,
+	Text _InfoLineStyle, Text[] _InfoLineLogos, Text[] _MetadataKeys, Text[] _ButtonNames, Text[] _ButtonLogos, Text[] _ButtonActions, Text[] _ButtonEvents, Vec2 _ContextualMenuPos)
+{
+	Init(_CountX, _CountY, _CardFirstPos, _IsAuthorLine, _IsScroll, _ShowsNonExistentFrames, _CanAddNewMedia, <0., 0.>, _InfoLineStyle, _InfoLineLogos,
+			_MetadataKeys, _ButtonNames, _ButtonLogos, _ButtonActions, _ButtonEvents, _ContextualMenuPos);
+	G_AddNewMediaButtonPos	= <G_CardFirstPos.X + 3. * ((G_CountX - 1) * (C_SizeMediaCards.X + C_MarginMediaCards.X)) / 4. - 18.,
+								G_CardFirstPos.Y - ((G_CountY - 1) * (C_SizeMediaCards.Y + C_MarginMediaCards.Y)) - 14.3>;
+}
+
+Void Init(Integer _CountX, Integer _CountY, Vec2 _CardFirstPos, Boolean _IsAuthorLine, Boolean _IsScroll, Boolean _ShowsNonExistentFrames, Boolean _CanAddNewMedia,
+	Text _InfoLineStyle, Text[] _InfoLineLogos, Text[] _MetadataKeys, Text[] _ButtonNames, Text[] _ButtonLogos, Text[] _ButtonActions, Text[] _ButtonEvents)
+{
+	Init(_CountX, _CountY, _CardFirstPos, _IsAuthorLine, _IsScroll, _ShowsNonExistentFrames, _CanAddNewMedia, _InfoLineStyle, _InfoLineLogos,
+			_MetadataKeys, _ButtonNames, _ButtonLogos, _ButtonActions, _ButtonEvents, <0., 0.>);
+	G_ContextualMenuPos = <G_CardFirstPos.X + (G_CountX - 3.5) * C_SizeMediaCards.X + (G_CountX - 3) * C_MarginMediaCards.X, -44.>;
+}
+
+Void Init(Integer _CountX, Integer _CountY, Vec2 _CardFirstPos, Boolean _IsAuthorLine, Boolean _IsScroll, Boolean _ShowsNonExistentFrames, Text _InfoLineStyle,
+			Text[] _InfoLineLogos, Text[] _MetadataKeys, Text[] _ButtonNames, Text[] _ButtonLogos, Text[] _ButtonActions, Text[] _ButtonEvents)
+{
+	Init(_CountX, _CountY, _CardFirstPos, _IsAuthorLine, _IsScroll, _ShowsNonExistentFrames, False, _InfoLineStyle, _InfoLineLogos, _MetadataKeys, _ButtonNames, _ButtonLogos, _ButtonActions, _ButtonEvents);
+}
+
+Void Init(Integer _CountX, Integer _CountY, Vec2 _CardFirstPos, Boolean _IsAuthorLine, Boolean _IsScroll, Text _InfoLineStyle,
+			Text[] _InfoLineLogos, Text[] _MetadataKeys, Text[] _ButtonNames, Text[] _ButtonLogos, Text[] _ButtonActions, Text[] _ButtonEvents)
+{
+	Init(_CountX, _CountY, _CardFirstPos, _IsAuthorLine, _IsScroll, False, _InfoLineStyle, _InfoLineLogos, _MetadataKeys, _ButtonNames, _ButtonLogos, _ButtonActions, _ButtonEvents);
+}
+
+Vec2[] GetCardPositions()
+{
+	return TwoDArrayCardBuilder::GetCardPositions();
+}
+
+/** REQUIRES TWO FRAMEMODELS :	MediaCardDisplayer_Card_ExtraData
+								MediaCardDisplayer_ListItem_ExtraData
+	*/
+Text ManialinkFrameModels()
+{	
+	return """
+	<framemodel id="TwoDArrayCardBuilder_Card">
+		<frame id="Frame_WholeItem">
+			<frame id="Frame_WholeListItem" hidden="1">
+				<quad id="Quad_ListItemShadow"			halign="center" valign="center" size="{{{C_SizeMediaListItems.X}}} {{{C_SizeMediaListItems.Y}}}"				opacity="0.1"	bgcolor="000"/>
+				<quad id="Quad_ListItemFocus"			halign="center" valign="center" size="{{{C_SizeMediaListItems.X}}} {{{C_SizeMediaListItems.Y}}}"				opacity="0.1"	bgcolor="279" hidden="1"/>
+				<quad id="Quad_ListItemSelector"		halign="center" valign="center" size="{{{C_SizeMediaListItems.X}}} {{{C_SizeMediaListItems.Y}}}"	z-index="1"	opacity="0.9" bgcolor="FFF" hidden="1"/>
+				<label id="Label_ListItem"				halign="right"	valign="center" size="{{{C_SizeMediaListItems.X - 4.}}} 3" pos="{{{C_SizeMediaListItems.X / 2. - 4.}}} 0"		z-index="2" textfont="{{{G_MainFont}}}" textsize="2" textcolor="{{{DesignManialinks::GetColorCode_ButtonOutline_Normal()}}}" text="A01"/>
+				<frameinstance id="MediaCardDisplayer_ExtraDataInListItem" modelid="MediaCardDisplayer_ListItem_ExtraData" z-index="3"/>
+				<frame id="Frame_FolderListItem" hidden="1">
+					<quad id="Quad_FolderListItemBg"		halign="center" valign="center" size="{{{C_SizeMediaListItems.X}}} {{{C_SizeMediaListItems.Y}}}"	z-index="-1"			bgcolor="{{{GetColorCodes()["Folder"]}}}"/>
+				</frame>
+			</frame>
+			<frame id="Frame_WholeCard">
+				<quad id="Quad_CardShadow"			halign="center" valign="center" size="{{{C_SizeMediaCards.X}}} {{{C_SizeMediaCards.Y}}}" bgcolor="000" opacity="{{{C_CardShadowOpacity}}}"/>
+				<frame id="Frame_CardOver"	z-index="2">
+					<quad id="Quad_CardOver"			halign="center" valign="center" size="{{{C_SizeSelectorCards.X}}} {{{C_SizeSelectorCards.Y}}}" opacity="1." image="{{{C_IMGSelectorOver}}}" modulatecolor="{{{DesignManialinks::GetColorCode_ButtonOutline_Normal()}}}" hidden="1" keepratio="Clip"/>
+				</frame>
+				<quad id="Quad_CardSelector"		halign="center" valign="center" size="{{{C_SizeSelectorCards.X}}} {{{C_SizeSelectorCards.Y}}}"	z-index="2"	opacity="1.0" image="{{{C_IMGSelectorBT}}}" modulatecolor="{{{DesignManialinks::GetColorCode_ButtonOutline_Normal()}}}" hidden="1" keepratio="Clip"/>
+				<quad id="Quad_CardBG"				halign="center" valign="center" size="{{{C_SizeMediaCards.X}}} {{{C_SizeMediaCards.Y}}}" z-index="-3"   opacity="1.0"	bgcolor="000"/>
+				<label id="Label_Card"				halign="right"	valign="bottom" size="{{{C_SizeMediaCards.X - 7.}}} 3" pos="18.5 -10.5"		z-index="1" textfont="{{{G_MainFont}}}" textsize="2" textemboss="1" textcolor="{{{DesignManialinks::GetColorCode_ButtonOutline_Normal()}}}" text="A01"/>
+				<frameinstance id="MediaCardDisplayer_ExtraDataInCard" modelid="MediaCardDisplayer_Card_ExtraData" z-index="1"/>
+				<quad id="Quad_MediaCardThumbnailImg"		halign="center" valign="center" size="{{{C_SizeMediaCards.X/1.5}}} {{{C_SizeMediaCards.Y/1.5}}}" z-index="-2" keepratio="Fit" modulatecolor="{{{DesignManialinks::GetColorCode_ButtonOutline_Normal()}}}" opacity="{{{C_NonSelectedSecondTOpacity}}}"/>
+				<frame id="Frame_MediaCard" size="{{{C_SizeMediaCards.X}}} {{{C_SizeMediaCards.Y}}}" pos="{{{- C_SizeMediaCards.X / 2.}}} {{{C_SizeMediaCards.Y / 2.}}}">
+					<quad id="Quad_MediaCardThumbnail"	halign="center"	valign="center" size="{{{C_SizeMediaCards.X}}} {{{C_SizeMediaCards.Y * 2.}}}"	pos="{{{C_SizeMediaCards.X / 2.}}} {{{- C_SizeMediaCards.Y / 2.}}}"	 z-index="-1" keepratio="fit" opacity="{{{0.}}}"/>
+					<quad id="Quad_MediaCardThumbnail2"	halign="center"	valign="center" size="{{{C_SizeMediaCards.X}}} {{{C_SizeMediaCards.Y * 2.}}}"	pos="{{{C_SizeMediaCards.X / 2.}}} {{{- C_SizeMediaCards.Y / 2.}}}"	 z-index="-2" keepratio="fit" colorize="FFF"/>
+				</frame>
+				<frame id="Frame_FolderCard" hidden="1">
+					<quad id="Quad_FolderThumbnailUL"	halign="center"	valign="center" size="{{{C_SizeMediaCards.X / 2.3}}} {{{C_SizeMediaCards.Y / 2.3}}}"
+						pos="{{{- C_SizeMediaCards.X / 4.}}} {{{  C_SizeMediaCards.Y / 4.}}}" keepratio="fit" opacity="{{{G_ColoredThumbnailOpacity}}}"/>
+					<quad id="Quad_FolderThumbnailUL2"	halign="center"	valign="center" size="{{{C_SizeMediaCards.X / 2.3}}} {{{C_SizeMediaCards.Y / 2.3}}}"
+						pos="{{{- C_SizeMediaCards.X / 4.}}} {{{  C_SizeMediaCards.Y / 4.}}}" keepratio="fit" colorize="FFF"/>
+					<quad id="Quad_FolderThumbnailUR"	halign="center"	valign="center" size="{{{C_SizeMediaCards.X / 2.3}}} {{{C_SizeMediaCards.Y / 2.3}}}"
+						pos="{{{  C_SizeMediaCards.X / 4.}}} {{{  C_SizeMediaCards.Y / 4.}}}" keepratio="fit" opacity="{{{G_ColoredThumbnailOpacity}}}"/>
+					<quad id="Quad_FolderThumbnailUR2"	halign="center"	valign="center" size="{{{C_SizeMediaCards.X / 2.3}}} {{{C_SizeMediaCards.Y / 2.3}}}"
+						pos="{{{  C_SizeMediaCards.X / 4.}}} {{{  C_SizeMediaCards.Y / 4.}}}" keepratio="fit" colorize="FFF"/>
+					<quad id="Quad_FolderThumbnailBL"	halign="center"	valign="center" size="{{{C_SizeMediaCards.X / 2.3}}} {{{C_SizeMediaCards.Y / 2.3}}}"
+						pos="{{{- C_SizeMediaCards.X / 4.}}} {{{- C_SizeMediaCards.Y / 4.}}}" keepratio="fit" opacity="{{{G_ColoredThumbnailOpacity}}}"/>
+					<quad id="Quad_FolderThumbnailBL2"	halign="center"	valign="center" size="{{{C_SizeMediaCards.X / 2.3}}} {{{C_SizeMediaCards.Y / 2.3}}}"
+						pos="{{{- C_SizeMediaCards.X / 4.}}} {{{- C_SizeMediaCards.Y / 4.}}}" keepratio="fit" colorize="FFF"/>
+				</frame>
+			</frame>
+		</frame>
+		<frame id="Frame_NonExistentCard">
+			<quad id="Quad_NonExistentShadow"	halign="center" valign="center" size="{{{C_SizeMediaCards.X}}} {{{C_SizeMediaCards.Y}}}"				opacity="0.3" bgcolor="000"/>
+		</frame>
+	</framemodel>
+	""";
+}
+
+/** REQUIRES A FRAMEMODEL : MediaCardDisplayer_Menu_ExtraData
+	*/
+Text ManialinkMainBody()
+{
+	declare Real[] InfoLinePositionYs = [-59.6, -64.7, -69.8, -74.9, -80.];
+	declare Real InfoLineMarginY = 2.3;
+	declare Text InfoLineManialink;
+	for(InfoLineIndex, 0, C_MaxInfoLineLogos - 1) {
+		InfoLineManialink ^= Private_ManialinkFrameLineInfo(G_InfoLineStyle, "", InfoLineIndex, InfoLinePositionYs[InfoLineIndex], InfoLineMarginY);
+	}
+	declare Real[] ButtonPositionYs;
+	declare Text ButtonType;
+	declare Text ButtonManialink;
+	switch (G_ButtonNames.count) {
+		case 1: {
+			ButtonPositionYs = [-22.7];
+			ButtonType = "Large";
+		}
+		case 2: {
+			ButtonPositionYs = [-10.7, -23.5];
+			ButtonType = "Large";
+		}
+		case 3: {
+			ButtonPositionYs = [-8.5, -18.5, -28.5];
+			ButtonType = "Small";
+		}
+		case 4: {
+			ButtonPositionYs = [-4.25, -13.25, -22.25, -31.25];
+			ButtonType = "Small";
+		}
+	}
+	foreach(ButtonIndex => ButtonLogo in G_ButtonLogos) {
+		ButtonManialink ^= Private_ManialinkButton(ButtonType, ButtonLogo, G_ButtonNames[ButtonIndex], G_ButtonActions[ButtonIndex], ButtonIndex, ButtonPositionYs[ButtonIndex]);
+	}
+
+	declare Text MLText = """{{{TwoDArrayCardBuilder::ManialinkMainBody()}}}""";
+	if (G_CanAddNewMedia) {
+		MLText ^= """{{{DesignManialinks::ManialinkFloatingSecondaryButtonLarge(<G_AddNewMediaButtonPos.X, G_AddNewMediaButtonPos.Y>, <37., 11.>,
+			//L16N |Noun| In a popup, a button to create a new element. The adjective "New" can be relative to various things here. I guess some "neutral" translation will do.
+			_("New"), "file://Media/MEDIABROWSER_HiddenResources/Common/Images/Menus/Buttons/AddLogo.dds", "z-index=\"1\"", "Action1", "MediaCardDisplayer_AddNewMedia")}}}""";
+	}
+	declare Real CardInfoOpacity = 0.7;
+	if (GlobalVariables::GetLaunchContext() == GlobalVariables::LaunchContext_Maker()) {
+		CardInfoOpacity = 0.3;
+	}
+	MLText ^= """<frame id="Frame_CardInfo" pos="{{{G_ContextualMenuPos.X}}} {{{G_ContextualMenuPos.Y}}}" z-index="3" hidden="1">
+		<quad									size="124.4 41.6" z-index="-1" opacity="{{{CardInfoOpacity}}}" bgcolor="000"/>
+		<quad id="Quad_BlurryBG"				size="124.4 41.6" z-index="-1" opacity="0" style="Bgs1" substyle="BgDialogBlur" bluramount="0.1"/>
+		<quad									size="124.4 0.2"			bgcolor="{{{DesignManialinks::GetColorCode_ButtonOutline_Normal()}}}"/>
+		<frame id="Habillage_Menu_Top">
+			<quad halign="left" valign="top"	size="2.2 0.7"  pos="0 0" opacity="1." bgcolor="{{{DesignManialinks::GetColorCode_ButtonOutline_Normal()}}}"/>
+			<quad halign="left" valign="top"	size="0.7 2.2"  pos="0 0" opacity="1." bgcolor="{{{DesignManialinks::GetColorCode_ButtonOutline_Normal()}}}"/>
+		</frame>
+		<frame id="GeneralInfo" pos="-15 42">
+			<quad	id="Quad_InfoLogo"		halign="center" valign="center"	pos="25.5 -50.5" z-index="1" size="11 11" keepratio="Fit" modulatecolor="{{{DesignManialinks::GetColorCode_ButtonOutline_Normal()}}}"/>
+			<label	id="MediaCardDisplayer_MediaNameLabel"		halign="left" valign="center"	pos="35 -46.9" z-index="2" size="60 0" textfont="{{{G_MainFont}}}" textsize="3.5" textcolor="{{{DesignManialinks::GetColorCode_ButtonOutline_Normal()}}}" text="A08 Indian pursuit"/>
+			<label	id="MediaCardDisplayer_AuthorNameLabel"		halign="left" valign="center"	pos="42 -52.9" z-index="2" size="60 0" textfont="{{{G_MainFont}}}" textsize="2" textcolor="{{{DesignManialinks::GetColorCode_ButtonOutline_Normal()}}}" text="Kokolastiko"/>
+			<quad	id="MediaCardDisplayer_AuthorFlagQuad"		halign="left" valign="center"	pos="35 -53.2" size="5 3.5" z-index="2"/>
+			{{{InfoLineManialink}}}
+		</frame>
+		<frame id="Buttons" pos="82.8 0">
+			{{{ButtonManialink}}}
+		</frame>
+		<frameinstance id="MediaCardDisplayer_ExtraDataInMenu" modelid="MediaCardDisplayer_Menu_ExtraData" z-index="1"/>
+	</frame>
+	""";
+	return MLText;
+}
+
+Text Includes()
+{
+	return """
+#Include "TextLib"	as MediaCardDisplayer_TextLib
+#Include "MathLib"	as MediaCardDisplayer_MathLib
+{{{DesignManialinks::Includes()}}}
+{{{Manialink::GetIncludes()}}}
+{{{TwoDArrayCardBuilder::Includes()}}}
+
+#Const C_MediaCardDisplayer_MetadataKeys			{{{dump(G_MetadataKeys)}}}
+#Const C_MediaCardDisplayer_IsAuthorLine			{{{dump(G_IsAuthorLine)}}}
+#Const C_MediaCardDisplayer_ShowsNonExistentFrames	{{{dump(G_ShowsNonExistentFrames)}}}
+#Const C_MediaCardDisplayer_ButtonNames				{{{dump(G_ButtonNames)}}}
+#Const C_MediaCardDisplayer_ColorFromSecondThumbnail {{{dump(GetColorCodes())}}}
+#Const C_MediaCardDisplayer_ImgUrlFromSecondThumbnail ["Folder"	=> "{{{C_ImgBase ^ "Dossier.dds"}}}",
+											"EmptyThumbnail"	=> "{{{C_ImgBase ^ "EmptyThumbnail.dds"}}}",
+											"File"				=> "{{{C_ImgBase ^ "File.dds"}}}"]
+""";
+}
+
+Text FirstDeclares()
+{
+	return Manialink::Load() ^ TwoDArrayCardBuilder::FirstDeclares();
+}
+
+/** REQUIRES THE FOLLOWING FUNCTIONS : 
+	Void MediaCardDisplayer_ShowCard(CMlFrame _Card, Text[Text] _Data)
+	Void MediaCardDisplayer_ShowLockedCard(CMlFrame _Card, Text[Text] _Data)
+	Void MediaCardDisplayer_UnSelectCard(CMlFrame _Card)
+	Void MediaCardDisplayer_SelectCard(CMlFrame _Card, Text[Text] _Data)
+	Void MediaCardDisplayer_UnFocusCard(CMlFrame _Card, Text[Text] _Data)
+	Void MediaCardDisplayer_FocusCard(CMlFrame _Card, Text[Text] _Data)
+	*/
+Text SecondDeclares()
+{
+	return """{{{DesignManialinks::Declares()}}}
+	//<script>
+	declare Text[Text][]	G_Private_MediaCardDisplayer_Data;
+	declare Text[][][]		G_Private_MediaCardDisplayer_LineMetaData;
+	declare Text[][]		G_Private_MediaCardDisplayer_LineLogos;
+	declare Integer			G_Private_MediaCardDisplayer_StartElement;
+	declare Text[]			G_Private_MediaCardDisplayer_ButtonEvents;
+	declare Integer			G_Private_MediaCardDisplayer_CurrentIndex;
+
+	Boolean IsFolder(Text[Text] _Data)
+	{
+		return (_Data.existskey("CardType") && (_Data["CardType"] == "Folder"));
+	}
+
+	Boolean IsTrack(Text[Text] _Data)
+	{
+		return (_Data.existskey("Type") && (_Data["Type"] == "Track"));
+	}
+
+	Void TwoDArrayCardBuilder_HideCard(CMlFrame _Card)
+	{
+		_Card.GetFirstChild("Frame_WholeItem").Hide();
+		if (C_MediaCardDisplayer_ShowsNonExistentFrames) {
+			_Card.GetFirstChild("Frame_NonExistentCard").Show();
+		} else {
+			_Card.GetFirstChild("Frame_NonExistentCard").Hide();
+		}
+	}
+
+	Void Private_MediaCardDisplayer_ShowMediaCardBase(CMlFrame _Card)
+	{
+		_Card.GetFirstChild("Frame_FolderCard").Hide();
+		_Card.GetFirstChild("Frame_FolderListItem").Hide();
+		_Card.GetFirstChild("Frame_MediaCard").Show();
+		declare CMlQuad		Quad_MediaCardThumbnail		<=> (_Card.GetFirstChild("Quad_MediaCardThumbnail")		as CMlQuad);
+		declare CMlQuad		Quad_MediaCardThumbnail2	<=> (_Card.GetFirstChild("Quad_MediaCardThumbnail2")	as CMlQuad);
+		declare Integer OneDIndex for _Card;
+		declare Text[Text] Data	= G_Private_MediaCardDisplayer_Data[OneDIndex];
+		declare Text Thumbnail;
+		if (Data.existskey("Thumbnail")) Thumbnail = Data["Thumbnail"];
+
+
+		if(Thumbnail != "") {
+			Quad_MediaCardThumbnail	.ChangeImageUrl(Thumbnail);
+			Quad_MediaCardThumbnail2.ChangeImageUrl(Thumbnail);
+		}
+
+		Quad_MediaCardThumbnail.ModulateColor = <1., 1., 1.>;
+		declare Label_Card								<=> (_Card.GetFirstChild("Label_Card")					as CMlLabel);
+		Label_Card.TextColor = MediaCardDisplayer_TextLib::ToColor("{{{DesignManialinks::GetColorCode_ButtonOutline_Normal()}}}");
+		if (Data.existskey("2ndState")) {
+			if (Data["2ndState"] == "Valid") {
+				Quad_MediaCardThumbnail.ModulateColor = <1., 1., 1.>;
+				Label_Card.TextColor = MediaCardDisplayer_TextLib::ToColor("{{{DesignManialinks::GetColorCode_ButtonOutline_Normal()}}}");
+			} else if (Data["2ndState"] == "Greyed") {
+				Quad_MediaCardThumbnail.Colorize = <0.4, 0.4, 0.4>;
+				Label_Card.TextColor = <0.6, 0.6, 0.6>;
+			}
+		}
+	}
+
+	Void Private_MediaCardDisplayer_ShowFolderCardBase(CMlFrame _Card)
+	{
+		_Card.GetFirstChild("Frame_MediaCard").Hide();
+		_Card.GetFirstChild("Frame_FolderCard").Show();
+		_Card.GetFirstChild("Frame_FolderListItem").Show();
+
+		declare CMlQuad		Quad_FolderThumbnailUL		<=> (_Card.GetFirstChild("Quad_FolderThumbnailUL")	as CMlQuad);
+		declare CMlQuad		Quad_FolderThumbnailUL2		<=> (_Card.GetFirstChild("Quad_FolderThumbnailUL2")	as CMlQuad);
+		declare CMlQuad		Quad_FolderThumbnailUR		<=> (_Card.GetFirstChild("Quad_FolderThumbnailUR")	as CMlQuad);
+		declare CMlQuad		Quad_FolderThumbnailUR2		<=> (_Card.GetFirstChild("Quad_FolderThumbnailUR2")	as CMlQuad);
+		declare CMlQuad		Quad_FolderThumbnailBL		<=> (_Card.GetFirstChild("Quad_FolderThumbnailBL")	as CMlQuad);
+		declare CMlQuad		Quad_FolderThumbnailBL2		<=> (_Card.GetFirstChild("Quad_FolderThumbnailBL2")	as CMlQuad);
+		declare Integer OneDIndex for _Card;
+
+		
+		declare Text Thumbnail1 = G_Private_MediaCardDisplayer_Data[OneDIndex]["Thumbnail1"];
+		declare Text Thumbnail2 = G_Private_MediaCardDisplayer_Data[OneDIndex]["Thumbnail2"];
+		declare Text Thumbnail3 = G_Private_MediaCardDisplayer_Data[OneDIndex]["Thumbnail3"];
+		Quad_FolderThumbnailUL.ChangeImageUrl(Thumbnail1);
+		Quad_FolderThumbnailUL2.ChangeImageUrl(Thumbnail1);
+		Quad_FolderThumbnailUR.ChangeImageUrl(Thumbnail2);
+		Quad_FolderThumbnailUR2.ChangeImageUrl(Thumbnail2);
+		Quad_FolderThumbnailBL.ChangeImageUrl(Thumbnail3);
+		Quad_FolderThumbnailBL2.ChangeImageUrl(Thumbnail3);
+	}
+
+	Void Private_MediaCardDisplayer_ShowCardBase(CMlFrame _Card)
+	{
+		_Card.GetFirstChild("Frame_WholeItem").Show();
+		_Card.GetFirstChild("Frame_NonExistentCard").Hide();
+		declare CMlLabel	Label_Card					<=> (_Card.GetFirstChild("Label_Card")					as CMlLabel);
+		declare CMlLabel	Label_ListItem				<=> (_Card.GetFirstChild("Label_ListItem")				as CMlLabel);
+		declare CMlQuad		Quad_MediaCardThumbnailImg	<=> (_Card.GetFirstChild("Quad_MediaCardThumbnailImg")	as CMlQuad);
+		declare CMlQuad		Quad_CardBG					<=> (_Card.GetFirstChild("Quad_CardBG")					as CMlQuad);
+
+
+		declare Integer OneDIndex for _Card;
+		declare Text[Text] Data	= G_Private_MediaCardDisplayer_Data[OneDIndex];
+		declare Text SecondThumbnailImage = "";
+		declare Text SecondThumbnailColorCode = "000";
+		if(Data.existskey("SecondThumbnailImage") && C_MediaCardDisplayer_ColorFromSecondThumbnail.existskey(Data["SecondThumbnailImage"])) {
+			SecondThumbnailImage = C_MediaCardDisplayer_ImgUrlFromSecondThumbnail[Data["SecondThumbnailImage"]];
+			SecondThumbnailColorCode = C_MediaCardDisplayer_ColorFromSecondThumbnail[Data["SecondThumbnailImage"]];
+		}
+		Quad_MediaCardThumbnailImg.ChangeImageUrl(SecondThumbnailImage);
+		Quad_CardBG.BgColor = MediaCardDisplayer_TextLib::ToColor(SecondThumbnailColorCode);
+		declare Text MediaName;
+		if (Data.existskey("Name")) MediaName = Data["Name"];
+		Label_ListItem.SetText("$<" ^ MediaName ^ "$>");
+		Label_Card.SetText("$<" ^ MediaName ^ "$>");
+		if (Data.existskey("CardType")
+			&& Data["CardType"] == "Folder") {
+			Private_MediaCardDisplayer_ShowFolderCardBase(_Card);
+		} else {
+			Private_MediaCardDisplayer_ShowMediaCardBase(_Card);
+		}
+	}
+
+	Void TwoDArrayCardBuilder_ShowCard(CMlFrame _Card)
+	{
+		Private_MediaCardDisplayer_ShowCardBase(_Card);
+		declare Integer OneDIndex for _Card;
+		MediaCardDisplayer_ShowCard(_Card, G_Private_MediaCardDisplayer_Data[OneDIndex]);
+	}
+
+	Void TwoDArrayCardBuilder_ShowLockedCard(CMlFrame _Card)
+	{
+		Private_MediaCardDisplayer_ShowCardBase(_Card);
+		declare Integer OneDIndex for _Card;
+		MediaCardDisplayer_ShowLockedCard(_Card, G_Private_MediaCardDisplayer_Data[OneDIndex]);
+	}
+
+	Void TwoDArrayCardBuilder_UnFocusCard(CMlFrame _Card)
+	{
+		declare CMlQuad Quad_ListItemFocus <=> (_Card.GetFirstChild("Quad_ListItemFocus")		as CMlQuad);
+		declare CMlQuad Quad_CardShadow	<=> (_Card.GetFirstChild("Quad_CardShadow")				as CMlQuad);
+		declare CMlQuad Quad_CardOver	<=> (_Card.GetFirstChild("Quad_CardOver")				as CMlQuad);
+		declare CMlQuad Quad_ListItemShadow <=> (_Card.GetFirstChild("Quad_ListItemShadow")		as CMlQuad);
+		Quad_ListItemFocus.Hide();
+		Quad_CardOver.Hide();
+		Quad_CardShadow.Show();
+		Quad_ListItemShadow.Show();
+		declare Integer OneDIndex for _Card;
+		
+		declare Text[Text] Data;
+		if (G_Private_MediaCardDisplayer_Data.existskey(OneDIndex)) {
+			Data = G_Private_MediaCardDisplayer_Data[OneDIndex];
+		}
+		MediaCardDisplayer_UnFocusCard(_Card, Data);
+	}
+
+	Void TwoDArrayCardBuilder_FocusCard(CMlFrame _Card)
+	{
+		declare CMlQuad Quad_ListItemFocus <=> (_Card.GetFirstChild("Quad_ListItemFocus")		as CMlQuad);
+		declare CMlQuad Quad_CardOver	<=> (_Card.GetFirstChild("Quad_CardOver")				as CMlQuad);
+		declare CMlQuad Quad_CardShadow	<=> (_Card.GetFirstChild("Quad_CardShadow")				as CMlQuad);
+		declare CMlQuad Quad_ListItemShadow <=> (_Card.GetFirstChild("Quad_ListItemShadow")		as CMlQuad);
+		Quad_ListItemFocus.Show();
+		Quad_CardOver.Show();
+		Quad_CardShadow.Hide();
+		Quad_ListItemShadow.Hide();
+		declare Integer OneDIndex for _Card;
+		MediaCardDisplayer_FocusCard(_Card, G_Private_MediaCardDisplayer_Data[OneDIndex]);
+	}
+
+	Void TwoDArrayCardBuilder_UnSelectCard(CMlFrame _Card)
+	{
+		declare CMlQuad Quad_CardShadow		<=> (_Card.GetFirstChild("Quad_CardShadow")			as CMlQuad);
+		declare CMlQuad Quad_CardSelector	<=> (_Card.GetFirstChild("Quad_CardSelector")		as CMlQuad);
+		declare CMlFrame Frame_CardOver		<=> (_Card.GetFirstChild("Frame_CardOver")			as CMlFrame);
+		declare CMlQuad		Quad_MediaCardThumbnailImg	<=> (_Card.GetFirstChild("Quad_MediaCardThumbnailImg")	as CMlQuad);
+		declare CMlLabel Label_Card			<=> (_Card.GetFirstChild("Label_Card")				as CMlLabel);
+		declare CMlQuad Quad_ListItemFocus	<=> (_Card.GetFirstChild("Quad_ListItemFocus")		as CMlQuad);
+		declare CMlFrame Frame_CardInfo		<=> (Page.MainFrame.GetFirstChild("Frame_CardInfo")	as CMlFrame);
+		declare CMlLabel	Label_ListItem	<=> (_Card.GetFirstChild("Label_ListItem")			as CMlLabel);
+
+		declare Integer OneDIndex for _Card;
+
+		declare Text[Text] Data;
+		if (G_Private_MediaCardDisplayer_Data.existskey(OneDIndex)) {
+			Data = G_Private_MediaCardDisplayer_Data[OneDIndex];
+		}
+
+		// Affichage
+		LibManialink_AnimStop(Quad_CardShadow);
+		LibManialink_AnimStop(Quad_CardSelector);
+		LibManialink_AnimStop(Label_Card);
+
+		if (Quad_CardShadow.Visible) {
+			LibManialink_SetTargetOpacity(Quad_CardShadow, {{{C_CardShadowOpacity}}});
+			LibManialink_PresetAnim(Quad_CardShadow, 70, "EaseLinear");
+		} else {
+			Quad_CardShadow.Opacity = {{{C_CardShadowOpacity}}}; // TODO : Enlever ce hack quand la nouvelle lib c++ d'animations arrive
+		}
+
+		Quad_CardSelector.RelativeScale = 1.;
+		Quad_CardSelector.Hide();
+		Frame_CardOver.Show();
+		Quad_MediaCardThumbnailImg.Opacity = {{{C_NonSelectedSecondTOpacity}}};
+
+		Label_Card.Opacity = 1.;
+		Label_Card.TextColor = MediaCardDisplayer_TextLib::ToColor("{{{DesignManialinks::GetColorCode_ButtonOutline_Normal()}}}");
+		if (Data.existskey("2ndState")) {
+			if (Data["2ndState"] == "Valid") {
+				Label_Card.TextColor = MediaCardDisplayer_TextLib::ToColor("{{{DesignManialinks::GetColorCode_ButtonOutline_Normal()}}}");
+			} else if (Data["2ndState"] == "Greyed") {
+				Label_Card.TextColor = <0.6, 0.6, 0.6>;
+			}
+		}
+		LibManialink_SetTargetPosition(Label_Card, <Label_Card.RelativePosition_V3.X, -10.5>);
+		LibManialink_PresetAnim(Label_Card, 70, "EaseLinear");
+
+		Quad_ListItemFocus.Opacity = 0.25;
+
+		Frame_CardInfo.Hide();
+		Label_ListItem.TextColor = MediaCardDisplayer_TextLib::ToColor({{{dump(DesignManialinks::GetColorCode_ButtonOutline_Normal())}}});
+		_Card.GetFirstChild("Quad_ListItemSelector").Hide();
+		// ---
+
+		// Logique interne
+		G_Private_MediaCardDisplayer_CurrentIndex = OneDIndex;
+		// ---
+		MediaCardDisplayer_UnSelectCard(_Card);
+	}
+
+	Void TwoDArrayCardBuilder_SelectCard(CMlFrame _Card)
+	{
+		declare CMlQuad Quad_CardShadow		<=> (_Card.GetFirstChild("Quad_CardShadow")			as CMlQuad);
+		declare CMlQuad Quad_CardSelector	<=> (_Card.GetFirstChild("Quad_CardSelector")		as CMlQuad);
+		declare CMlFrame Frame_CardOver		<=> (_Card.GetFirstChild("Frame_CardOver")			as CMlFrame);
+		declare CMlQuad		Quad_MediaCardThumbnailImg	<=> (_Card.GetFirstChild("Quad_MediaCardThumbnailImg")	as CMlQuad);
+		declare CMlLabel Label_Card			<=> (_Card.GetFirstChild("Label_Card")				as CMlLabel);
+		declare CMlQuad Quad_ListItemFocus	<=> (_Card.GetFirstChild("Quad_ListItemFocus")		as CMlQuad);
+		declare CMlFrame Frame_CardInfo		<=> (Page.MainFrame.GetFirstChild("Frame_CardInfo")	as CMlFrame);
+		declare CMlLabel	Label_ListItem	<=> (_Card.GetFirstChild("Label_ListItem")			as CMlLabel);
+
+		// Affichage
+		declare Integer OneDIndex	for _Card;
+		declare Text[Text] MainData = G_Private_MediaCardDisplayer_Data[OneDIndex];
+
+
+		Quad_CardSelector.Show();
+		Frame_CardOver.Hide();
+
+		LibManialink_AnimStop(Quad_CardShadow);
+		LibManialink_AnimStop(Quad_CardSelector);
+		LibManialink_AnimStop(Label_Card);
+		LibManialink_AnimStop(Quad_MediaCardThumbnailImg);
+
+		if (Quad_CardShadow.Visible) {
+			LibManialink_SetTargetOpacity(Quad_CardShadow, 0.);
+			LibManialink_PresetAnim(Quad_CardShadow, 70, "EaseLinear");
+			LibManialink_SetTargetOpacity(Quad_MediaCardThumbnailImg, 1.);
+			LibManialink_PresetAnim(Quad_MediaCardThumbnailImg, 70, "EaseLinear");
+			
+		} else {
+			Quad_CardShadow.Opacity = 0.; // TODO : Enlever ce hack quand la nouvelle lib c++ d'animations arrive
+			Quad_MediaCardThumbnailImg.Opacity = 1.;
+		}
+
+		Quad_CardSelector.RelativeScale = 0.98;
+		LibManialink_SetTargetScale(Quad_CardSelector, 1.);
+		LibManialink_PresetAnim(Quad_CardSelector, 70, "EaseLinear");
+
+		Label_Card.Opacity = 1.;
+		Label_Card.TextColor = <1., 1., 1.>;
+		LibManialink_SetTargetPosition(Label_Card, <Label_Card.RelativePosition_V3.X, -10.2>);
+		LibManialink_PresetAnim(Label_Card, 70, "EaseLinear");
+
+		Quad_ListItemFocus.Opacity = 0.; 
+		// ---
+
+		Label_ListItem.TextColor = <0., 0., 0.>;
+		_Card.GetFirstChild("Quad_ListItemSelector").Show();
+
+		// Menu contextuel
+		Frame_CardInfo.Show();
+		declare CMlLabel MediaCardDisplayer_MediaNameLabel	<=> (Frame_CardInfo.GetFirstChild("MediaCardDisplayer_MediaNameLabel")	as CMlLabel);
+		declare Text MediaName;
+		if (MainData.existskey("Name")) MediaName = MainData["Name"];
+		MediaCardDisplayer_MediaNameLabel.SetText("$<" ^ MediaName ^ "$>");
+		declare CMlQuad	Quad_InfoLogo						<=> (Frame_CardInfo.GetFirstChild("Quad_InfoLogo") as CMlQuad);
+		declare Text Logo = "";
+		if (IsFolder(MainData)) {
+			Logo = {{{dump(C_FolderIcon)}}};
+		} else if (IsTrack(MainData)) {
+			if (MainData.existskey("Multilap") && (MainData["Multilap"] == MediaCardDisplayer_TextLib::ToText(True))) {
+				Logo = {{{dump(C_MultilapIcon)}}};
+			} else {
+				Logo = {{{dump(C_NonMultilapIcon)}}};
+			}
+		} else {
+			Logo = {{{dump(C_FileIcon)}}};
+		}
+		Quad_InfoLogo.ChangeImageUrl(Logo);
+
+		declare CMlQuad MediaCardDisplayer_AuthorFlagQuad	<=> (Frame_CardInfo.GetFirstChild("MediaCardDisplayer_AuthorFlagQuad") as CMlQuad);
+		MediaCardDisplayer_AuthorFlagQuad.Opacity = 0.15;
+		declare Text AuthorFlagUrl = "file://ZoneFlags/Path/World";
+		if (C_MediaCardDisplayer_IsAuthorLine)
+		{
+			declare CMlLabel MediaCardDisplayer_AuthorNameLabel <=> (Frame_CardInfo.GetFirstChild("MediaCardDisplayer_AuthorNameLabel") as CMlLabel);
+			declare Text AuthorLineText = "";
+			if (MainData.existskey("Author")) {
+				AuthorLineText = MainData["Author"];
+			}
+			MediaCardDisplayer_AuthorNameLabel.SetText(AuthorLineText);
+			if (MainData.existskey("Flag") && MainData["Flag"] != "") {
+				MediaCardDisplayer_AuthorFlagQuad.Opacity = 1.;
+				AuthorFlagUrl = MainData["Flag"];
+			}
+		}
+		MediaCardDisplayer_AuthorFlagQuad.ChangeImageUrl(AuthorFlagUrl);
+
+		declare Text[][]	LineMetaData	= G_Private_MediaCardDisplayer_LineMetaData[OneDIndex];
+		declare Text[]		LineLogos		= G_Private_MediaCardDisplayer_LineLogos[OneDIndex];
+		declare Real[]		InfoLinePositionYs;
+		declare Real		InfoLineMarginY;
+		if (LineLogos.count == 5 && C_MediaCardDisplayer_IsAuthorLine) {
+			InfoLinePositionYs = [-59.6, -64.7, -69.8, -74.9, -80.];
+			InfoLineMarginY = 2.3;
+		} else if (LineLogos.count == 5) {
+			InfoLinePositionYs = [-58., -63.2, -68.4, -73.6, -78.8];
+			InfoLineMarginY = 2.4;
+		} else {
+			InfoLinePositionYs = [-60.8, -66.5, -72.3, -78.];
+			InfoLineMarginY = 2.6;
+		}
+		foreach(InfoLineIndex => InfoLineData in LineMetaData)
+		{
+			if (InfoLineIndex >= {{{C_MaxInfoLineLogos}}}) {
+				break;
+			}
+			declare CMlQuad		MediaCardDisplayer_LineInfo_Quad <=> (Page.GetFirstChild("MediaCardDisplayer_LineInfo" ^ InfoLineIndex ^ "_Quad") as CMlQuad);
+			declare CMlControl	MediaCardDisplayer_LineInfo_Frame <=> Page.GetFirstChild("MediaCardDisplayer_LineInfo" ^ InfoLineIndex ^ "_Frame");
+			if (MediaCardDisplayer_LineInfo_Quad == Null) {
+				continue;
+			}
+			MediaCardDisplayer_LineInfo_Frame.Show();
+			if (LineLogos.existskey(InfoLineIndex)) {
+				MediaCardDisplayer_LineInfo_Quad.ChangeImageUrl(LineLogos[InfoLineIndex]);
+			}
+			foreach(LabelIndex => SegmentedInfoBit in InfoLineData)
+			{
+				declare CMlLabel	MediaCardDisplayer_LineInfo_Label <=> (Page.GetFirstChild("MediaCardDisplayer_LineInfo" ^ InfoLineIndex ^ "_Label" ^ LabelIndex) as CMlLabel);
+				if (MediaCardDisplayer_LineInfo_Label == Null) {
+					continue;
+				}
+				MediaCardDisplayer_LineInfo_Label.SetText(SegmentedInfoBit);
+			}
+		}
+		for (HideIndex, LineMetaData.count, {{{C_MaxInfoLineLogos}}} - 1) {
+			declare CMlControl MediaCardDisplayer_LineInfo_Frame <=> Page.GetFirstChild("MediaCardDisplayer_LineInfo" ^ HideIndex ^ "_Frame");
+			if (MediaCardDisplayer_LineInfo_Frame == Null) {
+				continue;
+			}
+			MediaCardDisplayer_LineInfo_Frame.Hide();
+		}
+		if (IsFolder(MainData)) {
+			foreach (ButtonIndex => ButtonName in C_MediaCardDisplayer_ButtonNames) {
+				declare CMlFrame MediaCardDisplayer_Button <=> (Page.GetFirstChild("MediaCardDisplayer_Button_" ^ ButtonIndex ^ "_Frame") as CMlFrame);
+				if (ButtonIndex == 0) {
+					declare CMlLabel MediaCardDisplayer_Label <=> (Page.GetFirstChild("MediaCardDisplayer_Button_" ^ ButtonIndex ^ "_Label") as CMlLabel);
+					//L16N |Verb| To browse one folder
+					MediaCardDisplayer_Label.SetText(_("Open"));
+					// TODO : Voir comment on change la vignette du bouton
+					continue;
+				}
+				MediaCardDisplayer_Button.Hide();
+			}
+		} else {
+			foreach (ButtonIndex => ButtonName in C_MediaCardDisplayer_ButtonNames) {
+				declare CMlFrame MediaCardDisplayer_Button <=> (Page.GetFirstChild("MediaCardDisplayer_Button_" ^ ButtonIndex ^ "_Frame") as CMlFrame);
+				if (ButtonIndex == 0) {
+					declare CMlLabel MediaCardDisplayer_Label <=> (Page.GetFirstChild("MediaCardDisplayer_Button_" ^ ButtonIndex ^ "_Label") as CMlLabel);
+					MediaCardDisplayer_Label.SetText(ButtonName);
+					continue;
+				}
+				MediaCardDisplayer_Button.Show();
+			}
+		}
+		// ---
+
+		// Logique interne
+		G_Private_MediaCardDisplayer_CurrentIndex = OneDIndex;
+		// ---
+		MediaCardDisplayer_SelectCard(_Card, G_Private_MediaCardDisplayer_Data[OneDIndex]);
+	}
+
+{{{TwoDArrayCardBuilder::SecondDeclares()}}}
+
+	Void Private_MediaCardDisplayer_Update()
+	{
+		declare Integer[] CardStates;
+		for (DataIndex, 0, G_Private_MediaCardDisplayer_Data.count - 1)
+		{
+			declare Text[Text] Data = G_Private_MediaCardDisplayer_Data[DataIndex];
+			if (!Data.existskey("State")) {
+				CardStates.add(C_TwoDArrayCardBuilder_Available);
+				continue;
+			}
+			switch (Data["State"]) {
+				case "Available" : {
+					CardStates.add(C_TwoDArrayCardBuilder_Available);
+				}
+				case "Locked" : {
+					CardStates.add(C_TwoDArrayCardBuilder_Locked);
+				}
+				case "NonExistent" : {
+					CardStates.add(C_TwoDArrayCardBuilder_NonExistentState);
+				}
+			}
+		}
+		if (G_Private_MediaCardDisplayer_StartElement == -1) {
+			TwoDArrayCardBuilder_Update(CardStates);
+		} else if (G_Private_MediaCardDisplayer_StartElement == -2) {
+			TwoDArrayCardBuilder_Update(CardStates, -1);
+		} else {
+			TwoDArrayCardBuilder_Update(CardStates, 0);
+		}
+	}
+
+	Void Private_MediaCardDisplayer_FetchData()
+	{
+		declare Text[Text][]	Page_MediaCardDisplayer_Data			for Page;
+		declare Text[][][]		Page_MediaCardDisplayer_LineMetaData	for Page;
+		declare Text[][]		Page_MediaCardDisplayer_LineLogos		for Page;
+		declare Integer			Page_MediaCardDisplayer_StartElement	for Page;
+
+		G_Private_MediaCardDisplayer_Data			= Page_MediaCardDisplayer_Data;
+		G_Private_MediaCardDisplayer_LineMetaData	= Page_MediaCardDisplayer_LineMetaData;
+		G_Private_MediaCardDisplayer_LineLogos		= Page_MediaCardDisplayer_LineLogos;
+		G_Private_MediaCardDisplayer_StartElement	= Page_MediaCardDisplayer_StartElement;
+
+		foreach (DataIndex => Data in G_Private_MediaCardDisplayer_Data) {
+			foreach (MetadataKey in C_MediaCardDisplayer_MetadataKeys)
+			{
+				if (!Data.existskey(MetadataKey)) {
+					G_Private_MediaCardDisplayer_Data[DataIndex][MetadataKey] = "";
+				}
+			}
+		}
+	}
+
+	Void Private_MediaCardDisplayer_Input_Button(Integer _ButtonIndex)
+	{
+		if (!G_Private_MediaCardDisplayer_Data.existskey(G_Private_MediaCardDisplayer_CurrentIndex)) {
+			log(Now ^ ") WARNING : MediaCardDisplayer : La carte choisie n'existe pas");
+			return;
+		}
+		declare Text[Text] Data = G_Private_MediaCardDisplayer_Data[G_Private_MediaCardDisplayer_CurrentIndex];
+		if (!Data.existskey("Path")) {
+			log(Now ^ ") WARNING : MediaCardDisplayer : La carte choisie n'a pas de chemin spécifié");
+			return;
+		}
+		declare Text MediaPath     = Data["Path"];
+		declare Text ThumbnailPath;
+		if(Data.existskey("Thumbnail")) ThumbnailPath = Data["Thumbnail"];
+		if (Data.existskey("CardType") && Data["CardType"] == "Folder") {
+			// TODO : Léger hack à améliorer dans un avenir lointain
+			if (_ButtonIndex == 0) {
+				SendCustomEvent("MediaCardDisplayer_FolderOpen", [MediaPath, ThumbnailPath]);
+			}
+			return;
+		}
+
+		if (!G_Private_MediaCardDisplayer_ButtonEvents.existskey(_ButtonIndex)) {
+			return;
+		}
+		SendCustomEvent(G_Private_MediaCardDisplayer_ButtonEvents[_ButtonIndex], [MediaPath, ThumbnailPath]);
+	}
+
+	Text MediaCardDisplayer_GetSelectedPath()
+	{
+		declare Text Result = "";
+		if (G_Private_MediaCardDisplayer_Data.existskey(G_Private_MediaCardDisplayer_CurrentIndex)) {
+			declare Text[Text] Data = G_Private_MediaCardDisplayer_Data[G_Private_MediaCardDisplayer_CurrentIndex];
+			if (!Data.existskey("Path")) {
+				log(Now ^ ") WARNING : MediaCardDisplayer_GetSelectedPath : La carte choisie n'a pas de chemin spécifié");
+				return Result;
+			} else {
+				Result = Data["Path"];
+			}
+		}
+		return Result;
+	}
+
+	Void MediaCardDisplayer_SetButtonEvents(Text[] _ButtonEvents)
+	{
+		G_Private_MediaCardDisplayer_ButtonEvents = _ButtonEvents;
+	}
+
+	Void MediaCardDisplayer_Init()
+	{
+		G_Private_MediaCardDisplayer_Data			.clear();
+		G_Private_MediaCardDisplayer_LineMetaData	.clear();
+		G_Private_MediaCardDisplayer_LineLogos		.clear();
+
+		G_Private_MediaCardDisplayer_StartElement	= -1; // Nothing is reset
+		MediaCardDisplayer_SetButtonEvents({{{dump(G_ButtonEvents)}}});
+		TwoDArrayCardBuilder_Init();
+		Private_MediaCardDisplayer_Update();
+	}
+
+	Void MediaCardDisplayer_Loop()
+	{
+		if (G_Private_MediaCardDisplayer_CurrentIndex != -1) {
+			declare CMlFrame CardFrame <=> (Page.GetFirstChild("TwoDArrayCardBuilder_CardInstance-" ^ G_Private_MediaCardDisplayer_CurrentIndex) as CMlFrame);
+			if (CardFrame != Null) {
+				declare CMlQuad Quad_ListItemSelector <=> (CardFrame.GetFirstChild("Quad_ListItemSelector") as CMlQuad);
+				if (Quad_ListItemSelector != Null) {
+					declare Light = 0.90 + 0.1 * MediaCardDisplayer_MathLib::Sin(Now * 0.005);
+					Quad_ListItemSelector.BgColor = <Light, Light, Light>;
+				}
+			}
+		}
+		declare Boolean Page_MediaCardDisplayer_RefreshPage for Page;
+		if (Page_MediaCardDisplayer_RefreshPage) {
+			Private_MediaCardDisplayer_FetchData();
+			Private_MediaCardDisplayer_Update();
+			Page_MediaCardDisplayer_RefreshPage = False;
+		}
+		foreach(Event in PendingEvents) {
+			switch (Event.Type) {
+				case CMlEvent::Type::MenuNavigation: {
+					switch (Event.MenuNavAction) {
+						{{{Private_MenuNavigationActionsHandling()}}}
+					}
+				}
+				case CMlEvent::Type::MouseClick: {
+					Audio.PlaySoundEvent(CAudioManager::ELibSound::Valid, 1, 0.0);
+					for (ButtonIndex, 0, 4) {
+						if (Event.ControlId == "MediaCardDisplayer_Button_" ^ ButtonIndex) {
+							Private_MediaCardDisplayer_Input_Button(ButtonIndex);
+						}
+					}
+				}
+			}
+		}
+		TwoDArrayCardBuilder_Loop();
+		if (TwoDArrayCardBuilder_HasDoubleClicked())
+		{
+			Private_MediaCardDisplayer_Input_Button(0);
+		}
+		DesignManialinks_Loop();
+		LibManialink_AnimLoop();
+	}
+	
+	Void MediaCardDisplayer_Show()
+	{
+		DesignManialinks_Show();
+
+		declare Integer AddDecale  = 70;
+		declare Integer DecaleTime = 150;
+		if (G_TwoDArrayCardBuilder_CountY > 6) {
+			AddDecale  = 30;
+			DecaleTime = 60;
+		}
+		for(LineIndex, 0, G_TwoDArrayCardBuilder_CountY - 1)
+		{
+			for(ColumnIndex, 0, G_TwoDArrayCardBuilder_CountX - 1)
+			{
+				declare Integer		FrameIndex					= ColumnIndex + LineIndex * G_TwoDArrayCardBuilder_CountX; 
+				declare CMlFrame	CardFrame					<=> (Page.GetFirstChild("TwoDArrayCardBuilder_CardInstance-" ^ FrameIndex) as CMlFrame);
+				declare CMlQuad		Quad_CardShadow				<=> (CardFrame.GetFirstChild("Quad_CardShadow") as CMlQuad);
+				declare CMlQuad		Quad_MediaCardThumbnail		<=> (CardFrame.GetFirstChild("Quad_MediaCardThumbnail") as CMlQuad);
+				declare CMlQuad		Quad_MediaCardThumbnail2	<=> (CardFrame.GetFirstChild("Quad_MediaCardThumbnail2") as CMlQuad);
+				declare CMlQuad		Quad_CardBG					<=> (CardFrame.GetFirstChild("Quad_CardBG") as CMlQuad);
+				declare CMlQuad		Quad_ListItemShadow			<=> (CardFrame.GetFirstChild("Quad_ListItemShadow") as CMlQuad);
+				declare CMlQuad		Quad_ListItemFocus			<=> (CardFrame.GetFirstChild("Quad_ListItemFocus") as CMlQuad);
+				declare CMlQuad		Quad_MediaCardThumbnailImg	<=> (CardFrame.GetFirstChild("Quad_MediaCardThumbnailImg")	as CMlQuad);
+				declare CMlQuad		Quad_ListItemSelector		<=> (CardFrame.GetFirstChild("Quad_ListItemSelector") as CMlQuad);
+				declare CMlQuad		Quad_FolderListItemBg		<=> (CardFrame.GetFirstChild("Quad_FolderListItemBg") as CMlQuad);
+				declare CMlLabel	Label_ListItem				<=> (CardFrame.GetFirstChild("Label_ListItem") as CMlLabel);
+				declare CMlLabel	Label_Card					<=> (CardFrame.GetFirstChild("Label_Card") as CMlLabel);
+				declare CMlFrame	ExtraDataInCard				<=> (CardFrame.GetFirstChild("MediaCardDisplayer_ExtraDataInCard") as CMlFrame);
+				declare CMlFrame	ExtraDataInListItem			<=> (CardFrame.GetFirstChild("MediaCardDisplayer_ExtraDataInListItem") as CMlFrame);
+				CardFrame.RelativePosition_V3.Y = 3.;
+				LibManialink_SetTargetPosition(CardFrame, <0., 0.>);
+				LibManialink_PresetAnimInsert(CardFrame, DecaleTime, 300, "EaseOutExp");
+				Quad_CardShadow				.Opacity = 0.;
+				LibManialink_SetTargetOpacity(Quad_CardShadow, {{{C_CardShadowOpacity}}});
+				LibManialink_PresetAnimInsert(Quad_CardShadow, DecaleTime, 300, "EaseOutCubic");
+				Quad_MediaCardThumbnail		.Opacity = 0.;
+				LibManialink_SetTargetOpacity(Quad_MediaCardThumbnail, {{{G_ColoredThumbnailOpacity}}});
+				LibManialink_PresetAnimInsert(Quad_MediaCardThumbnail, DecaleTime, 300, "EaseOutCubic");
+				Quad_MediaCardThumbnail2	.Opacity = 0.;
+				LibManialink_SetTargetOpacity(Quad_MediaCardThumbnail2, 1.);
+				LibManialink_PresetAnimInsert(Quad_MediaCardThumbnail2, DecaleTime, 300, "EaseOutCubic");
+				Label_Card					.Opacity = 0.;
+				LibManialink_SetTargetOpacity(Label_Card, 1.);
+				LibManialink_PresetAnimInsert(Label_Card, DecaleTime, 300, "EaseOutCubic");
+				Quad_ListItemShadow			.Opacity = 0.;
+				LibManialink_SetTargetOpacity(Quad_ListItemShadow, 0.1);
+				LibManialink_PresetAnimInsert(Quad_ListItemShadow, DecaleTime, 300, "EaseOutCubic");
+				Quad_MediaCardThumbnailImg	.Opacity = 0.;
+				LibManialink_SetTargetOpacity(Quad_MediaCardThumbnailImg, {{{C_NonSelectedSecondTOpacity}}});
+				LibManialink_PresetAnimInsert(Quad_MediaCardThumbnailImg, DecaleTime, 300, "EaseOutCubic");
+				Quad_ListItemFocus			.Opacity = 0.;
+				LibManialink_SetTargetOpacity(Quad_ListItemFocus, 0.1);
+				LibManialink_PresetAnimInsert(Quad_ListItemFocus, DecaleTime, 300, "EaseOutCubic");
+				Quad_ListItemSelector		.Opacity = 0.;
+				LibManialink_SetTargetOpacity(Quad_ListItemSelector, 0.9);
+				LibManialink_PresetAnimInsert(Quad_ListItemSelector, DecaleTime, 300, "EaseOutCubic");
+				Quad_FolderListItemBg		.Opacity = 0.;
+				LibManialink_SetTargetOpacity(Quad_FolderListItemBg, 1.);
+				LibManialink_PresetAnimInsert(Quad_FolderListItemBg, DecaleTime, 300, "EaseOutCubic");
+				Label_ListItem				.Opacity = 0.;
+				LibManialink_SetTargetOpacity(Label_ListItem, 1.);
+				LibManialink_PresetAnimInsert(Label_ListItem, DecaleTime, 300, "EaseOutCubic");
+				Quad_CardBG					.Opacity = 0.;
+				LibManialink_SetTargetOpacity(Quad_CardBG, 1.);
+				LibManialink_PresetAnimInsert(Quad_CardBG, DecaleTime, 300, "EaseOutCubic");
+				foreach(Control in ExtraDataInCard.Controls) {
+					if (Control is CMlQuad) {
+						declare ControlAsQuad	<=> (Control as CMlQuad);
+						ControlAsQuad		.Opacity = 0.;
+						LibManialink_SetTargetOpacity(ControlAsQuad, 1.);
+						LibManialink_PresetAnimInsert(ControlAsQuad, DecaleTime, 300, "EaseOutCubic");
+					} else if (Control is CMlLabel) {
+						declare ControlAsLabel	<=> (Control as CMlLabel);
+						ControlAsLabel		.Opacity = 0.;
+						LibManialink_SetTargetOpacity(ControlAsLabel, 1.);
+						LibManialink_PresetAnimInsert(ControlAsLabel, DecaleTime, 300, "EaseOutCubic");
+					}
+				}
+				foreach(Control in ExtraDataInListItem.Controls) {
+					if (Control.ControlId == "Quad_AddedToListItem") { // HACK
+						declare ControlAsQuad	<=> (Control as CMlQuad);
+						ControlAsQuad		.Opacity = 0.;
+						LibManialink_SetTargetOpacity(ControlAsQuad, 0.3);
+						LibManialink_PresetAnimInsert(ControlAsQuad, DecaleTime, 300, "EaseOutCubic");
+					} else if (Control is CMlQuad) {
+						declare ControlAsQuad	<=> (Control as CMlQuad);
+						ControlAsQuad		.Opacity = 0.;
+						LibManialink_SetTargetOpacity(ControlAsQuad, 1.);
+						LibManialink_PresetAnimInsert(ControlAsQuad, DecaleTime, 300, "EaseOutCubic");
+					} else if (Control is CMlLabel) {
+						declare ControlAsLabel	<=> (Control as CMlLabel);
+						ControlAsLabel		.Opacity = 0.;
+						LibManialink_SetTargetOpacity(ControlAsLabel, 1.);
+						LibManialink_PresetAnimInsert(ControlAsLabel, DecaleTime, 300, "EaseOutCubic");
+					}
+				}
+				if (C_MediaCardDisplayer_ShowsNonExistentFrames) {
+					declare CMlQuad	Quad_NonExistentShadow		<=> (CardFrame.GetFirstChild("Quad_NonExistentShadow") as CMlQuad);
+					Quad_NonExistentShadow	.Opacity = 0.;
+					LibManialink_SetTargetOpacity(Quad_NonExistentShadow, 0.3);
+					LibManialink_PresetAnimInsert(Quad_NonExistentShadow, DecaleTime, 300, "EaseOutCubic");
+				}
+			}
+			DecaleTime += AddDecale;
+		}
+	}
+""";
+}
+
+//<script>
+/** REQUIRES THE FOLLOWING FUNCTIONS : 
+	Void MediaCardDisplayer_ShowCard(CMlFrame _Card, Text[Text] _Data)
+	Void MediaCardDisplayer_ShowLockedCard(CMlFrame _Card, Text[Text] _Data)
+	Void MediaCardDisplayer_UnSelectCard(CMlFrame _Card)
+	Void MediaCardDisplayer_SelectCard(CMlFrame _Card, Text[Text] _Data)
+	Void MediaCardDisplayer_UnFocusCard(CMlFrame _Card, Text[Text] _Data)
+	Void MediaCardDisplayer_FocusCard(CMlFrame _Card, Text[Text] _Data)
+	*/
+Text Declares()
+{
+	return FirstDeclares() ^ SecondDeclares();
+}
+
+Void Update(Text _LayerNameToUpdate, Text[Text][] _Data, Text[][][] _LineMetaData, Text[][] _LineLogos, Integer _StartElement)
+{
+	declare CUILayer LayerToUpdate = Layers::Get(_LayerNameToUpdate);
+	if (LayerToUpdate == Null) {
+		Logger::Warn("Update de MediaCardDisplayer : Layer non trouvée");
+		return;
+	}
+	if (_Data.count != _LineMetaData.count) {
+		Logger::Warn("Update de MediaCardDisplayer : Les arrays n'ont pas le même nombre d'éléments");
+		return;
+	}
+	declare Text[Text][]	Page_MediaCardDisplayer_Data			for LayerToUpdate.LocalPage;
+	declare Text[][][]		Page_MediaCardDisplayer_LineMetaData	for LayerToUpdate.LocalPage;
+	declare Text[][]		Page_MediaCardDisplayer_LineLogos		for LayerToUpdate.LocalPage;
+	declare Integer			Page_MediaCardDisplayer_StartElement	for LayerToUpdate.LocalPage;
+	declare Boolean			Page_MediaCardDisplayer_RefreshPage		for LayerToUpdate.LocalPage;
+	Page_MediaCardDisplayer_Data			= _Data;
+	Page_MediaCardDisplayer_LineMetaData	= _LineMetaData;
+	Page_MediaCardDisplayer_LineLogos		= _LineLogos;
+	Page_MediaCardDisplayer_StartElement	= _StartElement;
+	Page_MediaCardDisplayer_RefreshPage		= True;
+}
+
+Void Update(Text _LayerNameToUpdate, Text[Text][] _Data, Text[][][] _LineMetaData, Text[][] _LineLogos)
+{
+	Update(_LayerNameToUpdate, _Data, _LineMetaData, _LineLogos, -1);
+}
+
+Void Update(Text _LayerNameToUpdate, Text[Text][] _Data, Text[][][] _LineMetaData, Integer _StartElement)
+{
+	declare Text[][] LineLogos;
+	foreach(Elem in _LineMetaData) {
+		LineLogos.add(["", "", "", "", ""]);
+	}
+	Update(_LayerNameToUpdate, _Data, _LineMetaData, LineLogos, _StartElement);
+}
+
+Void Update(Text _LayerNameToUpdate, Text[Text][] _Data, Text[][][] _LineMetaData)
+{
+	Update(_LayerNameToUpdate, _Data, _LineMetaData, -1);
+}

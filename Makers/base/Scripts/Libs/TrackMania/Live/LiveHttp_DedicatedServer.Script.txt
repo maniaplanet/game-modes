@@ -1,0 +1,128 @@
+#Include "Libs/Trackmania/Live/LiveLogger.Script.txt" 			as LiveLogger
+#Include "Libs/Trackmania/Live/LiveEvent.Script.txt" 			as LiveEvent
+// #Include "Libs/Trackmania/Live/LiveRequestLogger.Script.txt" 	as LiveRequestLogger
+#Include "Libs/Trackmania/Live/LiveXml.Script.txt" 			as LiveXml
+// #Include "Libs/Trackmania/Live/LiveHelpers.Script.txt" 		as LiveHelpers
+
+#Include "MathLib"											as ML
+
+declare Ident[Ident] 		G_Manialib_Http_Requests;
+declare Integer[Ident] 		G_Manialib_Http_RequestsExec;
+
+Text[Text] Private_Manialib_Http_GetDefaultHeaders() {
+    declare Text[Text] DefaultHeaders;
+    DefaultHeaders["Accept"] = "application/xml";
+    DefaultHeaders["Content-Type"] = "application/json";
+    return DefaultHeaders;
+}
+
+Text[Text] Private_Manialib_Http_GetHeaders(Text[Text] _Headers) {
+    declare Text[Text] Headers = Private_Manialib_Http_GetDefaultHeaders();
+    foreach(Key => Value in _Headers) {
+        Headers[Key] = Value;
+    }
+    return Headers;
+}
+
+Text Private_Manialib_Http_GetLinearizedHeader(Text[Text] _Headers) {
+    declare Text Result = "";
+    foreach(Key => Value in Private_Manialib_Http_GetHeaders(_Headers)) {
+        Result ^= Key ^": "^ Value ^ "\n";
+    }
+    return Result;
+}
+
+Ident Manialib_Http_PostAsync(Text _Url, Text _Data, Text[Text] _Headers) {
+	// declare Text G_APIUrl = LiveHelpers::GetAPIUrl();
+	declare Request <=> Http.CreatePost(_Url, _Data, Private_Manialib_Http_GetLinearizedHeader(_Headers));
+	if (Request != Null) {
+		G_Manialib_Http_Requests[Request.Id] = Request.Id;
+		G_Manialib_Http_RequestsExec[Request.Id] = Now;
+	}
+	// LiveLogger::Manialib_Logger_Info("[Http] "^Request.Id^" POST "^_Url);
+	
+	declare Text AuthHeader = "";
+	if (_Headers.existskey("Maniaplanet-Auth"))
+		AuthHeader = _Headers["Maniaplanet-Auth"];
+	// LiveRequestLogger::AddPostRequest(Request.Id^"", G_APIUrl, _Url, AuthHeader, _Data);
+	
+	return Request.Id;
+}
+
+Ident Manialib_Http_PostAsync(Text _Url, Text _Data) {
+    declare Text[Text] NoHeaders;
+    return Manialib_Http_PostAsync(_Url, _Data, NoHeaders);
+}
+
+Ident Manialib_Http_GetAsync(Text _Url, Text[Text] _Headers) {
+	// declare Text G_APIUrl = LiveHelpers::GetAPIUrl();
+	// LiveLogger::Manialib_Logger_Debug(Private_Manialib_Http_GetLinearizedHeader(_Headers));
+	declare Request <=> Http.CreateGet(_Url, False, Private_Manialib_Http_GetLinearizedHeader(_Headers));
+	if (Request != Null) {
+		G_Manialib_Http_Requests[Request.Id] = Request.Id;
+		G_Manialib_Http_RequestsExec[Request.Id] = Now;
+	}
+	// LiveLogger::Manialib_Logger_Info("[Http] "^Request.Id^" GET "^_Url);
+  
+	declare Text AuthHeader = "";
+	if (_Headers.existskey("Maniaplanet-Auth"))
+		AuthHeader = _Headers["Maniaplanet-Auth"];
+	// LiveRequestLogger::AddGetRequest(Request.Id^"", G_APIUrl, _Url, AuthHeader);
+  
+	return Request.Id;
+}
+
+Ident Manialib_Http_GetAsync(Text _Url) {
+    declare Text[Text] NoHeaders;
+    return Manialib_Http_GetAsync(_Url, NoHeaders);
+}
+
+Void Private_Manialib_Http_HandleFinishedRequests() {
+	declare Ident[] ToRemove;
+	foreach (Request in Http.Requests) {
+		if (!G_Manialib_Http_Requests.existskey(Request.Id)) continue; //Ignore other requests
+		if (!Request.IsCompleted) 
+			continue;
+			
+		declare ReqResult = Request.Result;
+		declare ReqId = Request.Id;
+
+		G_Manialib_Http_RequestsExec[Request.Id] = Now - G_Manialib_Http_RequestsExec[Request.Id];
+		
+		// LiveRequestLogger::AnswerRequest(ReqId^"", Request.StatusCode, ReqResult);
+		
+		if (ML::FloorInteger(Request.StatusCode/100.) == 2) {
+			LiveLogger::Manialib_Logger_Info("[Http] "^ReqId^" OK "^Request.StatusCode^" in "^G_Manialib_Http_RequestsExec[ReqId]^"ms");
+			LiveEvent::Manialib_Event_DispatchCustomEvent("Manialib.Http.Success", [""^ReqId, ReqResult]);
+		} else {
+			//log le message d'erreur :
+			declare Text Message;
+			declare CXmlDocument ResultDoc = LiveXml::Manialib_Xml_CreateDocument(ReqResult);
+			if (ResultDoc != Null)
+			{
+				declare Text[Text] ResultArray = LiveXml::Manialib_Xml_NodeToArray(ResultDoc.GetFirstChild("result"));
+				if (ResultArray.existskey("message"))
+					Message = ResultArray["message"];
+			}
+			LiveXml::Manialib_Xml_DestroyDocument(ResultDoc);
+			LiveLogger::Manialib_Logger_Info("[Http] "^ReqId^" ERROR "^Request.StatusCode^" in "^G_Manialib_Http_RequestsExec[ReqId]^"ms");
+			LiveLogger::Manialib_Logger_Info("[Http] "^ReqId^" ERROR : "^Message);
+			if (Request.StatusCode == 403 || Request.StatusCode == 401)
+			{
+				LiveEvent::Manialib_Event_DispatchCustomEvent("Manialib.Http.Retry", [""^ReqId, ReqResult, ""^G_Manialib_Http_RequestsExec[ReqId]]);
+			} else {
+				LiveEvent::Manialib_Event_DispatchCustomEvent("Manialib.Http.Error", [""^ReqId, ReqResult, ""^G_Manialib_Http_RequestsExec[ReqId]]);
+			}
+		}
+		ToRemove.add(ReqId);
+	}
+	foreach (RequestId in ToRemove) {
+		G_Manialib_Http_Requests.removekey(RequestId);
+		G_Manialib_Http_RequestsExec.removekey(RequestId);
+		Http.Destroy(Http.Requests[RequestId]);
+	}
+}
+
+Void Manialib_Http_Loop() {
+	Private_Manialib_Http_HandleFinishedRequests();
+}

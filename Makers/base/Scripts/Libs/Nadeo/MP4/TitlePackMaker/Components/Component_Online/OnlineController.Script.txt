@@ -1,0 +1,179 @@
+#Include "Libs/Nadeo/Common/Core/MenuLayers.Script.txt"											as Layers
+#Include "Libs/Nadeo/Common/Core/Pages.Script.txt"												as Pages
+#Include "Libs/Nadeo/Common/Core/Logger.Script.txt"												as Logger
+#Include "TextLib"																			as TextLib
+#Include "Libs/Nadeo/Common/Core/SectionsManager.Script.txt"										as SectionsManager
+#Include "Libs/Nadeo/MP4/Common/Components/ImageBrowser/ImageBrowserController.Script.txt"		as ImageBrowserController
+#Include "Libs/Nadeo/MP4/Common/Components/DialogBox/DialogBoxController.Script.txt"			as DialogBoxController
+
+#Include "Libs/Nadeo/MP4/TitlePackMaker/Components/Component_Online/OnlineXmlReader.Script.txt"	as OnlineXmlReader
+
+//Layers
+#Include "Libs/Nadeo/MP4/TitlePackMaker/Components/Component_Online/LBOnline.Script.txt"		as LBOnline
+
+//APIs
+#Include "Libs/Nadeo/MP4/Common/Components/ScriptBrowser/ScriptBrowserController.Script.txt"	as ScriptBrowserController
+#Include "Libs/Nadeo/MP4/Common/Components/AssetMaker/AssetMakerController.Script.txt"								as AssetMakerController
+
+declare Text G_Color;
+declare Boolean G_IsActive;
+declare Boolean G_AllAssets;
+declare Boolean G_DisplayTitleServersOnly;
+
+Boolean IsActive()
+{
+	return G_IsActive;
+}
+
+Boolean IsActivated()
+{
+	return G_IsActive;
+}
+
+Void SetActive(Boolean _IsActive)
+{
+	G_IsActive = _IsActive;
+}
+
+Void SetColor(Text _Color)
+{
+	G_Color = _Color;
+}
+
+Text GetColor()
+{
+	return G_Color;
+}
+
+Text GenerateXML ()
+{
+	// HACK : logo presetté et mis dans le xml en tant que tel
+	return """	<Multiplayer logo="file://Media/MEDIABROWSER_HiddenResources/Common/Images/Menus/Buttons/Logo_Online.dds" activated="{{{IsActive()}}}" color="{{{GetColor()}}}" allowallmodes="{{{G_AllAssets}}}" displaytitleserversonly="{{{G_DisplayTitleServersOnly}}}">
+		{{{AssetMakerController::GetXMLAllAssets("Online")}}}
+	</Multiplayer>""";
+}
+
+Void Init()
+{
+	G_Color = "c39";
+	G_IsActive = True;
+}
+
+Void InitAssets() {
+	AssetMakerController::Init("Online", OnlineXmlReader::GetBaseIds(),
+		OnlineXmlReader::GetBaseTitleNames(),
+		OnlineXmlReader::GetBaseMakerNames(),
+		OnlineXmlReader::GetUGCAssets(),
+		OnlineXmlReader::GetIsVisibleInMaker(),
+		False,
+		OnlineXmlReader::GetIsActivated(), 
+		"allowallmodes",
+		OnlineXmlReader::GetSpecialParamIsActivated());
+}
+
+Void UpdateFromController()
+{
+	declare Layer <=> Layers::Get("Online");
+	declare Boolean Page_AllAssets_Active			for Layer.LocalPage;
+	declare Boolean Page_DisplayTitleServersOnly	for Layer.LocalPage;
+	Page_AllAssets_Active			= G_AllAssets;
+	Page_DisplayTitleServersOnly	= G_DisplayTitleServersOnly;
+	LayerCustomEvent(Layer, "UpdateFromController", Text[]);
+}
+
+Void AnalyzeXML(Text _XML)
+{
+	Init();
+	OnlineXmlReader::AnalyzeXML(_XML);
+	if (_XML != "") {
+		SetColor(OnlineXmlReader::GetColor());
+		SetActive(OnlineXmlReader::IsActive());
+		G_AllAssets					= OnlineXmlReader::AllowAllAssets();
+		G_DisplayTitleServersOnly	= OnlineXmlReader::DisplayTitleServersOnly();
+		UpdateFromController();
+	} else {
+		OnlineXmlReader::ReadBase();
+	}
+	InitAssets();
+}
+
+Boolean CanPublishXML()
+{
+	if (!IsActivated()) {
+		return True;
+	}
+	return True;
+}
+
+Text PublishXML ()
+{
+	if (!IsActivated()) {
+		return "";
+	}
+	return """	<Multiplayer logo="file://Media/MEDIABROWSER_HiddenResources/Common/Images/Menus/Buttons/Logo_Online.dds" activated="{{{IsActive()}}}" color="{{{GetColor()}}}" allowallmodes="{{{G_AllAssets}}}" displaytitleserversonly="{{{G_DisplayTitleServersOnly}}}">
+		{{{AssetMakerController::GetXMLPublishedAssets("Online")}}}
+	</Multiplayer>""";
+}
+
+Void Build(Text _LayerName, Boolean _Attach) {
+
+	declare Text MLText;
+	switch(_LayerName) {
+		case("Online"):{
+			MLText = LBOnline::Build();
+		}
+	}
+
+	if(MLText == "") {
+		Logger::Warn("Unknown Page: "^_LayerName);
+		return;
+	}
+	
+	Layers::Create(_LayerName, MLText);
+	
+	declare CUILayer Layer <=> Layers::Get(_LayerName);
+	declare Text Page_LayerName for Layer.LocalPage;
+	
+	Page_LayerName = _LayerName;
+	if(_Attach) Layers::Attach(_LayerName);
+}
+
+Void Build(Text _LayerName) {
+	Build(_LayerName, False);
+}
+
+Void Load() {
+	Init();
+	OnlineXmlReader::ReadBase();
+	InitAssets();
+	Build("Online");
+	Pages::Compose("Online", ["Online"]);
+	SectionsManager::AddSection("Online", "Online");
+}
+
+Void Loop() {
+	AssetMakerController::Loop("Online");
+	foreach(Event in PendingEvents) {
+		if(Event.Type != CManiaAppEvent::EType::LayerCustomEvent) continue;
+		switch(Event.CustomEventType) {
+			case "ScriptBrowserToOnline_Button_0": {
+				Pages::GotoPrevious();
+				declare Path = Event.CustomEventData[0];
+				AssetMakerController::AddNewAsset("Online", Path);
+			}
+			case "Asset_SetAllAssets_Active" : {
+				declare AssetsAllActive = Event.CustomEventData[0] == TextLib::ToText(True);
+				G_AllAssets = AssetsAllActive;
+			}
+			case "Asset_DisplayTitleServersOnly" : {
+				declare DisplayTitleServersOnly = Event.CustomEventData[0] == TextLib::ToText(True);
+				G_DisplayTitleServersOnly = DisplayTitleServersOnly;
+			}
+		}
+	}
+	if (AssetMakerController::IsAskingNewAsset("Online")) {
+		ScriptBrowserController::Show("ScriptBrowserToOnline", [//L16N |Infinitive| In a popup, a button to select
+					_("Choose")],
+					_("|GameModes|Scripts"));
+	}
+}

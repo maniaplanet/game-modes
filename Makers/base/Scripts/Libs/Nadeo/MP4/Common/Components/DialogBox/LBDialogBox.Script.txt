@@ -1,0 +1,239 @@
+#Include "Libs/Nadeo/MP4/Common/DesignManialinks.Script.txt"	as DesignManialinks
+#Include "Libs/Nadeo/MP4/Common/ManialinkTools/FontManager.Script.txt"			as Font
+
+#Const C_DialogBoxManialinkBase		1
+#Const C_DialogBoxAllManialinkIds	[1]
+#Const C_AllActions					["Select", "Cancel", "Action1", "Action2"]
+#Const C_OptionNumber				2
+
+Integer ManialinkId_Base()
+{
+	return C_DialogBoxManialinkBase;
+}
+
+Text AllOptions(Integer _ManialinkId)
+{
+	declare Text Result;
+	switch (_ManialinkId) {
+		case C_DialogBoxManialinkBase : {
+			for(OptionIndex, 0, C_OptionNumber - 1) {
+				declare Text	SubFont					= Font::GetFontName("SubTitle"); // TODO : DesignManialinkifier les boutons
+				Result ^= """
+					<frame id="Option_{{{OptionIndex}}}_Frame" pos="65 {{{-6 - OptionIndex * 10}}}">
+						<quad id="Option_{{{OptionIndex}}}" halign="center" valign="center" size="30 8" z-index="-1" bgcolor="2D2F35" scriptevents="1" class="OptionButton"/>
+						<label id="Option_Label" halign="center" valign="center" size="26 6" pos="0 0.5" textprefix="$t" textsize="3.8" textcolor="{{{DesignManialinks::GetColorCode_TextLabel_Normal()}}}" textfont="{{{SubFont}}}"/>
+					</frame>""";
+			}
+		}
+	}
+	return Result;
+}
+
+Text AllManialinks()
+{
+	declare Text	MainFont				= Font::GetFontName("Main");
+	declare Text	SubFont					= Font::GetFontName("SubTitle");
+	declare DialogBoxAllManialinks			= [C_DialogBoxManialinkBase =>
+"""			<frame pos="-55 35">
+				<label id="Customize_0" halign="left" valign="center" size="110 10" pos="55 3" textsize="8.5" textfont="{{{MainFont}}}" textprefix="$t" textcolor="{{{DesignManialinks::GetColorCode_Overall()}}}"/>
+				<frame id="TitleSeparator">
+					<quad valign="top" size="129 0.2" pos="-9.5 -5" bgcolor="{{{DesignManialinks::GetColorCode_Overall()}}}" opacity="0.5"/>
+					<quad valign="bottom" size="7 0.45" pos="112.5 -5" bgcolor="{{{DesignManialinks::GetColorCode_Overall()}}}" opacity="0.5"/>
+				</frame>
+				<label id="MessageQuotes" size="10 10" pos="24 -13" textsize="7" textfont="{{{SubFont}}}" text="''" textcolor="{{{DesignManialinks::GetColorCode_Overall()}}}" opacity="0.3" halign="center" valign="center"/>
+				<label id="Customize_1" halign="left" size="50 32" pos="30 -16" textfont="{{{SubFont}}}" autonewline="1" textcolor="{{{DesignManialinks::GetColorCode_Overall()}}}"/>
+				<frame id="Frame_Options" pos="-10 -55">
+					<frame id="OptionsSeparator" pos="10 6.5">
+						<quad valign="top" size="129 0.2" pos="-9.5 -5" bgcolor="{{{DesignManialinks::GetColorCode_TextLabel_Normal()}}}" opacity="0.5"/>
+						<quad valign="bottom" size="7 0.45" pos="112.5 -5" bgcolor="{{{DesignManialinks::GetColorCode_TextLabel_Normal()}}}" opacity="0.5"/>
+					</frame>
+					<quad id="BgOptions"  z-index="-1" size="130 11.6" bgcolor="{{{DesignManialinks::GetColorCode_TextLabel_Normal()}}}" opacity="0.3"/>
+{{{AllOptions(C_DialogBoxManialinkBase)}}}
+				</frame>
+				<frame id="BgQuad" pos="-10 10">
+					<quad pos="-0.5 0.8" size="0.5 2" halign="right" valign="bottom" bgcolor="{{{DesignManialinks::GetColorCode_TextLabel_Normal()}}}" opacity="0.8"/>
+					<quad pos="-1 0.8" size="1.5 0.5" halign="right" valign="bottom" bgcolor="{{{DesignManialinks::GetColorCode_TextLabel_Normal()}}}" opacity="0.8"/>
+					<quad size="130 60" bgcolor="{{{DesignManialinks::GetColorCode_TextLabel_Normal()}}}" opacity="0.9"/>
+				</frame>
+			</frame>"""];
+	declare Text Result;
+	foreach(Value => Manialink in DialogBoxAllManialinks) {
+		Result ^= """
+		<frame id="ManialinkFrame_{{{Value}}}">
+{{{Manialink}}}
+		</frame>
+""";
+	}
+	return Result;
+}
+
+Text AllActions()
+{
+	declare Text Result;
+	foreach(Action in C_AllActions) {
+		DesignManialinks::AddAction("Button_" ^ Action);
+		Result ^=
+"""		<frame id="Frame_{{{Action}}}" z-index="1">
+			<quad id="Button_{{{Action}}}" halign="center" valign="center" size="8 8" keepratio="Fit"/>
+		</frame>
+""";
+	}
+	return Result;
+}
+
+Text Build() {
+	DesignManialinks::Init();
+	declare Text MLText = """
+<manialink version="3" name="L_DialogBox">
+
+	<frame id="Frame_All" z-index="100">
+		<quad id="BigBg" halign="center" valign="center" size="320 180" z-index="-1" bgcolor="000" opacity="0.8" scriptevents="1"/>
+{{{AllActions()}}}
+{{{AllManialinks()}}}
+	</frame>
+
+	<script><!--
+{{{DesignManialinks::Includes()}}}
+
+#Include "TextLib"		as DialogBox_TextLib
+#Include "MathLib"		as DialogBox_MathLib
+#Const C_AllActions		{{{dump(C_AllActions)}}}
+
+declare Text[] G_MessageActions;
+
+{{{DesignManialinks::Declares()}}}
+
+	Void UpdateMessage(Integer _ManialinkId, Text[] _MessageContents, Text[] _MessageOptions, Text[] _MessageActions)
+	{
+		G_MessageActions = _MessageActions;
+		declare CMlFrame ManialinkFrame	<=> (Page.GetFirstChild("ManialinkFrame_" ^ _ManialinkId)		as CMlFrame);
+		foreach (ContentIndex => Content in _MessageContents) {
+			declare Customize			<=> ManialinkFrame.GetFirstChild("Customize_" ^ ContentIndex);
+			if (Customize == Null) {
+				break;
+			}
+			if (Customize is CMlQuad) {
+				declare CustomizeQuad	<=> (Customize as CMlQuad);
+				CustomizeQuad.ChangeImageUrl(Content);
+			} else if (Customize is CMlLabel) {
+				declare CustomizeLabel	<=> (Customize as CMlLabel);
+				CustomizeLabel.SetText(Content);
+				CustomizeLabel.Size = <DialogBox_MathLib::Min(115., CustomizeLabel.ComputeWidth(Content)), DialogBox_MathLib::Min(50., CustomizeLabel.ComputeHeight(Content))>;
+				CustomizeLabel.RelativePosition_V3.X = 56. - CustomizeLabel.Size.X / 2.;
+			}
+		}
+		declare CMlFrame Frame_Options	<=> (ManialinkFrame.GetFirstChild("Frame_Options")			as CMlFrame);
+		foreach(Action in C_AllActions) {
+			declare Frame_Action <=> Page.GetFirstChild("Frame_" ^ Action);
+			Frame_Action.Hide();
+		}
+		if (_MessageOptions.count == 0) {
+			Frame_Options.Hide();
+		} else {
+			Frame_Options.Show();
+			for (OptionToHideIndex, 0, {{{C_OptionNumber - 1}}}) {
+				declare CMlFrame Option_Frame <=> (ManialinkFrame.GetFirstChild("Option_" ^ OptionToHideIndex ^ "_Frame") as CMlFrame);
+				Option_Frame.Hide();
+			}
+			declare Text[] DeclaredActions;
+			foreach(OptionIndex => Option in _MessageOptions) {
+				declare CMlFrame Option_Frame <=> (ManialinkFrame.GetFirstChild("Option_" ^ OptionIndex ^ "_Frame") as CMlFrame);
+				if (Option_Frame == Null) {
+					log(Now ^ ") WARNING : _MessageOptions (" ^ _MessageOptions ^ ") is too long. Please raise C_OptionNumber");
+					break;
+				}
+				Option_Frame.Show();
+				declare CMlLabel Option_Label <=> (Option_Frame.GetFirstChild("Option_Label") as CMlLabel);
+				Option_Label.SetText(Option);
+				if (_MessageActions.existskey(OptionIndex) && !DeclaredActions.exists(_MessageActions[OptionIndex])) {
+					declare Text Action = _MessageActions[OptionIndex];
+					DeclaredActions.add(Action);
+					declare CMlFrame Frame_Action <=> (Page.GetFirstChild("Frame_" ^ Action) as CMlFrame);
+					if (Frame_Action == Null) {
+						log(Now ^ ") WARNING : _MessageActions (" ^ _MessageActions ^ ") contains unreferenced actions. Please add them to C_AllActions");
+					}
+					Frame_Action.Show();
+					Frame_Action.RelativePosition_V3 = Option_Frame.AbsolutePosition_V3 + <-16., 0.>;
+				}
+				
+			}
+		}
+	}
+
+	Void HandleAction(Text _ActionType) {
+		if (!C_AllActions.exists(_ActionType)) {
+			return;
+		}
+		if (G_MessageActions.exists(_ActionType)) {
+			declare OptionIndex = G_MessageActions.keyof(_ActionType);
+			SendCustomEvent("DialogBox_HideMessage", [DialogBox_TextLib::ToText(OptionIndex)]);
+		}
+	}
+
+	Void Init()
+	{
+		G_MessageActions = Text[];
+	}
+
+	main() {
+		Init();
+		DesignManialinks_Init();
+
+		while(True) {
+			yield;
+			if(! PageIsVisible) continue;
+			DesignManialinks_Loop();
+
+			foreach(Event in PendingEvents) {
+				switch(Event.Type) {
+					case CMlEvent::Type::MenuNavigation: {
+						HandleAction(DialogBox_TextLib::Split("::", (Event.MenuNavAction ^ ""))[2]);
+					}
+					case CMlEvent::Type::MouseClick: {
+						if (Event.Control.HasClass("OptionButton")) {
+							declare Quad <=> (Event.Control as CMlQuad);
+							Quad.BgColor = DialogBox_TextLib::ToColor("2D2F35");
+							for (OptionIndex, 0, {{{C_OptionNumber - 1}}}) {
+								if (Event.ControlId == "Option_" ^ OptionIndex) {
+									SendCustomEvent("DialogBox_HideMessage", [DialogBox_TextLib::ToText(OptionIndex)]);
+								}
+							}
+						}
+					}
+					case CMlEvent::Type::MouseOver: {
+						declare Quad <=> (Event.Control as CMlQuad);
+						if (Event.Control.HasClass("OptionButton")) {
+							Quad.BgColor = DialogBox_TextLib::ToColor("888");
+						}
+					}
+					case CMlEvent::Type::MouseOut: {
+						declare Quad <=> (Event.Control as CMlQuad);
+						if (Event.Control.HasClass("OptionButton")) {
+							Quad.BgColor = DialogBox_TextLib::ToColor("2D2F35");
+						}
+					}
+					case CMlEvent::Type::PluginCustomEvent: {
+						switch(Event.CustomEventType) {
+							case "ShowMessage" : {
+								EnableMenuNavigation(True, False, Null, 3);
+								DesignManialinks_Show();
+								declare Integer ManialinkId		for Page;
+								declare Text[] MessageContents	for Page;
+								declare Text[] MessageOptions	for Page;
+								declare Text[] MessageActions	for Page;
+								UpdateMessage(ManialinkId, MessageContents, MessageOptions, MessageActions);
+							}
+							case "Hide" : {
+								EnableMenuNavigation(False, False, Null, 0);
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	--></script>
+</manialink>
+	""";
+	return MLText;
+}

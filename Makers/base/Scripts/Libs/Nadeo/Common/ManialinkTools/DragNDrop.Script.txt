@@ -1,0 +1,133 @@
+Text Modules()
+{
+	return """
+	// Returns a quad within a frame
+	CMlControl DragNDrop_PrivateGetQuad(Text _FrameId, Text _QuadId)
+	{
+		declare CMlFrame Frame						<=> (Page.GetFirstChild(_FrameId) as CMlFrame);
+		declare CMlControl Result					<=> Frame.GetFirstChild(_QuadId);
+		return Result;
+	}
+
+	Real[] DragNDrop_PrivateDraggableGetOffset(CMlControl _Control) {
+		declare Offset = [0., 0., 0., 0.];
+		if (_Control == Null) return Offset;
+
+		if (_Control.HorizontalAlign == CMlControl::AlignHorizontal::HCenter) {
+			Offset[0] -= _Control.Size.X / 2.;
+			Offset[1] += _Control.Size.X / 2.;
+		} else if (_Control.HorizontalAlign == CMlControl::AlignHorizontal::Right) {
+			Offset[0] -= _Control.Size.X;
+		} else {
+			Offset[1] += _Control.Size.X;
+		}
+
+		if (_Control.VerticalAlign == CMlControl::AlignVertical::VCenter) {
+			Offset[2] -= _Control.Size.Y / 2.;
+			Offset[3] += _Control.Size.Y / 2.;
+		} else if (_Control.VerticalAlign == CMlControl::AlignVertical::Bottom) {
+			Offset[3] += _Control.Size.Y;
+		} else {
+			Offset[2] -= _Control.Size.Y;
+		}
+
+		return Offset;
+	}
+
+	Void DragNDrop_DraggableLoop() {
+		declare Boolean DragNDrop_DragMouseLeftButton for Page;
+		declare Boolean DragNDrop_IsDragging for Page;
+		declare Text DragNDrop_Draggable for Page;
+		declare CMlControl[Integer] DragNDrop_Dragging for Page;
+		declare Real[] DragNDrop_DragLimit for Page;
+		declare CMlControl DragNDrop_DragBoundingBox for Page;
+		declare Real[] DragNDrop_DragBoundingBoxOffset for Page;
+
+		if (DragNDrop_DragMouseLeftButton != G_IsClicking) {
+			DragNDrop_DragMouseLeftButton = G_IsClicking;
+			if (MouseLeftButton && DragNDrop_Draggable != "" && G_IsClicking) {
+				DragNDrop_IsDragging = True;
+				DragNDrop_Dragging.clear();
+				DragNDrop_DragLimit = [-160., 160., -90., 90.];
+				DragNDrop_DragBoundingBox = Null;
+				Page.GetClassChildren("DragNDrop_Draggable", Page.MainFrame, True);
+				foreach (Key => Control in Page.GetClassChildren_Result) {
+					if (Control.ControlId == DragNDrop_Draggable) {
+						declare Vec2 DragNDrop_DragOffset for Control;
+						DragNDrop_DragOffset = <Control.RelativePosition_V3.X - MouseX, Control.RelativePosition_V3.Y - MouseY>;
+						DragNDrop_Dragging[Key] = Control;
+					}
+				}
+				Page.GetClassChildren("DragNDrop_DraggableArea", Page.MainFrame, True);
+				foreach (Control in Page.GetClassChildren_Result) {
+					if (Control.ControlId == "DraggableArea") {
+						DragNDrop_DragLimit = [Control.AbsolutePosition_V3.X, Control.AbsolutePosition_V3.X, Control.AbsolutePosition_V3.Y, Control.AbsolutePosition_V3.Y];
+						declare Offset = DragNDrop_PrivateDraggableGetOffset(Control);
+						for (I, 0, 3) {
+							DragNDrop_DragLimit[I] += Offset[I];
+						}
+						break;
+					}
+				}
+				Page.GetClassChildren("DragNDrop_DraggableBoundingBox", Page.MainFrame, True);
+				foreach (Control in Page.GetClassChildren_Result) {
+					if (Control == DragNDrop_PrivateGetQuad(DragNDrop_Draggable, "FocusQuad")) {
+						DragNDrop_DragBoundingBox = Control;
+						DragNDrop_DragBoundingBoxOffset = DragNDrop_PrivateDraggableGetOffset(Control);
+						break;
+					}
+				}
+			} else {
+				DragNDrop_IsDragging = False;
+				DragNDrop_Dragging.clear();
+			}
+		}
+
+		// Events have to be integrated into the main
+
+		if (DragNDrop_IsDragging && DragNDrop_Dragging.count > 0) {
+			foreach (Control in DragNDrop_Dragging) {
+				declare Vec2 DragNDrop_DragOffset for Control;
+				Control.RelativePosition_V3.X = MouseX + DragNDrop_DragOffset.X;
+				Control.RelativePosition_V3.Y = MouseY + DragNDrop_DragOffset.Y;
+			}
+			if (DragNDrop_DragBoundingBox != Null) {
+				declare Box = [
+					DragNDrop_DragBoundingBox.AbsolutePosition_V3.X + DragNDrop_DragBoundingBoxOffset[0],
+					DragNDrop_DragBoundingBox.AbsolutePosition_V3.X + DragNDrop_DragBoundingBoxOffset[1],
+					DragNDrop_DragBoundingBox.AbsolutePosition_V3.Y + DragNDrop_DragBoundingBoxOffset[2],
+					DragNDrop_DragBoundingBox.AbsolutePosition_V3.Y + DragNDrop_DragBoundingBoxOffset[3]
+				];
+				declare Shift = <0., 0.>;
+				if (Box[0] < DragNDrop_DragLimit[0]) Shift.X += DragNDrop_DragLimit[0] - Box[0];
+				if (Box[1] > DragNDrop_DragLimit[1]) Shift.X += DragNDrop_DragLimit[1] - Box[1];
+				if (Box[2] < DragNDrop_DragLimit[2]) Shift.Y += DragNDrop_DragLimit[2] - Box[2];
+				if (Box[3] > DragNDrop_DragLimit[3]) Shift.Y += DragNDrop_DragLimit[3] - Box[3];
+				foreach (Control in DragNDrop_Dragging) {
+					Control.RelativePosition_V3.X += Shift.X;
+					Control.RelativePosition_V3.Y += Shift.Y;
+				}
+			}
+		}
+	}
+	""";
+}
+
+
+Text DragNDropEventMouseOver()
+{
+	return """
+	if (Event.Control.HasClass("DragNDrop_DraggableHandle")) {
+		DragNDrop_Draggable = EventGetDesignatedFrame(Event.Control, Event.ControlId).ControlId;
+	} else {
+		DragNDrop_Draggable = "";
+	}
+	""";
+}
+
+Text DragNDropEventMouseOut()
+{
+	return """
+	DragNDrop_Draggable = "";
+	""";
+}

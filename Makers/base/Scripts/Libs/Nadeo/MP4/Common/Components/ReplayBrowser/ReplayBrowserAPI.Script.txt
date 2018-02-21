@@ -1,0 +1,366 @@
+#Include "Libs/Nadeo/Common/Core/Logger.Script.txt"									as Logger
+#Include "Libs/Nadeo/Common/ManiascriptTools/Sort.Script.txt"								as SortTools
+#Include "TextLib"																as TextLib
+
+#Include "Libs/Nadeo/MP4/Common/Components/TrackBrowser/TrackBrowserAPI.Script.txt"	as TrackBrowserAPI
+
+#Const C_BasePath			"Replays\\"
+
+#Const C_MapInfoFromReplay_FetchState_NotStartedYet		-1
+#Const C_MapInfoFromReplay_FetchState_Started			0
+#Const C_MapInfoFromReplay_FetchState_ReplaysBrowsed	1
+#Const C_MapInfoFromReplay_FetchState_MapsBrowsed		2
+#Const C_MapInfoFromReplay_FetchState_Finished			3
+#Const C_MapInfoFromReplay_FetchState_Error				4
+
+#Const C_MaxCalculations	30
+
+declare CTaskResult_ReplayList	G_ListTaskResult;
+declare Boolean					G_HasFetched;
+declare Boolean					G_Flatten;
+declare Boolean					G_IsSortingFromDescendingOrder;
+declare Boolean					G_IsSortingFromDateRatherThanName;
+declare Text					G_CommonMapUid;
+
+declare Integer					G_MapInfoFromReplay_FetchState;
+declare Text					G_MapInfoFromReplay_ReplayUid;
+declare Text					G_MapInfoFromReplay_ReplayPath;
+declare Integer					G_CurrentPage;
+declare Integer					G_MaxPages;
+declare Integer					G_ElemsPerPage;
+declare Integer[]				G_AllPages;
+
+Void FetchData(Text _Path, Boolean _Flatten)
+{
+	G_HasFetched					= False;
+	if (G_ListTaskResult != Null) {
+		DataFileMgr.TaskResult_Release(G_ListTaskResult.Id);
+	}
+	G_ListTaskResult = DataFileMgr.Replay_GetGameList(_Path, _Flatten);
+}
+
+Void FetchData(Text _Path)
+{
+	FetchData(_Path, G_Flatten);
+}
+
+Boolean HasFetched()
+{
+	if ((G_ListTaskResult != Null) && !G_ListTaskResult.IsProcessing && G_ListTaskResult.HasSucceeded && !G_HasFetched) {
+		G_HasFetched = True;
+		return True;
+	}
+	return False;
+}
+
+Void Refresh()
+{
+	DataFileMgr.Replay_RefreshFromDisk();
+}
+
+Void Load()
+{
+	G_ListTaskResult					= Null;
+	G_HasFetched						= False;
+	G_Flatten							= False;
+	G_IsSortingFromDescendingOrder		= False;
+	G_IsSortingFromDateRatherThanName	= False;
+	G_MapInfoFromReplay_FetchState		= C_MapInfoFromReplay_FetchState_NotStartedYet;
+	G_MapInfoFromReplay_ReplayUid		= "";
+	G_CurrentPage						= 0;
+	G_MaxPages							= 0;
+	G_ElemsPerPage						= 12;
+}
+
+Void MapInfoFromReplay_Fetch(Text _ReplayPath)
+{
+	G_MapInfoFromReplay_ReplayPath	= _ReplayPath;
+	G_MapInfoFromReplay_ReplayUid	= "";
+	G_MapInfoFromReplay_FetchState	= C_MapInfoFromReplay_FetchState_Started;
+	FetchData("\\", True);
+}
+
+Boolean MapInfoFromReplay_HasFetched()
+{
+	if (G_MapInfoFromReplay_FetchState == C_MapInfoFromReplay_FetchState_Finished
+		|| G_MapInfoFromReplay_FetchState == C_MapInfoFromReplay_FetchState_Error) {
+		G_MapInfoFromReplay_FetchState = C_MapInfoFromReplay_FetchState_NotStartedYet;
+		return True;
+	}
+	return False;
+}
+
+Void MapInfoFromReplay_TrackBrowserInit()
+{
+	foreach (ReplayInfo in G_ListTaskResult.ReplayInfos) {
+		if (ReplayInfo.FileName == G_MapInfoFromReplay_ReplayPath)
+		{
+			G_MapInfoFromReplay_ReplayUid = ReplayInfo.MapUid;
+		}
+	}
+	if (G_MapInfoFromReplay_ReplayUid == "") {
+		G_MapInfoFromReplay_FetchState = C_MapInfoFromReplay_FetchState_Error;
+	}
+	G_MapInfoFromReplay_FetchState = C_MapInfoFromReplay_FetchState_ReplaysBrowsed;
+	TrackBrowserAPI::FetchData("\\", True, True);
+}
+
+Void MapInfoFromReplay_MapInfosInit()
+{
+	G_MapInfoFromReplay_FetchState = C_MapInfoFromReplay_FetchState_MapsBrowsed;
+	TrackBrowserAPI::MapInfoIteration_Begin();
+}
+
+Void MapInfoFromReplay_LoopAfterMapInfosFetched()
+{
+	for(I, 1, C_MaxCalculations) {
+		if (TrackBrowserAPI::MapInfoIteration_IsOver()) {
+			G_MapInfoFromReplay_FetchState = C_MapInfoFromReplay_FetchState_Error;
+			break;
+		}
+		declare CMapInfo MapInfo <=> TrackBrowserAPI::MapInfoIteration_GetMapInfo();
+		if (MapInfo.MapUid == G_MapInfoFromReplay_ReplayUid) {
+			G_MapInfoFromReplay_FetchState = C_MapInfoFromReplay_FetchState_Finished;
+			break;
+		}
+		TrackBrowserAPI::MapInfoIteration_Next();
+	}
+}
+
+Void MapInfoFromReplay_Loop()
+{
+	switch(G_MapInfoFromReplay_FetchState) {
+		case C_MapInfoFromReplay_FetchState_Started: {
+			if (G_ListTaskResult == Null || G_ListTaskResult.IsProcessing || !G_ListTaskResult.HasSucceeded) {
+				return;
+			} else {
+				MapInfoFromReplay_TrackBrowserInit();
+			}
+		}
+		case C_MapInfoFromReplay_FetchState_ReplaysBrowsed: {
+			if (!TrackBrowserAPI::HasAlreadyFetched()) {
+				return;
+			} else {
+				MapInfoFromReplay_MapInfosInit();
+			}
+		}
+		case C_MapInfoFromReplay_FetchState_MapsBrowsed: {
+			MapInfoFromReplay_LoopAfterMapInfosFetched();
+		}
+	}
+}
+
+CMapInfo MapInfoFromReplay_Get()
+{
+	if (G_MapInfoFromReplay_FetchState == C_MapInfoFromReplay_FetchState_Error) {
+		return Null;
+	}
+	return TrackBrowserAPI::MapInfoIteration_GetMapInfo();
+}
+
+Text FullPath(Text _Path)
+{
+	return C_BasePath ^ _Path;
+}
+
+Text FolderParentPath()
+{
+	if (G_ListTaskResult == Null) {
+		return "";
+	}
+	return G_ListTaskResult.ParentPath;
+}
+
+Void SwitchFlatten()
+{
+	if (G_Flatten) {
+		G_Flatten = False;
+	} else {
+		G_Flatten = True;
+	}
+}
+
+Void SwitchSortOrder()
+{
+	if (G_IsSortingFromDescendingOrder) {
+		G_IsSortingFromDescendingOrder = False;
+	} else {
+		G_IsSortingFromDescendingOrder = True;
+	}
+}
+
+Void SwitchSortCriterion()
+{
+	if (G_IsSortingFromDateRatherThanName) {
+		G_IsSortingFromDateRatherThanName = False;
+	} else {
+		G_IsSortingFromDateRatherThanName = True;
+	}
+}
+
+Text[Text] GetMetadataFromReplayInfo(CReplayInfo _ReplayInfo, Text _2ndState)
+{
+	declare Text ReplayTime = "-:--.--";
+	return [	"Path"		=> _ReplayInfo.FileName,
+				"Name"		=> _ReplayInfo.Name,
+				"ExtraContextImage" => "",
+				"Style"		=> "Race",
+				"Thumbnail"	=> "file://Thumbnails/MapUid/" ^ _ReplayInfo.MapUid ^ "/",
+				"SecondThumbnailImage"		=> "EmptyThumbnail",
+				"Author"	=> "",
+				"Flag"		=> "",
+				"State"		=> "Available",
+				"2ndState"	=> _2ndState,
+				"Time"		=> ReplayTime,
+				"Logo"		=> ""];
+}
+
+CReplayInfo[] GetAllSortedReplayInfos(Boolean _IsSortingFromDateRatherThanName, Boolean _IsSortingFromDescendingOrder)
+{
+	declare CReplayInfo[] Result;
+	declare Text[] IntermediateResult;
+	foreach(ReplayInfo in G_ListTaskResult.ReplayInfos) {
+		IntermediateResult.add(ReplayInfo.Name);
+	}
+	declare Integer SortOrder = SortTools::Array_IncreasingOrder();
+	if (_IsSortingFromDescendingOrder) {
+		SortOrder = SortTools::Array_DecreasingOrder();
+	}
+	declare Integer[] SortedIndexes = SortTools::SortTools_GetSortSwapArray(IntermediateResult, SortOrder);
+	foreach(SortedIndex in SortedIndexes) {
+		Result.add(G_ListTaskResult.ReplayInfos[SortedIndex]);
+	}
+	return Result;
+}
+
+Text[] GetAllSortedFolders(Boolean _IsSortingFromDateRatherThanName, Boolean _IsSortingFromDescendingOrder)
+{
+	declare Text[] Result;
+	declare Text[] IntermediateResult;
+	foreach(SubFolder in G_ListTaskResult.SubFolders) {
+		IntermediateResult.add(SubFolder);
+	}
+	declare Integer SortOrder = SortTools::Array_IncreasingOrder();
+	if (_IsSortingFromDescendingOrder) {
+		SortOrder = SortTools::Array_DecreasingOrder();
+	}
+	declare Integer[] SortedIndexes = SortTools::SortTools_GetSortSwapArray(IntermediateResult, SortOrder);
+	foreach(SortedIndex in SortedIndexes) {
+		Result.add(G_ListTaskResult.SubFolders[SortedIndex]);
+	}
+	return Result;
+}
+
+Text[Text] GetMetadata(Text _Path)
+{
+	declare Text[Text] Result;
+	foreach (ReplayInfo in G_ListTaskResult.ReplayInfos)
+	{
+		if (ReplayInfo.FileName == _Path)
+		{
+			return GetMetadataFromReplayInfo(ReplayInfo, "Valid");
+		}
+	}
+
+	Logger::Warn("Path non trouvé : " ^ _Path);
+	return Result;
+}
+
+Text[Text][] GetMainData() {
+	declare Text[Text][] Result;
+	declare Boolean Skip = False;
+	//declare Text[] RequestedSubFolders = GetAllSortedFolders(G_IsSortingFromDateRatherThanName, G_IsSortingFromDescendingOrder);
+	// TODO : Attendre les fonctions de Falguiere et ne pas faire ça tout seul
+	for (FolderIndex, G_CurrentPage * G_ElemsPerPage, (G_CurrentPage + 1) * G_ElemsPerPage - 1) {
+		if (!G_ListTaskResult.SubFolders.existskey(FolderIndex)) {
+			break;
+		}
+		declare SubFolder = G_ListTaskResult.SubFolders[FolderIndex];
+		declare SplitSubFolder = TextLib::Split("\\", SubFolder);
+		Result.add([	"CardType"		=> "Folder",
+			"Name"			=> SplitSubFolder[SplitSubFolder.count - 1],
+			"Path"			=> SubFolder,
+			"SecondThumbnailImage" => "Folder",
+			"Thumbnail1"	=> "", // ??
+			"Thumbnail2"	=> "", // ??
+			"Thumbnail3"	=> "", // ??
+			"State"			=> "Available"]);
+	}
+	//declare CReplayInfo[] RequestedReplayInfos = GetAllSortedReplayInfos(G_IsSortingFromDateRatherThanName, G_IsSortingFromDescendingOrder);
+	declare MediaIndex = 0;
+	if (G_AllPages.existskey(G_CurrentPage)) {
+		MediaIndex = G_AllPages[G_CurrentPage];
+	}
+	declare UnfilteredMediaIndex = MediaIndex;
+	while(Result.count < G_ElemsPerPage) {
+		if (!G_ListTaskResult.ReplayInfos.existskey(UnfilteredMediaIndex)) {
+			break;
+		}
+		declare CReplayInfo ReplayInfo <=> G_ListTaskResult.ReplayInfos[UnfilteredMediaIndex];
+		declare Text _2ndState = "Valid";
+		UnfilteredMediaIndex += 1;
+		MediaIndex += 1;
+		Result.add(GetMetadataFromReplayInfo(ReplayInfo, _2ndState));
+	}
+	return Result;
+}
+
+Void UpdateMainData()
+{
+	G_AllPages.clear();
+	declare Boolean Skip		= False;
+	declare Integer NbElems		= 0;
+	G_AllPages.add(0);
+	//declare Text[] RequestedSubFolders = GetAllSortedFolders(G_IsSortingFromDateRatherThanName, G_IsSortingFromDescendingOrder);
+	// TODO : Attendre les fonctions de Falguiere et ne pas faire ça tout seul
+	foreach(SubFolder in G_ListTaskResult.SubFolders) {
+		declare SplitSubFolder = TextLib::Split("\\", SubFolder);
+		NbElems += 1;
+		if (NbElems % G_ElemsPerPage == 0) {
+			G_AllPages.add(0);
+		}
+	}
+	//declare CReplayInfo[] RequestedReplayInfos = GetAllSortedReplayInfos(G_IsSortingFromDateRatherThanName, G_IsSortingFromDescendingOrder);
+	declare Boolean IsEndPage	= False;
+	declare Integer UnfilteredMediaIndex = 0;
+	foreach(ReplayInfo in G_ListTaskResult.ReplayInfos) {
+		IsEndPage = False;
+		UnfilteredMediaIndex += 1;
+		NbElems += 1;
+		if (NbElems % G_ElemsPerPage == 0) {
+			G_AllPages.add(UnfilteredMediaIndex);
+			IsEndPage = True;
+		}
+	}
+	if (IsEndPage) {
+		if (!G_AllPages.remove(UnfilteredMediaIndex)) {
+			Logger::Warn("ReplayBrowserAPI : G_AllPages remove malfunction : " ^ UnfilteredMediaIndex);
+		}
+	}
+	G_CurrentPage	= 0;
+	G_MaxPages		= G_AllPages.count - 1;
+}
+
+Void InputPageUp()
+{
+	if (G_CurrentPage > 0) {
+		G_CurrentPage += -1;
+	}
+}
+
+Void InputPageDown()
+{
+	if (G_CurrentPage < G_MaxPages) {
+		G_CurrentPage += 1;
+	}
+}
+
+Integer GetCurrentPageIndex()
+{
+	return G_CurrentPage + 1;
+}
+
+Integer GetMaxPages()
+{
+	return G_MaxPages + 1;
+}

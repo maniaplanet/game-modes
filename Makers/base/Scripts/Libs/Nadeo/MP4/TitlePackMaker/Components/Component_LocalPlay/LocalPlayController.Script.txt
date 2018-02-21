@@ -1,0 +1,153 @@
+#Include "Libs/Nadeo/Common/Core/MenuLayers.Script.txt"													as Layers
+#Include "Libs/Nadeo/Common/Core/Pages.Script.txt"														as Pages
+#Include "Libs/Nadeo/Common/Core/Logger.Script.txt"														as Logger
+#Include "Libs/Nadeo/Common/Core/SectionsManager.Script.txt"												as SectionsManager
+#Include "Libs/Nadeo/MP4/Common/Components/ImageBrowser/ImageBrowserController.Script.txt"				as ImageBrowserController
+#Include "TextLib"																					as TextLib
+#Include "Libs/Nadeo/MP4/Common/Components/DialogBox/DialogBoxController.Script.txt"			as DialogBoxController
+
+#Include "Libs/Nadeo/MP4/TitlePackMaker/Components/Component_LocalPlay/LocalPlayXmlReader.Script.txt"	as LocalPlayXmlReader
+
+//Layers
+#Include "Libs/Nadeo/MP4/TitlePackMaker/Components/Component_LocalPlay/LBLocalPlay.Script.txt"			as LBLocalPlay
+#Include "Libs/Nadeo/MP4/Common/Components/ScriptBrowser/ScriptBrowserController.Script.txt"			as ScriptBrowserController
+#Include "Libs/Nadeo/MP4/Common/Components/AssetMaker/AssetMakerController.Script.txt"										as AssetMakerController
+
+declare Text G_Color;
+declare Boolean G_IsActive;
+
+Boolean IsActive()
+{
+	return G_IsActive;
+}
+
+Boolean IsActivated()
+{
+	return G_IsActive;
+}
+
+Void SetActive(Boolean _IsActive)
+{
+	G_IsActive = _IsActive;
+}
+
+Void SetColor(Text _Color)
+{
+	G_Color = _Color;
+}
+
+Text GetColor()
+{
+	return G_Color;
+}
+
+Text GenerateXML ()
+{
+
+	return """	<LocalPlay logo="file://Media/MEDIABROWSER_HiddenResources/Common/Images/Menus/Buttons/Logo_LocalPlay.dds" activated="{{{IsActive()}}}" color="{{{GetColor()}}}">
+		{{{AssetMakerController::GetXMLAllAssets("LocalPlay")}}}
+	</LocalPlay>""";
+}
+
+Void InitAssets()
+{
+	AssetMakerController::Init("LocalPlay", LocalPlayXmlReader::GetBaseIds(),
+		LocalPlayXmlReader::GetBaseTitleNames(),
+		LocalPlayXmlReader::GetBaseMakerNames(),
+		LocalPlayXmlReader::GetUGCAssets(),
+		LocalPlayXmlReader::GetIsVisibleInMaker(),
+		False,
+		LocalPlayXmlReader::GetIsActivated());
+}
+
+Void Init()
+{
+	LocalPlayXmlReader::ReadBase();
+	InitAssets();
+	G_Color = "0f8";
+	G_IsActive = True;
+}
+
+Void AnalyzeXML(Text _XML)
+{
+	Init();
+	LocalPlayXmlReader::AnalyzeXML(_XML);
+	if (_XML != "") {
+		SetColor(LocalPlayXmlReader::GetColor());
+		SetActive(LocalPlayXmlReader::IsActive());
+		InitAssets();
+	}
+}
+
+Boolean CanPublishXML()
+{
+	if (!IsActivated()) {
+		return True;
+	}
+	return True;
+}
+
+Text PublishXML()
+{
+	if (!IsActivated()) {
+		return "";
+	}
+	return """	<LocalPlay logo="file://Media/MEDIABROWSER_HiddenResources/Common/Images/Menus/Buttons/Logo_LocalPlay.dds" activated="{{{IsActive()}}}" color="{{{GetColor()}}}">
+		{{{AssetMakerController::GetXMLPublishedAssets("LocalPlay")}}}
+	</LocalPlay>""";
+}
+
+Void Build(Text _LayerName, Boolean _Attach) {
+
+	declare Text MLText;
+	switch(_LayerName) {
+		case("LocalPlay"):{
+			MLText = LBLocalPlay::Build();
+		}
+	}
+
+	if(MLText == "") {
+		Logger::Warn("Unknown Page: "^_LayerName);
+		return;
+	}
+	
+	Layers::Create(_LayerName, MLText);
+	
+	declare CUILayer Layer <=> Layers::Get(_LayerName);
+	declare Text Page_LayerName for Layer.LocalPage;
+	
+	Page_LayerName = _LayerName;
+	if(_Attach) Layers::Attach(_LayerName);
+}
+
+Void Build(Text _LayerName) {
+	Build(_LayerName, False);
+
+}
+
+Void Load() {
+	Init();
+	AssetMakerController::Init("LocalPlay", Text[], Text[], Text[], Text[], Boolean[], False);
+	Build("LocalPlay");
+	Pages::Compose("LocalPlay", ["LocalPlay"]);
+	SectionsManager::AddSection("LocalPlay", "LocalPlay");
+}
+
+Void Loop() {
+	AssetMakerController::Loop("LocalPlay");
+	foreach(Event in PendingEvents) {
+		if(Event.Type != CManiaAppEvent::EType::LayerCustomEvent) continue;
+		switch(Event.CustomEventType) {
+			case "ScriptBrowserToLocalPlay_Button_0": {
+				Pages::GotoPrevious();
+				declare Path = Event.CustomEventData[0];
+				AssetMakerController::AddNewAsset("LocalPlay", Path);
+			}
+		}
+	}
+	if (AssetMakerController::IsAskingNewAsset("LocalPlay")) {
+		ScriptBrowserController::Show("ScriptBrowserToLocalPlay", [//L16N |Infinitive| In a popup, a button to select
+					_("Choose")],
+					_("|GameModes|Scripts"));
+	}
+}

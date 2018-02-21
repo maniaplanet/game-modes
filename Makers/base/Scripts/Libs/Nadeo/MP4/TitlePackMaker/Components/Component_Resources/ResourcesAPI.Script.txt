@@ -1,0 +1,171 @@
+#Include "Libs/Nadeo/Common/ManiascriptTools/XmlParser.Script.txt"				as XmlParser
+
+#Const C_BaseUrl			"https://www.maniaplanet.com"
+#Const C_HttpCodeSuccess	200
+#Const C_TimeLimit			1000
+
+declare Text			G_ProjectDisplayName;
+declare Text			G_ProjectTitleId;
+declare Text			G_ProjectDescription;
+declare Text			G_DownloadURL;
+declare Integer			G_FlashURLFocus;
+declare Text[]			G_FlashURLList;
+declare Text			G_TitleManagerPage;
+declare Boolean			G_IsPublished;
+declare Boolean			G_HasFinished;
+declare CHttpRequest	G_TitleRequest;
+declare Integer			G_TimeOut;
+
+Void UpdateTitleManagerPage()
+{
+	G_HasFinished = False;
+	G_TimeOut = Now + C_TimeLimit;
+	if (G_IsPublished) {
+		return;
+	}
+	declare Boolean TitleWasMadeOnce for LocalUser;
+	if (TitleWasMadeOnce) {
+		G_TitleManagerPage = C_BaseUrl ^ "/titles/manager";
+		if (!G_IsPublished) {
+			G_TitleRequest = Http.CreateGet(C_BaseUrl ^ "/ingame/public/titles/" ^ G_ProjectTitleId, False, "Accept: application/xml");
+		}
+	} else {
+		G_TitleManagerPage = "";
+	}
+}
+
+Void Load()
+{
+	G_ProjectDisplayName = "";
+	G_ProjectTitleId = "";
+	G_ProjectDescription = "";
+	G_DownloadURL = "";
+	G_FlashURLFocus = 0;
+	G_IsPublished = False;
+	G_TimeOut = -1;
+	if (TitleEdition != Null && TitleEdition.EditedTitleInfo != Null) {
+		declare TitleInfo <=> TitleEdition.EditedTitleInfo;
+		G_ProjectDisplayName = TitleInfo.DisplayName;
+		G_ProjectTitleId = ""^TitleInfo.TitleId;
+		if (G_ProjectDisplayName == "") G_ProjectDisplayName = G_ProjectTitleId;
+		G_ProjectDescription = TitleInfo.Description;
+		if (G_ProjectDescription == "") {
+			G_ProjectDescription = "Made in maker '" ^ LoadedTitle.Name ^ "'";
+		}
+		G_DownloadURL = TitleInfo.DownloadUrl;
+		//G_FlashURLFocus    = TitleInfo.FlashURL;
+		G_FlashURLList.clear();
+		G_FlashURLList.add(G_ProjectTitleId);
+		G_FlashURLList.add(LocalUser.Id^"");
+		if ((TitleEdition != Null) && (TitleEdition.TitleMaker != Null)) {
+			G_FlashURLList.add(TitleEdition.TitleMaker.BaseTitleId ^ "@nadeo");
+		} else {
+			declare Text ProjectEnviro for LocalUser;
+			G_FlashURLList.add(ProjectEnviro ^ "@nadeo");
+		}
+		G_FlashURLList.add("");
+	}
+
+	UpdateTitleManagerPage();
+}
+
+Void Update()
+{
+	UpdateTitleManagerPage();
+}
+
+Void Loop()
+{
+	if ((G_TitleRequest != Null && G_TitleRequest.IsCompleted && G_TitleRequest.StatusCode != C_HttpCodeSuccess)
+			|| (Now > G_TimeOut && G_TimeOut != -1)) {
+		Http.Destroy(G_TitleRequest);
+		G_TitleRequest = Null;
+		G_IsPublished = False;
+		G_HasFinished = True;
+		G_TimeOut = -1;
+	}
+	if (G_TitleRequest != Null && G_TitleRequest.IsCompleted && G_TitleRequest.StatusCode == C_HttpCodeSuccess) {
+		declare CXmlDocument XmlDoc = Xml.Create(G_TitleRequest.Result);
+		declare ResultNode = XmlDoc.GetFirstChild("response");
+		if (ResultNode != Null) {
+			declare Text[Text] TitleInfo = XmlParser::NodeToText_TextArray(ResultNode);
+			if (TitleInfo.existskey("uid") && (G_ProjectTitleId == TitleInfo["uid"])) {
+				G_TitleManagerPage = C_BaseUrl ^ "/titles/manager/" ^ G_ProjectTitleId;
+				G_IsPublished = True;
+			}
+		}
+		Xml.Destroy(XmlDoc);
+		Http.Destroy(G_TitleRequest);
+		G_TitleRequest = Null;
+		G_HasFinished = True;
+		G_TimeOut = -1;
+	}
+}
+
+Boolean HasFinished()
+{
+	if (G_HasFinished) {
+		G_HasFinished = False;
+		return True;
+	}
+	return False;
+}
+
+Text Get_ProjectDisplayName()
+{
+	return G_ProjectDisplayName;
+}
+
+Text Get_ProjectTitleId()
+{
+	return G_ProjectTitleId;
+}
+
+Text Get_ProjectDescription()
+{
+	return G_ProjectDescription;
+}
+
+Text Get_DownloadURL()
+{
+	return G_DownloadURL;
+}
+
+Integer Get_FlashURLFocus()
+{
+	return G_FlashURLFocus;
+}
+
+Text[] Get_FlashURLList()
+{
+	return G_FlashURLList;
+}
+
+Text Get_TitleManagerPage()
+{
+	return G_TitleManagerPage;
+}
+
+Void Set_FlashURLCustom(Text _Value)
+{
+	if (!G_FlashURLList.existskey(3)) {
+		G_FlashURLList.clear();
+		G_FlashURLList.add(G_ProjectTitleId);
+		G_FlashURLList.add(LocalUser.Id^"");
+		declare Text ProjectEnviro for LocalUser;
+		G_FlashURLList.add(ProjectEnviro^"@nadeo");
+		G_FlashURLList.add(_Value);
+	} else {
+		G_FlashURLList[3] = _Value;
+	}
+}
+
+Void Set_FlashURLFocus(Integer _Value)
+{
+	G_FlashURLFocus = _Value;
+	if (G_FlashURLFocus < 0) {
+		G_FlashURLFocus = 0;
+	} else if (G_FlashURLFocus > 3) {
+		G_FlashURLFocus = 3;
+	}
+}

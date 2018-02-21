@@ -1,0 +1,245 @@
+#Include "Libs/Nadeo/Common/ManialinkTools/Manialink3WPrevAnims.Script.txt"											as Manialink
+#Include "Libs/Trackmania/Ingame/Medals.Script.txt"									as Medals
+#Include "Libs/Trackmania/Ingame/UI/UIButtonNamesPopup.Script.txt"					as UIButtonNamesPopup
+#Include "Libs/Trackmania/Ingame/UI/Layers/Inject_SoloMapInfosBase.Script.txt"		as Inject_SoloMapInfosBase
+#Include "Libs/Trackmania/Ingame/UI/Layers/Inject_QuadsSelector.Script.txt"			as Inject_QuadsSelector
+
+#Const C_ImgBase	"file://Media/MEDIABROWSER_HiddenResources/Common/Images/Ingame/"
+ 
+#Const TMC_PLAYERCHOICE_RESTART			0
+#Const TMC_PLAYERCHOICE_QUIT	 		1
+#Const TMC_PLAYERCHOICE_NEXTTRACK 		2
+
+Text Build() {
+	declare Integer Count_InstancesY         = 2;
+	declare Integer Count_InstancesX         = 1;
+	declare Real	PosXFirstQuad            = 0.;
+	declare Real	PosYFirstQuad            = 20.;
+
+	declare Real	SizeXQuad                = 77.;
+	declare Real	SizeYQuad                = 10.;
+	declare Real	MarginY_Button           = 4.0;
+	declare Real	MarginX_Button           = 4.0;
+	declare  Boolean	Solo_NextTrackIsPossible for Users[0];
+	if(Solo_NextTrackIsPossible) Count_InstancesY += 1;
+
+	declare Text MLText = """
+<manialink version="3" name="L_UIMenuNextMap">
+	<frame id="Frame_All">
+		<frame id="Frame_MouseClick" pos="0 0" hidden="0"z-index="-7">
+			<quad id="Quad_MouseClick" halign="center" valign="center" size="320 180"  opacity="0." scriptevents="1"/>
+		</frame>
+
+		<frame id="Frame_Menu" pos="0 0" hidden="0">
+			<quad halign="center" valign="center" z-index="-7" size="320 180" image="{{{C_ImgBase}}}BGFlag.dds" hidden="1" />
+			{{{Inject_SoloMapInfosBase::InjectInManialink()}}}
+			{{{Inject_QuadsSelector::InjectInManialink(Count_InstancesY, Count_InstancesX)}}}
+		</frame>
+		
+		
+	</frame>
+	
+	
+	<script><!--
+		#Const DebugName  "L_MenuStart"
+		#Const C_TimeHideMenu 8000
+
+		{{{Manialink::GetIncludes()}}}
+		
+		{{{Manialink::Load()}}}
+		
+		declare Boolean G_MenuIsVisible;
+		declare Integer G_TimeVisible;
+		{{{Inject_SoloMapInfosBase::InjectInGlobal()}}}
+
+		{{{Inject_QuadsSelector::InjectInFunction()}}}
+		{{{Inject_SoloMapInfosBase::InjectInFunction()}}}
+
+		Void ClearChoose()
+		{
+			//declare netwrite Integer Net_MedalChosen 		for UI;
+			//Net_MedalChosen = -1;
+		}
+
+		Void Init()
+		{
+			declare  Boolean	Solo_NextTrackIsPossible 				for LocalUser;
+
+			ClearChoose();
+			declare Text[] LabelMedals;
+			LabelMedals.add("{{{_("Restart")}}}");
+			if(Solo_NextTrackIsPossible) LabelMedals.add("{{{_("Next Track")}}}");
+			LabelMedals.add("{{{_("Back to menu")}}}");
+
+			SetButtons(LabelMedals);
+		}
+
+		Void UpdateMenuVisibility(Boolean _Anim)
+		{
+			declare CMlFrame Frame_Menu <=> (Page.MainFrame.GetFirstChild("Frame_Menu") as CMlFrame);
+			declare CMlFrame Frame_MouseClick <=> (Page.MainFrame.GetFirstChild("Frame_MouseClick") as CMlFrame);
+			Frame_Menu.Visible      =  G_MenuIsVisible;
+			if(G_MenuIsVisible)
+			{
+				Frame_MouseClick.Hide();
+				AnimShow_QuadSelect();
+				AnimShow_SoloMapInfosBase();
+			}
+			else
+			{
+				Frame_MouseClick.Show();
+				G_TimeVisible = Now + C_TimeHideMenu;
+			}
+		}
+		
+		Void ShowPage()
+		{
+			log("ShowPage");
+			declare netwrite Integer 	Net_PlayerRestartChoice 			for UI;
+			Net_PlayerRestartChoice = -1;
+			CloseInGameMenu(CMlScriptIngame::EInGameMenuResult::Resume);
+			EnableMenuNavigation(True,False,Null,2);
+			ClearChoose();
+			FocusButton();
+			G_MenuIsVisible = True;
+			UpdateMenuVisibility(False);
+			
+		}
+
+		Void Button_Restart()
+		{
+			//log(Net_PlayerRestartChoice^Net_PlayerRestartChoice^Net_PlayerRestartChoice); 
+			declare netwrite Integer 	Net_PlayerRestartChoice 			for UI;
+			Net_PlayerRestartChoice = {{{TMC_PLAYERCHOICE_RESTART}}};
+		}
+
+		Void Button_Quit()
+		{
+			//CloseInGameMenu(CMlScriptIngame::EInGameMenuResult::Quit);
+			declare netwrite Integer 	Net_PlayerRestartChoice			for UI;
+			Net_PlayerRestartChoice = {{{TMC_PLAYERCHOICE_QUIT}}};
+
+		}
+
+		Void Button_NextTrack()
+		{
+			declare netwrite Integer 	Net_PlayerRestartChoice			for UI;
+			Net_PlayerRestartChoice = {{{TMC_PLAYERCHOICE_NEXTTRACK}}};
+		}
+
+		Void PressSelect()
+		{
+			if(!G_MenuIsVisible)
+			{
+				G_MenuIsVisible = True;
+				UpdateMenuVisibility(True);
+			}
+			else
+			{
+
+				switch(G_ButtonFocus)
+				{
+					case 0: {
+						declare Integer 	Net_ShowIngameUI 			for Teams[0];
+						Net_ShowIngameUI += 1;
+						Button_Restart();
+					}
+					case {{{Count_InstancesY-1}}}: {
+						Button_Quit();
+					}
+					case 1: {
+						Button_NextTrack();
+					}
+				}
+			}
+
+			EnableMenuNavigation(True, False, Null, 0);
+		}
+
+		main() {
+			Init();
+			{{{Inject_SoloMapInfosBase::InjectInMain()}}}
+
+			declare Boolean Prev_Visibility;
+
+			G_TimeVisible = -1;
+
+			while(True) {
+				
+				yield;
+				if(Prev_Visibility != PageIsVisible) {
+					if(PageIsVisible) ShowPage();
+					Prev_Visibility = PageIsVisible;
+				}
+				if(! PageIsVisible) continue;
+
+				{{{Inject_SoloMapInfosBase::InjectInWhile()}}}
+				/*
+				if(G_TimeVisible < Now && G_TimeVisible != -1)
+				{
+					if(G_MenuIsVisible)
+					{
+						G_MenuIsVisible = False;
+						UpdateMenuVisibility(True);
+					}
+					G_TimeVisible = -1;
+				}
+				*/
+				LibManialink_AnimLoop();
+				
+				
+				{{{Inject_QuadsSelector::InjectInWhile("PressSelect();")}}}
+
+				foreach(Event in PendingEvents) {
+					switch(Event.Type) {
+
+						case CMlEvent::Type::MenuNavigation: {
+							G_TimeVisible = Now + C_TimeHideMenu;
+							switch(Event.MenuNavAction) {
+								case CMlEvent::EMenuNavAction::Cancel : {
+									if(G_MenuIsVisible)
+									{
+										//Button_Restart();
+										//G_MenuIsVisible = True;
+										//UpdateMenuVisibility(True);
+									}
+								}
+							}
+						}
+						case CMlEvent::Type::MouseClick: {
+							if(!G_MenuIsVisible)
+							{
+								if(Event.ControlId == "Quad_MouseClick")
+								{
+									G_MenuIsVisible = True;
+									UpdateMenuVisibility(True);
+								}
+							}
+						}
+						case CMlEvent::Type::MouseOver: {
+							if(G_MenuIsVisible)
+							{
+								G_TimeVisible = Now + C_TimeHideMenu;
+							}
+						}
+						case CMlEvent::Type::PluginCustomEvent: {
+							
+							switch(Event.PluginCustomEventType) {
+								case "Show" : {
+									ShowPage();
+								}
+								case "Hide" : {
+									//EnableMenuNavigation(True,False,Null,0);
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	--></script>
+</manialink>
+	""";
+	
+	return MLText;
+}

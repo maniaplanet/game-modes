@@ -1,0 +1,132 @@
+#Include "Libs/Nadeo/Common/Core/MenuLayers.Script.txt"											as Layers
+#Include "Libs/Nadeo/Common/Core/Pages.Script.txt"												as Pages
+#Include "Libs/Nadeo/Common/Core/Logger.Script.txt"												as Logger
+#Include "Libs/Nadeo/Common/Core/SectionsManager.Script.txt"										as SectionsManager
+#Include "TextLib"																			as TextLib
+
+//Layers
+#Include "Libs/Nadeo/MP4/TitlePackMaker/Components/Component_Resources/LBResources.Script.txt"	as LBResources
+
+//APIs
+#Include "Libs/Nadeo/MP4/TitlePackMaker/Components/Component_Resources/ResourcesAPI.Script.txt"	as ResourcesAPI
+
+Void Update()
+{
+	declare CUILayer LayerToSend <=> Layers::Get("Resources");
+	declare Text Page_ProjectDisplayName	for LayerToSend.LocalPage;
+	declare Text Page_ProjectTitleId		for LayerToSend.LocalPage;
+	declare Text Page_ProjectDescription	for LayerToSend.LocalPage;
+	declare Text Page_DownloadURL			for LayerToSend.LocalPage;
+	declare Integer Page_FlashURLFocus		for LayerToSend.LocalPage;
+	declare Text[] Page_FlashURLList		for LayerToSend.LocalPage;
+	declare Text Page_TitleManagerPage		for LayerToSend.LocalPage;
+	Page_ProjectDisplayName		=	ResourcesAPI::Get_ProjectDisplayName();
+	Page_ProjectTitleId			=	ResourcesAPI::Get_ProjectTitleId();
+	Page_ProjectDescription		=	ResourcesAPI::Get_ProjectDescription();
+	Page_DownloadURL			=	ResourcesAPI::Get_DownloadURL();
+	Page_FlashURLFocus			=	ResourcesAPI::Get_FlashURLFocus();
+	Page_FlashURLList			=	ResourcesAPI::Get_FlashURLList();
+	Page_TitleManagerPage		=	ResourcesAPI::Get_TitleManagerPage();
+	LayerCustomEvent(LayerToSend, "Update", Text[]);
+}
+
+Void AnalyzeXML(Text _XML)
+{
+	if (_XML == "")
+	{
+		return;
+	}
+	declare Document				<=> Xml.Create(_XML);
+	declare Resources				<=> Document.Root;
+	ResourcesAPI::Set_FlashURLCustom(Resources.GetAttributeText("flashurlcustom", ""));
+	ResourcesAPI::Set_FlashURLFocus(Resources.GetAttributeInteger("flashurlfocus", 0));
+	Xml.Destroy(Document);
+}
+
+Text GenerateXML ()
+{
+	return """<Resources flashurlcustom="{{{ResourcesAPI::Get_FlashURLList()[3]}}}" flashurlfocus="{{{ResourcesAPI::Get_FlashURLFocus()}}}"/>""";
+}
+
+Text PublishXML ()
+{
+	return """<Resources flashurl="{{{ResourcesAPI::Get_FlashURLList()[ResourcesAPI::Get_FlashURLFocus()]}}}"/>""";
+}
+
+Void Build(Text _LayerName, Boolean _Attach) {
+
+	declare Text MLText;
+	switch(_LayerName) {
+		case("Resources"):{
+			MLText = LBResources::Build();
+		}
+	}
+
+	if(MLText == "") {
+		Logger::Warn("Unknown Page: "^_LayerName);
+		return;
+	}
+	
+	Layers::Create(_LayerName, MLText);
+	
+	declare CUILayer Layer <=> Layers::Get(_LayerName);
+	declare Text Page_LayerName for Layer.LocalPage;
+	
+	Page_LayerName = _LayerName;
+	if(_Attach) Layers::Attach(_LayerName);
+}
+
+Void Build(Text _LayerName) {
+	Build(_LayerName, False);
+
+}
+
+Void Load() {
+	ResourcesAPI::Load();
+	Build("Resources");
+	Pages::Compose("Resources", ["Resources"]);
+	SectionsManager::AddSection("Resources", "Resources");
+	while (!ResourcesAPI::HasFinished()) {
+		ResourcesAPI::Loop();
+		yield;
+	}
+	Update();
+}
+
+Void Loop() {
+	ResourcesAPI::Loop();
+	if (ResourcesAPI::HasFinished()) {
+		Update();
+	}
+	foreach(Event in PendingEvents) {
+		if(Event.Type != CManiaAppEvent::EType::LayerCustomEvent) continue;
+		switch(Event.CustomEventType) {
+			case "BrowseInExplorer": {
+				if (Event.CustomEventData.count != 1) {
+					continue;
+				}
+				if (!OpenFileInExplorer(Event.CustomEventData[0])) {
+					Logger::Warn("ResourcesController : Publishing : OpenFileInExplorer did not work");
+				}
+			}
+			case "OpenLink": {
+				// TODO : checker si le titre a déjà été publié (sinon, la page d'admin n'existe pas je pense).
+				if (TitleEdition != Null && TitleEdition.EditedTitleInfo != Null) {
+					declare Text LinkUrl = Event.CustomEventData[0];
+					declare TitleInfo <=> TitleEdition.EditedTitleInfo;
+					OpenLink(LinkUrl, CManiaApp::ELinkType::ExternalBrowser);
+				}
+			}
+			case "Resources_Show": {
+				ResourcesAPI::Update();
+				Update();
+			}
+			case "Resources_SetFlashUrlFocus": {
+				ResourcesAPI::Set_FlashURLFocus(TextLib::ToInteger(Event.CustomEventData[0]));
+			}
+			case "Resources_SetFlashUrlCustom": {
+				ResourcesAPI::Set_FlashURLCustom(Event.CustomEventData[0]);
+			}
+		}
+	}
+}

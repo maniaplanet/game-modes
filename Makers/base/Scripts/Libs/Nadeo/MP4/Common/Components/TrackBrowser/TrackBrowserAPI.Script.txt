@@ -1,0 +1,502 @@
+#Include "Libs/Nadeo/Common/Core/Logger.Script.txt"									as Logger
+#Include "Libs/Nadeo/Common/ManiascriptTools/Sort.Script.txt"								as SortTools
+#Include "TextLib"																as TextLib
+
+#Const C_ImgTrack				"file://Media/MEDIABROWSER_HiddenResources/Common/Images/TrackBrowser/"
+#Const C_BasePath				"Maps\\"
+
+#Const C_MedalTypes [	"NoMedal"	=> 4,
+						"Bronze"	=> 3,
+						"Silver"	=> 2,
+						"Gold"		=> 1,
+						"Author"	=> 0]
+#Const C_MedalNumbers [	4			=> "NoMedal",
+						3			=> "Bronze",
+						2			=> "Silver",
+						1			=> "Gold",
+						0			=> "Author"]
+#Const C_MedalsFromFalguiere [	0	=> 4,
+						1			=> 3,
+						2			=> 2,
+						3			=> 1,
+						4			=> 0,
+						5			=> 0,
+						6			=> 0,
+						7			=> 0,
+						8			=> 0]
+
+declare CTaskResult_MapList	G_ListTaskResult;
+declare Boolean				G_HasFetched;
+declare Boolean				G_Flatten;
+declare Boolean				G_IsSortingFromDescendingOrder;
+declare Boolean				G_IsSortingFromDateRatherThanName;
+declare Boolean				G_IsFilteringUnvalidatedTracks;
+declare Boolean				G_IsInHardFetchMetadata;
+
+declare Text[Text][]		G_MainData;
+declare Text[]				G_ForbiddenTracks;
+declare Boolean				G_MainDataNeedsRefreshing;
+declare Integer				G_MapInfoIteration_CurrentIndex;
+declare Integer				G_CurrentPage;
+declare Integer				G_MaxPages;
+declare Integer				G_ElemsPerPage;
+declare Integer[]			G_AllPages;
+
+Void Load()
+{
+	declare CMatchSettings CurrentMatchSettings for LocalUser;
+	CurrentMatchSettings = Null;
+	G_ListTaskResult					= Null;
+	G_HasFetched						= False;
+	G_Flatten							= False;
+	G_IsSortingFromDescendingOrder		= False;
+	G_IsSortingFromDateRatherThanName	= False;
+	G_IsFilteringUnvalidatedTracks		= False;
+	G_IsInHardFetchMetadata				= False;
+	G_MainData							= Text[Text][];
+	G_ForbiddenTracks					= Text[];
+	G_MainDataNeedsRefreshing			= False;
+	G_CurrentPage						= 0;
+	G_MaxPages							= 0;
+	G_ElemsPerPage						= 12;
+}
+
+Void FetchData(Text _Path, Boolean _IsFilteringUnvalidatedTracks, Boolean _Flatten)
+{
+	G_HasFetched					= False;
+	G_IsFilteringUnvalidatedTracks	= _IsFilteringUnvalidatedTracks;
+	if (G_ListTaskResult != Null) {
+		DataFileMgr.TaskResult_Release(G_ListTaskResult.Id);
+	}
+	G_ListTaskResult = DataFileMgr.Map_GetGameList(_Path, _Flatten);
+}
+
+Void FetchData(Text _Path, Boolean _IsFilteringUnvalidatedTracks)
+{
+	FetchData(_Path, _IsFilteringUnvalidatedTracks, G_Flatten);
+}
+
+Void FetchData(Text _Path)
+{
+	FetchData(_Path, G_IsFilteringUnvalidatedTracks);
+}
+
+Boolean HasFetched()
+{
+	if ((G_ListTaskResult != Null) && !G_ListTaskResult.IsProcessing && G_ListTaskResult.HasSucceeded && !G_HasFetched) {
+		G_HasFetched = True;
+		G_MainDataNeedsRefreshing = True;
+		return True;
+	}
+	return False;
+}
+
+Void Refresh()
+{
+	DataFileMgr.Map_RefreshFromDisk();
+}
+
+Boolean HasAlreadyFetched()
+{
+	if ((G_ListTaskResult != Null) && !G_ListTaskResult.IsProcessing && G_ListTaskResult.HasSucceeded && G_HasFetched) {
+		G_HasFetched = True;
+		G_MainDataNeedsRefreshing = True;
+		return True;
+	}
+	return False;
+}
+
+Void MapInfoIteration_Begin()
+{
+	G_MapInfoIteration_CurrentIndex = 0;
+}
+
+CMapInfo MapInfoIteration_GetMapInfo()
+{
+	if (!G_ListTaskResult.MapInfos.existskey(G_MapInfoIteration_CurrentIndex)) {
+		return Null;
+	}
+	return G_ListTaskResult.MapInfos[G_MapInfoIteration_CurrentIndex];
+}
+
+Void MapInfoIteration_Next()
+{
+	G_MapInfoIteration_CurrentIndex += 1;
+}
+
+Boolean MapInfoIteration_IsOver()
+{
+	return G_MapInfoIteration_CurrentIndex >= G_ListTaskResult.MapInfos.count;
+}
+
+Text FullPath(Text _Path)
+{
+	return C_BasePath ^ _Path;
+}
+
+Text FolderParentPath()
+{
+	if (G_ListTaskResult == Null) {
+		return "";
+	}
+	return G_ListTaskResult.ParentPath;
+}
+
+Void SwitchFlatten()
+{
+	if (G_Flatten) {
+		G_Flatten = False;
+	} else {
+		G_Flatten = True;
+	}
+}
+
+Void SwitchSortOrder()
+{
+	if (G_IsSortingFromDescendingOrder) {
+		G_IsSortingFromDescendingOrder = False;
+	} else {
+		G_IsSortingFromDescendingOrder = True;
+	}
+}
+
+Void SwitchSortCriterion()
+{
+	if (G_IsSortingFromDateRatherThanName) {
+		G_IsSortingFromDateRatherThanName = False;
+	} else {
+		G_IsSortingFromDateRatherThanName = True;
+	}
+}
+
+Text Private_GetExtraContextImage(Text _CollectionName) {
+	declare Text[] AcceptedEnviros = ["Valley", "Stadium", "Canyon", "Lagoon"];
+	if (!AcceptedEnviros.exists(_CollectionName)) {
+		return "";
+	}
+	return C_ImgTrack ^ _CollectionName ^ "EnviroMini.dds";
+}
+
+Text Private_GetLogo(Text _CollectionName) {
+	declare Text[] AcceptedEnviros = ["Valley", "Stadium", "Canyon", "Lagoon"];
+	if (!AcceptedEnviros.exists(_CollectionName)) {
+		return "";
+	}
+	return C_ImgTrack ^ _CollectionName ^ "Enviro.dds";
+}
+
+Text[Text] GetMetadataFromMapInfo(CMapInfo _MapInfo, Text _2ndState)
+{
+	declare Text IsValidated = "no";
+	declare Text MapTime = "-:--.--";
+	declare Text MapGoldTime = "-:--.--";
+	declare Text Flag = _MapInfo.AuthorCountryFlagUrl;
+	declare Text PersonalTime = TextLib::ToText(ScoreMgr.Map_GetRecord(UserMgr.MainUser.Id, _MapInfo.MapUid, ""));
+	declare Integer Index = ScoreMgr.Map_GetMultiAsyncLevel(UserMgr.MainUser.Id, _MapInfo.MapUid, "");
+	if(!C_MedalsFromFalguiere.existskey(Index)) return Text[Text];
+	declare PersonalMedal = C_MedalNumbers[C_MedalsFromFalguiere[Index]];
+	if (Flag == "file://ZoneFlags/Path/") {
+		Flag = "file://ZoneFlags/Path/World";
+	}
+	if (_MapInfo.IsPlayable && _MapInfo.TMObjective_AuthorTime != -1) {
+		IsValidated	= "yes";
+		MapTime		= TextLib::TimeToText(_MapInfo.TMObjective_AuthorTime, True);
+		MapGoldTime	= TextLib::TimeToText(_MapInfo.TMObjective_GoldTime, True);
+	}
+	declare Text IsMultilap = TextLib::ToText(False);
+	if (_MapInfo.TMObjective_IsLapRace) {
+		IsMultilap = TextLib::ToText(True);
+	}
+	return [	"Path"		=> _MapInfo.FileName,
+				"Name"		=> _MapInfo.Name,
+				"Type"		=> "Track",
+				"Enviro"	=> _MapInfo.CollectionName,
+				"ExtraContextImage" => Private_GetExtraContextImage(_MapInfo.CollectionName),
+				"Style"		=> _MapInfo.MapStyle,
+				"Type"		=> _MapInfo.MapType,
+				"Coppers"	=> _MapInfo.CopperPrice ^ "C",
+				"Mood"		=> "Day", // !!!!!!!!!!!!!!!!!! TODO : A traduire
+				"Thumbnail"	=> "file://Thumbnails/MapUid/"^_MapInfo.MapUid^"/",
+				"SecondThumbnailImage"		=> "EmptyThumbnail",
+				"Author"	=> _MapInfo.AuthorNickName,
+				"Flag"		=> Flag,
+				"State"		=> "Available",
+				"2ndState"	=> _2ndState,
+				"Validated"	=> IsValidated,
+				"PersonalTime" => PersonalTime,
+				"PersonalMedal" => PersonalMedal,
+				// "Replay"	=> xxx, !!!!!!!!!!!!!!!!!!
+				// "Ghosts"	=> xxx, !!!!!!!!!!!!!!!!!!
+				"Multilap"	=> IsMultilap, // TODO : Vérifier cette ligne
+				"Time"		=> MapTime,
+				"GoldTime"	=> MapGoldTime,
+				"LogoEnv"	=> Private_GetLogo(_MapInfo.CollectionName)];
+}
+
+CMapInfo[] GetAllSortedMapInfos(Boolean _IsSortingFromDateRatherThanName, Boolean _IsSortingFromDescendingOrder)
+{
+	declare CMapInfo[] Result;
+	declare Text[] IntermediateResult;
+	foreach(MapInfo in G_ListTaskResult.MapInfos) {
+		IntermediateResult.add(MapInfo.Name);
+	}
+	declare Integer SortOrder = SortTools::Array_IncreasingOrder();
+	if (_IsSortingFromDescendingOrder) {
+		SortOrder = SortTools::Array_DecreasingOrder();
+	}
+	declare Integer[] SortedIndexes = SortTools::SortTools_GetSortSwapArray(IntermediateResult, SortOrder);
+	foreach(SortedIndex in SortedIndexes) {
+		Result.add(G_ListTaskResult.MapInfos[SortedIndex]);
+	}
+	return Result;
+}
+
+Text[] GetAllSortedFolders(Boolean _IsSortingFromDateRatherThanName, Boolean _IsSortingFromDescendingOrder)
+{
+	declare Text[] Result;
+	declare Text[] IntermediateResult;
+	foreach(SubFolder in G_ListTaskResult.SubFolders) {
+		IntermediateResult.add(SubFolder);
+	}
+	declare Integer SortOrder = SortTools::Array_IncreasingOrder();
+	if (_IsSortingFromDescendingOrder) {
+		SortOrder = SortTools::Array_DecreasingOrder();
+	}
+	declare Integer[] SortedIndexes = SortTools::SortTools_GetSortSwapArray(IntermediateResult, SortOrder);
+	foreach(SortedIndex in SortedIndexes) {
+		Result.add(G_ListTaskResult.SubFolders[SortedIndex]);
+	}
+	return Result;
+}
+
+Void HardFetchMetadata()
+{
+	G_IsInHardFetchMetadata = True;
+	FetchData("\\", False, True);
+}
+
+Boolean IsInHardFetchMetadata()
+{
+	return G_IsInHardFetchMetadata;
+}
+
+Text[Text] HardPullMetadata(Text _Path)
+{
+	G_IsInHardFetchMetadata = False;
+	foreach (MapInfo in G_ListTaskResult.MapInfos) {
+		if (MapInfo.FileName == _Path) {
+			return GetMetadataFromMapInfo(MapInfo, "Valid");
+		}
+	}
+	Logger::Warn("HardPullMetadata : Path non trouvé (\"" ^ _Path ^ "\")");
+	return Text[Text];
+}
+
+Text[Text] HardGetMetadata(Text _Path)
+{
+	HardFetchMetadata();
+	wait(HasFetched()); // TODO : Eviter le wait
+	return HardPullMetadata(_Path);
+}
+
+Text[Text] GetMetadata(Text _Path)
+{
+	declare Text[Text] Result;
+	declare Text ProjectEnviro for LocalUser;
+	if (G_ListTaskResult == Null) {
+		return HardGetMetadata(_Path);
+	}
+	foreach (MapInfo in G_ListTaskResult.MapInfos)
+	{
+		if (MapInfo.FileName == _Path)
+		{
+			if ((ProjectEnviro != "" && ProjectEnviro != "TMAll") && MapInfo.CollectionName != ProjectEnviro)
+			{
+				return GetMetadataFromMapInfo(MapInfo, "Greyed");
+			}
+			return GetMetadataFromMapInfo(MapInfo, "Valid");
+		}
+	}
+
+	return HardGetMetadata(_Path);
+}
+
+Void UpdateMainDataForPage()
+{
+	G_MainData.clear();
+	declare Text ProjectEnviro			for LocalUser;
+	declare Boolean Skip = False;
+	//declare Text[] RequestedSubFolders = GetAllSortedFolders(G_IsSortingFromDateRatherThanName, G_IsSortingFromDescendingOrder);
+	// TODO : Attendre les fonctions de Falguiere et ne pas faire ça tout seul
+	for (FolderIndex, G_CurrentPage * G_ElemsPerPage, (G_CurrentPage + 1) * G_ElemsPerPage - 1) {
+		if (!G_ListTaskResult.SubFolders.existskey(FolderIndex)) {
+			break;
+		}
+		declare SubFolder = G_ListTaskResult.SubFolders[FolderIndex];
+		declare SplitSubFolder = TextLib::Split("\\", SubFolder);
+		G_MainData.add([	"CardType"		=> "Folder",
+			"Name"			=> SplitSubFolder[SplitSubFolder.count - 1],
+			"Path"			=> SubFolder,
+			"SecondThumbnailImage" => "Folder",
+			"Thumbnail1"	=> "", // ??
+			"Thumbnail2"	=> "", // ??
+			"Thumbnail3"	=> "", // ??
+			"State"			=> "Available"]);
+	}
+	//declare CMapInfo[] RequestedMapInfos = GetAllSortedMapInfos(G_IsSortingFromDateRatherThanName, G_IsSortingFromDescendingOrder);
+	declare MediaIndex = 0;
+	if (G_AllPages.existskey(G_CurrentPage)) {
+		MediaIndex = G_AllPages[G_CurrentPage];
+	}
+	declare UnfilteredMediaIndex = MediaIndex;
+	while(G_MainData.count < G_ElemsPerPage) {
+		if (!G_ListTaskResult.MapInfos.existskey(UnfilteredMediaIndex)) {
+			break;
+		}
+		declare CMapInfo MapInfo <=> G_ListTaskResult.MapInfos[UnfilteredMediaIndex];
+		if (G_IsFilteringUnvalidatedTracks && !MapInfo.IsPlayable) {
+			Skip = True;
+		}
+		foreach(ForbiddenTrack in G_ForbiddenTracks) {
+			if (ForbiddenTrack == MapInfo.FileName) {
+				Skip = True;
+				continue;
+			}
+		}
+
+		declare Text _2ndState = "Valid";
+		
+		declare Text CorrectedCollection = MapInfo.CollectionName;
+		
+		UnfilteredMediaIndex += 1;
+		if (Skip 
+			|| ((ProjectEnviro != "" && ProjectEnviro != "TMAll") && CorrectedCollection != ProjectEnviro)
+			|| (CorrectedCollection != "Storm" && ProjectEnviro == "Storm") || (CorrectedCollection == "Storm" && ProjectEnviro != "Storm")
+			)
+		{
+			Skip = False;
+			//_2ndState = "Greyed";
+			continue;
+		}
+		MediaIndex += 1;
+		G_MainData.add(GetMetadataFromMapInfo(MapInfo, _2ndState));
+	}
+}
+
+Void Private_UpdateMainData()
+{
+	G_AllPages.clear();
+	declare Text ProjectEnviro			for LocalUser;
+	declare Boolean Skip = False;
+	declare Integer NbElems = 0;
+	G_AllPages.add(0);
+	//declare Text[] RequestedSubFolders = GetAllSortedFolders(G_IsSortingFromDateRatherThanName, G_IsSortingFromDescendingOrder);
+	// TODO : Attendre les fonctions de Falguiere et ne pas faire ça tout seul
+	foreach(SubFolder in G_ListTaskResult.SubFolders) {
+		declare SplitSubFolder = TextLib::Split("\\", SubFolder);
+		NbElems += 1;
+		if (NbElems % G_ElemsPerPage == 0) {
+			G_AllPages.add(0);
+		}
+	}
+	// TODO : Mettre en place un cas où IsEndPage ET pas de media après
+	//declare CMapInfo[] RequestedMapInfos = GetAllSortedMapInfos(G_IsSortingFromDateRatherThanName, G_IsSortingFromDescendingOrder);
+	declare UnfilteredMediaIndex = 0;
+	declare Boolean IsEndPage = False;
+	foreach(MapInfo in G_ListTaskResult.MapInfos) {
+		IsEndPage = False;
+		if (G_IsFilteringUnvalidatedTracks && !MapInfo.IsPlayable) {
+			Skip = True;
+		}
+		foreach(ForbiddenTrack in G_ForbiddenTracks) {
+			if (ForbiddenTrack == MapInfo.FileName) {
+				Skip = True;
+				continue;
+			}
+		}
+
+		declare Text _2ndState = "Valid";
+
+		declare Text CorrectedCollection = MapInfo.CollectionName;
+
+		UnfilteredMediaIndex	+= 1;
+		
+		declare CMatchSettings CurrentMatchSettings for LocalUser;
+		if (Skip 
+			|| ((ProjectEnviro != "" && ProjectEnviro != "TMAll") && CorrectedCollection != ProjectEnviro)
+			|| (CorrectedCollection != "Storm" && ProjectEnviro == "Storm") || (CorrectedCollection == "Storm" && ProjectEnviro != "Storm")
+			|| (CurrentMatchSettings != Null && CurrentMatchSettings.Playlist_FileMatchesMode(MapInfo.FileName))
+			)
+		{
+			Skip = False;
+			//_2ndState = "Greyed";
+			continue;
+		}
+		NbElems		+= 1;
+		if (NbElems % G_ElemsPerPage == 0) {
+			G_AllPages.add(UnfilteredMediaIndex);
+			IsEndPage = True;
+		}
+	}
+	if (IsEndPage) {
+		if (!G_AllPages.remove(UnfilteredMediaIndex)) {
+			Logger::Warn("TrackBrowserAPI : G_AllPages.remove(UnfilteredMediaIndex) did not function : " ^ UnfilteredMediaIndex);
+		}
+	}
+	G_CurrentPage	= 0;
+	G_MaxPages		= (G_AllPages.count - 1);
+	UpdateMainDataForPage();
+}
+
+Void UpdateMainData(Text[] _ForbiddenTracks)
+{
+	if (G_MainDataNeedsRefreshing || G_ForbiddenTracks.count != _ForbiddenTracks.count) {
+		G_ForbiddenTracks = _ForbiddenTracks;
+		G_MainDataNeedsRefreshing = False;
+		Private_UpdateMainData();
+	}
+}
+
+Void UpdateMainData()
+{
+	declare Text[] MatchSettingCurrentTrackList	for LocalUser;
+	declare Text[][] MapsPerCategory			for LocalUser;
+	declare Text[] ForbiddenTracks = MatchSettingCurrentTrackList;
+	foreach(Category in MapsPerCategory) {
+		foreach(Map in Category) {
+			ForbiddenTracks.add(Map);
+		}
+	}
+	UpdateMainData(ForbiddenTracks);
+}
+
+Text[Text][] GetMainData() {
+	UpdateMainData();
+	return G_MainData;
+}
+
+Void InputPageUp()
+{
+	if (G_CurrentPage > 0) {
+		G_CurrentPage += -1;
+	}
+	UpdateMainDataForPage();
+}
+
+Void InputPageDown()
+{
+	if (G_CurrentPage < G_MaxPages) {
+		G_CurrentPage += 1;
+	}
+	UpdateMainDataForPage();
+}
+
+Integer GetCurrentPageIndex()
+{
+	return G_CurrentPage + 1;
+}
+
+Integer GetMaxPages()
+{
+	return G_MaxPages + 1;
+}

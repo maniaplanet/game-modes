@@ -1,0 +1,470 @@
+#Include "Libs/Nadeo/Common/Core/MenuLayers.Script.txt"															as Layers
+#Include "Libs/Nadeo/Common/Core/Pages.Script.txt"																as Pages
+#Include "Libs/Nadeo/Common/Core/Logger.Script.txt"																as Logger
+#Include "TextLib"																							as TextLib
+#Include "Libs/Nadeo/MP4/Common/GlobalVariables.Script.txt"														as GlobalVariables
+
+// APIs
+#Include "Libs/Nadeo/MP4/Common/Components/DialogBox/DialogBoxController.Script.txt"							as DialogBoxController
+#Include "Libs/Nadeo/MP4/Common/Components/MatchSettingsEditor/MatchSettingsBrowserAPI.Script.txt"				as MatchSettingsBrowserAPI
+#Include "Libs/Nadeo/MP4/Common/Components/ListDisplayer/ListDisplayerController_Menu.Script.txt"										as ListDisplayerController_Menu
+#Include "Libs/Nadeo/MP4/Common/Components/TrackBrowser/TrackBrowserController.Script.txt"						as TrackBrowserController
+#Include "Libs/Nadeo/MP4/Common/Components/ScriptBrowser/ScriptBrowserController.Script.txt"					as ScriptBrowserController
+#Include "Libs/Nadeo/MP4/TPLagoon/Components/G_BarreSection/BarreSectionController.Script.txt"					as BarreSectionController
+#Include "Libs/Nadeo/MP4/TPLagoon/Components/NewAsset/NewAssetController.Script.txt"							as NewAssetController
+#Include "Libs/Nadeo/MP4/Common/Components/MediaBrowser/MediaBrowserController.Script.txt"						as MediaBrowserController
+#Include "Libs/Nadeo/MP4/Common/Components/MediaDisplayer/LBMediaDisplayer.Script.txt"													as MediaCardDisplayer
+#Include "Libs/Nadeo/MP4/Common/Components/DynamicFormDisplayer/DynamicFormDisplayerController.Script.txt"											as DynamicFormDisplayer_Menu
+#Include "Libs/Nadeo/MP4/TPLagoon/XMLController.Script.txt"														as XMLController
+#Include "Libs/Nadeo/MP4/Common/LoadingScreen.Script.txt"														as LoadingScreen
+#Include "Libs/Nadeo/MP4/Common/SettingsController.Script.txt"  												as SettingsController
+
+//Layers
+#Include "Libs/Nadeo/MP4/Common/Components/MatchSettingsEditor/LBMatchSettingsEditor.Script.txt"				as LBMatchSettingsEditor
+#Include "Libs/Nadeo/MP4/Common/Components/MatchSettingsEditor/LBMatchSettingsEditorForm.Script.txt"			as LBMatchSettingsEditorForm
+#Include "Libs/Nadeo/MP4/Common/Components/MatchSettingsEditor/LBMatchSettingsBrowser.Script.txt"				as LBMatchSettingsBrowser
+
+#Const C_BrowserName	"MatchSettingBrowser"
+#Const C_EditorName1	"MatchSettingsEditor"
+#Const C_EditorName2	"MatchSettingsEditorForm"
+#Const C_PageName		"BrowseMatchSettings"
+//L16N |Infinitive| In a popup, a button to modify the selected file
+#Const C_EditButtonName	_("Edit")
+//L16N |Noun, plural, singular is still "Match settings"| Term referencing a playlist of maps with a ruleset to play them
+#Const C_MediaTitle		_("Match settings")
+
+#Const C_Context1		"MakerMatchSettings"
+#Const C_Context2		"MatchSettingsEditor"
+#Const C_Context3		"LocalPlaySingleMap"
+#Const C_Context4		"EditorsClassicMapEditor"
+#Const C_Context5		"GhostEditor"
+#Const C_Context6		"CustomEditor"
+
+declare Integer	G_MapIndex;
+declare Text	G_FolderPath;
+declare Text	G_MapEditorScriptName;
+declare Text	G_SettingsXml;
+declare Boolean	G_IsRunning;
+
+declare Integer G_MoveMapStart;
+declare Integer G_MovePageStart;
+
+Void Build(Text _LayerName, Boolean _Attach) {
+
+	declare Text MLText;
+	switch(_LayerName) {
+		case(C_EditorName1):{
+			MLText = LBMatchSettingsEditor::Build();
+		}
+		case(C_EditorName2):{
+			MLText = LBMatchSettingsEditorForm::Build();
+		}
+	}
+
+	if(MLText == "") {
+		Logger::Warn("Unknown Page: "^_LayerName);
+		return;
+	}
+
+	Layers::Create(_LayerName, MLText);
+
+	declare CUILayer Layer <=> Layers::Get(_LayerName);
+	declare Text Page_LayerName for Layer.LocalPage;
+
+	Page_LayerName = _LayerName;
+	if(_Attach) Layers::Attach(_LayerName);
+}
+
+Void Build(Text _LayerName) {
+	Build(_LayerName, False);
+}
+
+Void Init()
+{
+	G_MapIndex	= 0;
+	G_MapEditorScriptName	= XMLController::Get_MapEditorScriptName();
+	G_SettingsXml			= SettingsController::GetSettingsXmlEditor();
+	G_MoveMapStart			= -1;
+	G_MovePageStart			= -1;
+}
+
+Void OpenCurrentFolder()
+{
+	MatchSettingsBrowserAPI::FetchData(G_FolderPath);
+}
+
+Void OpenInExplorer()
+{
+	if (!OpenFileInExplorer(MatchSettingsBrowserAPI::FullPath(G_FolderPath))) {
+		Logger::Warn(C_BrowserName ^ " : OpenFileInExplorer did not function");
+	}
+}
+
+CMatchSettings GetMatchSettings()
+{
+	return MatchSettingsBrowserAPI::GetMatchSettings();
+}
+
+Text GetMatchSettingsPath()
+{
+	return MatchSettingsBrowserAPI::GetMatchSettingsPath();
+}
+
+Text[] GetTrackListFromMatchSettings()
+{
+	return MatchSettingsBrowserAPI::GetTrackListFromMatchSettings();
+}
+
+Boolean IsRunning()
+{
+	return G_IsRunning;
+}
+
+Void UpdateButtonNames(Text _EventNamePrefix, Text[] _ButtonNames)
+{
+	declare CUILayer 		LayerToSend	= Layers::Get(C_EditorName2);
+	if (LayerToSend == Null) {
+		Logger::Warn("Layer non trouvée dans UpdateButtonNames : " ^ C_EditorName2);
+		return;
+	}
+	declare Text MatchSettingsEditor_EventNamePrefix		for LayerToSend.LocalPage;
+	declare Text[] MatchSettingsEditor_ButtonNames			for LayerToSend.LocalPage;
+	declare Text MatchSettingsEditor_MediaTitle				for LayerToSend.LocalPage;
+	declare Text[] MatchSettingsEditor_SecondaryButtonNames	for LayerToSend.LocalPage;
+	declare Text MatchSettingsEditor_AddToListButtonName	for LayerToSend.LocalPage;
+	declare Boolean MatchSettingsEditor_Refresh				for LayerToSend.LocalPage;
+	MatchSettingsEditor_EventNamePrefix						= _EventNamePrefix;
+	MatchSettingsEditor_ButtonNames							= _ButtonNames;
+	MatchSettingsEditor_Refresh								= True;
+}
+
+Void UpdateMaps()
+{
+	declare CUILayer		MapsLayer		<=> Layers::Get(C_EditorName1);
+	declare CUILayer		FormLayer		<=> Layers::Get(C_EditorName2);
+
+	declare Text[Text][]	Data		= MatchSettingsBrowserAPI::GetSectionMainData();
+	declare Text[][][]		LineData	= MatchSettingsBrowserAPI::GetSectionLineData();
+	declare Text[][]		LineLogos	= MatchSettingsBrowserAPI::GetSectionLineLogos();
+	MediaCardDisplayer::Update(C_EditorName1, Data, LineData, LineLogos);
+
+	declare Integer[]		MatchSettings_NewTracks			for MapsLayer.LocalPage;
+	declare Integer			MatchSettings_CurrentPageIndex	for MapsLayer.LocalPage;
+	declare Integer			MatchSettings_MaxPages			for MapsLayer.LocalPage;
+	declare Integer			MatchSettings_MovePageIndex		for MapsLayer.LocalPage;
+	MatchSettings_NewTracks					= MatchSettingsBrowserAPI::GetNewTrackPatterns();
+	MatchSettings_CurrentPageIndex			= MatchSettingsBrowserAPI::GetTrack_CurrentPageIndex();
+	MatchSettings_MaxPages					= MatchSettingsBrowserAPI::GetTrack_MaxPages();
+	MatchSettings_MovePageIndex				= G_MovePageStart;
+	LayerCustomEvent(MapsLayer, "GiveChooseTrackQuads", Text[]);
+
+	declare Boolean Page_CanSave for FormLayer.LocalPage;
+	Page_CanSave = MatchSettingsBrowserAPI::CanSave();
+	DynamicFormDisplayer_Menu::UpdateAttributes(C_EditorName2
+												, LBMatchSettingsEditorForm::GetChunkAttributePositions()
+												, MatchSettingsBrowserAPI::GetChunkAttributeTypes()
+												, MatchSettingsBrowserAPI::GetChunkAttributeNames()
+												, MatchSettingsBrowserAPI::GetExtraParams()
+												, MatchSettingsBrowserAPI::GetChunkSettingValues()
+												, MatchSettingsBrowserAPI::GetFormCurrentPage()
+												, MatchSettingsBrowserAPI::GetFormMaxPages());
+}
+
+Void Load() {
+	Init();
+	MatchSettingsBrowserAPI::Load();
+	MediaBrowserController::Load(LBMatchSettingsBrowser::Build(), C_PageName, C_BrowserName, C_MediaTitle);
+	Build(C_EditorName1);
+	Build(C_EditorName2);
+
+	if (GlobalVariables::GetLaunchContext() == GlobalVariables::LaunchContext_Title()) {
+		BarreSectionController::AddConfiguration("NewMatchSettings", 
+								//L16N Noun, singular, displayed as a title of the section, refers to match settings (playlist of maps with a ruleset)
+								_("New match settings"),
+								Text[], Text[]);
+		Pages::Compose("NewMatchSettings", [C_EditorName1, C_EditorName2, "BarreSection"]);
+	} else {
+		Pages::Compose("NewMatchSettings", [C_EditorName1, C_EditorName2]);
+	}
+}
+
+Void CreateNew(Text _Mode, Text _EventNamePrefix, Text[] _ButtonNames)
+{
+	Pages::GotoNext("NewMatchSettings");
+	MatchSettingsBrowserAPI::NewSettings(_Mode);
+	UpdateButtonNames(_EventNamePrefix, _ButtonNames);
+	MatchSettingsBrowserAPI::HardFetchMaps();
+}
+
+Void LoadMatchSettings()
+{
+	G_FolderPath = "";
+	MatchSettingsBrowserAPI::FetchData("");
+	MediaBrowserController::Show(C_BrowserName, C_PageName, "MatchSettingsEditorInternal", [C_EditButtonName], C_MediaTitle, Text[]);
+}
+
+Void Show(Text _Mode, Text _EventNamePrefix, Text[] _ButtonNames, Text _MediaTitle, Text[] _SecondaryButtonNames, Text[] _AuthorizedModes)
+{
+	G_IsRunning = True;
+	MatchSettingsBrowserAPI::SetAuthorizedModes(_AuthorizedModes);
+	CreateNew(_Mode, _EventNamePrefix, _ButtonNames);
+}
+
+Void Show(Text _Mode, Text _EventNamePrefix, Text[] _ButtonNames, Text _MediaTitle, Text[] _SecondaryButtonNames)
+{
+	Show(_Mode, _EventNamePrefix, _ButtonNames, _MediaTitle, _SecondaryButtonNames, Text[]);
+}
+
+Void Show(Text _EventNamePrefix, Text[] _ButtonNames, Text _MediaTitle, Text[] _SecondaryButtonNames)
+{
+	Show("", _EventNamePrefix, _ButtonNames, _MediaTitle, _SecondaryButtonNames);
+}
+
+Void Show(Text _EventNamePrefix, Text[] _ButtonNames, Text _MediaTitle)
+{
+	Show(_EventNamePrefix, _ButtonNames, _MediaTitle, Text[]);
+}
+
+Void Show()
+{
+	G_IsRunning = True;
+	Pages::GotoPrevious();
+}
+
+Void SaveState()
+{
+	declare Boolean Saved = MatchSettingsBrowserAPI::SaveMatchSettings();
+	if (Saved) {
+		DialogBoxController::ShowMessage(_("|Noun|Notice"), _("Save successful."));
+	}
+}
+
+Void MakeIdle()
+{
+	declare CMatchSettings CurrentMatchSettings for LocalUser;
+	CurrentMatchSettings = Null;
+	G_IsRunning = False;
+}
+
+Text[][] LineDataFromContext(Text _Context, Text[Text] _Metadata)
+{
+	switch(_Context) {
+		case "MakerMatchSettings" : {
+			return		Text[][];
+		}
+		case "MatchSettingsEditor" : {
+			
+		}
+		case "LocalPlaySingleMap" : {
+			
+		}
+		case "EditorsClassicMapEditor" : {
+			
+		}
+		case "GhostEditor" : {
+			
+		}
+		case "CustomEditor" : {
+			
+		}
+	}
+	return Text[][];
+}
+
+Text[][][] GetLineData(Text _Context)
+{
+	declare Text[][][] Result;
+	declare Text[Text][] MainData = MatchSettingsBrowserAPI::GetMainData();
+	foreach (Metadata in MainData) {
+		if (Metadata.existskey("CardType") && Metadata["CardType"] == "Folder") {
+			Result.add(Text[][]);
+		} else {
+			Result.add(LineDataFromContext(_Context, Metadata));
+		}
+	}
+	return Result;
+}
+
+Text[][][] GetLineData()
+{
+	return GetLineData(C_Context1);
+}
+
+Void Loop() {
+	if (MatchSettingsBrowserAPI::IsFinishedUpdating()) {
+		UpdateMaps();
+	}
+	if (MatchSettingsBrowserAPI::HasFetched()) {
+		MatchSettingsBrowserAPI::UpdateMainData();
+		MediaBrowserController::UpdateData(C_BrowserName, MatchSettingsBrowserAPI::FullPath(G_FolderPath), MatchSettingsBrowserAPI::GetMainData(), GetLineData(), MatchSettingsBrowserAPI::GetCurrentPageIndex(), MatchSettingsBrowserAPI::GetMaxPages());
+	}
+	if (MediaBrowserController::IsRunning(C_BrowserName)) {
+		MediaBrowserController::Loop(C_BrowserName);
+	}
+	if (MediaBrowserController::IsRequestingFolderOpening(C_BrowserName)) {
+		G_FolderPath = MediaBrowserController::FolderOpeningPath(C_BrowserName);
+		OpenCurrentFolder();
+	}
+	if (MediaBrowserController::IsRequestingFolderBack(C_BrowserName)) {
+		G_FolderPath = MatchSettingsBrowserAPI::FolderParentPath();
+		OpenCurrentFolder();
+	}
+	if (MediaBrowserController::IsRequestingRefreshFolder(C_BrowserName)) {
+		MatchSettingsBrowserAPI::Refresh();
+		OpenCurrentFolder();
+	}
+	if (MediaBrowserController::IsRequestingOpenInExplorer(C_BrowserName)) {
+		OpenInExplorer();
+	}
+	if (MediaBrowserController::IsRequestingSwitchFlatten(C_BrowserName)) {
+		MatchSettingsBrowserAPI::SwitchFlatten();
+		OpenCurrentFolder();
+	}
+	if (MediaBrowserController::IsRequestingSortByDateName(C_BrowserName)) {
+		MatchSettingsBrowserAPI::SwitchSortCriterion();
+		OpenCurrentFolder();
+	}
+	if (MediaBrowserController::IsRequestingSortAscDesc(C_BrowserName)) {
+		MatchSettingsBrowserAPI::SwitchSortOrder();
+		OpenCurrentFolder();
+	}
+	if (MediaBrowserController::IsRequestingInputPageUp(C_BrowserName)) {
+		MatchSettingsBrowserAPI::InputPageUp();
+		MediaBrowserController::UpdateData(C_BrowserName, MatchSettingsBrowserAPI::FullPath(G_FolderPath), MatchSettingsBrowserAPI::GetMainData(), GetLineData(), MatchSettingsBrowserAPI::GetCurrentPageIndex(), MatchSettingsBrowserAPI::GetMaxPages());
+	}
+	if (MediaBrowserController::IsRequestingInputPageDown(C_BrowserName)) {
+		MatchSettingsBrowserAPI::InputPageDown();
+		MediaBrowserController::UpdateData(C_BrowserName, MatchSettingsBrowserAPI::FullPath(G_FolderPath), MatchSettingsBrowserAPI::GetMainData(), GetLineData(), MatchSettingsBrowserAPI::GetCurrentPageIndex(), MatchSettingsBrowserAPI::GetMaxPages());
+	}
+	if (MediaBrowserController::IsRequestingSteamWorkshop(C_BrowserName)) {
+		TitleControl.PublishFile(MatchSettingsBrowserAPI::FullPath(MediaBrowserController::RequestingSteamWorkshopMediaName(C_BrowserName)));
+	}
+	foreach(Event in PendingEvents) {
+		if (Event.Type != CManiaAppEvent::EType::LayerCustomEvent) {
+			continue;
+		}
+		switch (Event.CustomEventType) {
+			case "MatchSettings_Track_InputPageUp" : {
+				MatchSettingsBrowserAPI::Input_TrackPageUp();
+				MatchSettingsBrowserAPI::HardFetchMaps();
+			}
+			case "MatchSettings_Track_InputPageDown" : {
+				MatchSettingsBrowserAPI::Input_TrackPageDown();
+				MatchSettingsBrowserAPI::HardFetchMaps();
+			}
+			case "MatchSettingsEditorInternal_Button_0" : {
+				Pages::GotoPrevious();
+				if (Event.CustomEventData.count <= 0) {
+					continue;
+				}
+				declare MatchSettingsPath = Event.CustomEventData[0];
+				MatchSettingsBrowserAPI::LoadSettings(MatchSettingsPath);
+				MatchSettingsBrowserAPI::HardFetchMaps();
+			}
+			case "MatchSettingsEditor_Edit" : {
+				MatchSettingsBrowserAPI::MatchSettings_EditScriptSettings();
+			}
+			case "MatchSettings_Move": {
+				G_MoveMapStart	= MatchSettingsBrowserAPI::GetTrack_AbsoluteIndex(TextLib::ToInteger(Event.CustomEventData[0]));
+				G_MovePageStart	= MatchSettingsBrowserAPI::GetTrack_CurrentPageIndex();
+				LayerCustomEvent(Layers::Get(C_EditorName1), "StartMovingAllCards", Text[]);
+			}
+			case "MatchSettings_FinishMovingCard": {
+				declare Integer MoveMapFinish	= MatchSettingsBrowserAPI::GetTrack_AbsoluteIndex(TextLib::ToInteger(Event.CustomEventData[0]));
+				MatchSettingsBrowserAPI::MoveMaps(G_MoveMapStart, MoveMapFinish);
+				MatchSettingsBrowserAPI::HardFetchMaps();
+			}
+			case "MatchSettings_AddMap": {
+				declare Text MapIndex = Event.CustomEventData[0];
+				G_MapIndex = MatchSettingsBrowserAPI::GetTrack_AbsoluteIndex(TextLib::ToInteger(MapIndex));
+				declare Text MapTerm = _("Tracks");
+				declare Text ProjectEnviro for LocalUser;
+				if (ProjectEnviro == "Storm") {
+					MapTerm = _("Maps");
+				}
+				TrackBrowserController::Show("TracksToMatchSettings", [//L16N |Infinitive| In a popup, a button to select
+					_("Choose"),
+					//L16N |Infinitive| In a popup, a button to modify the selected file
+					_("Edit")], MapTerm,
+					//L16N |Infinitive| In a popup, a button to make a new media
+					[_("Create")], C_EditorName1);
+			}
+			case "MatchSettings_RemoveMap": {
+				declare Text MapIndex = Event.CustomEventData[0];
+				MatchSettingsBrowserAPI::RemoveMap(MatchSettingsBrowserAPI::GetTrack_AbsoluteIndex(TextLib::ToInteger(MapIndex)));
+				MatchSettingsBrowserAPI::HardFetchMaps();
+			}
+			case "MatchSettings_SwitchMap": {
+				declare Text MapPath = Event.CustomEventData[0];
+				G_MapIndex		= MatchSettingsBrowserAPI::Get_MapIndex(MapPath);
+				declare Text MapTerm = _("Tracks");
+				declare Text ProjectEnviro for LocalUser;
+				if (ProjectEnviro == "Storm") {
+					MapTerm = _("Maps");
+				}
+				TrackBrowserController::Show("TracksToMatchSettings", [//L16N |Infinitive| In a popup, a button to select
+					_("Choose"),
+					//L16N |Infinitive| In a popup, a button to modify the selected file
+					_("Edit")], MapTerm, 
+					//L16N |Infinitive| In a popup, a button to make a new media
+					[_("Create")], C_EditorName1);
+			}
+			case "TracksToMatchSettings_Button_0": { // Choose
+				declare Text Path = Event.CustomEventData[0];
+				MatchSettingsBrowserAPI::PlaceMap(Path, G_MapIndex);
+				MatchSettingsBrowserAPI::HardFetchMaps();
+				Pages::GotoPrevious();
+			}
+			case "TracksToMatchSettings_Button_1": { // Edit
+				declare Text MapPath		= Event.CustomEventData[0];
+				declare Text MapThumbnail	= Event.CustomEventData[1];
+				LoadingScreen::SetLoadingType(0, MapThumbnail);
+				wait(TitleFlow.IsReady);
+				TitleFlow.EditMap(MapPath, G_MapEditorScriptName, G_SettingsXml);
+				wait(TitleFlow.IsReady);
+			}
+			case "MatchSettingsEditor_LoadMatchSettings": {
+				LoadMatchSettings();
+			}
+			case "MatchSettingsEditor_SaveMatchSettings": {
+				SaveState();
+			}
+			case "TracksToMatchSettings_SecondaryButton_0": {
+				TrackBrowserController::MakeIdle();
+				NewAssetController::Show("BrowseTracks");
+			}
+			case "DynamicFormDisplayer_ValidateEntry": {
+				if (!IsRunning()) {
+					continue;
+				}
+				declare FormId = TextLib::ToInteger(Event.CustomEventData[0]);
+				declare Value = Event.CustomEventData[1];
+				MatchSettingsBrowserAPI::SetValue(FormId, Value);
+				MatchSettingsBrowserAPI::HardFetchMaps();
+			}
+			case "DynamicFormDisplayer_Event": {
+				if (!MatchSettingsBrowserAPI::CanChangeMode()) {
+					continue;
+				}
+				ScriptBrowserController::Show("ScriptToGameModeInMatchSettings", [//L16N |Infinitive| In a popup, a button to select
+					_("Choose")],
+					_("|GameModes|Scripts"), 
+					Text[]);
+			}
+			case "ScriptToGameModeInMatchSettings_Button_0": {
+				Pages::GotoPrevious();
+				if (Event.CustomEventData.count == 0) {
+					continue;
+				}
+				declare Text ScriptToUse = Event.CustomEventData[0];
+				MatchSettingsBrowserAPI::SetScriptType(ScriptToUse);
+				MatchSettingsBrowserAPI::HardFetchMaps();
+			}
+		}
+	}
+}
+
+Boolean HasNoMaps()
+{
+	return MatchSettingsBrowserAPI::HasNoMaps();
+}

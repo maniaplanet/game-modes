@@ -1,0 +1,1042 @@
+// ListDisplayer.Script.txt
+// ATTENTION : UTILISE LE NEWCARDBUILDER ET LIBBUTTON_IMG A TRAVERS DESIGNMANIALINKS
+
+// SPECIFIER AVANT :
+//	Void ListDisplayer_Input_Action1()
+//	Void ListDisplayer_Input_Select(Text[Text] _Data)
+//	
+//
+
+#Include "Libs/Nadeo/Common/ManialinkTools/2DArrayCardBuilder.Script.txt"		as TwoDArrayCardBuilder
+#Include "Libs/Nadeo/MP4/Common/DesignManialinks.Script.txt"	as DesignManialinks
+#Include "Libs/Nadeo/MP4/Common/GlobalVariables.Script.txt"		as GlobalVariables
+#Include "Libs/Nadeo/Common/Core/Logger.Script.txt"				as Logger
+#Include "Libs/Nadeo/Common/ManiascriptTools/Dump.Script.txt"			as DumpTools
+#Include "Libs/Nadeo/Common/ManialinkTools/Manialink3WPrevAnims.Script.txt"		as Manialink
+#Include "Libs/Nadeo/MP4/Common/ManialinkTools/FontManager.Script.txt"			as Font
+#Include "TextLib"											as TextLib
+
+#Const C_ElemsMaxCountPerLineTitle	9
+#Const C_ElemsMaxCountPerLineMaker	8
+#Const C_ElemSize					<197.7, 9.2>
+#Const C_PosFirstElem				<-19.8, 26.7>
+#Const C_Margin_Elem				<0.8, 0.4>
+#Const C_ElemPositions				[<-135.2, 47.>, <-104., 47.>, <-72.8, 47.>, <-41.6, 47.>]
+
+#Const C_ImgBase				"file://Media/MEDIABROWSER_HiddenResources/Common/Images/Menus/Buttons/"
+#Const C_NbSecondaryButtonsMax	4
+
+declare Text[]		G_FilterTypes;
+declare Text[]		G_FilterNames;
+declare Vec2[]		G_FilterPositions;
+declare Vec2[]		G_FilterSizes;
+declare Text[]		G_MainButtonsNames;
+declare Text[]		G_SecondButtonsNames;
+declare Boolean[]	G_IsColorRevertable;
+declare Text[]		G_AdditionalFilterTypes;
+declare Text[]		G_AdditionalFilterNames;
+declare Text[][]	G_AdditionalFilterExtraButtons;
+
+declare Integer		G_ElemsMaxCountPerLine;
+declare Text		G_MainFont;
+declare Text		G_SubFont;
+
+Void Init(Text[] _FilterTypes, Text[] _FilterNames, Vec2[] _FilterPositions, Vec2[] _FilterSizes, Boolean[] _IsColorRevertable, Text[] _MainButtonsNames,
+	Text[] _SecondButtonsNames, Text[] _AdditionalFilterTypes, Text[] _AdditionalFilterNames, Text[][] _AdditionalFilterExtraButtons)
+{
+	DesignManialinks::Init();
+	G_ElemsMaxCountPerLine = C_ElemsMaxCountPerLineTitle;
+	if (GlobalVariables::GetLaunchContext() == GlobalVariables::LaunchContext_Maker()) {
+		G_ElemsMaxCountPerLine = C_ElemsMaxCountPerLineMaker;
+	}
+	G_MainFont				= Font::GetFontName("Main");
+	G_SubFont				= Font::GetFontName("SubTitle");
+	TwoDArrayCardBuilder::Init(1, G_ElemsMaxCountPerLine, C_PosFirstElem, C_ElemSize, C_Margin_Elem);
+	G_FilterTypes			= _FilterTypes;
+	G_FilterNames			= _FilterNames;
+	G_FilterPositions		= _FilterPositions;
+	G_FilterSizes			= _FilterSizes;
+	G_MainButtonsNames		= _MainButtonsNames;
+	G_SecondButtonsNames	= _SecondButtonsNames;
+	G_IsColorRevertable		= _IsColorRevertable;
+	G_AdditionalFilterTypes	= _AdditionalFilterTypes;
+	G_AdditionalFilterNames	= _AdditionalFilterNames;
+	G_AdditionalFilterExtraButtons = _AdditionalFilterExtraButtons;
+}
+
+Void Init(Text[] _FilterTypes, Text[] _FilterNames, Vec2[] _FilterPositions, Vec2[] _FilterSizes,
+	Boolean[] _IsColorRevertable, Text[] _MainButtonsNames, Text[] _SecondButtonsNames)
+{
+	Init(_FilterTypes, _FilterNames, _FilterPositions, _FilterSizes, _IsColorRevertable, _MainButtonsNames,
+		_SecondButtonsNames, Text[], Text[], Text[][]);
+}
+
+Void Init(Text[] _FilterTypes, Text[] _FilterNames, Vec2[] _FilterPositions, Vec2[] _FilterSizes, Text[] _MainButtonsNames, Text[] _SecondButtonsNames)
+{
+	declare Boolean[] IsColorRevertable;
+	foreach(FilterName in _FilterNames) {
+		IsColorRevertable.add(True);
+	}
+	Init(_FilterTypes, _FilterNames, _FilterPositions, _FilterSizes, IsColorRevertable, _MainButtonsNames, _SecondButtonsNames);
+}
+
+Void Init(Text[] _FilterTypes, Text[] _FilterNames, Vec2[] _FilterPositions, Vec2[] _FilterSizes, Text[] _MainButtonsNames)
+{
+	Init(_FilterTypes, _FilterNames, _FilterPositions, _FilterSizes, _MainButtonsNames, Text[]);
+}
+
+Void Init(Text[] _FilterTypes, Text[] _FilterNames, Vec2[] _FilterPositions, Vec2[] _FilterSizes)
+{
+	Init(_FilterTypes, _FilterNames, _FilterPositions, _FilterSizes, Text[]);
+}
+
+Text ExtraButtonsInAdditionalFilter(Integer _ButtonIndex)
+{
+	declare Text Result;
+	declare Text[]	AdditionalFilterExtraButtons;
+	if (!G_AdditionalFilterExtraButtons.existskey(_ButtonIndex)) {
+		Logger::Warn("ListDisplayer : ExtraButtonsInAdditionalFilter appelé au mauvais index");
+		return "";
+	}
+	AdditionalFilterExtraButtons	= G_AdditionalFilterExtraButtons[_ButtonIndex];
+	foreach (ButtonIndex => Button in AdditionalFilterExtraButtons) {
+		Result ^= DesignManialinks::ManialinkFloatingButtonFrame(<C_ElemPositions[_ButtonIndex].X, 40. - 7. * ButtonIndex>, Button, "", "TestId-" ^ _ButtonIndex ^ "-" ^ ButtonIndex);
+	}
+	return Result;
+}
+
+Text AdditionalFilterButton(Integer _ButtonIndex)
+{
+	declare Text	AdditionalFilterType;
+	declare Text	AdditionalFilterName;
+	if (!G_AdditionalFilterNames.existskey(_ButtonIndex)) {
+		Logger::Warn("ListDisplayer : AdditionalFilterButton appelé au mauvais index");
+		return "";
+	}
+	AdditionalFilterType			= G_AdditionalFilterTypes[_ButtonIndex];
+	AdditionalFilterName			= G_AdditionalFilterNames[_ButtonIndex];
+	switch(AdditionalFilterType) {
+		case "ListOneChoice": {
+			return """		<frame>
+			{{{DesignManialinks::ManialinkFloatingExpandingButtonFrame(C_ElemPositions[_ButtonIndex], AdditionalFilterName, "", Text[], "TestId" ^ _ButtonIndex)}}}
+			<frame id="FrameId-TestId{{{_ButtonIndex}}}" hidden="1">
+{{{ExtraButtonsInAdditionalFilter(_ButtonIndex)}}}
+			</frame>
+		</frame>""";
+		}
+		case "Locked": {
+			return """		<frame>
+			{{{DesignManialinks::ManialinkFloatingButtonFrame(C_ElemPositions[_ButtonIndex], AdditionalFilterName, "", "TestId" ^ _ButtonIndex)}}}
+		</frame>""";
+		}
+		case "ListYesNo": {
+			return """		<frame>
+			{{{DesignManialinks::ManialinkFloatingExpandingButtonFrame(C_ElemPositions[_ButtonIndex], AdditionalFilterName, "", Text[], "TestId" ^ _ButtonIndex)}}}
+			<frame id="FrameId-TestId{{{_ButtonIndex}}}" hidden="1">
+{{{ExtraButtonsInAdditionalFilter(_ButtonIndex)}}}
+			</frame>
+		</frame>""";
+		}
+	}
+	return "";
+}
+
+Text AdditionalFilterButtons()
+{
+	declare Text Result;
+	foreach(ButtonIndex => FilterButton in G_AdditionalFilterNames) {
+		Result ^= AdditionalFilterButton(ButtonIndex);
+	}
+	return Result;
+}
+
+Text Private_GetManiaLinkElement(Text _FilterType, Vec2 _FilterPos, Text _FilterName, Boolean _ColorRevertable) {
+	declare Real PosX = _FilterPos[0];
+	declare Text ReturnValue;
+	declare Text ExtraClassColorRevertable = "class=\"Class_ColorRevertable\"";
+	if (!_ColorRevertable) {
+		ExtraClassColorRevertable = "";
+	}
+	switch(_FilterType) {
+		case "Text": {
+			PosX += -3.1 - C_PosFirstElem.X;
+			ReturnValue = """<frame z-index="2">
+		<quad	id="ListDisplayer_Quad_Flag"	halign="center"	valign="center" size="6.2 5.2"  pos="{{{PosX - 9}}} 0" z-index="1" image=""/>
+		<label	id="{{{_FilterName}}}"	halign="left"	valign="center" size="92	{{{C_ElemSize[1]}}}"	pos="{{{PosX}}} 0"
+			 textfont="{{{G_SubFont}}}"	textsize="2" textcolor="fff" opacity="1." text="HELLO WORLD" {{{ExtraClassColorRevertable}}}/>
+	</frame>""";
+		}
+		case "TextNoFlag": {
+			PosX += 0.2 - C_PosFirstElem.X;
+			ReturnValue = """<frame z-index="2">
+		<label	id="{{{_FilterName}}}"	halign="center"	valign="center" size="40	{{{C_ElemSize[1]}}}"	pos="{{{PosX}}} 0"
+			 textfont="{{{G_SubFont}}}"	textsize="2" textcolor="fff" text="HELLO WORLD" {{{ExtraClassColorRevertable}}} scriptevents="1"/>
+	</frame>""";
+		}
+		case "Integer": {
+			PosX += 0.2 - C_PosFirstElem.X;
+			ReturnValue = """<frame z-index="2">
+		<label	id="{{{_FilterName}}}"	halign="center"	valign="center" size="7		{{{C_ElemSize[1]}}}"	pos="{{{PosX}}} 0"
+			textfont="{{{G_MainFont}}}"			textsize="2" textcolor="fff" opacity="1." text="144" {{{ExtraClassColorRevertable}}}/>
+	</frame>""";
+		}
+		case "Ratio": {
+			PosX += 0.2 - C_PosFirstElem.X;
+			ReturnValue = """<frame z-index="2">
+		<label	id="{{{_FilterName}}}"	halign="center"	valign="center" size="12	{{{C_ElemSize[1]}}}"	pos="{{{PosX}}} 0"
+			textfont="{{{G_MainFont}}}"			textsize="2" textcolor="fff" opacity="1." text="12/24" {{{ExtraClassColorRevertable}}}/>
+	</frame>""";
+		}
+		case "Date": {
+			PosX += 0.2 - C_PosFirstElem.X;
+			ReturnValue = """<frame z-index="2">
+		<label	id="{{{_FilterName}}}"	halign="center"	valign="center" size="15	{{{C_ElemSize[1]}}}"	pos="{{{PosX}}} 0"
+			textfont="{{{G_SubFont}}}"	textsize="2" textcolor="fff" opacity="1." text="5 MN AGO" {{{ExtraClassColorRevertable}}}/>
+	</frame>""";
+		}
+		case "Quad": {
+			PosX += - C_PosFirstElem.X;
+			ReturnValue = """<frame z-index="2">
+		<quad	id="{{{_FilterName}}}"	halign="center" valign="center" size="6 6"							pos="{{{PosX}}} 0"
+			bgcolor="fff"  keepratio="Fit" scriptevents="1"/>
+		<label	id="{{{_FilterName}}}_Label"	halign="center"	valign="center" size="6	{{{C_ElemSize[1]}}}"	pos="{{{PosX}}} 0"
+			textfont="{{{G_MainFont}}}"			textsize="2" textcolor="fff" text="0"/>
+	</frame>""";
+		}
+	}
+	return ReturnValue;
+}
+
+Text ManialinkFrameModels() {
+	declare Text IMG_FlecheTri = C_ImgBase ^ "FlecheTri.dds";
+
+	declare Text MLText = """	<framemodel id="ListDisplayer_Frame_Sort">
+		<quad	id="ListDisplayer_Quad_Sort"	halign="center" valign="center" size="38 8.0"	pos="0 -0.6" z-index="1" opacity="0.0" bgcolor="000" scriptevents="1"/>
+		<label	id="ListDisplayer_Label_Sort"	halign="center" valign="center" textfont="{{{G_SubFont}}}" textprefix="$t" z-index="2" textsize="2" textcolor="fff" opacity="1."/>
+		<quad	id="ListDisplayer_Arrow_Sort"	halign="center" valign="center" size="3 3"		pos="8 -0.5" z-index="2" opacity="1." image="{{{IMG_FlecheTri}}}" keepratio="Fit"/>
+	</framemodel>
+
+	<framemodel id="TwoDArrayCardBuilder_Card">
+		<quad	id="ListDisplayer_MainCard"			halign="center" valign="center" z-index="-1" size="{{{C_ElemSize[0]}}} {{{C_ElemSize[1]}}}" opacity="0.2" bgcolor="000"/>
+		<frame	id="ListDisplayer_Card_All">
+			<quad	id="ListDisplayer_Quad_IsPrivate" halign="center" valign="center" size="6 6" pos="13 0" opacity="0.8" style="Icons64x64_1" substyle="StatePrivate" hidden="1"/>
+			<quad	id="ListDisplayer_Quad_Elem"	halign="center"	valign="center" size="{{{C_ElemSize[0]}}} {{{C_ElemSize[1]}}}" z-index="-1" opacity="0.0" bgcolor="fff"/>
+			<quad	id="ListDisplayer_Quad_Focus"	halign="center"	valign="center" size="{{{C_ElemSize[0]}}} {{{C_ElemSize[1]}}}" z-index="-1" opacity="0.0" bgcolor="fff"/>
+
+""";
+	foreach (LabelIndex => FilterType in G_FilterTypes) {
+		declare Text ManiaLinkElement = Private_GetManiaLinkElement(FilterType, G_FilterPositions[LabelIndex], "Elem_Category" ^ LabelIndex, G_IsColorRevertable[LabelIndex]);
+		MLText ^= """			{{{ManiaLinkElement}}}""";
+	}
+	MLText ^= """	</frame>
+	</framemodel>""";
+	return MLText;
+}
+
+Text AllSecondaryButtons()
+{
+	declare Text MLText;
+	for(I, 0, C_NbSecondaryButtonsMax-1) {
+		declare Real PosX             = -21.0 - C_PosFirstElem.X;
+		declare Real PosY             = 73.8 - I*15.;
+		declare Text IsAction1Visible = "hidden=\"1\"";
+		declare Text ButtonName       = "Button_"^I;
+		if(G_SecondButtonsNames.count > I)
+		{
+			IsAction1Visible = "";
+			ButtonName       = G_SecondButtonsNames[I];
+		}
+		declare Text ImgInput;
+		if(I == 0) ImgInput = "";// "Action2";
+		MLText ^= """
+					<frame id="Frame_Button">
+						{{{DesignManialinks::ManialinkSecondaryButtonLarge(<PosX, PosY>, ButtonName, IsAction1Visible, ImgInput, "SecondaryButton_"^I)}}}
+					</frame>
+				""";
+	}
+	return MLText;
+}
+
+Text ManialinkMainBody() {
+	declare Text    IMG_IconSearch           = C_ImgBase ^ "Icon_Search.dds";
+	declare Text    IMG_ContainerSearch      = C_ImgBase ^ "Container_Search.dds";
+
+	declare Vec2	MainActionPosition		= <-96.3, -19.7>;
+	declare Text	Image_Select			= "";
+	declare Text	Image_Action1			= "";
+	declare Text	IsAction1Visible		= "hidden=\"1\"";
+	declare Vec2	ScrollPosition			= <-138.6, -24.6>;
+	declare Real	BottomFramePosY			= -42.5 + (9. - G_ElemsMaxCountPerLine) * (C_ElemSize.Y + C_Margin_Elem.Y);
+	declare Text	SearchText				= TextLib::GetTranslatedText("Search");
+
+	if (G_MainButtonsNames.count > 0) {
+		Image_Select       = G_MainButtonsNames[0];
+	}
+	if (G_MainButtonsNames.count > 1) {
+		Image_Action1      = G_MainButtonsNames[1];
+		IsAction1Visible   = "";
+		MainActionPosition = <-86.3, -19.7>;
+		ScrollPosition     = <-153.6, -24.6>;
+	}
+
+	declare Text MLText = """
+	<frame id="Frame_ServerList" z-index="0">
+		<frame id="Frame_Filters">
+			<frame id="LoadingThrobber" pos="{{{C_PosFirstElem.X}}} {{{C_PosFirstElem.Y}}}" hidden="1">
+				<quad id="LoadingQuad" halign="center" valign="top" size="{{{C_ElemSize.X}}} {{{(C_ElemSize.Y + C_Margin_Elem.Y) * G_ElemsMaxCountPerLine}}}" pos="0 {{{C_ElemSize.Y / 2.}}}" z-index="-1" bgcolor="000" opacity="0.5"/>
+				<label id="LoadingText" halign="center" valign="center" size="40 8" pos="0 -25" text="{{{_("Loading...")}}}" textsize="7" textfont="{{{G_MainFont}}}" textprefix="$t" textcolor="{{{DesignManialinks::GetColorCode_TextLabel_Normal()}}}"/>
+			</frame>
+			<frame id="Frame_SortButtons" pos="0 36.6" hidden="0">
+				<quad halign="center" valign="center"	size="{{{C_ElemSize[0]}}} 8.0"	pos="{{{C_PosFirstElem.X}}} -0.6" z-index="1" opacity="0.6" bgcolor="111"/>""";
+	foreach(FilterIndex => Unused in G_FilterTypes) {
+		MLText ^= """				<frameinstance modelid="ListDisplayer_Frame_Sort" z-index="5" id="ListDisplayer_Frame_Sort-{{{FilterIndex}}}" hidden="0"/>""";
+	}
+	MLText ^= """			</frame>
+			<frame>
+{{{TwoDArrayCardBuilder::ManialinkMainBody()}}}
+			</frame>
+		</frame>
+		<frame z-index="1">
+			{{{AdditionalFilterButtons()}}}
+			{{{DesignManialinks::ManialinkSearchEntry(<24., 47.>, "", "List_Entry_Search")}}}
+			{{{DesignManialinks::ManialinkFloatingButtonFrame(<64.6, 46.9>, _("Refresh"), "", "ListRefresh")}}}
+			<frame pos="{{{110.4 + C_PosFirstElem.X}}} {{{BottomFramePosY}}}" id="Frame Buttons">
+
+				<frame pos="0. 0." id="Frame_Bottom">
+					<quad  halign="center" valign="top" pos="-110.4 -13.4" z-index="-1" size="{{{C_ElemSize[0]}}} 24.5" opacity="0.4" bgcolor="000" keepratio="Fit"/>
+					{{{DesignManialinks::ManialinkMainButtonLarge(MainActionPosition, Image_Select, "", "MainAction")}}}
+					{{{DesignManialinks::ManialinkSecondaryButtonSmall(<-130.7, -19.7>, Image_Action1, IsAction1Visible, "", "MainAction2")}}}
+					{{{DesignManialinks::ManialinkScrollFrame(ScrollPosition, "", "ListScroll")}}}
+				</frame>
+
+				<frame id="Frame_SecondButtons">
+					{{{AllSecondaryButtons()}}}
+				</frame>
+				
+			</frame>
+		</frame>
+	</frame>
+	""";
+	return MLText;
+}
+
+Text Includes() {
+	return """		#Include "TextLib" as ListDisplayer_TextLib
+		#Include "MathLib" as ListDisplayer_MathLib
+
+		#Const C_ARRAY_NOORDER			0
+		#Const C_ARRAY_INCREASINGORDER	1
+		#Const C_ARRAY_DECREASINGORDER	2
+
+		#Const C_SortButtonsNb {{{G_FilterTypes.count}}}
+{{{TwoDArrayCardBuilder::Includes()}}}
+{{{DesignManialinks::Includes()}}}
+{{{Manialink::GetIncludes()}}}
+	""";
+}
+
+Text Declares() {
+	declare Text MLText = """
+	{{{DesignManialinks::Declares()}}}
+	{{{Manialink::Load()}}}
+	//<script>
+		declare Integer			G_Private_ListDisplayer_CurrentPage;
+		declare Integer			G_Private_ListDisplayer_MaxPages;
+		declare Integer			G_Private_ListDisplayer_AbsoluteIndex;
+		declare Text[Text][]	G_Private_ListDisplayer_ListData;
+		declare Text[][]		G_Private_ListDisplayer_Category;
+		declare Boolean[]		G_Private_ListDisplayer_IsPrivate;
+		declare Text[]			G_Private_ListDisplayer_Flag;
+		declare Integer[Integer] G_Private_ListDisplayer_SortStatePerButton;
+		declare Integer			G_Private_ListDisplayer_SortCursorPosition;
+		declare Text[]			G_Private_ListDisplayer_AdditionalFilterTypes;
+		declare Text[]			G_Private_ListDisplayer_AdditionalFilterNames;
+		declare Text[][]		G_Private_ListDisplayer_AdditionalFilterExtraButtons;
+		declare Text[]			G_Private_ListDisplayer_AdditionalFilterValues;
+
+	Void ListDisplayer_SetLoadingThrobberVisible(Boolean _Visible)
+	{
+		declare LoadingThrobber <=> Page.GetFirstChild("LoadingThrobber");
+		LoadingThrobber.Visible = _Visible;
+	}
+
+	Void TwoDArrayCardBuilder_HideCard(CMlFrame _Card)
+	{
+		_Card.GetFirstChild("ListDisplayer_Card_All").Hide();
+		declare MainCard <=> (_Card.GetFirstChild("ListDisplayer_MainCard") as CMlQuad);
+		MainCard.Opacity = 0.2;
+	}
+
+	Void TwoDArrayCardBuilder_ShowCard(CMlFrame _Card)
+	{
+		_Card.GetFirstChild("ListDisplayer_Card_All").Show();
+		declare MainCard <=> (_Card.GetFirstChild("ListDisplayer_MainCard") as CMlQuad);
+		MainCard.Opacity = 0.4;
+		declare Integer OneDIndex for _Card;
+		declare AbsoluteIndex = OneDIndex;
+
+		if (G_Private_ListDisplayer_IsPrivate.existskey(AbsoluteIndex)) {
+			declare ListDisplayer_Quad_IsPrivate <=> (_Card.GetFirstChild("ListDisplayer_Quad_IsPrivate") as CMlQuad);
+			if (G_Private_ListDisplayer_IsPrivate[AbsoluteIndex]) {
+				ListDisplayer_Quad_IsPrivate.Show();
+			} else {
+				ListDisplayer_Quad_IsPrivate.Hide();
+			}
+		}
+		if (G_Private_ListDisplayer_Flag.existskey(AbsoluteIndex)) {
+			declare ListDisplayer_Quad_Flag <=> (_Card.GetFirstChild("ListDisplayer_Quad_Flag") as CMlQuad);
+			ListDisplayer_Quad_Flag.ChangeImageUrl(G_Private_ListDisplayer_Flag[AbsoluteIndex]);
+		}
+		for (ElemIndex, 0, 9) {
+			declare ListDisplayer_Elem <=> _Card.GetFirstChild("Elem_Category" ^ ElemIndex);
+			if (ListDisplayer_Elem == Null) {
+				continue;
+			}
+			if (ListDisplayer_Elem is CMlLabel) {
+				declare ListDisplayer_Label <=> (ListDisplayer_Elem as CMlLabel);
+				if (G_Private_ListDisplayer_Category.existskey(AbsoluteIndex)
+					&& G_Private_ListDisplayer_Category[AbsoluteIndex].existskey(ElemIndex)) {
+					ListDisplayer_Label.SetText(G_Private_ListDisplayer_Category[AbsoluteIndex][ElemIndex]);
+				}
+			}
+			if (ListDisplayer_Elem is CMlQuad) {
+				declare ListDisplayer_Quad <=> (ListDisplayer_Elem as CMlQuad);
+				declare Echelon_Label <=> (ListDisplayer_Elem.Parent.GetFirstChild("Elem_Category" ^ ElemIndex ^ "_Label") as CMlLabel);
+				Echelon_Label.SetText("");
+				if (G_Private_ListDisplayer_Category.existskey(AbsoluteIndex)
+					&& G_Private_ListDisplayer_Category[AbsoluteIndex].existskey(ElemIndex)) {
+					declare QuadUrl = G_Private_ListDisplayer_Category[AbsoluteIndex][ElemIndex];
+					if (ListDisplayer_TextLib::SubText(QuadUrl, 0, 7) == "ECHELON") {
+						declare Echelon = ListDisplayer_TextLib::SubText(QuadUrl, 7, 1);
+						ListDisplayer_Quad.ChangeImageUrl("file://Media/Manialinks/Common/Echelons/echelon" ^ Echelon ^ ".dds");
+						Echelon_Label.SetText(Echelon);
+					} else if (QuadUrl != "" && ListDisplayer_TextLib::SubText(QuadUrl, 0, 7) != "file://") {
+						log(Now ^ ") WARN : QuadUrl == " ^ QuadUrl ^ "(ListDisplayer_Elem" ^ ElemIndex ^ ")");
+					} else {
+						ListDisplayer_Quad.ChangeImageUrl(QuadUrl);
+					}
+				}
+			}
+			declare Integer ListDisplayer_Id for ListDisplayer_Elem;
+			ListDisplayer_Id = OneDIndex;
+		}
+	}
+
+	Void TwoDArrayCardBuilder_ShowLockedCard(CMlFrame _Card)
+	{
+	}
+
+	Void TwoDArrayCardBuilder_UnFocusCard(CMlFrame _Card)
+	{
+		declare Quad_Control <=> (_Card.GetFirstChild("ListDisplayer_Quad_Elem") as CMlQuad);
+		Quad_Control.Opacity = 0.;
+	}
+
+	Void TwoDArrayCardBuilder_FocusCard(CMlFrame _Card)
+	{
+		declare Quad_Control <=> (_Card.GetFirstChild("ListDisplayer_Quad_Elem") as CMlQuad);
+		Quad_Control.Opacity = 0.4;
+	}
+
+	Void TwoDArrayCardBuilder_UnSelectCard(CMlFrame _Card)
+	{
+		DesignManialinks_MainButton_Deactivate("MainAction");
+		declare CMlQuad Quad_Control <=> (_Card.GetFirstChild("ListDisplayer_Quad_Focus") as CMlQuad);
+		Quad_Control.Opacity = 0.;
+
+		declare Quad_Focus <=> (_Card.GetFirstChild("ListDisplayer_Quad_Elem") as CMlQuad);
+		Quad_Focus.Show();
+		Page.GetClassChildren("Class_ColorRevertable", _Card, True);
+		foreach(Elem in Page.GetClassChildren_Result) {
+			if (Elem is CMlLabel) {
+				declare Label <=> (Elem as CMlLabel);
+				Label.TextColor = <1., 1., 1.>;
+			} else if (Elem is CMlQuad) {
+				declare Quad <=> (Elem as CMlQuad);
+				Quad.ModulateColor = <1., 1., 1.>;
+			}
+		}
+	}
+
+	Void TwoDArrayCardBuilder_SelectCard(CMlFrame _Card)
+	{
+		DesignManialinks_MainButton_Activate("MainAction");
+		declare CMlQuad Quad_Control <=> (_Card.GetFirstChild("ListDisplayer_Quad_Focus") as CMlQuad);
+		Quad_Control.Opacity = 0.9;
+
+		declare Quad_Focus <=> (_Card.GetFirstChild("ListDisplayer_Quad_Elem") as CMlQuad);
+		Quad_Focus.Hide();
+
+		declare Integer OneDIndex for _Card;
+		G_Private_ListDisplayer_AbsoluteIndex = OneDIndex;
+		Page.GetClassChildren("Class_ColorRevertable", _Card, True);
+		foreach(Elem in Page.GetClassChildren_Result) {
+			if (Elem is CMlLabel) {
+				declare Label <=> (Elem as CMlLabel);
+				Label.TextColor = <0., 0., 0.>;
+			} else if (Elem is CMlQuad) {
+				declare Quad <=> (Elem as CMlQuad);
+				Quad.ModulateColor = <0., 0., 0.>;
+			}
+		}
+	}
+
+{{{TwoDArrayCardBuilder::Declares()}}}
+
+	Void Private_ListDisplayer_FillCategoriesFromListData()
+	{
+		G_Private_ListDisplayer_IsPrivate.clear();
+		G_Private_ListDisplayer_Flag.clear();
+		G_Private_ListDisplayer_Category.clear();
+		foreach(ListIndex => Data in G_Private_ListDisplayer_ListData)
+		{
+			G_Private_ListDisplayer_Category.add(Text[]);
+			foreach(DataKey => DataValue in Data) {
+				if (DataKey == "IsPrivate") {
+					G_Private_ListDisplayer_IsPrivate.add(DataValue == ListDisplayer_TextLib::ToText(True));
+				}
+				if (DataKey == "Flag") {
+					G_Private_ListDisplayer_Flag.add(DataValue);
+				}
+				for (I, 0, 9) {
+					if (DataKey == "Category" ^ I) {
+						G_Private_ListDisplayer_Category[ListIndex].add(DataValue);
+					}
+				}
+			}
+		}
+	}
+
+	Void Private_ListDisplayer_ReturnAdditionalFilterValues()
+	{
+		declare Text[] Page_ListDisplayer_AdditionalFilterValues for Page;
+		Page_ListDisplayer_AdditionalFilterValues = G_Private_ListDisplayer_AdditionalFilterValues;
+		SendCustomEvent("ListDisplayer_ReturnAdditionalFilterValues", Text[]);
+	}
+
+	Void Private_ListDisplayer_Input_Select()
+	{
+		declare Integer		FinalIndex = G_Private_ListDisplayer_AbsoluteIndex;
+		if (G_Private_ListDisplayer_ListData.existskey(FinalIndex)) {
+			declare Text[Text] SelectedRecord = G_Private_ListDisplayer_ListData[FinalIndex];
+			ListDisplayer_Input_Select(SelectedRecord);
+		}
+	}
+
+	Void Private_ListDisplayer_UpdateDisplay()
+	{
+		declare Integer[] CardStates;
+
+		for (i, 0, {{{G_ElemsMaxCountPerLine - 1}}})
+		{
+			declare AbsoluteIndex = i;
+
+			if (G_Private_ListDisplayer_Category.existskey(AbsoluteIndex) && G_Private_ListDisplayer_Category[AbsoluteIndex].count != 0) {
+				CardStates.add(C_TwoDArrayCardBuilder_Available);
+			} else {
+				CardStates.add(C_TwoDArrayCardBuilder_NonExistentState);
+			}
+		}
+		if (CardStates[0] == C_TwoDArrayCardBuilder_NonExistentState) {
+			DesignManialinks_MainButton_Deactivate("MainAction");
+		} else {
+			DesignManialinks_MainButton_Activate("MainAction");
+		}
+		TwoDArrayCardBuilder_Update(CardStates);
+		DesignManialinks_ScrollButtons_Update("ListScroll", G_Private_ListDisplayer_CurrentPage, G_Private_ListDisplayer_MaxPages);
+	}
+
+	Void Private_ListDisplayer_SetTextFilter(Text _Filter)
+	{
+		SendCustomEvent("ListDisplayer_SetTextFilter", [_Filter]);
+		Private_ListDisplayer_UpdateDisplay();
+	}
+
+	Void Private_ListDisplayer_OverSortButtons()
+	{
+		for(I, 0, C_SortButtonsNb - 1)
+		{
+			declare CMlFrame ListDisplayer_Frame_Sort <=> (Page.GetFirstChild("ListDisplayer_Frame_Sort-" ^ I) as CMlFrame);
+			declare CMlQuad  ListDisplayer_Quad_Sort <=> (ListDisplayer_Frame_Sort.GetFirstChild("ListDisplayer_Quad_Sort") as CMlQuad);
+			if (G_Private_ListDisplayer_SortCursorPosition == I)
+			{
+				ListDisplayer_Quad_Sort.Opacity = 0.8;
+			} else {
+				ListDisplayer_Quad_Sort.Opacity = 0.;
+			}
+		}
+	}
+
+	Void Private_ListDisplayer_SortElements(Integer _QuadId)
+	{
+		//Arrows
+		for(I, 0, C_SortButtonsNb - 1)
+		{
+			declare CMlFrame ListDisplayer_Frame_Sort <=> (Page.MainFrame.GetFirstChild("ListDisplayer_Frame_Sort-"^I)	as CMlFrame);
+			declare CMlLabel ListDisplayer_Label_Sort <=> (ListDisplayer_Frame_Sort.GetFirstChild("ListDisplayer_Label_Sort")	as CMlLabel);
+			declare CMlQuad ListDisplayer_Arrow_Sort              <=> (ListDisplayer_Frame_Sort.GetFirstChild("ListDisplayer_Arrow_Sort")	as CMlQuad);
+			if(I == _QuadId)
+			{
+				switch(G_Private_ListDisplayer_SortStatePerButton[I])
+				{
+					case C_ARRAY_NOORDER: {
+						G_Private_ListDisplayer_SortStatePerButton[I] = C_ARRAY_INCREASINGORDER;
+						ListDisplayer_Arrow_Sort.Show();
+						ListDisplayer_Arrow_Sort.RelativeRotation = 180.;
+					}
+				}
+			}
+			else
+			{
+				G_Private_ListDisplayer_SortStatePerButton[I] = C_ARRAY_NOORDER;
+				ListDisplayer_Arrow_Sort.Hide();
+			}
+		}
+
+		//Sort
+		SendCustomEvent("ListDisplayer_SortElements", ["" ^ _QuadId]);
+		Private_ListDisplayer_UpdateDisplay();
+	}
+
+	Void Private_ListDisplayer_GetListData()
+	{
+		ListDisplayer_SetLoadingThrobberVisible(False);
+		declare Integer			List_CurrentPage	for Page;
+		declare Integer			List_MaxPages		for Page;
+		declare Text[Text][]	RequestedListData	for Page;
+		G_Private_ListDisplayer_CurrentPage	= List_CurrentPage;
+		G_Private_ListDisplayer_MaxPages	= List_MaxPages;
+		G_Private_ListDisplayer_ListData	= RequestedListData;
+		Private_ListDisplayer_FillCategoriesFromListData();
+		Private_ListDisplayer_UpdateDisplay();
+		DesignManialinks_ScrollButtons_Update("ListScroll", G_Private_ListDisplayer_CurrentPage, G_Private_ListDisplayer_MaxPages);
+	}
+
+	Void Private_ListDisplayer_Input_PageUp()
+	{
+		SendCustomEvent("ListDisplayer_PageUp", Text[]);
+	}
+
+	Void Private_ListDisplayer_Input_PageDown()
+	{
+		SendCustomEvent("ListDisplayer_PageDown", Text[]);
+	}
+
+	Void ListDisplayer_Init() {
+		declare Text[Text][]	RequestedListData for Page;
+		declare Boolean			ListDataLoaded	for Page;
+		ListDataLoaded			= False;
+
+		declare Text[] ButtonSort		= {{{dump(	G_FilterNames)}}};
+		declare Vec2[] ButtonSortPos	= {{{		G_FilterPositions}}};
+		declare Vec2[] ButtonSortSize	= {{{		G_FilterSizes}}};
+		for(I, 0, C_SortButtonsNb - 1)
+		{
+			declare CMlFrame ListDisplayer_Frame_Sort	<=> (Page.GetFirstChild("ListDisplayer_Frame_Sort-"^I)	as CMlFrame);
+			declare CMlLabel ListDisplayer_Label_Sort	<=> (ListDisplayer_Frame_Sort.GetFirstChild("ListDisplayer_Label_Sort")	as CMlLabel);
+			declare CMlQuad ListDisplayer_Quad_Sort	<=> (ListDisplayer_Frame_Sort.GetFirstChild("ListDisplayer_Quad_Sort")	as CMlQuad);
+			declare CMlQuad ListDisplayer_Arrow_Sort				<=> (ListDisplayer_Frame_Sort.GetFirstChild("ListDisplayer_Arrow_Sort")	as CMlQuad);
+			declare Integer QuadId for ListDisplayer_Quad_Sort;
+			QuadId = I;
+			if (I == 0) {
+				G_Private_ListDisplayer_SortStatePerButton[I] = C_ARRAY_INCREASINGORDER;
+				ListDisplayer_Arrow_Sort.Show();
+				ListDisplayer_Arrow_Sort.RelativeRotation = 180.;
+			} else {
+				ListDisplayer_Arrow_Sort.Hide();
+				G_Private_ListDisplayer_SortStatePerButton[I] = C_ARRAY_NOORDER;
+			}
+			ListDisplayer_Frame_Sort.RelativePosition_V3 = ButtonSortPos[I];
+			ListDisplayer_Label_Sort.SetText(ButtonSort[I]);
+			ListDisplayer_Quad_Sort.Size = ButtonSortSize[I];
+			declare Real LabelWidth = ListDisplayer_Label_Sort.ComputeWidth(ListDisplayer_Label_Sort.Value, True);
+			ListDisplayer_Arrow_Sort.RelativePosition_V3.X = 0.65 * LabelWidth + 1.;
+		}
+
+		G_Private_ListDisplayer_AbsoluteIndex 		= 0;
+		G_Private_ListDisplayer_ListData			= Text[Text][];
+		G_Private_ListDisplayer_SortCursorPosition	= -1;
+
+		G_Private_ListDisplayer_AdditionalFilterTypes	= {{{DumpTools::CustomDump(G_AdditionalFilterTypes)}}};
+		G_Private_ListDisplayer_AdditionalFilterNames	= {{{DumpTools::CustomDump(G_AdditionalFilterNames)}}};
+		G_Private_ListDisplayer_AdditionalFilterExtraButtons	= {{{DumpTools::CustomDump(G_AdditionalFilterExtraButtons)}}};
+
+		TwoDArrayCardBuilder_Init();
+		Private_ListDisplayer_UpdateDisplay();
+	}
+
+
+	Void AnimShow_CardBuilder(CMlFrame _Frame, Integer _Index, Boolean _IsComeFromRight)
+	{
+		declare Integer Direction = 1;
+		if(!_IsComeFromRight) Direction = -1;
+
+		declare Integer StartTime = 15 * (_Index+1) + 350;
+		declare Integer Speed = 500;
+
+		_Frame.RelativePosition_V3.X = (0. * (_Index+1) + 300.) * Direction;
+		LibManialink_AnimStop(_Frame);
+		LibManialink_SetTargetPosition(_Frame, <0., _Frame.RelativePosition_V3.Y>);
+		LibManialink_PresetAnimInsert(_Frame, StartTime, Speed, "EaseOutCubic");
+		foreach(Index => Control in _Frame.Controls)
+		{
+			if (Control is CMlLabel) {
+				declare Label <=> (Control as CMlLabel);
+			}
+			else if (Control is CMlQuad) {
+				declare Quad <=> (Control as CMlQuad);
+			}
+			else if (Control is CMlFrame) {
+				declare Frame <=> (Control as CMlFrame);
+				declare CMlFrame Frame_ListDisplayer_Card_All <=> (Frame.GetFirstChild("ListDisplayer_Card_All") as CMlFrame);
+				foreach(SubIndex => SubControl in Frame.Controls)
+				{
+					if (SubControl is CMlLabel) {
+						declare Label <=> (SubControl as CMlLabel);
+						Label.Opacity= 0.;
+						LibManialink_SetTargetOpacity(Label, 1.);
+						LibManialink_PresetAnimInsert(Label, StartTime, Speed, "EaseOutCubic");
+					}
+					else if (SubControl is CMlQuad) {
+						declare Quad <=> (SubControl as CMlQuad);
+						if(Quad.ControlId == "ListDisplayer_Quad_Elem" || Quad.ControlId == "ListDisplayer_Quad_Focus") continue;
+						Quad.Opacity= 0.;
+						LibManialink_SetTargetOpacity(Quad, 1.);
+						LibManialink_PresetAnimInsert(Quad, StartTime, Speed, "EaseOutCubic");
+					}
+				}
+			}
+		}
+	}
+
+	Void AnimShow_Frame(CMlFrame _Frame, Boolean _IsComeFromRight)
+	{
+		declare Integer Direction = 1;
+		if(!_IsComeFromRight) Direction = -1;
+
+		//ListDisplayer_Frame_Sort
+		foreach(Index => Control in _Frame.Controls)
+		{
+			if (Control is CMlLabel) {
+				declare Label <=> (Control as CMlLabel);
+			}
+			else if (Control is CMlQuad) {
+				declare Quad <=> (Control as CMlQuad);
+			}
+			else if (Control is CMlFrame) {
+				declare Frame <=> (Control as CMlFrame);
+				declare EventIdSplit = ListDisplayer_TextLib::Split("-", Frame.ControlId);
+				if(EventIdSplit.count > 0 && EventIdSplit[0] == "TwoDArrayCardBuilder_CardInstance")
+				{
+					declare Integer Index = ListDisplayer_TextLib::ToInteger(EventIdSplit[1]);
+					AnimShow_CardBuilder(Frame, Index, _IsComeFromRight);
+				}
+				else if(EventIdSplit.count > 0 && EventIdSplit[0] == "ListDisplayer_Frame_Sort")
+				{
+					declare Integer StartTime = 300;
+					declare Integer Speed = 500;
+					LibManialink_AnimStop(Frame.Parent);
+					Frame.Parent.RelativePosition_V3.X = 300. * Direction;
+					LibManialink_SetTargetPosition(Frame.Parent, <0., Frame.Parent.RelativePosition_V3.Y>);
+					LibManialink_PresetAnimInsert(Frame.Parent, StartTime, Speed, "EaseOutCubic");
+					
+					foreach(SubIndex => SubControl in Frame.Controls)
+					{
+						if (SubControl is CMlLabel) {
+							declare Label <=> (SubControl as CMlLabel);
+							Label.Opacity= 0.;
+							LibManialink_AnimStop(Label);
+							LibManialink_SetTargetOpacity(Label, 1.);
+							LibManialink_PresetAnimInsert(Label, StartTime-200, Speed-200, "EaseOutCubic");
+						}
+					}
+				}
+				else if(EventIdSplit.count > 0 && EventIdSplit[0] == "Frame_Searcha")
+				{
+
+				}
+				else if(EventIdSplit.count > 0 && (EventIdSplit[0] == "ListRefresh_Frame" || EventIdSplit[0] == "Frame_Search"))
+				{
+					declare Integer StartTime = 400 + Index*20;
+					declare Integer Speed = 500 + Index*20;
+					LibManialink_AnimStop(Frame);
+					declare TargetPosX = Frame.RelativePosition_V3.X;
+					Frame.RelativePosition_V3.X = Frame.RelativePosition_V3.X + 50. * Direction;
+					LibManialink_SetTargetPosition(Frame, <TargetPosX, Frame.RelativePosition_V3.Y>);
+					LibManialink_PresetAnimInsert(Frame, StartTime, Speed, "EaseOutCubic");
+					StartTime += 100;
+					Speed += 100;
+					foreach(SubIndex => SubControl in Frame.Controls)
+					{
+						if (SubControl is CMlLabel) {
+							declare Label <=> (SubControl as CMlLabel);
+							Label.Opacity= 0.;
+							LibManialink_AnimStop(Label);
+							LibManialink_SetTargetOpacity(Label, 1.);
+							LibManialink_PresetAnimInsert(Label, StartTime, Speed, "EaseOutCubic");
+						}
+						else if (SubControl is CMlQuad) {
+							declare Quad <=> (SubControl as CMlQuad);
+							if(Quad.ControlId == "Quad_SearchCancel" && !Quad.Visible) continue;
+							declare TargetOpacity = Quad.Opacity;
+							Quad.Opacity = 0.;
+							LibManialink_AnimStop(Quad);
+							LibManialink_SetTargetOpacity(Quad, TargetOpacity);
+							LibManialink_PresetAnimInsert(Quad, StartTime, Speed, "EaseOutCubic");
+						}
+					}
+				}
+				else if(EventIdSplit.count > 0 && EventIdSplit[0] == "Frame_Bottom")
+				{
+					declare Integer StartTime = 400;
+					declare Integer Speed = 500;
+					LibManialink_AnimStop(Frame);
+					Frame.RelativePosition_V3.X = 300. * Direction;
+					LibManialink_SetTargetPosition(Frame, <0., Frame.RelativePosition_V3.Y>);
+					LibManialink_PresetAnimInsert(Frame, StartTime, Speed, "EaseOutCubic");
+				}
+				else if(Control.ControlId == "SecondaryButton_0_Frame" || Control.ControlId == "SecondaryButton_1_Frame" || Control.ControlId == "SecondaryButton_2_Frame" || Control.ControlId == "SecondaryButton_3_Frame")
+				{
+					declare Integer StartTime = 600 + Index*20;
+					declare Integer Speed = 500 + Index*20;
+					if(!Control.Visible) continue;
+					LibManialink_AnimStop(Frame.Parent);
+					declare TargetPosX = Frame.Parent.RelativePosition_V3.X;
+					Frame.Parent.RelativePosition_V3.X = Frame.Parent.RelativePosition_V3.X + 20. * Direction;
+					LibManialink_SetTargetPosition(Frame.Parent, <0., Frame.Parent.RelativePosition_V3.Y>);
+					LibManialink_PresetAnimInsert(Frame.Parent, StartTime, Speed, "EaseOutCubic");
+					StartTime += 100;
+					Speed += 100;
+					foreach(SubIndex => SubControl in Frame.Controls)
+					{
+						if (SubControl is CMlLabel) {
+							declare Label <=> (SubControl as CMlLabel);
+							Label.Opacity= 0.;
+							LibManialink_AnimStop(Label);
+							LibManialink_SetTargetOpacity(Label, 1.);
+							LibManialink_PresetAnimInsert(Label, StartTime, Speed, "EaseOutCubic");
+						}
+						else if (SubControl is CMlQuad) {
+							declare Quad <=> (SubControl as CMlQuad);
+							if(Quad.ControlId == "Quad_SearchCancel" && !Quad.Visible) continue;
+							declare TargetOpacity = Quad.Opacity;
+							Quad.Opacity = 0.;
+							LibManialink_AnimStop(Quad);
+							LibManialink_SetTargetOpacity(Quad, TargetOpacity);
+							LibManialink_PresetAnimInsert(Quad, StartTime, Speed, "EaseOutCubic");
+						}
+						else if (SubControl is CMlFrame) {
+							declare SubFrame <=> (SubControl as CMlFrame);
+							foreach(ContourControl in SubFrame.Controls)
+							{
+								declare Quad_Contour <=> (ContourControl as CMlQuad);
+								declare TargetOpacity = Quad_Contour.Opacity;
+								Quad_Contour.Opacity = 0.;
+								LibManialink_AnimStop(Quad_Contour);
+								LibManialink_SetTargetOpacity(Quad_Contour, TargetOpacity);
+								LibManialink_PresetAnimInsert(Quad_Contour, StartTime, Speed, "EaseOutCubic");
+							}
+
+						}
+					}
+				}
+				else
+				{
+					AnimShow_Frame(Frame, _IsComeFromRight);
+				}
+			}
+		}
+	}
+	
+
+	Void AnimShow_Frame(Boolean _IsComeFromRight)
+	{
+		declare CMlFrame Frame_All <=> (Page.GetFirstChild("Frame_All") as CMlFrame);
+		AnimShow_Frame(Frame_All, _IsComeFromRight);
+	}
+
+	Void ListDisplayer_Show()
+	{
+		DesignManialinks_Show();
+		declare LoadingText <=> (Page.GetFirstChild("LoadingText") as CMlLabel);
+		declare LoadingQuad <=> (Page.GetFirstChild("LoadingQuad") as CMlQuad);
+		LoadingText.Opacity = 0.;
+		LibManialink_AnimStop(LoadingText);
+		LibManialink_SetTargetOpacity(LoadingText, 1.);
+		LibManialink_PresetAnimInsert(LoadingText, 600, 500, "EaseOutCubic");
+		LoadingQuad.Opacity = 0.;
+		LibManialink_AnimStop(LoadingQuad);
+		LibManialink_SetTargetOpacity(LoadingQuad, 0.5);
+		LibManialink_PresetAnimInsert(LoadingQuad, 600, 500, "EaseOutCubic");
+	}
+
+	Void Private_ListDisplayer_GraphicalLoop()
+	{
+		declare LoadingText <=> (Page.GetFirstChild("LoadingText") as CMlLabel);
+		declare Light = 0.85 + 0.15 * ListDisplayer_MathLib::Sin(Now * 0.01);
+		LoadingText.TextColor = <Light, Light, Light>;
+		if (G_Private_ListDisplayer_AbsoluteIndex != -1) {
+			declare CMlFrame CardFrame <=> (Page.GetFirstChild("TwoDArrayCardBuilder_CardInstance-" ^ G_Private_ListDisplayer_AbsoluteIndex) as CMlFrame);
+			if (CardFrame != Null) {
+				declare CMlQuad ListDisplayer_Quad_Focus <=> (CardFrame.GetFirstChild("ListDisplayer_Quad_Focus") as CMlQuad);
+				if (ListDisplayer_Quad_Focus != Null) {
+					declare OtherLight = 0.90 + 0.1 * ListDisplayer_MathLib::Sin(Now * 0.005);
+					ListDisplayer_Quad_Focus.BgColor = <OtherLight, OtherLight, OtherLight>;
+				}
+			}
+		}
+	}
+
+	Void ListDisplayer_Loop() {
+		DesignManialinks_Loop();
+		declare Boolean ListDataLoaded for Page;
+		if (ListDataLoaded) {
+			Private_ListDisplayer_GetListData();
+			ListDataLoaded = False;
+		}
+		Private_ListDisplayer_GraphicalLoop();
+		foreach(Event in PendingEvents)
+		{
+			switch(Event.Type) {
+				case CMlEvent::Type::MenuNavigation: {
+					switch(Event.MenuNavAction) {
+						case CMlEvent::EMenuNavAction::Up: {
+							if (G_Private_ListDisplayer_AbsoluteIndex % {{{G_ElemsMaxCountPerLine}}} == 0)
+							{
+								TwoDArrayCardBuilder_SetRunningState(False);
+								G_Private_ListDisplayer_SortCursorPosition = 0;
+								Private_ListDisplayer_OverSortButtons();
+							}
+						}
+						case CMlEvent::EMenuNavAction::Down: {
+							if (!TwoDArrayCardBuilder_IsRunning()) {
+								TwoDArrayCardBuilder_SetRunningState(True);
+								G_Private_ListDisplayer_SortCursorPosition = -1;
+								Private_ListDisplayer_OverSortButtons();
+							}
+						}
+						case CMlEvent::EMenuNavAction::Right : {
+							if (TwoDArrayCardBuilder_IsRunning())
+							{
+								Private_ListDisplayer_Input_PageDown();
+							} else {
+								G_Private_ListDisplayer_SortCursorPosition += 1;
+								if (G_Private_ListDisplayer_SortCursorPosition >= C_SortButtonsNb - 1) {
+									G_Private_ListDisplayer_SortCursorPosition = C_SortButtonsNb - 1;
+								}
+								Private_ListDisplayer_OverSortButtons();
+							}
+						}
+						case CMlEvent::EMenuNavAction::Left : {
+							if (TwoDArrayCardBuilder_IsRunning())
+							{
+								Private_ListDisplayer_Input_PageUp();
+							} else {
+								G_Private_ListDisplayer_SortCursorPosition -= 1;
+								if (G_Private_ListDisplayer_SortCursorPosition <= 0) {
+									G_Private_ListDisplayer_SortCursorPosition = 0;
+								}
+								Private_ListDisplayer_OverSortButtons();
+							}
+						}
+						case CMlEvent::EMenuNavAction::Select : {
+							if (TwoDArrayCardBuilder_IsRunning())
+							{
+								Private_ListDisplayer_Input_Select();
+							} else {
+								Private_ListDisplayer_SortElements(G_Private_ListDisplayer_SortCursorPosition);
+							}
+						}
+						case CMlEvent::EMenuNavAction::Action1 : {
+							ListDisplayer_Input_Action1();
+						}
+					}
+				}
+				case CMlEvent::Type::EntrySubmit: {
+					if(Event.ControlId == "List_Entry_Search")
+					{
+						declare CMlEntry Label_Search    <=> (Event.Control as CMlEntry);
+						Private_ListDisplayer_SetTextFilter(Label_Search.Value);
+					}
+				}
+				case CMlEvent::Type::MouseClick: {
+					if (Event.Control.HasClass("FloatingExpandingButtonFrame")) {
+						declare Frame <=> Page.GetFirstChild("FrameId-" ^ Event.ControlId);
+						if (Frame.Visible) {
+							Frame.Hide();
+						} else {
+							Frame.Show();
+						}
+					}
+					else if (Event.Control.HasClass("FloatingButtonFrame")) {
+						declare Params = ListDisplayer_TextLib::Split("TestId-", Event.ControlId);
+						if (Params.count < 2) {
+							log(Now ^ ") WARN : ListDisplayer_AdditionalFilter : Probleme de séparation des params : " ^ Params);
+							continue;
+						} else if (Params.count < 3) {
+							SendCustomEvent("ListDisplayer_AdditionalFilter", [Params[Params.count - 1], ""]);
+						}
+						else {
+							SendCustomEvent("ListDisplayer_AdditionalFilter", [Params[Params.count - 2], Params[Params.count - 1]]);
+						}
+					}
+					if (Event.ControlId == "MainAction")
+					{
+						Private_ListDisplayer_Input_Select();
+					}
+					else if (Event.ControlId == "MainAction2")
+					{
+						ListDisplayer_Input_Action1();
+					}
+					else if (Event.ControlId == "ListDisplayer_Quad_Sort")
+					{
+						declare Integer QuadId for Event.Control;
+						Private_ListDisplayer_SortElements(QuadId);
+					}
+					else if (Event.ControlId == "ListScroll_ScrollL")
+					{
+						Private_ListDisplayer_Input_PageUp();
+					}
+					else if (Event.ControlId == "ListScroll_ScrollR")
+					{
+						Private_ListDisplayer_Input_PageDown();
+					}
+				}
+				case CMlEvent::Type::MouseOver: {
+					if (Event.ControlId == "ListDisplayer_Quad_Sort")
+					{
+						declare CMlQuad  ListDisplayer_Quad_Sort <=> (Event.Control as CMlQuad);
+						ListDisplayer_Quad_Sort.Opacity = 0.8;
+					}
+				}
+				case CMlEvent::Type::MouseOut: {
+					if (Event.ControlId == "ListDisplayer_Quad_Sort")
+					{
+						declare CMlQuad  ListDisplayer_Quad_Sort <=> (Event.Control as CMlQuad);
+						ListDisplayer_Quad_Sort.Opacity = 0.;
+					}
+				}
+				case CMlEvent::Type::PluginCustomEvent: {
+					switch(Event.CustomEventType) {
+						case "ListDisplayer_SetLoadingThrobberVisible" : {
+							if (Event.CustomEventData.count == 0) {
+								ListDisplayer_SetLoadingThrobberVisible(True);
+							} else {
+								declare Boolean IsLoadingThrobberVisible = (Event.CustomEventData[0] == ListDisplayer_TextLib::ToText(True));
+								ListDisplayer_SetLoadingThrobberVisible(IsLoadingThrobberVisible);
+							}
+						}
+					}
+				}
+			}
+		}
+		TwoDArrayCardBuilder_Loop();
+		if (TwoDArrayCardBuilder_HasDoubleClicked())
+		{
+			Private_ListDisplayer_Input_Select();
+		}
+	}
+""";
+
+	return MLText;
+}

@@ -1,0 +1,326 @@
+#Include "Libs/Nadeo/Common/Core/MenuLayers.Script.txt"											as Layers
+#Include "Libs/Nadeo/Common/Core/Pages.Script.txt"												as Pages
+#Include "Libs/Nadeo/Common/Core/Logger.Script.txt"												as Logger
+#Include "Libs/Nadeo/Common/Core/SectionsManager.Script.txt"										as SectionsManager
+#Include "TextLib"																			as TextLib
+
+#Include "Libs/Nadeo/MP4/Common/Components/ImageBrowser/ImageBrowserController.Script.txt"		as ImageBrowserController
+#Include "Libs/Nadeo/MP4/Common/Components/VideoBrowser/VideoBrowserController.Script.txt"		as VideoBrowserController
+#Include "Libs/Nadeo/MP4/Common/Components/SoundBrowser/SoundBrowserController.Script.txt"		as SoundBrowserController
+
+#Include "Libs/Nadeo/MP4/TitlePackMaker/Components/Component_Style/StyleBuilder.Script.txt"		as StyleBuilder
+#Include "Libs/Nadeo/MP4/TitlePackMaker/Components/Component_Style/StyleXmlReader.Script.txt"	as StyleXmlReader
+#Include "Libs/Nadeo/MP4/TitlePackMaker/ColorController.Script.txt"								as ColorController
+#Include "Libs/Nadeo/MP4/TitlePackMaker/ActivationController.Script.txt"						as ActivationController
+
+//APIs
+#Include "Libs/Nadeo/MP4/Common/Components/MediaBrowser/MediaBrowserAPI.Script.txt"				as MediaBrowserAPI
+
+//Layers
+#Include "Libs/Nadeo/MP4/TitlePackMaker/Components/Component_Style/LBStyle.Script.txt"			as LBStyle
+
+#Const C_SectionColorsId	[0 => "Solo", 1 => "Online", 2 => "LocalPlay", 3 => "Editor"]
+#Const C_LBStyle "LBStyle"
+
+Void AnalyzeXML(Text _XML)
+{
+	StyleBuilder::Init();
+	StyleXmlReader::AnalyzeXML(_XML);
+	if (_XML != "") {
+		ColorController::SetColor("News", StyleXmlReader::GetNewsColor());
+	}
+}
+
+Text GenerateXML ()
+{
+	declare Text Result;
+	declare Text Logo				for LocalUser;
+	declare Text BackgroundVideo	for LocalUser;
+	declare Text BackgroundImage	for LocalUser;
+	declare Text StationLogos		for LocalUser;
+	declare Text StationImage		for LocalUser;
+	declare Text TitleMusic			for LocalUser;
+	return """	<global>
+		<News color="{{{ColorController::GetColor("News")}}}"/>
+		<Logo path="{{{Logo}}}" />
+		<Background path="{{{BackgroundVideo}}}" />
+		<BackgroundImage path="{{{BackgroundImage}}}" />
+		<Music path="{{{TitleMusic}}}" />
+		<Style MainTitlePolice="TextTitle3" SectionsPolice="TextRaceMessageBig" />
+		<Station stationlogos="{{{StationLogos}}}" stationimage="{{{StationImage}}}"/>
+	</global>""";
+}
+
+Boolean CanPublishXML()
+{
+	declare Text Logo				for LocalUser;
+	declare Text BackgroundVideo	for LocalUser;
+	declare Text BackgroundImage	for LocalUser;
+	declare Text TitleMusic			for LocalUser;
+	declare Text StationLogos		for LocalUser;
+	declare Text StationImage		for LocalUser;
+	return True;
+}
+
+Text PublishXMLError()
+{
+	declare Text Logo				for LocalUser;
+	declare Text BackgroundVideo	for LocalUser;
+	declare Text BackgroundImage	for LocalUser;
+	declare Text TitleMusic			for LocalUser;
+	declare Text StationLogos		for LocalUser;
+	declare Text StationImage		for LocalUser;
+	declare Text Result;
+	return Result;
+}
+
+Text PublishXML ()
+{
+	declare Text Result;
+	declare Text Logo				for LocalUser;
+	declare Text BackgroundVideo	for LocalUser;
+	declare Text BackgroundImage	for LocalUser;
+	declare Text StationLogos		for LocalUser;
+	declare Text StationImage		for LocalUser;
+	declare Text TitleMusic			for LocalUser;
+	declare Text ProjectEnviro		for LocalUser;
+	declare Text Enviro = "Storm";
+	if (ProjectEnviro != "" && ProjectEnviro != "TMAll") {
+		Enviro = ProjectEnviro;
+	}
+	declare Text FinalLogo;
+	declare Text FinalBackgroundImage;
+	declare Text FinalBackground;
+	declare Text FinalTitleMusic;
+	if (Logo == "") {
+		FinalLogo = """file://Media/Nadeo/Images/Logos/BaseLogo.dds""";
+	} else {
+		FinalLogo = Logo;
+	}
+	if (BackgroundImage == "") { //TODO Alexis Prendre en compte le cas vidéo
+		if (BackgroundVideo == "") {
+			FinalBackgroundImage = """file://Media/Nadeo/Images/Backgrounds/{{{Enviro}}}Screen.jpg""";
+			if (Enviro == "Storm") {
+				FinalBackgroundImage = """file://Media/Nadeo/Images/Backgrounds/{{{Enviro}}}Screen.webp""";
+			}
+		} else {
+			FinalBackground = BackgroundVideo;
+		}
+	} else {
+		FinalBackgroundImage = BackgroundImage;
+	}
+	if (TitleMusic == "") {
+		FinalTitleMusic = """file://Media/Nadeo/Musics/{{{Enviro}}}Menu.ogg""";
+	} else {
+		FinalTitleMusic = TitleMusic;
+	}
+	if (StationLogos == "") {
+		StationLogos = "file://Media/Images/Nadeo/Station/Logos.png";
+	}
+	if (StationImage == "") {
+		StationImage = "file://Media/Images/Nadeo/Station/PackImage.jpg";
+	}
+	return """	<global>
+		<News color="{{{ColorController::GetColor("News")}}}"/>
+		<Logo path="{{{FinalLogo}}}" />
+		<Background path="{{{FinalBackground}}}" />
+		<BackgroundImage path="{{{FinalBackgroundImage}}}" />
+		<Music path="{{{FinalTitleMusic}}}" />
+		<Style MainTitlePolice="TextTitle3" SectionsPolice="TextRaceMessageBig" />
+	</global>""";
+}
+
+Void Build(Text _LayerName, Boolean _Attach) {
+
+	declare Text MLText;
+	switch(_LayerName) {
+		case(C_LBStyle):{
+			MLText = LBStyle::Build();
+		}
+	}
+
+	if(MLText == "") {
+		Logger::Warn("Unknown Page: "^_LayerName);
+		return;
+	}
+	
+	Layers::Create(_LayerName, MLText);
+	
+	declare CUILayer Layer <=> Layers::Get(_LayerName);
+	declare Text Page_LayerName for Layer.LocalPage;
+	
+	Page_LayerName = _LayerName;
+	if(_Attach) Layers::Attach(_LayerName);
+}
+
+Void Build(Text _LayerName) {
+	Build(_LayerName, False);
+
+}
+
+Void Load() {
+	ColorController::Load();
+	StyleBuilder::Init();
+	Build(C_LBStyle);
+	Pages::Compose("Style", [C_LBStyle]);
+	SectionsManager::AddSection("Style", "Style");
+}
+
+Void Loop() {
+	foreach(Event in PendingEvents) {
+		if(Event.Type != CManiaAppEvent::EType::LayerCustomEvent) continue;
+		switch(Event.CustomEventType) {
+			case "AddImage": {
+				ImageBrowserController::Show("ImageToStyle", [//L16N |Infinitive| In a popup, a button to select
+					_("Choose"),
+					//L16N |Infinitive| In a popup, a button to display the media (video, image, sound...) before choosing it
+					_("|Verb|Preview")], "Logo");
+			}
+			case "PreviewImage": {
+				declare Text Logo				for LocalUser;
+				ImageBrowserController::Preview(Logo);
+			}
+			case "ImageToStyle_Button_0": {
+				declare Text ImagePath = Event.CustomEventData[0];
+				declare Text Logo for LocalUser;
+				Logo = ImagePath;
+				Pages::GotoPrevious();
+			}
+			case "ImageToStyle_Button_1": {
+				ImageBrowserController::Preview(Event.CustomEventData[0]);
+			}
+			case "AddVideo": {
+				VideoBrowserController::Show("VideoToStyle", [//L16N |Infinitive| In a popup, a button to select
+					_("Choose"),
+					//L16N |Infinitive| In a popup, a button to display the media (video, image, sound...) before choosing it
+					_("|Verb|Preview")], "Background video");
+			}
+			case "PreviewVideo": {
+				declare Text BackgroundVideo	for LocalUser;
+				VideoBrowserController::Preview(BackgroundVideo);
+			}
+			case "VideoToStyle_Button_0": {
+				declare Text VideoPath = Event.CustomEventData[0];
+				declare Text BackgroundVideo for LocalUser;
+				declare Text BackgroundImage for LocalUser;
+				if (MediaBrowserAPI::ImageOrVideo(VideoPath) == "Video") {
+					BackgroundVideo = VideoPath;
+					BackgroundImage = "";
+				} else {
+					BackgroundVideo = "";
+					BackgroundImage = VideoPath;
+				}
+				Pages::GotoPrevious();
+			}
+			case "VideoToStyle_Button_1": {
+				VideoBrowserController::Preview(Event.CustomEventData[0]);
+			}
+			case "AddSound": {
+				SoundBrowserController::Show("SoundToStyle", [//L16N |Infinitive| In a popup, a button to select
+					_("Choose"),
+					//L16N |Infinitive| In a popup, a button to display the media (video, image, sound...) before choosing it
+					_("|Verb|Preview")], "Background music");
+			}
+			case "PreviewSound": {
+				declare Text TitleMusic			for LocalUser;
+				SoundBrowserController::Preview(TitleMusic);
+			}
+			case "SoundToStyle_Button_0": {
+				declare Text SoundPath = Event.CustomEventData[0];
+				declare Text TitleMusic for LocalUser;
+				TitleMusic = SoundPath;
+				Pages::GotoPrevious();
+			}
+			case "SoundToStyle_Button_1": {
+				SoundBrowserController::Preview(Event.CustomEventData[0]);
+			}
+			case "SetSectionColor": {
+				declare Integer Index = TextLib::ToInteger(Event.CustomEventData[0]);
+				declare Vec3    Color = TextLib::ToColor(Event.CustomEventData[1]);
+				declare CUILayer LayerToSend = Layers::Get(C_LBStyle);
+				declare Integer[] Page_ActiveSections = ActivationController::GetActivatedStyleSections();
+
+				declare Integer FinalIndex = Page_ActiveSections[Index];
+				ColorController::SetColor(C_SectionColorsId[FinalIndex], TextLib::ColorToText(Color));
+				LayerCustomEvent(LayerToSend, "UpdateSectionColors", [""^Index]);
+
+			}
+			case "SetNewsColor": {
+				declare Vec3    Color = TextLib::ToColor(Event.CustomEventData[0]);
+				declare CUILayer LayerToSend = Layers::Get(C_LBStyle);
+				LayerCustomEvent(LayerToSend, "UpdateNewsColors", [""]);
+				ColorController::SetColor("News", TextLib::ColorToText(Color));
+			}
+			case "AddStationLogos": {
+				ImageBrowserController::Show("StationLogosToStyle", [//L16N |Infinitive| In a popup, a button to select
+					_("Choose"),
+					//L16N |Infinitive| In a popup, a button to display the media (video, image, sound...) before choosing it
+					_("|Verb|Preview")], "Station Logos");
+			}
+			case "StationLogosToStyle_Button_0": {
+				declare Text ImagePath = Event.CustomEventData[0];
+				declare Text StationLogos for LocalUser;
+				StationLogos = ImagePath;
+				Pages::GotoPrevious();
+			}
+			case "StationLogosToStyle_Button_1": {
+				ImageBrowserController::Preview(Event.CustomEventData[0]);
+			}
+			case "AddStationImage": {
+				ImageBrowserController::Show("StationImageToStyle", [//L16N |Infinitive| In a popup, a button to select
+					_("Choose"),
+					//L16N |Infinitive| In a popup, a button to display the media (video, image, sound...) before choosing it
+					_("|Verb|Preview")], "Station Image");
+			}
+			case "StationImageToStyle_Button_0": {
+				declare Text ImagePath = Event.CustomEventData[0];
+				declare Text StationImage for LocalUser;
+				StationImage = ImagePath;
+				Pages::GotoPrevious();
+			}
+			case "StationImageToStyle_Button_1": {
+				ImageBrowserController::Preview(Event.CustomEventData[0]);
+			}
+			case "StyleMusicStart": {
+				declare Text TitleMusic for LocalUser;
+				SoundBrowserController::Preview(TitleMusic);
+			}
+			case "StyleMusicStop": {
+				SoundBrowserController::StopPreview();
+			}
+			case "GetSectionsHack": {
+				declare Text LayerName = Event.CustomEventData[0];
+				if (LayerName != C_LBStyle)
+				{
+					Logger::Warn("Layer != LBStyle. Aborting");
+					continue;
+				}
+
+				declare CUILayer LayerToSend = Layers::Get(LayerName);
+				if(LayerToSend == Null) return;
+				declare Text[] Sections_Name          for LayerToSend.LocalPage;
+				declare Text[] Sections_FirstPage     for LayerToSend.LocalPage;
+				declare Text[] Sections_QuadSubstyle  for LayerToSend.LocalPage;
+				declare Text[Text] LabelPolices       for LayerToSend.LocalPage;
+				declare Text[Text] Page_Logo_Sections for LayerToSend.LocalPage;
+				declare Text[Text] Logo_Sections      = Text[Text];
+				declare Vec3[] Page_Section_Colors    for LayerToSend.LocalPage;
+				declare Vec3   Page_News_Color        for LayerToSend.LocalPage;
+				declare Integer[] Page_ActiveSections for LayerToSend.LocalPage;
+				Sections_Name         = ["Solo", "Multiplayer", "LocalPlay", "Editors"];
+				Sections_FirstPage    = ["", "", "", ""];
+				Sections_QuadSubstyle = ["", "", "", ""];
+				LabelPolices          = ["SectionsPolice" => "", "MainTitlePolice" => ""];
+				Page_Logo_Sections    = Logo_Sections;
+				Page_Section_Colors   = [	TextLib::ToColor(ColorController::GetColor("Solo")),
+											TextLib::ToColor(ColorController::GetColor("Online")),
+											TextLib::ToColor(ColorController::GetColor("LocalPlay")),
+											TextLib::ToColor(ColorController::GetColor("Editor"))];
+				Page_News_Color       = TextLib::ToColor(ColorController::GetColor("News"));
+				Page_ActiveSections   = ActivationController::GetActivatedStyleSections();
+
+				LayerCustomEvent(LayerToSend, "SectionInfosSent", [""]);
+			}
+		}
+	}
+}

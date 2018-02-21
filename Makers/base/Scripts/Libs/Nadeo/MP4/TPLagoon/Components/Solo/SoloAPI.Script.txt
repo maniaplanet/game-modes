@@ -1,0 +1,874 @@
+#Include "Libs/Nadeo/Common/Core/Logger.Script.txt"				as Logger
+#Include "Libs/Nadeo/MP4/TPLagoon/XMLController.Script.txt"		as XMLController
+#Include "Libs/Nadeo/MP4/Common/SettingsController.Script.txt"	as SettingsController
+#Include "Libs/Nadeo/MP4/Common/LoadingScreen.Script.txt"		as LoadingScreen
+#Include "Libs/Nadeo/Common/APIs/PlayerGroups.Script.txt"		as PlayerGroups
+
+#Include "TextLib"										as TextLib
+#Include "MathLib"										as MathLib
+
+#Const C_MedalImg			"file://Media/MEDIABROWSER_HiddenResources/Common/Images/Menus/Buttons/flag-picto2.dds"
+#Const C_MultilapIcon		"file://Media/MEDIABROWSER_HiddenResources/Common/Images/Menus/Buttons/Multilap-icon.dds"
+#Const C_NonMultilapIcon	"file://Media/MEDIABROWSER_HiddenResources/Common/Images/Menus/Buttons/Nonmultilap-icon.dds"
+#Const C_ImgBase      "file://Media/MEDIABROWSER_HiddenResources/Common/Images/Menus/"
+#Const C_MedalTypes [	"NoMedal"	=> 4,
+						"Bronze"	=> 3,
+						"Silver"	=> 2,
+						"Gold"		=> 1,
+						"Author"	=> 0]
+#Const C_MedalNumbers [	4			=> "NoMedal",
+						3			=> "Bronze",
+						2			=> "Silver",
+						1			=> "Gold",
+						0			=> "Author"]
+#Const C_MedalsFromFalguiere [	0	=> 4,
+						1			=> 3,
+						2			=> 2,
+						3			=> 1,
+						4			=> 0,
+						5			=> 0,
+						6			=> 0,
+						7			=> 0,
+						8			=> 0]
+#Const C_LockedTexts [	"White"		=> _("You need a bronze medal on the previous line of maps to unlock this map."),
+						"Green"		=> _("You need a bronze medal on the previous line of maps to unlock this map."),
+						"Blue"		=> _("You need a silver medal on the previous line of maps to unlock this map."),
+						"Red"		=> _("You need a silver medal on the previous line of maps to unlock this map."),
+						"Locked"	=> _("You need a gold medal on all the previous maps to unlock this map."),
+						"Black"		=> _("You need a gold medal on the previous map to unlock this map."),
+						"Unused1"	=> _("You need a gold medal on the previous line of maps to unlock this map."),
+						"Unused2"	=> _("You need an author medal on the previous line of maps to unlock this map.")]
+
+declare Text[]				G_SoloSections;
+declare Text				G_CampaignId;
+declare Text[]				G_SoloSectionImages;
+declare Text[][]			G_MapsPath;
+declare Text[][]			G_MapsName;
+declare Text[][]			G_MapsThumbnails;
+declare Integer[][]			G_MapsTime;
+declare Text[][]			G_Author;
+declare Text[][]			G_AuthorFlag;
+declare Integer[Integer][]	G_PlayerMedalsPerSection;
+declare Text[][]			G_SoloUnlock_MedalType;
+declare Text[][]			G_SoloUnlock_MedalNb;
+declare Boolean				G_SoloAllowEvaluate;
+declare Text				G_SoloScriptName;
+declare Text[Text]			G_MapUidByPath;
+
+declare Boolean				G_HasFetched;
+declare Text				G_MapUid;
+declare Text				G_Zone;
+declare Text				G_DisplayZone;
+declare Boolean				G_IsOffline;
+declare Integer				G_FetchTime;
+declare Integer				G_NumberOfTries;
+declare Integer				G_CurrentPosition;
+declare Integer				G_GlobalPosition;
+declare CTaskResult_NaturalLeaderBoardInfoList G_TaskResult;
+declare Boolean				G_IsFetchSuccessful;
+declare Text				G_List_Top_ZoneRank;
+declare Text[]				G_List_Top_Name;
+declare Text[]				G_List_Top_ReplayUrls;
+declare Integer[]			G_List_Top_Ranks;
+declare Integer[]			G_List_Top_Time;
+declare Integer				G_ZoneRanking;
+
+Boolean Get_SoloAllowEvaluate() {
+	return G_SoloAllowEvaluate;
+}
+
+Text GetMapUidByPath(Text _MapPath)
+{
+	if(G_MapUidByPath.existskey(_MapPath))
+	{
+		return G_MapUidByPath[_MapPath];
+	}
+	return "";
+}
+
+CMapInfo Private_GetMapInfoFromPath(Text _MapPath)
+{
+	declare LoadedCampaign <=> DataFileMgr.Campaign_Get(G_CampaignId);
+	if (LoadedCampaign == Null) {
+		return Null;
+	}
+	for(GroupIndex, 0, LoadedCampaign.GetMapGroupCount() - 1) {
+		declare CMapGroup MapGroup = LoadedCampaign.GetMapGroup(GroupIndex);
+		foreach(MapIndex => Map in MapGroup.MapInfos) {
+			if (Map.FileName == _MapPath) {
+				return Map;
+			}
+		}
+	}
+	return Null;
+}
+
+CMapInfo Private_GetMapInfoFromIndex(Integer _SectionIndex, Integer _MapIndex)
+{
+	declare Text MapPath = G_MapsPath[_SectionIndex][_MapIndex];
+	return Private_GetMapInfoFromPath(MapPath);
+}
+
+Void LoadAllMaps() {
+	foreach (CampaignIndex => LoadedCampaign in DataFileMgr.Campaigns) {
+		G_CampaignId = LoadedCampaign.CampaignId;
+		for(GroupIndex, 0, LoadedCampaign.GetMapGroupCount() - 1) {
+			G_Author		.add(Text[]);
+			G_AuthorFlag	.add(Text[]);
+			G_MapsTime		.add(Integer[]);
+			declare CMapGroup MapGroup = LoadedCampaign.GetMapGroup(GroupIndex);
+			declare MapPaths = G_MapsPath[GroupIndex];
+			foreach(Map in MapGroup.MapInfos) {
+				declare Integer MapIndex = -1;
+				foreach (PotentialIndex => MapPath in MapPaths) {
+					if (Map.FileName == MapPath) {
+						MapIndex = PotentialIndex;
+						break;
+					}
+				}
+				if (MapIndex == -1) {
+					Logger::Warn("Map de campagne non trouvée dans le XML de campagne. Interruption");
+					continue;
+				}
+				G_MapsPath[GroupIndex][MapIndex] = Map.FileName;
+				G_MapsName[GroupIndex][MapIndex] = Map.Name;
+				G_MapsThumbnails[GroupIndex][MapIndex] = "file://Thumbnails/MapUid/"^Map.MapUid^"/";
+				G_MapUidByPath[Map.FileName] = Map.MapUid;
+
+				G_Author[GroupIndex].add(Map.AuthorNickName);
+				declare Text Flag = Map.AuthorCountryFlagUrl;
+				if (Flag == "file://ZoneFlags/Path/") {
+					Flag = "file://ZoneFlags/Path/World";
+				}
+				G_AuthorFlag[GroupIndex].add(Flag);
+				declare Ident MyUserID for LocalUser;
+				G_MapsTime[GroupIndex].add(ScoreMgr.Map_GetRecord(MyUserID, Map.MapUid, ""));
+			}
+		}
+	}
+	declare Text CampaignId for LocalUser;
+	CampaignId = G_CampaignId;
+}
+
+Integer Private_GetHighestSectionMedalInNumber(Integer _SectionIndex)
+{
+	declare Integer HighestMedal = 0;
+	foreach(MapPath in G_MapsPath[_SectionIndex]) {
+		if (MapPath == "") {
+			continue;
+		}
+		declare Integer Medal = 4;
+		declare Map <=> Private_GetMapInfoFromPath(MapPath);
+		if (Map != Null) {
+			declare Integer Index = ScoreMgr.Map_GetMultiAsyncLevel(UserMgr.MainUser.Id, Map.MapUid, "");
+			if(!C_MedalsFromFalguiere.existskey(Index)) continue;
+			Medal = C_MedalsFromFalguiere[Index];
+		}
+		if (Medal > HighestMedal) {
+			HighestMedal = Medal;
+		}
+	}
+	return HighestMedal;
+}
+
+Integer Private_GetPlayerMedalNbOutsideOfCategory(Integer _CategoryIndex)
+{
+	declare Ident MyUserID for LocalUser;
+	return ScoreMgr.Campaign_GetMultiAsyncLevelCount(MyUserID, G_CampaignId, C_MedalsFromFalguiere[C_MedalTypes["Gold"]]);
+}
+
+Boolean IsCategoryLocked(Integer _CategoryIndex)
+{
+	if (!G_SoloSections.existskey(_CategoryIndex) || G_SoloSections[_CategoryIndex] != "Black") {
+		return False;
+	}
+	declare Integer NbMedals = Private_GetPlayerMedalNbOutsideOfCategory(_CategoryIndex);
+	declare Integer NbMaxMedals;
+	for(IntermediateCategoryIndex, 0, _CategoryIndex - 1) {
+		foreach(Map in G_MapsPath[IntermediateCategoryIndex]) {
+			if (Map != "") {
+				NbMaxMedals += 1;
+			}
+		}
+	}
+	return (NbMedals < NbMaxMedals);
+}
+
+Integer Private_GetMedalType(Integer _SectionIndex, Integer _MapIndex)
+{
+	if (IsCategoryLocked(_SectionIndex) && _MapIndex == 0) {
+		return C_MedalTypes["Gold"];
+	}
+	if (G_SoloUnlock_MedalType[_SectionIndex].existskey(_MapIndex)) {
+		return C_MedalTypes[G_SoloUnlock_MedalType[_SectionIndex][_MapIndex]];
+	}
+	return 4;
+}
+
+Integer Private_GetPlayerMaxMedalNbOutsideOfCategory(Integer _CategoryIndex)
+{
+	declare Integer NbMaxMedals = 0;
+	for(IntermediateCategoryIndex, 0, _CategoryIndex - 1) {
+		foreach(Map in G_MapsPath[IntermediateCategoryIndex]) {
+			if (Map != "") {
+				NbMaxMedals += 1;
+			}
+		}
+	}
+	return NbMaxMedals;
+}
+
+Integer Private_GetLockedMedalNb(Integer _SectionIndex, Integer _MapIndex)
+{
+	if (IsCategoryLocked(_SectionIndex) && _MapIndex == 0) {
+		return Private_GetPlayerMaxMedalNbOutsideOfCategory(_SectionIndex);
+	}
+	if (G_SoloUnlock_MedalNb[_SectionIndex].existskey(_MapIndex)) {
+		return TextLib::ToInteger(G_SoloUnlock_MedalNb[_SectionIndex][_MapIndex]);
+	}
+	return 0;
+}
+
+Integer Private_GetMedalNb(Integer _SectionIndex, Integer _MapIndex)
+{
+	if (IsCategoryLocked(_SectionIndex) && (_MapIndex == 0)) {
+		return Private_GetPlayerMedalNbOutsideOfCategory(_SectionIndex);
+	}
+	declare Integer MedalType	= Private_GetMedalType(_SectionIndex, _MapIndex);
+	return G_PlayerMedalsPerSection[_SectionIndex][MedalType];
+}
+
+Text Private_GetMapState(Integer _SectionIndex, Integer _MapIndex)
+{
+	if (!G_MapsPath[_SectionIndex].existskey(_MapIndex) || G_MapsPath[_SectionIndex][_MapIndex] == "") {
+		return "NonExistent";
+	}
+	declare Integer		MedalNb			= Private_GetMedalNb(_SectionIndex, _MapIndex);
+	declare Integer		LockedMedalNb	= Private_GetLockedMedalNb(_SectionIndex, _MapIndex);
+	if (MedalNb < LockedMedalNb)
+	{
+		return "Locked";
+	}
+	return "Available";
+}
+
+Integer Private_GetLockMedalInfoWithinCategory(Integer _CategoryIndex)
+{
+	foreach(MedalIndex => MedalNb in G_SoloUnlock_MedalNb[_CategoryIndex]) {
+		if (Private_GetMapState(_CategoryIndex, MedalIndex) == "Locked" || MedalIndex == G_SoloUnlock_MedalNb[_CategoryIndex].count - 1) {
+			declare Integer NbMedals = G_PlayerMedalsPerSection[_CategoryIndex][Private_GetMedalType(_CategoryIndex, MedalIndex)];
+			declare Integer NbMaxMedals = TextLib::ToInteger(MedalNb);
+			return Private_GetMedalType(_CategoryIndex, MedalIndex);
+		}
+	}
+	return C_MedalTypes["NoMedal"];
+}
+
+Text Get_CampaignId()
+{
+	return G_CampaignId;
+}
+
+Text Get_PromotionMedal()
+{
+	declare Text Result;
+	declare GotMedal = True;
+	foreach(MedalIndex => MedalType in C_MedalNumbers) {
+		foreach(SectionIndex => Section in G_SoloSections) {
+			declare LockMedalInSection		= Private_GetLockMedalInfoWithinCategory(SectionIndex);
+			if (LockMedalInSection < MedalIndex) {
+				continue;
+			}
+			declare PlayerMedalInSection	= Private_GetHighestSectionMedalInNumber(SectionIndex);
+			if (PlayerMedalInSection > MedalIndex) {
+				GotMedal = False;
+			}
+		}
+		if (GotMedal) {
+			Result = MedalType;
+		} else {
+			return Result;
+		}
+	}
+	return Result;
+}
+
+Integer Get_NbMedalsToNextPromotion()
+{
+	declare Text PromotionMedal = Get_PromotionMedal();
+	if (PromotionMedal == "Gold" || PromotionMedal == "Author") {
+		return -1;
+	}
+	declare Integer Result;
+	declare MedalIndex = C_MedalTypes[PromotionMedal] - 1;
+	declare MedalType = C_MedalNumbers[MedalIndex];
+	foreach(SectionIndex => Section in G_SoloSections) {
+		declare LockMedalInSection		= Private_GetLockMedalInfoWithinCategory(SectionIndex);
+		if (LockMedalInSection < MedalIndex) {
+			continue;
+		}
+		Result += G_PlayerMedalsPerSection[SectionIndex][4] - G_PlayerMedalsPerSection[SectionIndex][MedalIndex];
+	}
+	return Result;
+}
+
+Boolean List_CanGoLeft()
+{
+	return (G_ZoneRanking < PlayerGroups::GetZoneCount(LocalUser.ZonePath) - 1);
+}
+
+Boolean List_CanGoRight()
+{
+	return (G_ZoneRanking > 0);
+}
+
+Void List_PageUp()
+{
+	G_ZoneRanking += -1;
+}
+
+Void List_PageDown()
+{
+	G_ZoneRanking += 1;
+}
+
+Integer List_GetZoneRanking()
+{
+	return G_ZoneRanking;
+}
+
+Boolean IsFetchingData()
+{
+	if (G_TaskResult != Null) {
+		return G_TaskResult.IsProcessing;
+	}
+	return False;
+}
+
+Void FetchAllMapRankingData(Integer _SectionIndex, Integer _MapIndex, Integer _ZoneRanking)
+{
+	declare Text[] Zones = TextLib::Split("|", LocalUser.ZonePath);
+	if (Zones.count == 0) {
+		G_IsOffline = True;
+		G_IsFetchSuccessful = True;
+	}
+	G_Zone					= PlayerGroups::Get_ZoneText(LocalUser.ZonePath, _ZoneRanking);
+	G_DisplayZone			= PlayerGroups::Get_ZoneLabelText(LocalUser.ZonePath, _ZoneRanking);
+	G_HasFetched			= True;
+	G_IsOffline				= False;
+	G_FetchTime				= Now;
+	G_NumberOfTries			= 0;
+	G_CurrentPosition		= -1;
+	G_GlobalPosition		= -1;
+	G_List_Top_ZoneRank		= TextLib::Compose("$<$t%1$> : %2", G_DisplayZone, "...");
+	declare Text DefaultText = " ----------------";
+	G_List_Top_Name			= [DefaultText, DefaultText, DefaultText, DefaultText, DefaultText, 
+								DefaultText, DefaultText, DefaultText, DefaultText, DefaultText];
+	G_List_Top_ReplayUrls	= ["", "", "", "", "", 
+								"", "", "", "", ""];
+	G_List_Top_Ranks		= [0, 0, 0, 0, 0,
+								0, 0, 0, 0, 0];
+	G_List_Top_Time			= [0, 0, 0, 0, 0,
+								0, 0, 0, 0, 0];
+	G_IsFetchSuccessful		= False;
+	G_MapUid			= GetMapUidByPath(G_MapsPath[_SectionIndex][_MapIndex]);
+	if (G_TaskResult != Null) {
+		ScoreMgr.TaskResult_Release(G_TaskResult.Id);
+	}
+	G_TaskResult = ScoreMgr.MapLeaderBoard_GetPlayerList(UserMgr.MainUser.Id, G_MapUid, "", G_Zone , 1, 10);
+}
+
+Void LoopAllMapRankingData()
+{
+	if (G_IsOffline) {
+		return;
+	}
+	if (Now > G_FetchTime && G_FetchTime != -1) {
+		declare Integer PlayerCount = ScoreMgr.MapLeaderBoard_GetPlayerCount(G_MapUid, "", G_Zone);
+		if (PlayerCount == -1) {
+			G_NumberOfTries += 1;
+			G_FetchTime = Now + 100 * MathLib::NearestInteger(MathLib::Pow(2., 1. * G_NumberOfTries));
+		} else {
+			G_FetchTime = -1;
+			G_NumberOfTries = -1;
+		}
+	}
+}
+
+Boolean IsAllRankingDataReady()
+{
+	if (G_IsOffline) {
+		G_IsFetchSuccessful = True;
+		G_List_Top_ZoneRank		= _("|You are offline|Offline");
+		return True;
+	}
+	if (G_TaskResult != Null && !G_TaskResult.IsProcessing && G_TaskResult.HasSucceeded && (G_NumberOfTries == -1) && G_HasFetched) {
+		declare Ident MyUserID for LocalUser;
+		G_HasFetched = False;
+		G_IsFetchSuccessful = True;
+		declare Integer PlayerRanking = ScoreMgr.MapLeaderBoard_GetPlayerRanking(UserMgr.MainUser.Id, G_MapUid, "", G_Zone);
+		declare Integer PlayerCount = ScoreMgr.MapLeaderBoard_GetPlayerCount(G_MapUid, "", G_Zone);
+		declare Integer Time = ScoreMgr.Map_GetRecord(MyUserID, G_MapUid, "");
+		if (PlayerRanking <= 0) {
+			PlayerRanking = PlayerCount;
+		}
+		if (PlayerCount <= 0) {
+			G_List_Top_ZoneRank		= TextLib::Compose("$<$t%1$> : %2", G_DisplayZone, "??? / ???");
+		} else if (Time <= -1) {
+			G_List_Top_ZoneRank		= TextLib::Compose("$<$t%1$> : $<$t%2$>", G_DisplayZone, _("Not ranked"));
+		} else {
+			G_List_Top_ZoneRank		= TextLib::Compose("$<$t%1$> : %2", G_DisplayZone, PlayerRanking ^ " / " ^ PlayerCount);
+		}
+		G_List_Top_Name			= Text[];
+		G_List_Top_ReplayUrls	= Text[];
+		G_List_Top_Ranks		= Integer[];
+		G_List_Top_Time			= Integer[];
+		declare Text DefaultText = " ----------------";
+
+		foreach(LeaderBoardIndex => LeaderBoardEntry in G_TaskResult.LeaderBoardInfo) {
+			if ((PlayerRanking >= 10) && (LeaderBoardIndex >= 9) && (Time != -1)) {
+				G_List_Top_Name.add(LocalUser.Name);
+				G_List_Top_ReplayUrls.add(""); // TODO : Mettre son propre ReplayUrl ou codifier
+				G_List_Top_Ranks.add(PlayerRanking);
+				G_List_Top_Time.add(Time);
+			} else if (LeaderBoardEntry.Score != -1) {
+				G_List_Top_Name.add(LeaderBoardEntry.DisplayName);
+				G_List_Top_ReplayUrls.add(LeaderBoardEntry.ReplayUrl);
+				G_List_Top_Ranks.add(LeaderBoardEntry.Rank);
+				G_List_Top_Time.add(LeaderBoardEntry.Score);
+			} else {
+				G_List_Top_Name.add(DefaultText);
+				G_List_Top_ReplayUrls.add("");
+				G_List_Top_Ranks.add(0);
+				G_List_Top_Time.add(0);
+			}
+		}
+		for (I, G_TaskResult.LeaderBoardInfo.count, 9) {
+			G_List_Top_Name.add(DefaultText);
+			G_List_Top_ReplayUrls.add("");
+			G_List_Top_Ranks.add(0);
+			G_List_Top_Time.add(0);
+		}
+		return True;
+	} else if (G_TaskResult != Null && !G_TaskResult.IsProcessing && G_TaskResult.HasFailed && G_HasFetched) {
+		G_HasFetched = False;
+		Logger::Log("G_TaskResult.HasFailed");
+		Logger::Log("G_TaskResult.ErrorType       : " ^ G_TaskResult.ErrorType);
+		Logger::Log("G_TaskResult.ErrorCode       : " ^ G_TaskResult.ErrorCode);
+		Logger::Log("G_TaskResult.ErrorDescription: " ^ G_TaskResult.ErrorDescription);
+		return True;
+	}
+	return False;
+}
+
+Text Get_List_Top_ZoneRank() {
+	return G_List_Top_ZoneRank;
+}
+
+Text[] Get_List_Top_Name() {
+	return G_List_Top_Name;
+}
+
+Text[] Get_List_Top_ReplayUrls() {
+	return G_List_Top_ReplayUrls;
+}
+
+Integer[] Get_List_Top_Ranks() {
+	return G_List_Top_Ranks;
+}
+
+Integer[] Get_List_Top_Time() {
+	return G_List_Top_Time;
+}
+
+Text GetSkillPoints() {
+
+	declare Ident MyUserID for LocalUser;
+	return TextLib::ToText(ScoreMgr.Campaign_GetSkillPoints(MyUserID, G_CampaignId));
+}
+
+Text[] GetCampaignPlayerRanking() {
+	declare Text[] Result;
+	declare Text[] Zones = TextLib::Split("|", LocalUser.ZonePath);
+	if (Zones.count == 0) {
+		return [_("|You are offline|Offline")];
+	}
+	declare Text ConcatenatedZone;
+	foreach (ZoneIndex => Zone in Zones) {
+		if (ZoneIndex != 0) {
+			ConcatenatedZone ^= "|";
+		}
+		ConcatenatedZone ^= Zone;
+		declare Integer PlayerRanking;
+		declare Integer PlayerCount;
+		if (DataFileMgr.Campaigns.count != 0) {
+			PlayerRanking = ScoreMgr.CampaignLeaderBoard_GetPlayerRanking(UserMgr.MainUser.Id, G_CampaignId, ConcatenatedZone, True);
+			PlayerCount = ScoreMgr.CampaignLeaderBoard_GetPlayerCount(G_CampaignId, ConcatenatedZone, True);
+		}
+		if (PlayerCount == 0) {
+			Result.add(TextLib::ToUpperCase(Zone) ^ " > ???/???");
+			continue;
+		}
+		if (PlayerRanking == 0) {
+			PlayerRanking = PlayerCount;
+		}
+		Result.add(TextLib::ToUpperCase(Zone) ^ " > " ^
+			PlayerRanking ^ " / " ^
+			PlayerCount);
+	}
+	return Result;
+}
+
+Integer Get_PlayerRanking(Integer _ZoneIndex)
+{
+	declare Text ConcatenatedZone = PlayerGroups::Get_ZoneText(LocalUser.ZonePath, _ZoneIndex);
+	return ScoreMgr.CampaignLeaderBoard_GetPlayerRanking(UserMgr.MainUser.Id, G_CampaignId, ConcatenatedZone, True);
+}
+
+Text GetMessage(Integer _CategoryIndex, Integer _MapIndex)
+{
+	if (IsCategoryLocked(_CategoryIndex) && (_MapIndex == 0)) {
+		return C_LockedTexts["Locked"];
+	}
+	return C_LockedTexts[G_SoloSections[_CategoryIndex]];
+}
+
+Void Private_ReloadMedalImages()
+{
+	G_SoloSectionImages.clear();
+	foreach (SectionIndex => Section in G_SoloSections)
+	{
+		G_SoloSectionImages.add(C_MedalImg);
+	}
+}
+
+Void Private_ReloadMedals()
+{
+	foreach (SectionIndex => Section in G_SoloSections)
+	{
+		G_PlayerMedalsPerSection.add(Integer[Integer]);
+		for (I, 0, 4)
+		{
+			G_PlayerMedalsPerSection[SectionIndex][I] = 0;
+		}
+		foreach(MapPath in G_MapsPath[SectionIndex])
+		{
+			declare Map <=> Private_GetMapInfoFromPath(MapPath);
+			if (Map == Null) {
+				continue;
+			}
+			declare Integer Index = ScoreMgr.Map_GetMultiAsyncLevel(UserMgr.MainUser.Id, Map.MapUid, "");
+			if(!C_MedalsFromFalguiere.existskey(Index)) continue;
+			declare Medal = C_MedalsFromFalguiere[Index];
+			for(I, Medal, 4)
+			{
+				G_PlayerMedalsPerSection[SectionIndex][I] += 1;
+			}
+		}
+	}
+}
+
+Text Private_GetTime(Integer _SectionIndex, Integer _MapIndex)
+{
+	declare Map <=> Private_GetMapInfoFromIndex(_SectionIndex, _MapIndex);
+	if (Map == Null) {
+		return "";
+	}
+	declare Ident MyUserID for LocalUser;
+	declare Integer Time = ScoreMgr.Map_GetRecord(MyUserID, Map.MapUid, "");
+	if (Time == -1) {
+		return "-:--.---";
+	}
+	declare Text TimeText = TextLib::TimeToText(Time, True);
+	TimeText ^= TextLib::SubText(Time  ^"", (TextLib::Length(Time^"")-1), 1);
+	return TimeText;
+}
+
+Text Private_GetSkillPoints(Integer _SectionIndex, Integer _MapIndex)
+{
+	declare Map <=> Private_GetMapInfoFromIndex(_SectionIndex, _MapIndex);
+	if (Map == Null) {
+		return "";
+	}
+	declare Ident MyUserID for LocalUser;
+	declare Integer Time = ScoreMgr.Map_GetRecord(MyUserID, Map.MapUid, "");
+	declare Integer Score = ScoreMgr.Map_GetSkillPoints(MyUserID, Map.MapUid, "");
+	if (Score == -1 || Time <= 0) {
+		return "";
+	}
+	return TextLib::ToText(Score);
+}
+
+Text Private_GetMultilap(Integer _SectionIndex, Integer _MapIndex)
+{
+	declare Map <=> Private_GetMapInfoFromIndex(_SectionIndex, _MapIndex);
+	if (Map == Null) {
+		return TextLib::ToText(False);
+	}
+	if (Map.TMObjective_IsLapRace) {
+		return TextLib::ToText(True);
+	} else {
+		return TextLib::ToText(False);
+	}
+	return "";
+}
+
+Integer Private_GetMedal(Text _MapPath)
+{
+	declare Map <=> Private_GetMapInfoFromPath(_MapPath);
+	if (Map == Null) {
+		return 4;
+	}
+	declare Integer Index = ScoreMgr.Map_GetMultiAsyncLevel(UserMgr.MainUser.Id, Map.MapUid, "");
+	if(!C_MedalsFromFalguiere.existskey(Index)) return 4;
+	return C_MedalsFromFalguiere[Index];
+}
+
+Text Private_GetPlayerMedalInfoPerCategory(Integer _CategoryIndex)
+{
+	return "";
+}
+
+Text[] GetPlayerMedalInfos()
+{
+	declare Text[] PlayerMedalInfos;
+
+	foreach(CategoryIndex => Category in G_SoloSections)
+	{
+		PlayerMedalInfos.add(Private_GetPlayerMedalInfoPerCategory(CategoryIndex));
+	}
+	return PlayerMedalInfos;
+}
+
+Void Load()
+{
+	declare Text[][] MapsPerCategory for LocalUser;
+	G_MapsPath				= XMLController::Get_MapsPath();
+	MapsPerCategory			= G_MapsPath;
+	G_MapsName				= XMLController::Get_MapsName();
+	G_SoloSections			= XMLController::Get_Solo_Sections();
+	G_MapsThumbnails		= XMLController::Get_MapsThumbnails();
+	G_SoloUnlock_MedalType	= XMLController::Get_SoloUnlock_MedalType();
+	G_SoloUnlock_MedalNb	= XMLController::Get_SoloUnlock_MedalNb();
+	G_SoloAllowEvaluate		= XMLController::Get_SoloAllowEvaluate();
+	G_SoloScriptName		= XMLController::Get_SoloScriptName();
+	declare Text ProjectEnviro for LocalUser;
+	if (ProjectEnviro != "Storm") {
+		G_SoloScriptName	= "Modes/TrackMania/CampaignSolo";
+	}
+
+	G_MapsTime				= Integer[][];
+	G_CampaignId			= "";
+	G_Author				= Text[][];
+	G_AuthorFlag			= Text[][];
+
+	G_HasFetched			= False;
+	G_IsOffline				= False;
+	G_FetchTime				= -1;
+	G_NumberOfTries			= -1;
+	G_CurrentPosition		= 0;
+	G_GlobalPosition		= 0;
+	G_TaskResult			= Null;
+	G_ZoneRanking			= PlayerGroups::GetRegionZoneCount(LocalUser.ZonePath) - 1;
+	LoadAllMaps();
+	Private_ReloadMedals();
+}
+
+Integer Private_NextTrackIndex(Integer _SectionIndex, Integer _MapIndex)
+{
+	declare CurrentMapIndex = _MapIndex + 1;
+	while (CurrentMapIndex <= 25) {
+		declare Text MapState = Private_GetMapState(_SectionIndex, CurrentMapIndex);
+		if (MapState == "Available") {
+			return CurrentMapIndex;
+		} else if (MapState == "Locked") {
+			return -1;
+		}
+		CurrentMapIndex += 1;
+	}
+	return -1;
+}
+
+Text Private_NextTrackPath(Text _MapPath)
+{
+	declare Text MapUid = GetMapUidByPath(_MapPath);
+	LoadingScreen::SetLoadingType(0, "file://Thumbnails/MapUid/"^MapUid^"/");
+	foreach (SectionIndex => Section in G_MapsPath) {
+		foreach(MapIndex => MapPath in Section) {
+			if (MapPath == _MapPath) {
+				declare Integer NextMapIndex = Private_NextTrackIndex(SectionIndex, MapIndex);
+				if (NextMapIndex != -1) {
+					return G_MapsPath[SectionIndex][NextMapIndex];
+				}
+			}
+		}
+	}
+	return "";
+}
+
+Boolean Private_NextTrackIsPossible(Text _MapPath)
+{
+	return (Private_NextTrackPath(_MapPath) != "");
+}
+
+Text Private_GetUserMedalNbPerSection(Integer _SectionIndex)
+{
+	declare Integer UserMedalNbPerSection;
+
+	return TextLib::ToText(UserMedalNbPerSection);
+}
+
+Text[] GetSoloSections()
+{
+	declare Text[] Result = [_("Ranking")];
+	foreach(Section in G_SoloSections) {
+		Result.add(Section);
+	}
+	return Result;
+}
+
+Text[] GetSoloSectionImages()
+{
+	Private_ReloadMedalImages();
+	declare Text IMG_RankingOnline		= C_ImgBase ^ "Achievements/Logo_Ranking.dds";
+	declare Text[] Result = [IMG_RankingOnline];
+	foreach(Image in G_SoloSectionImages) {
+		Result.add(Image);
+	}
+	return Result;
+}
+
+Text Private_GetAuthor(Integer _SectionIndex, Integer _MapIndex)
+{
+	if (!G_Author.existskey(_SectionIndex) || !G_Author[_SectionIndex].existskey(_MapIndex))
+	{
+		return "";
+	}
+	return G_Author[_SectionIndex][_MapIndex];
+}
+
+Text Private_GetAuthorFlag(Integer _SectionIndex, Integer _MapIndex)
+{
+	if (!G_AuthorFlag.existskey(_SectionIndex) || !G_AuthorFlag[_SectionIndex].existskey(_MapIndex))
+	{
+		return "";
+	}
+	return G_AuthorFlag[_SectionIndex][_MapIndex];
+}
+
+Text[Text][] GetSectionMainData(Integer _SectionIndex)
+{
+	declare Text[Text][] Result;
+	if (!G_MapsPath.existskey(_SectionIndex)) {
+		return Result;
+	}
+	declare Text[] MapsPath = G_MapsPath[_SectionIndex];
+	foreach(MapIndex => MapPath in MapsPath) {
+		declare Text MapState		= Private_GetMapState(_SectionIndex, MapIndex);
+		declare Text MapName		= G_MapsName[_SectionIndex][MapIndex];
+		declare Text MapAuthor		= Private_GetAuthor(_SectionIndex, MapIndex);
+		declare Text MapFlag		= Private_GetAuthorFlag(_SectionIndex, MapIndex);
+		declare Text MapThumbnail	= G_MapsThumbnails[_SectionIndex][MapIndex];
+		declare Text Multilap		= Private_GetMultilap(_SectionIndex, MapIndex);
+		declare Text Medal			= C_MedalNumbers[Private_GetMedal(MapPath)];
+
+		declare Text Time			= Private_GetTime(_SectionIndex, MapIndex);
+		declare Text SkillPoints	= Private_GetSkillPoints(_SectionIndex, MapIndex);
+		declare Text UserMedalNb	= TextLib::ToText(Private_GetMedalNb(_SectionIndex, MapIndex));
+		declare Text LockMedalNb	= TextLib::ToText(Private_GetLockedMedalNb(_SectionIndex, MapIndex));
+		declare Text LockMedalType	= C_MedalNumbers[Private_GetMedalType(_SectionIndex, MapIndex)];
+		Result.add(["State"		=> MapState,
+					"Path"		=> MapPath,
+					"Type"		=> "Track",
+					"Multilap"	=> Multilap,
+					"Name"		=> MapName,
+					"Author"	=> MapAuthor,
+					"Flag"		=> MapFlag,
+					"Thumbnail"	=> MapThumbnail,
+					"Medal"			=> Medal,
+					"Time"			=> Time,
+					"SkillPoints"	=> SkillPoints,
+					"UserMedalNb"	=> UserMedalNb,
+					"LockMedalNb"	=> LockMedalNb,
+					"LockMedalType"	=> LockMedalType]);
+	}
+	return Result;
+}
+
+Text[][][] GetSectionLineData(Integer _SectionIndex)
+{
+	declare Text[][][] Result;
+	if (!G_MapsPath.existskey(_SectionIndex)) {
+		return Result;
+	}
+	declare Text[] MapsPath = G_MapsPath[_SectionIndex];
+	foreach(MapPath in MapsPath) {
+		Result.add(Text[][]);
+	}
+	return Result;
+}
+
+Boolean IsOfficial(Text _MapPath)
+{
+	foreach(MapByDifficulty in G_MapsPath)
+	{
+		foreach(Map in MapByDifficulty)
+		{
+			if(Map == _MapPath)	return True;
+		}
+
+	}
+	return False;
+}
+
+Void PlayAndManageMap(Text _MapPath)
+{
+	declare Boolean Solo_NextTrackIsPossible		for LocalUser;
+	declare Boolean Solo_WorldRecordIsPossible		for LocalUser;
+	declare Boolean Solo_ChallengeAuthorIsPossible	for LocalUser;
+	declare Boolean Solo_ChooseOpponentIsPossible	for LocalUser;
+	declare Boolean Solo_GiveUpIsPossible			for LocalUser;
+	declare Boolean Solo_NextTrackRequested			for LocalUser;
+	declare Text MapPath = _MapPath;
+	
+	declare Boolean PlayMapLoop = True;
+
+	//log("Get_PromotionMedal: "^ Get_PromotionMedal());
+	//return;
+
+	while(PlayMapLoop) {
+		PlayMapLoop = False;
+		Solo_NextTrackIsPossible = Private_NextTrackIsPossible(MapPath);
+		Solo_ChooseOpponentIsPossible = True;
+		Solo_GiveUpIsPossible = True;
+		Solo_WorldRecordIsPossible = True;
+		declare Text PromotionMedal = Get_PromotionMedal();
+		Solo_ChallengeAuthorIsPossible = (Private_GetMedal(MapPath) == 0 || PromotionMedal == "Gold" || PromotionMedal == "Author");
+		Solo_NextTrackRequested = False;
+		declare Text Settings = SettingsController::GetSettingsXml("Campaign", True);
+		declare Boolean HideSoloInfo	for LocalUser;
+		HideSoloInfo = False;
+		declare Boolean RunAway = False;
+		foreach (SectionIndex => Section in G_MapsPath) {
+			foreach(MapIndex => SpecificMapPath in Section) {
+				if (SpecificMapPath == _MapPath) {
+					if (Private_GetMapState(SectionIndex, MapIndex) == "Locked" || Private_GetMapState(SectionIndex, MapIndex) == "NonExistent") {
+						RunAway = True;
+					}
+				}
+			}
+		}
+		if (RunAway) {
+			break;
+		}
+		TitleFlow.PlayMap(MapPath, G_SoloScriptName, Settings);
+		wait(TitleFlow.IsReady); // TODO : Changer le while et le wait pour éviter la perte d'events
+
+		Private_ReloadMedals();
+		if (Solo_NextTrackRequested) {
+			PlayMapLoop = True;
+			MapPath = Private_NextTrackPath(MapPath);
+		}
+		Solo_NextTrackIsPossible = False;
+	}
+}

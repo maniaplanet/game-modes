@@ -1,0 +1,190 @@
+#Include "Libs/Nadeo/Common/Core/MenuLayers.Script.txt"											as Layers
+#Include "Libs/Nadeo/Common/Core/Logger.Script.txt"												as Logger
+#Include "Libs/Nadeo/Common/Core/Pages.Script.txt"												as Pages
+#Include "Libs/Nadeo/Common/Core/SectionsManager.Script.txt"										as SectionsManager
+#Include "TextLib"																			as TextLib
+#Include "MathLib"																			as MathLib
+
+//APIs
+#Include "Libs/Nadeo/MP4/TPLagoon/Components/Solo/SoloAPI.Script.txt"							as SoloAPI
+#Include "Libs/Nadeo/MP4/TPLagoon/Components/G_RankingModule/RankingAPI.Script.txt"				as RankingAPI
+#Include "Libs/Nadeo/MP4/TPLagoon/Components/Multiplayer/MultiplayerAPI.Script.txt"				as MultiplayerAPI
+#Include "Libs/Nadeo/Common/APIs/PlayerGroups.Script.txt"										as PlayerGroups
+
+//Layers
+#Include "Libs/Nadeo/MP4/TPLagoon/Components/G_RankingModule/LBRankingModule.Script.txt"		as LBRankingModule
+#Include "Libs/Nadeo/MP4/TPLagoon/Components/G_RankingModule/LBRankingPage.Script.txt"			as LBRankingPage
+
+#Const C_LBRankingModule	    "RankingModule"
+#Const C_LBRankingPage		    "RankingPage"
+#Const C_NextUpdateInterval		1000
+
+declare CTaskResult_NaturalLeaderBoardInfoList G_TaskPlayerList;
+declare Integer G_NextUpdateTime;
+declare Text    G_CurrentRankingSection;
+declare Integer G_ZoneFocus;
+declare Boolean G_HasFetched;
+declare Text[]  G_PlayerListInfoLogin;
+
+Void UpdateRankingModule(Boolean _Visibility)
+{
+	declare CUILayer LayerToSend <=> Layers::Get(C_LBRankingModule);
+	if(LayerToSend == Null) return;
+	LayerCustomEvent(LayerToSend, "UpdateAll", [""^_Visibility]);
+}
+
+Void SwitchToProfile()
+{
+	Menu_Profile();
+}
+
+Void Build(Text _LayerName, Boolean _Attach) {
+
+	declare Text MLText;
+	switch(_LayerName) {
+		case(C_LBRankingModule):{
+			MLText = LBRankingModule::Build();
+		}
+		case(C_LBRankingPage):{
+			MLText = LBRankingPage::Build();
+		}
+	}
+
+	if(MLText == "") {
+		Logger::Warn("Unknown Page: "^_LayerName);
+		return;
+	}
+	
+	Layers::Create(_LayerName, MLText);
+	
+	declare CUILayer Layer <=> Layers::Get(_LayerName);
+	declare Text Page_LayerName for Layer.LocalPage;
+	
+	Page_LayerName = _LayerName;
+	if(_Attach) Layers::Attach(_LayerName);
+}
+
+Void SendPlayerInfo(Integer _Zone)
+{
+	declare CUILayer LayerToSend = Layers::Get(C_LBRankingPage);
+	if(LayerToSend == Null) return;
+	declare Text[]		Page_PlayersNameList	for LayerToSend.LocalPage;
+	declare Integer[]	Page_PlayersRankList	for LayerToSend.LocalPage;
+	declare Integer[]	Page_PlayersScoreList	for LayerToSend.LocalPage;
+	declare Integer	    NewDataList_GroupCount  for LayerToSend.LocalPage;
+	declare Text		Page_PlayersZone		for LayerToSend.LocalPage;
+
+	Page_PlayersNameList.clear();
+	Page_PlayersRankList.clear();
+	Page_PlayersScoreList.clear();
+	G_PlayerListInfoLogin.clear();
+	NewDataList_GroupCount = PlayerGroups::GetPlayerGroupsCount();
+	Page_PlayersZone = PlayerGroups::Get_ZoneLabelText(LocalUser.ZonePath, _Zone);
+	declare PlayerRanking = SoloAPI::Get_PlayerRanking(_Zone);
+	foreach(LeaderBoardIndex => LeaderBoardEntry in G_TaskPlayerList.LeaderBoardInfo) {
+		if ((PlayerRanking >= 10) && (LeaderBoardIndex >= 9)) {
+			G_PlayerListInfoLogin.add(LocalUser.Login);
+			Page_PlayersNameList.add(LocalUser.Name);
+			Page_PlayersScoreList.add(ScoreMgr.Campaign_GetSkillPoints (UserMgr.MainUser.Id, SoloAPI::Get_CampaignId()));
+			Page_PlayersRankList.add(PlayerRanking);
+		} else {
+			G_PlayerListInfoLogin.add("" ^ LeaderBoardEntry.Login);
+			Page_PlayersNameList.add(LeaderBoardEntry.DisplayName);
+			Page_PlayersRankList.add(LeaderBoardEntry.Rank);
+			Page_PlayersScoreList.add(LeaderBoardEntry.Score);
+		}
+	}
+
+	LayerCustomEvent(LayerToSend, "Update_PlayersLabels", [""]);
+}
+
+
+Void UpdateRanking()
+{
+	declare CUILayer LayerToSend = Layers::Get(C_LBRankingModule);
+	declare Text	Ranking_ZoneScores	for LayerToSend.LocalPage;
+	declare Text[]	Ranking_ZoneTexts	for LayerToSend.LocalPage;
+	switch (SectionsManager::GetActualSection()) {
+		case "SectionsSelector" : {
+			Ranking_ZoneScores	= RankingAPI::GetGlobalPoints();
+			Ranking_ZoneTexts	= RankingAPI::GetGlobalPlayerRanking();
+		}
+		case "Solo" : {
+			Ranking_ZoneScores	= SoloAPI::GetSkillPoints();
+			Ranking_ZoneTexts	= SoloAPI::GetCampaignPlayerRanking();
+		}
+		case "Multiplayer" : {
+			Ranking_ZoneScores	= MultiplayerAPI::GetMultiplayerEchelon();
+			Ranking_ZoneTexts	= MultiplayerAPI::GetMultiplayerPlayerRanking();
+		}
+	}
+	LayerCustomEvent(LayerToSend, "RankingSent", Text[]);
+}
+
+Void Init()
+{
+	G_HasFetched = False;
+	G_NextUpdateTime = Now + C_NextUpdateInterval;
+	G_CurrentRankingSection = "";
+}
+
+Void Load() {
+	Build(C_LBRankingModule, False);
+	Build(C_LBRankingPage, False);
+	
+	Pages::Compose(C_LBRankingPage, [C_LBRankingPage]);
+}
+
+
+Void Loop() {
+	if(ScoreMgr == Null) return;
+
+	if(ScoreMgr.TaskResults.count > 0 && G_TaskPlayerList != Null && G_HasFetched)
+	{
+		if(!G_TaskPlayerList.IsProcessing)
+		{
+			G_HasFetched = False;
+			if(G_TaskPlayerList.HasSucceeded)
+			{
+				SendPlayerInfo(G_ZoneFocus);
+			}
+			else
+			{
+				log("G_TaskPlayerList Fail: " ^ G_TaskPlayerList.ErrorDescription);
+			}
+		}
+	}
+	
+	if (Now > G_NextUpdateTime && G_CurrentRankingSection != SectionsManager::GetActualSection()) {
+		G_NextUpdateTime		= Now + C_NextUpdateInterval;
+		G_CurrentRankingSection	= SectionsManager::GetActualSection();
+		UpdateRanking();
+	}
+	foreach(Event in PendingEvents) {
+		if(Event.Type != CManiaAppEvent::EType::LayerCustomEvent) continue;
+		switch(Event.CustomEventType) {
+			case "GetPlayerInfo": {
+				declare Integer ZoneInt = TextLib::ToInteger(Event.CustomEventData[0]);
+				declare Text ZoneRank   = PlayerGroups::Get_ZoneText(LocalUser.ZonePath, ZoneInt);
+				if (ZoneRank == "") {
+					continue;
+				}
+
+				G_ZoneFocus = ZoneInt;
+				G_HasFetched = True;
+				if (G_TaskPlayerList != Null) {
+					ScoreMgr.TaskResult_Release(G_TaskPlayerList.Id);
+				}
+				G_TaskPlayerList = ScoreMgr.CampaignLeaderBoard_GetPlayerList(UserMgr.MainUser.Id, SoloAPI::Get_CampaignId(), ZoneRank, True, 0, 10);
+			}
+			case "Ranking_GetRanking" : {
+				UpdateRanking();
+			}
+			case "ShowProfile" : {
+				declare Integer Index   = TextLib::ToInteger(Event.CustomEventData[0]);
+				declare Text Url = "profile?" ^ G_PlayerListInfoLogin[Index];
+				OpenLink(Url, CManiaApp::ELinkType::ManialinkBrowser);
+			}
+		}
+	}
+}

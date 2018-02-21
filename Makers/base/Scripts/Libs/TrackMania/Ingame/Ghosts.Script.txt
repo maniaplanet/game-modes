@@ -1,0 +1,576 @@
+/**
+ *	ScoreTable Library
+ * 	Especially made for console
+ */
+
+#Const Version				"2016-01-20"
+#Const ScriptName			"Ghosts.Script.txt"
+
+
+#Const TMC_MEDAL_AUTHOR				0
+#Const TMC_MEDAL_GOLD				1
+#Const TMC_MEDAL_SILVER				2
+#Const TMC_MEDAL_BRONZE				3
+#Const TMC_MEDAL_PLAYER				4
+#Const TMC_MEDAL_NONE				5
+
+#Const C_STORERESULT_PROCESSING		0
+#Const C_STORERESULT_SUCCEEDED		1
+#Const C_STORERESULT_FAILED			2
+
+#Const TMC_DATAMGR_TIMEOUT			5000
+
+#Const C_ImgLoading	"file://Media/Manialinks/Nadeo/TMConsole/Images/Load.tga"
+
+declare CGhost[Integer]  								G_MedalGhosts;
+declare CGhost[Text]									G_PlayerGhost;
+declare Ident[Integer]									G_GhostsLoadedIdent;
+declare Integer[Text]									G_PlayerTime;
+declare CWebServicesTaskResult 							G_SetOnlineRecordWebTask;
+declare CWebServicesTaskResult							G_GetOnlineRecordWebTask;
+declare CTaskResult_GhostList							G_TaskLoadGhosts;
+declare CTaskResult_Ghost									G_TaskLoadGhost;
+// Async ghosts save
+declare Text[] G_AsyncGhosts_MapUid;
+declare Ident[] G_AsyncGhosts_UserId;
+declare CGhost[] G_AsyncGhosts_Ghost;
+declare Text[] G_AsyncGhosts_GhostName;
+declare Boolean G_IsSavingGhost;
+// Saving layer id
+declare Ident G_SavingLayerId;
+declare CWebServicesTaskResult_MapRecordGhostScript G_TaskRecordGhost;
+
+Text Private_GetSavingML() {
+	return """
+<manialink version="3" name="Lib:Ghosts_Saving">
+<frame pos="150 -80" hidden="1" id="Frame_Saving">
+	<quad size="10 10" halign="center" valign="center" id="Quad_Saving" />
+</frame>
+<script><!--
+main() {
+	declare Frame_Saving <=> (Page.GetFirstChild("Frame_Saving") as CMlFrame);
+	declare Quad_Saving <=> (Frame_Saving.GetFirstChild("Quad_Saving") as CMlQuad);
+
+	declare netread Boolean Net_LibGhosts_IsSavingGhost for Teams[0];
+	declare PrevVisible = !Net_LibGhosts_IsSavingGhost;
+
+	while (True) {
+		yield;
+
+		if (PrevVisible != Net_LibGhosts_IsSavingGhost) {
+			PrevVisible = Net_LibGhosts_IsSavingGhost;
+			Frame_Saving.Visible = Net_LibGhosts_IsSavingGhost;
+		}
+
+		if (PrevVisible) {
+			Quad_Saving.RelativeRotation += Period * 0.25;
+			if (Quad_Saving.RelativeRotation > 360.) {
+				Quad_Saving.RelativeRotation = Quad_Saving.RelativeRotation - 360.;
+			}
+		}
+	}
+}
+--></script>
+</manialink>
+""";
+}
+
+// ---------------------------------- //
+/** Return the version number of the script
+ *
+ *	@return		The version number of the script
+ */
+Text GetScriptVersion() {
+	return Version;
+}
+
+// ---------------------------------- //
+/** Return the name of the script
+ *
+ *	@return		The name of the script
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+Void WaitTime(Integer _Time) {
+	declare Integer WaitingTime = _Time;
+	while(WaitingTime > 0) {
+		WaitingTime -= Period;
+		yield;
+	}
+}
+
+Void RetrieveMedalGhosts(Integer _Medal, Text _GhostUrl) {
+	declare Medal = _Medal;
+	if(Medal == 0) Medal = 4;
+	declare CWebServicesTaskResult_MapRecordGhostScript TaskGhost = ScoreMgr.Map_GetMultiAsyncLevelRecordGhost(Map.MapInfo.MapUid, "", Medal);
+	declare Integer WaitingLimit = Now + TMC_DATAMGR_TIMEOUT;
+	if(TaskGhost == Null) return;
+	while(Now < WaitingLimit && TaskGhost.IsProcessing) {
+		yield;
+	}
+
+	if(TaskGhost.HasSucceeded)
+	{
+		G_MedalGhosts[TMC_MEDAL_PLAYER -_Medal] 	<=> TaskGhost.Ghost;
+		//log("G_MedalGhosts["^TMC_MEDAL_PLAYER - _Medal^"]: "^ TaskGhost.Ghost);
+		if(TaskGhost.Ghost != Null) ScoreMgr.ReleaseGhost(TaskGhost.Ghost.Id);
+	}
+	else if(TaskGhost.HasFailed)
+	{
+		//log("TaskMedalGhost["^_Medal^"].HasFailed");
+		//log("TaskMedalGhost["^_Medal^"].ErrorType       : " ^ TaskGhost.ErrorType);
+		//log("TaskMedalGhost["^_Medal^"].ErrorCode       : " ^ TaskGhost.ErrorCode);
+		//log("TaskMedalGhost["^_Medal^"].ErrorDescription: " ^ TaskGhost.ErrorDescription);
+	}
+	
+	//HackDataMgr
+	/*
+	declare Integer WaitingLimit = Now + TMC_DATAMGR_TIMEOUT;
+	while(Now < WaitingLimit) {
+		if(DataMgr.Ready) {
+			if(G_MedalGhosts.existskey(_Medal) && G_MedalGhosts[_Medal] != Null) {
+				DataMgr.GhostDestroy(G_MedalGhosts[_Medal]);
+				G_MedalGhosts[_Medal] = Null;
+			}
+			G_MedalGhosts[_Medal] 	= DataMgr.GhostRetrieve(_GhostUrl);
+			break;
+		}
+		yield;
+	}
+	*/
+}
+
+Void LoadMedalGhosts(Integer _Medal) {
+	//HackDataMgr
+	for(I, 0, TMC_MEDAL_PLAYER-1)
+	{
+		RetrieveMedalGhosts(I, "Record.GhostUrl");
+	}
+	//log("G_MedalGhosts: "^ G_MedalGhosts);
+	/*
+	foreach(Index => Record in DataMgr.Records) {
+		if((Record.Medal == CHighScore::EMedal::Author)
+			&& (_Medal == TMC_MEDAL_AUTHOR)) {
+			RetrieveMedalGhosts(_Medal, Record.GhostUrl);
+		} else if((Record.Medal == CHighScore::EMedal::Gold)
+			&& (_Medal == TMC_MEDAL_GOLD)) {
+			RetrieveMedalGhosts(_Medal, Record.GhostUrl);
+		} else if((Record.Medal == CHighScore::EMedal::Silver)
+			&& (_Medal == TMC_MEDAL_SILVER)) {
+			RetrieveMedalGhosts(_Medal, Record.GhostUrl);
+		} else if((Record.Medal == CHighScore::EMedal::Bronze)
+			&& (_Medal == TMC_MEDAL_BRONZE)) {
+			RetrieveMedalGhosts(_Medal, Record.GhostUrl);
+		}
+	}
+	*/
+}
+
+Boolean IsGhostReady(CGhost _GhostToLoad) {
+	if(_GhostToLoad == Null) return False;
+
+	return True;
+}
+
+CGhost GetMedalGhosts(Integer _Medal) {
+	declare Medal = _Medal;
+	if(Medal == 0) Medal = 4;
+	if(!G_MedalGhosts.existskey(Medal)) LoadMedalGhosts(_Medal);
+	if(!G_MedalGhosts.existskey(Medal) || G_MedalGhosts[Medal] == Null) return Null;
+	return G_MedalGhosts[Medal];
+}
+
+Integer GetMedalGhostTime(Integer _Medal) {
+	declare CGhost MedalGhost = GetMedalGhosts(_Medal);
+	if(MedalGhost != Null) {
+		return MedalGhost.Result.Time;
+	}
+	return -1;
+}
+
+Void RetrieveTrackRecord() {
+	// ---------------------------------- //
+	// Data Manager load
+	//HackDataMgr
+	/* 
+
+	declare Integer WaitingLimit = Now + TMC_DATAMGR_TIMEOUT;
+	while(Now < WaitingLimit) {
+		if(DataMgr.Ready) {
+			DataMgr.RetrieveRecords(Map.MapInfo, DataMgr.MenuUserId);
+			break;
+		}
+		yield;
+	}
+	*/
+}
+
+Text GetGhostUrlFromName(Text _GhostName) {
+
+	return "";
+	//HackDataMgr
+	/* 
+	wait(DataMgr.Ready);
+	RetrieveTrackRecord();
+	foreach(Index => Record in DataMgr.Records) {
+		if(Record.GhostName == _GhostName) {
+			// log("GET RECORD: "^Record.GhostUrl^" Ghost name: "^_GhostName);
+			return Record.GhostUrl;
+		}
+	}
+	return "";
+	*/
+}
+
+Void LoadPlayerGhost(Text _GhostName) {
+	declare Text 		GhostUrl 		= "";
+	declare Integer 	GhostTime 		= 0;
+	declare Integer WaitingLimit = Now + TMC_DATAMGR_TIMEOUT;
+	
+	//HackDataMgr
+	/* 
+	while(Now < WaitingLimit) {
+		if(DataMgr.Ready) {
+			break;
+		}
+		yield;
+	}
+	
+	if(!DataMgr.Ready) return;
+
+	foreach(Index => Record in DataMgr.Records) {
+		// log("GHOST RECORD NAME: "^Record.GhostName);
+		if(Record.GhostName == _GhostName) {
+			GhostUrl					= Record.GhostUrl;
+			GhostTime					= Record.Time;
+			break;
+		}
+	}
+	
+	if(GhostUrl == "") {
+		G_PlayerGhost[_GhostName] 	= Null;
+		G_PlayerTime[_GhostName] 	= -1;
+		return;
+	}
+	
+	while(Now < WaitingLimit) {
+		if(DataMgr.Ready) {
+			G_PlayerGhost[_GhostName] 	= DataMgr.GhostRetrieve(GhostUrl);
+			G_PlayerTime[_GhostName] 	= GhostTime;
+			break;
+		}
+		yield;
+	}
+	*/
+}
+
+CGhost GetPlayerGhost(Text _GhostName) {
+	if(!G_PlayerGhost.existskey(_GhostName)) LoadPlayerGhost(_GhostName);
+	if(!G_PlayerGhost.existskey(_GhostName)) return Null;
+	return G_PlayerGhost[_GhostName];
+}
+
+Integer GetPlayerTime(Text _GhostName) {
+	if(!G_PlayerGhost.existskey(_GhostName)) LoadPlayerGhost(_GhostName);
+	if(!G_PlayerTime.existskey(_GhostName)) return -1;
+	return G_PlayerTime[_GhostName];
+}
+
+CGhost[] GetGhostsFromUrl(Text _GhostUrl)
+{
+	declare CGhost[] Ghosts;
+	if (G_TaskLoadGhosts != Null) {
+		DataFileMgr.TaskResult_Release(G_TaskLoadGhosts.Id);
+	}
+	G_TaskLoadGhosts = DataFileMgr.Replay_Load(_GhostUrl);
+	wait(!G_TaskLoadGhosts.IsProcessing);
+	if (G_TaskLoadGhosts.HasSucceeded) {
+		foreach (TaskGhost in G_TaskLoadGhosts.Ghosts) {
+			Ghosts.add(TaskGhost);
+		}
+	}
+	return Ghosts;
+}
+
+CGhost GetGhostFromOnline(Text _OnlineGhostFileName, Text _OnlineGhostUrl)
+{
+	declare CGhost Ghost;
+	if (G_TaskLoadGhost != Null) {
+		DataFileMgr.TaskResult_Release(G_TaskLoadGhost.Id);
+	}
+	G_TaskLoadGhost = DataFileMgr.Ghost_Download(_OnlineGhostFileName, _OnlineGhostUrl);
+	wait(!G_TaskLoadGhost.IsProcessing);
+	if (G_TaskLoadGhost.HasSucceeded) {
+		Ghost = G_TaskLoadGhost.Ghost;
+	}
+	return Ghost;
+}
+
+CGhost GetGhostFromUrl(Text _GhostUrl)
+{
+	return GetGhostsFromUrl(_GhostUrl)[0];
+}
+
+Ident LoadGhostOnMapReplay(CGhost _GhostToLoad, Boolean _DisplayAsPlayer, Boolean _RaceResultAsBest) {
+	declare Boolean GhostLoaded = False;
+	declare Ident GhostIdent = NullId;
+	/*
+	while(_GhostToLoad.DataState == CGhost::EDataState::InProgress) {
+		yield;
+	}
+	*/
+	/*
+	if(_GhostToLoad.DataState == CGhost::EDataState::Ready) {
+		GhostLoaded = True;
+	} else if(_GhostToLoad.DataState == CGhost::EDataState::Error) {
+		GhostLoaded	= False;
+	}
+	*/
+	
+	/*
+	if(GhostLoaded) {
+		if(_RaceResultAsBest) {
+			foreach(Player in AllPlayers) {
+				Player.Score.BestRace = _GhostToLoad.RaceResult;
+			}
+		}
+		GhostIdent = RaceGhost_Add(_GhostToLoad, _DisplayAsPlayer);
+		G_GhostsLoadedIdent[G_GhostsLoadedIdent.count] = GhostIdent;
+	}
+	*/
+	return GhostIdent;
+}
+
+Ident LoadGhostOnMapWithSkin(CGhost _GhostToLoad, Boolean _DisplayAsPlayer, Ident _ModelId) {
+	declare Ident 		GhostIdent 		= NullId;
+	declare Boolean GhostLoaded = IsGhostReady(_GhostToLoad);
+	if(GhostLoaded) {
+		GhostIdent = RaceGhost_Add(_GhostToLoad, False, _ModelId);
+		G_GhostsLoadedIdent[G_GhostsLoadedIdent.count] = GhostIdent;
+	}
+	return GhostIdent;
+}
+
+Void ReleaseGhost() {
+	if(G_TaskRecordGhost != Null)
+	{
+		ScoreMgr.ReleaseGhost(G_TaskRecordGhost.Id);
+	}
+}
+
+Ident LoadGhostOnMap(CGhost _GhostToLoad, Boolean _DisplayAsPlayer) {
+	declare Ident 		GhostIdent 		= NullId;
+	if(_GhostToLoad == Null) return GhostIdent;
+	GhostIdent = RaceGhost_Add(_GhostToLoad, _DisplayAsPlayer);
+	G_GhostsLoadedIdent[G_GhostsLoadedIdent.count] = GhostIdent;
+	return GhostIdent;
+}
+
+CGhost GetLastGhostFromPlayer(CTmPlayer Player) {
+	return ScoreMgr.Playground_GetPlayerGhost(Player);
+}
+
+CGhost GetGhostFromPlayer(CTmPlayer Player, Text _Context) {
+	declare CGhost GhostPlayer;
+	
+	declare Ident MyUserID for Players[0].User;
+	G_TaskRecordGhost = ScoreMgr.Map_GetRecordGhost(MyUserID, Map.MapInfo.MapUid, _Context);
+	if (G_TaskRecordGhost == Null) {
+		return Null;
+	}
+	while(G_TaskRecordGhost.IsProcessing) yield;
+	if(G_TaskRecordGhost.HasSucceeded) GhostPlayer <=> G_TaskRecordGhost.Ghost;
+	//log("["^Now^"] G_TaskRecordGhost.HasSucceeded: " ^  G_TaskRecordGhost.HasSucceeded);
+	return GhostPlayer;
+}
+
+Void RemoveGhost(Ident _GhostIdent) {
+	RaceGhost_Remove(_GhostIdent);
+}
+
+Void RemoveAllGhosts() {
+	G_GhostsLoadedIdent.clear();
+	RaceGhost_RemoveAll();
+
+}
+
+Void SaveGhostRecord(CTmPlayer _Player, Text _GhostName) {
+
+	//HackDataMgr
+	/* 
+	declare Integer WaitingLimit = Now + TMC_DATAMGR_TIMEOUT;
+	while(Now < WaitingLimit) {
+		if(DataMgr.Ready) {
+			DataMgr.StoreRecord(Map.MapInfo.MapUid, DataMgr.MenuUserId, _Ghost, _GhostName);
+			log("STORE RECORD: "^Map.MapInfo.MapUid^DataMgr.MenuUserId^_Ghost^_GhostName);
+			break;
+		}
+		yield;
+	}
+	*/
+}
+
+Void Async_SaveGhostRecord(CGhost _Ghost, Text _GhostName) {
+
+	//HackDataMgr
+	/* 
+	G_AsyncGhosts_MapUid.add(Map.MapInfo.MapUid);
+	G_AsyncGhosts_UserId.add(DataMgr.MenuUserId);
+	G_AsyncGhosts_Ghost.add(_Ghost);
+	G_AsyncGhosts_GhostName.add(_GhostName);
+	*/
+}
+
+Void RequestOnlineSetRecord(CGhost _Ghost) {
+
+	//HackDataMgr
+	/* 
+	G_SetOnlineRecordWebTask = ScoreMgr.Campaign_SetNewMapRecord(DataMgr.MenuUserId, Map.MapInfo.MapUid, _Ghost);
+	*/
+}
+
+Void RequestOnlineGetRecord() {
+	//HackDataMgr
+	/* 
+	G_GetOnlineRecordWebTask = ScoreMgr.Campaign_GetMapRecordGhost(DataMgr.MenuUserId, Map.MapInfo.MapUid);
+	*/
+}
+
+CGhost GetOnlineRecordGhost() {
+	declare CGhost Ghost;
+	//HackDataMgr
+	/* 
+	if(G_GetOnlineRecordWebTask == Null || !G_GetOnlineRecordWebTask.HasSucceeded) return Null;
+	declare CGhost Ghost = DataMgr.GhostRetrieveFromTaskResult(G_GetOnlineRecordWebTask);
+	*/
+	return Ghost;
+}
+
+Integer GetOnlineRecordGhostTime() {
+	declare CGhost OnlineGhost = GetOnlineRecordGhost();
+	if (OnlineGhost == Null)	return -1;
+	//return OnlineGhost.RaceResult.Time;
+	return 0;
+}
+
+Integer GetOnlineGetRecordTaskStatus() {
+	if(G_GetOnlineRecordWebTask == Null) return -1;
+	if(G_GetOnlineRecordWebTask.IsProcessing) {
+		return C_STORERESULT_PROCESSING;
+	 } else if(G_GetOnlineRecordWebTask.HasSucceeded) {
+		return C_STORERESULT_SUCCEEDED;
+	 } else if(G_GetOnlineRecordWebTask.HasFailed) {
+		return C_STORERESULT_FAILED;
+	 }
+	 return -1;
+}
+
+Integer GetOnlineSetRecordTaskStatus() {
+	if(G_SetOnlineRecordWebTask == Null) return -1;
+	 if(G_SetOnlineRecordWebTask.IsProcessing) {
+		return C_STORERESULT_PROCESSING;
+	 } else if(G_SetOnlineRecordWebTask.HasSucceeded) {
+		return C_STORERESULT_SUCCEEDED;
+	 } else if(G_SetOnlineRecordWebTask.HasFailed) {
+		return C_STORERESULT_FAILED;
+	 }
+	 return -1;
+}
+
+Void ReleaseOnlineGetRecordTask() {
+	if( G_GetOnlineRecordWebTask == Null )
+		return;
+	ScoreMgr.TaskResult_Release(G_GetOnlineRecordWebTask.Id);
+	G_GetOnlineRecordWebTask = Null;
+}
+
+Void ReleaseOnlineSetRecordTask() {
+	if( G_SetOnlineRecordWebTask == Null )
+		return;
+	ScoreMgr.TaskResult_Release(G_SetOnlineRecordWebTask.Id);
+	G_SetOnlineRecordWebTask = Null;
+}
+
+Text GetSavingStatusVariableDeclaration() {
+	return "declare netread Boolean Net_LibGhosts_IsSavingGhost for Teams[0];";
+}
+
+Text GetSavingStatusVariableName() {
+	return "Net_LibGhosts_IsSavingGhost";
+}
+
+Ident[Integer] GetLoadedGhostsIdent() {
+	return G_GhostsLoadedIdent;
+}
+
+Integer RemainingGhostsToSave() {
+	return G_AsyncGhosts_MapUid.count;
+}
+
+Void Loop() {
+	//HackDataMgr
+	/* 
+	// Update save status
+	
+	if (G_IsSavingGhost && G_AsyncGhosts_MapUid.count <= 0 && DataMgr.Ready) {
+		G_IsSavingGhost = False;
+		declare netwrite Boolean Net_LibGhosts_IsSavingGhost for Teams[0];
+		Net_LibGhosts_IsSavingGhost = G_IsSavingGhost;
+	} else if (!G_IsSavingGhost && G_AsyncGhosts_MapUid.count > 0) {
+		G_IsSavingGhost = True;
+		declare netwrite Boolean Net_LibGhosts_IsSavingGhost for Teams[0];
+		Net_LibGhosts_IsSavingGhost = G_IsSavingGhost;
+	}
+
+	// Save ghosts
+	if (DataMgr.Ready && G_AsyncGhosts_MapUid.count > 0) {
+		declare MapUid = G_AsyncGhosts_MapUid[0];
+		declare UserId = G_AsyncGhosts_UserId[0];
+		declare Ghost = G_AsyncGhosts_Ghost[0];
+		declare GhostName = G_AsyncGhosts_GhostName[0];
+		
+		if (MapUid != "" && UserId != NullId && Ghost != Null && GhostName != "") {
+			DataMgr.StoreRecord(MapUid, UserId, Ghost, GhostName);
+		}
+
+		declare Removed = False;
+		Removed = G_AsyncGhosts_MapUid.removekey(0);
+		Removed = G_AsyncGhosts_UserId.removekey(0);
+		Removed = G_AsyncGhosts_Ghost.removekey(0);
+		Removed = G_AsyncGhosts_GhostName.removekey(0);
+	}
+	*/
+}
+
+// ---------------------------------- //
+// Unload the library
+Void Unload() {
+	G_MedalGhosts.clear();
+	G_PlayerGhost.clear();
+	G_PlayerTime.clear();
+
+	if (UIManager.UILayers.existskey(G_SavingLayerId)) {
+		declare Removed = UIManager.UIAll.UILayers.removekey(G_SavingLayerId);
+		UIManager.UILayerDestroy(UIManager.UILayers[G_SavingLayerId]);
+		G_SavingLayerId = NullId;
+	}
+}
+
+// ---------------------------------- //
+/// Load the library
+Void Load() {
+	Unload();
+	RetrieveTrackRecord();
+
+	declare SavingLayer <=> UIManager.UILayerCreate();
+	SavingLayer.ManialinkPage = Private_GetSavingML();
+	UIManager.UIAll.UILayers.add(SavingLayer);
+
+	declare netwrite Boolean Net_LibGhosts_IsSavingGhost for Teams[0];
+	Net_LibGhosts_IsSavingGhost = False;
+
+	G_IsSavingGhost = False;
+}
+

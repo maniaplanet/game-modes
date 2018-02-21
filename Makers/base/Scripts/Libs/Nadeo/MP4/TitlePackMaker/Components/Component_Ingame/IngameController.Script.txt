@@ -1,0 +1,231 @@
+#Include "TextLib"																				as TextLib
+#Include "Libs/Nadeo/Common/Core/MenuLayers.Script.txt"												as Layers
+#Include "Libs/Nadeo/Common/Core/Pages.Script.txt"													as Pages
+#Include "Libs/Nadeo/Common/Core/Logger.Script.txt"													as Logger
+#Include "Libs/Nadeo/Common/Core/SectionsManager.Script.txt"											as SectionsManager
+#Include "Libs/Nadeo/MP4/Common/SettingsController.Script.txt"										as SettingsController
+#Include "Libs/Nadeo/MP4/Common/Components/DialogBox/DialogBoxController.Script.txt"				as DialogBoxController
+
+#Include "Libs/Nadeo/MP4/Common/Components/MenuButtonsOld/LBMenuButtons.Script.txt"													as MenuButtons
+#Include "Libs/Nadeo/MP4/TitlePackMaker/Components/Component_Ingame/IngameXmlReader.Script.txt"		as IngameXmlReader
+#Include "Libs/Nadeo/MP4/Common/DesignManialinks.Script.txt"										as DesignManialinks
+
+//Layers
+#Include "Libs/Nadeo/MP4/TitlePackMaker/Components/Component_Ingame/LBIngame.Script.txt"			as LBIngame
+#Include "Libs/Nadeo/MP4/TitlePackMaker/Components/Component_Ingame/LBGameplaySettings.Script.txt"	as LBGameplaySettings
+
+#Const LayerGameplaySettings "GameplaySettings"
+
+declare Real G_AccelerationCoef;
+declare Real G_ControlCoef;
+declare Real G_GravityCoef;
+
+Text GenerateXML ()
+{
+	return """	<Ingame accelcoef="{{{G_AccelerationCoef}}}" controlcoef="{{{G_ControlCoef}}}" gravitycoef="{{{G_GravityCoef}}}">
+	</Ingame>""";
+}
+
+Void Init()
+{
+	G_AccelerationCoef	= 1.;
+	G_ControlCoef		= 1.;
+	G_GravityCoef		= 1.;
+}
+
+Void InitAssets()
+{
+	/* TODO : AssetMakerController::Init("Editor", EditorXmlReader::GetBaseIds(),
+		EditorXmlReader::GetBaseTitleNames(),
+		EditorXmlReader::GetBaseMakerNames(),
+		EditorXmlReader::GetUGCAssets(),
+		EditorXmlReader::GetIsVisibleInMaker(),
+		False,
+		EditorXmlReader::GetIsActivated());*/
+}
+
+Void AnalyzeXML(Text _XML)
+{
+	Init();
+	IngameXmlReader::AnalyzeXML(_XML);
+	if (_XML != "") {
+		G_AccelerationCoef	= IngameXmlReader::GetAccelerationCoef();
+		G_ControlCoef		= IngameXmlReader::GetControlCoef();
+		G_GravityCoef		= IngameXmlReader::GetGravityCoef();
+	}
+	InitAssets();
+}
+
+Boolean CanPublishXML()
+{
+	return True;
+}
+
+Text PublishXML()
+{
+	return """	<Ingame accelcoef="{{{G_AccelerationCoef}}}" controlcoef="{{{G_ControlCoef}}}" gravitycoef="{{{G_GravityCoef}}}">
+	</Ingame>""";
+}
+
+Void Build(Text _LayerName, Boolean _Attach) {
+
+	declare Text MLText;
+	switch(_LayerName) {
+		case("Ingame"):{
+			MLText = LBIngame::Build();
+		}
+		case(LayerGameplaySettings):{
+			MLText = LBGameplaySettings::Build();
+		}
+	}
+
+	if(MLText == "") {
+		Logger::Warn("Unknown Page: " ^ _LayerName);
+		return;
+	}
+
+	Layers::Create(_LayerName, MLText);
+
+	declare CUILayer Layer <=> Layers::Get(_LayerName);
+	declare Text Page_LayerName for Layer.LocalPage;
+
+	Page_LayerName = _LayerName;
+	if(_Attach) Layers::Attach(_LayerName);
+}
+
+Void Build(Text _LayerName) {
+	Build(_LayerName, False);
+}
+
+Void Load() {
+	declare SectionColor = TextLib::ToColor(DesignManialinks::GetColorCode_Overall());
+	Build("Ingame");
+	Build("GameplaySettings");
+	Pages::Compose("Ingame", ["Ingame"]);
+	Pages::Compose("GameplaySettings", ["GameplaySettings"]);
+	SectionsManager::AddSection("Ingame", "Ingame", "Hotseat", SectionColor);
+	MenuButtons::ChangeData("Ingame",	["GAMEPLAY SETTINGS",	"CAR MODELS",	"MUSIC PLAYLIST",	"MODS"],
+										[<-3.8, 31.7>,		<-3.8, 19.0>,	<-3.8, 4.1>,		<-3.8, -8.5>],
+										["GamePlay",		"CarModels",	"Music",			"Mods"],
+										SectionColor);
+
+}
+
+Void SendToSettingsController()
+{
+	SettingsController::Set_AccelerationCoef(G_AccelerationCoef);
+	SettingsController::Set_ControlCoef(G_ControlCoef);
+	SettingsController::Set_GravityCoef(G_GravityCoef);
+}
+
+
+Void SendEntryValue()
+{
+	declare CUILayer LayerToSend <=> Layers::Get(LayerGameplaySettings);
+	declare Real Page_AccCoef for LayerToSend.LocalPage;
+	declare Real Page_ConCoef for LayerToSend.LocalPage;
+	declare Real Page_GraCoef for LayerToSend.LocalPage;
+	Page_AccCoef = G_AccelerationCoef;
+	Page_ConCoef = G_ControlCoef;
+	Page_GraCoef = G_GravityCoef;
+	LayerCustomEvent(LayerToSend, "UpdateEntries", [""]);
+}
+
+Text Get_EnviroText(Integer _Index)
+{
+	declare Text[] Environments = ["Canyon", "Stadium", "Valley", "Lagoon"];
+	return Environments[_Index];
+}
+
+Text Get_PostMood(Integer _Index)
+{
+	if(_Index == 3) return "48";
+	return "";
+}
+
+Text Get_PostMood(Text _Enviro)
+{
+	if(_Enviro == "Lagoon") return Get_PostMood(3);
+	return Get_PostMood(0);
+}
+
+Void Loop() {
+	foreach(Event in PendingEvents) {
+		if(Event.Type != CManiaAppEvent::EType::LayerCustomEvent) continue;
+		switch(Event.CustomEventType) {
+			case "GamePlay" : {
+				Pages::GotoNext("GameplaySettings");
+			}
+			case "LaunchEditorGP" : {
+				
+				G_AccelerationCoef = TextLib::ToReal(Event.CustomEventData[0]);
+				G_ControlCoef      = TextLib::ToReal(Event.CustomEventData[1]);
+				G_GravityCoef      = TextLib::ToReal(Event.CustomEventData[2]);
+				SendToSettingsController();
+				declare Text ProjectEnviro for LocalUser;
+				declare Text PostMood = Get_PostMood(ProjectEnviro);
+				declare Text Enviro;
+				declare Text Mood;
+				declare Text Car;
+				declare Text MapType            = ""; // "Race.Script.txt";
+				//MapType = "";
+				declare Text EditorPluginScript = "";
+				declare Text SettingsXml        = SettingsController::GetSettingsXmlEditor(True);
+				if(ProjectEnviro != "TMAll")
+				{
+					Enviro = ProjectEnviro;
+					//Mood   = "Day"^PostMood;
+					//Car    = ProjectEnviro^"Car";
+				}
+				else if(ProjectEnviro == "Storm")
+				{
+					MapType            = "";
+					EditorPluginScript = "";
+					SettingsXml        = "";
+				}
+
+				TitleFlow.EditNewMap(Enviro, Mood, "", Car, MapType, EditorPluginScript, SettingsXml);
+				wait(TitleFlow.IsReady);
+
+				declare Text CustomResultType = TitleFlow.CustomResultType;
+				if (CustomResultType == "SetNewGameplaySettings") {
+					declare AccelerationCoef = TextLib::ToReal(TitleFlow.CustomResultData[1]);
+					declare ControlCoef      = TextLib::ToReal(TitleFlow.CustomResultData[2]);
+					declare GravityCoef      = TextLib::ToReal(TitleFlow.CustomResultData[0]);
+					G_AccelerationCoef = AccelerationCoef;
+					G_ControlCoef      = ControlCoef;
+					G_GravityCoef      = GravityCoef;
+
+					SendEntryValue();
+					SendToSettingsController();
+				}
+			}
+			case "GetEntryValue" : {
+				SendEntryValue();
+			}
+			case "SetEntryValue" : {
+				declare Integer Index = TextLib::ToInteger(Event.CustomEventData[0]);
+				declare Real Value    = TextLib::ToReal(Event.CustomEventData[1]);
+				switch(Index)
+				{
+					case 0: G_AccelerationCoef = Value;
+					case 1: G_ControlCoef      = Value;
+					case 2: G_GravityCoef      = Value;
+				}
+				SendToSettingsController();
+				//log("G_AccelerationCoef: " ^ G_AccelerationCoef);
+				//log("G_ControlCoef     : " ^ G_ControlCoef);
+				//log("G_GravityCoef     : " ^ G_GravityCoef);
+			}
+			case "CarModels" : {
+				DialogBoxController::ShowMessage("You cannot edit car models yet.");
+			}
+			case "Music" : {
+				DialogBoxController::ShowMessage("You cannot edit the ingame music yet.");
+			}
+			case "Mods" : {
+				DialogBoxController::ShowMessage("You cannot edit mods yet.");
+			}
+		}
+	}
+}

@@ -1,0 +1,439 @@
+#Include "Libs/Nadeo/Common/Core/Logger.Script.txt" as Logger
+
+#Const C_MIN_VOLUME				 -20.
+
+#Const C_VOLUME_UI		 		 0.
+#Const C_VOLUME_VOICES			 -1.
+#Const C_VOLUME_INGAME_MUSIC 	 -1.
+
+#Const C_VOLUME_MENU_UI 		 0.5
+#Const C_VOLUME_MENU_SFX 		 0.
+#Const C_VOLUME_MENU_MUSIC 		 -7.5
+
+
+//---------//
+//Valeurs de base
+
+//Nous
+#Const C_VOLUME_MAINSFX                  -1.
+#Const C_VOLUME_MAINMUSIC                -8.5
+
+#Const C_VOLUME_SFXMUSICBOOST            -7.
+#Const C_VOLUME_MUSICBOOSTED             -4.6
+
+#Const C_VOLUME_MUSICMUTE                -99. 
+#Const C_VOLUME_SFXMUSICMUTE             0. 
+
+
+//Edito
+/*
+#Const C_VOLUME_MAINSFX					-3.
+#Const C_VOLUME_MAINMUSIC				-2.
+
+#Const C_VOLUME_SFXMUSICBOOST			-3.
+#Const C_VOLUME_MUSICBOOSTED			-30.
+*/
+
+#Const C_VOLUME_SPLITSCREENSFX			-4.
+#Const C_VOLUME_MUSICSPLITSCREEN		-8.
+
+#Const C_VOLUME_REPLAYSFX				-30.
+#Const C_VOLUME_MUSICREPLAY				-6.
+
+//---------//
+
+#Const C_POSX_SIDE_MEDIUM		2.
+#Const C_POSX_SIDE_LARGE		2.5
+
+#Const C_VMAX					10.
+
+declare Real G_Volume_Musics;
+declare Real G_Volume_Voices;
+
+// ML for "PlayVoiceSound"
+// pas ouf de le mettre ici, mais merde.
+Text GetPlayVoiceSoundML() {
+	return """
+	
+	Real ParameterizeVoicesVolume(Real _BaseVolume) {
+		declare Real VolumeVoices for LocalUser;
+		if(VolumeVoices <= 0.) 					return -100.;	// EG : more than muted
+		if(_BaseVolume <= {{{C_MIN_VOLUME}}}) 	{
+			return -100.;	// EG : more than muted
+		}
+		
+		return ((1. - VolumeVoices) * {{{C_MIN_VOLUME}}}) + (VolumeVoices * _BaseVolume);
+	}
+	
+	Void PlayVoiceSound(Text _SoundPath, Real _BaseVolume, Integer _Delay) 
+	{
+		declare Real ParamedSound = ParameterizeVoicesVolume(_BaseVolume);
+		if(ParamedSound <= -99.) return; // EG : si c'est trop faible ou qu'on a carrément coupé les sons.
+		// log("PLAY WITH VOLUME: "^_BaseVolume);
+		Audio.PlaySoundEvent(_SoundPath, ParamedSound, _Delay);
+	}
+	
+	Void PlayVoiceSound(Text _SoundPath, Real _BaseVolume) {
+		PlayVoiceSound(_SoundPath, _BaseVolume, 0);
+	}
+	
+	
+	Void PlayVoiceSound(CAudioSource _Sound, Real _BaseVolume, Integer _Delay) 
+	{
+		declare Real ParamedSound = ParameterizeVoicesVolume(_BaseVolume);
+		if(ParamedSound <= -99.) return;  // EG : si c'est trop faible ou qu'on a carrément coupé les sons.
+		Audio.PlaySoundEvent(_Sound, ParamedSound, _Delay);
+	}
+	
+	
+	Void PlayVoiceSound(CAudioSource _Sound) 
+	{
+		PlayVoiceSound(_Sound, _Sound.Volume, 0);
+	}
+	""";
+}
+
+Real GetVoicesVolume() {
+	return C_VOLUME_VOICES;
+}
+
+Real GetMusicsVolume(Real _VolumeBase) {
+	return 0.;
+	//if(G_Volume_Musics <= 0.) return -99.;
+	//return _VolumeBase+ (C_VMAX * G_Volume_Musics - C_VMAX);
+}
+
+Real GetVolumedB(Text _Sound)
+{
+	switch(_Sound)
+	{
+		// MAIN VOLUMES
+		case "MainSFX" 									: return C_VOLUME_MAINSFX;
+		case "MainSFXLowerForMusicBoost"				: return C_VOLUME_SFXMUSICBOOST;
+		case "MainSFXMusicMute"							: return C_VOLUME_SFXMUSICMUTE;
+		case "MainSFXSplitscreen"						: return C_VOLUME_SPLITSCREENSFX;
+		case "MainSFXReplay"							: return C_VOLUME_REPLAYSFX;
+		
+		case "MusicStandBy" 							: return  GetMusicsVolume(-1.	+ C_VOLUME_INGAME_MUSIC);
+		case "MusicReplay" 								: return  GetMusicsVolume( C_VOLUME_INGAME_MUSIC + C_VOLUME_MUSICREPLAY);
+		case "MusicMultiTrack_NewTrack" 				: return  GetMusicsVolume( C_VOLUME_INGAME_MUSIC + C_VOLUME_MAINMUSIC);
+		case "MusicMultiTrack_LastLap" 					: return  GetMusicsVolume( C_VOLUME_INGAME_MUSIC + C_VOLUME_MAINMUSIC);
+		case "MusicBoosted"								: return  C_VOLUME_MUSICBOOSTED;
+		case "MusicMute"								: return  GetMusicsVolume( C_VOLUME_INGAME_MUSIC + C_VOLUME_MUSICMUTE);
+		case "MusicSplitscreen"							: return  GetMusicsVolume( C_VOLUME_INGAME_MUSIC + C_VOLUME_MUSICSPLITSCREEN);
+		
+
+		case "EditorMusic" 								: return  0.	+ C_VOLUME_MAINMUSIC;
+
+		case "MenuMusicDefault"							: return  C_VOLUME_MENU_MUSIC + C_VOLUME_MAINMUSIC;
+		case "MenuMusicOnline"							: return  C_VOLUME_MENU_MUSIC + C_VOLUME_MAINMUSIC;
+		case "MenuMusicSolo"							: return  C_VOLUME_MENU_MUSIC + C_VOLUME_MAINMUSIC;
+		case "MenuMusicEditor"							: return  C_VOLUME_MENU_MUSIC + C_VOLUME_MAINMUSIC;
+		case "MenuMusicMapsOverview"					: return  C_VOLUME_MENU_MUSIC + C_VOLUME_MAINMUSIC;
+		case "MenuMusicBrowseTracks"					: return  C_VOLUME_MENU_MUSIC + C_VOLUME_MAINMUSIC;
+		case "MenuMusicLocal"							: return  C_VOLUME_MENU_MUSIC + C_VOLUME_MAINMUSIC;
+		case "VolumeMusicsEditor"			  			: return  -3. 	+ C_VOLUME_MENU_MUSIC;
+		
+		// intro (nb: pas joué dans le bus des musiques, au contraire la musique est coupée pendant ce temps)
+		case "MenuMusicVideoIntro"						: return  2.;		
+		
+		
+		// INGAME UI VOLUMES
+		case "SFXRise" 									: return  -6. 	+ C_VOLUME_UI;
+		
+		case "StartRace" 								: return  -18.	+ C_VOLUME_UI;
+		case "CheckpointDiff" 							: return  -13. 	+ C_VOLUME_UI;
+		case "CheckpointTime" 							: return  -7.	+ C_VOLUME_UI;
+		case "CheckpointLap" 							: return  -13.	+ C_VOLUME_UI;
+		case "CheckpointYes" 							: return  -11.25	+ C_VOLUME_UI;
+		case "CheckpointNo" 							: return  -10.	+ C_VOLUME_UI;
+		case "EndRaceYes" 								: return  -6.	+ C_VOLUME_UI;
+		case "EndRaceNo" 								: return  -6.	+ C_VOLUME_UI;
+		case "FinishLine" 								: return  -5.	+ C_VOLUME_UI;
+		case "StartLineGo" 								: return  -15.	+ C_VOLUME_UI;
+		case "StartLineLap" 							: return  -12.	+ C_VOLUME_UI;
+		case "UnlockSomething"							: return  -4.5	+ C_VOLUME_UI;
+		case "RewardFlame"								: return  -5	+ C_VOLUME_UI;
+		case "WonEchelon"								: return  -5	+ C_VOLUME_UI;
+		case "CrowdYes" 								: return  -10.5	+ C_VOLUME_UI;
+		// case "CrowdYes" 								: return  -9.	+ C_VOLUME_UI;
+		// case "CrowdNo" 									: return  -8.	+ C_VOLUME_UI;
+		case "CrowdNo" 									: return  -9.5	+ C_VOLUME_UI;
+		case "ScoreIncrease"							: return  -8.	+ C_VOLUME_UI;
+		case "ScoreJackpot" 							: return  -7.	+ C_VOLUME_UI;
+		case "EndNoteStandBy" 							: return  -9.	+ C_VOLUME_UI;
+		case "321" 										: return  -9.	+ C_VOLUME_UI;
+		case "Go" 										: return  -9.	+ C_VOLUME_UI;
+		case "SpeedEffectStart" 						: return  -14.	+ C_VOLUME_UI;
+		case "SpeedEffect" 								: return  -11.	+ C_VOLUME_UI;
+		case "TransitionIngameChopper" 					: return  -15.	+ C_VOLUME_UI;
+		case "StateFreewheel" 							: return  -9.	+ C_VOLUME_UI;
+		case "GasEmpty" 								: return  -10.5	+ C_VOLUME_UI;
+		case "HotSeatPlayerOut" 						: return  -7.	+ C_VOLUME_UI;
+		
+		
+		// INGAME VOICES VOLUME
+		// case "VoiceMedal"								: return  3.5	+ GetVoicesVolume();
+		case "VoiceMedal"								: return  -2.0	+ GetVoicesVolume();
+		case "VoiceMessage" 							: return  -6.	+ GetVoicesVolume();
+		case "VoiceLapToGo" 							: return  -4.5	+ GetVoicesVolume();
+		case "VoiceRace321Go" 							: return  -8.	+ GetVoicesVolume();
+		case "VoiceRace321" 							: return  -8.	+ GetVoicesVolume();
+		case "VoiceRaceGo" 								: return  -7.	+ GetVoicesVolume();
+		case "VoiceCheckpoint"							: return  -6.5	+ GetVoicesVolume();
+		case "VoiceCommentaries"						: return  -3.5	+ GetVoicesVolume();
+		case "VoiceHotseat"								: return  -3.5	+ GetVoicesVolume();
+		
+		// MENU SFX AMBIENCE VOLUME
+		case "MenuAmbCanyon"							: return  -29.5 + C_VOLUME_MENU_SFX;
+		case "MenuAmbValley"							: return  -29.5 + C_VOLUME_MENU_SFX;
+		case "MenuAmbLagoon"							: return  -29.5 + C_VOLUME_MENU_SFX;
+		case "MenuAmbStadium"							: return  -29.5 + C_VOLUME_MENU_SFX;
+		
+		case "MenuConstructionOnline"					: return  -60. 	+ C_VOLUME_MENU_SFX;
+		case "MenuRadioOnline"							: return  -18.5 + C_VOLUME_MENU_SFX;
+		case "MenuPeopleOnline"							: return  -32.5 + C_VOLUME_MENU_SFX;
+		case "MenuChopperOnline"						: return  -60. 	+ C_VOLUME_MENU_SFX;
+		case "MenuConstructionLocal"					: return  -60. 	+ C_VOLUME_MENU_SFX;
+		case "MenuRadioLocal"							: return  -29.5 + C_VOLUME_MENU_SFX;
+		case "MenuPeopleLocal"							: return  -20. + C_VOLUME_MENU_SFX;
+		case "MenuChopperLocal"							: return  -30.5 + C_VOLUME_MENU_SFX;
+		case "MenuConstructionSolo"						: return  -37.5 + C_VOLUME_MENU_SFX;
+		case "MenuRadioSolo"							: return  -60. 	+ C_VOLUME_MENU_SFX;
+		case "MenuPeopleSolo"							: return  -32.5 + C_VOLUME_MENU_SFX;
+		case "MenuChopperSolo"							: return  -20. + C_VOLUME_MENU_SFX;
+		case "MenuRadioEditor"							: return  -60. 	+ C_VOLUME_MENU_SFX;
+		case "MenuPeopleEditor"							: return  -60. 	+ C_VOLUME_MENU_SFX;
+		case "MenuChopperEditor"						: return  -30.5 + C_VOLUME_MENU_SFX;
+		case "MenuConstructionEditor"					: return  -19.5 + C_VOLUME_MENU_SFX;
+		
+		
+		// MENU UI VOLUMES
+		
+		case "JoinGame" 								: return  -18. 	+ C_VOLUME_MENU_UI;
+		case "CancelJoinGame" 							: return  -18. 	+ C_VOLUME_MENU_UI;
+		case "RemoveLetter" 							: return  -18. 	+ C_VOLUME_MENU_UI;
+		case "AddLetter" 								: return  -18. 	+ C_VOLUME_MENU_UI;
+		case "ShowLine" 								: return  -21. 	+ C_VOLUME_MENU_UI;
+		case "ShowMedal" 								: return  -12. 	+ C_VOLUME_MENU_UI;
+		case "MenuSwitch" 								: return  -21.	+ C_VOLUME_MENU_UI;
+		case "MenuValidate" 							: return  -21.	+ C_VOLUME_MENU_UI;
+		case "MenuClick" 								: return  -12.	+ C_VOLUME_MENU_UI;
+		case "MenuClickLow" 							: return  -12.	+ C_VOLUME_MENU_UI;
+		case "MenuPauseShow" 							: return  -15.	+ C_VOLUME_MENU_UI;
+		case "MenuShow" 								: return  -12.	+ C_VOLUME_MENU_UI;
+		case "MenuHide" 								: return  -12.	+ C_VOLUME_MENU_UI;
+		
+		case "MenuMove" 								: return  -16.	+ C_VOLUME_MENU_UI;
+		case "MenuWIP" 									: return  -22.	+ C_VOLUME_MENU_UI;
+		case "MenuNext" 								: return  -20.	+ C_VOLUME_MENU_UI;
+		case "MenuTransitionMain2Bill"					: return  -18.	+ C_VOLUME_MENU_UI;
+		case "MenuBackToMenu"							: return  -20.	+ C_VOLUME_MENU_UI;
+		case "MenuWelcome"								: return  -10.5	+ GetVoicesVolume();
+		case "MenuToLeft"								: return  -19.	+ C_VOLUME_MENU_UI;
+		case "MenuToRight"								: return  -19.	+ C_VOLUME_MENU_UI;
+		case "MenuMapToLeft"							: return  -19.	+ C_VOLUME_MENU_UI;
+		case "MenuMapToRight"							: return  -19.	+ C_VOLUME_MENU_UI;
+		case "MenuPageBack"								: return  -18.	+ C_VOLUME_MENU_UI;
+		case "MenuPageForward"							: return  -15.	+ C_VOLUME_MENU_UI;
+		case "MenuTransition"							: return  -16.5	+ C_VOLUME_MENU_UI;
+		case "MenuEndNote"								: return  -22.	+ C_VOLUME_MENU_UI;
+		case "MenuStartRace"							: return  -16.	+ C_VOLUME_MENU_UI;
+		case "MenuSwitchLR"								: return  -20.	+ C_VOLUME_MENU_UI;
+		case "MenuPopUp"								: return  -12.	+ C_VOLUME_MENU_UI;
+		case "MenuClicInterfaceLeftRight"				: return  -19.	+ C_VOLUME_MENU_UI;
+		case "MenuBlocCategory"							: return  -19.	+ C_VOLUME_MENU_UI;
+		case "MenuHelmetWhoosh1"						: return  -16.	+ C_VOLUME_MENU_UI;
+		case "MenuHelmetWhoosh2"						: return  -16.	+ C_VOLUME_MENU_UI;
+		case "MenuHelmetAddSelected"					: return  -19.	+ C_VOLUME_MENU_UI;
+		case "MenuInsertCoin"							: return  -8.	+ C_VOLUME_MENU_UI;
+		case "AMB_MenuTracks_Canyon"					: return  -14.	+ C_VOLUME_MENU_UI;
+		case "AMB_MenuTracks_Lagoon"					: return  -16.	+ C_VOLUME_MENU_UI;
+		case "AMB_MenuTracks_Stadium"					: return  -9.	+ C_VOLUME_MENU_UI;
+		case "AMB_MenuTracks_Valley"					: return  -19.	+ C_VOLUME_MENU_UI;
+		case "SFX_Altitude1000m_1"						: return  -19.	+ C_VOLUME_MENU_UI;
+		case "SFX_Altitude1000m_2"						: return  -19.	+ C_VOLUME_MENU_UI;
+		case "SFX_BirdsDoves_Loop"						: return  -19.	+ C_VOLUME_MENU_UI;
+		case "SFX_ExplosionScore"						: return  -19.	+ C_VOLUME_MENU_UI;
+		case "SFX_FlyingPig_Loop"						: return  -19.	+ C_VOLUME_MENU_UI;
+		case "SFX_Garage_MetalAlloy"					: return  -8.	+ C_VOLUME_MENU_UI;
+		case "SFX_Garage_Paint_1"						: return  -10.	+ C_VOLUME_MENU_UI;
+		case "SFX_Garage_Paint_2"						: return  -10.	+ C_VOLUME_MENU_UI;
+		case "SFX_Garage_Paint_3"						: return  -10.	+ C_VOLUME_MENU_UI;
+		case "SFX_Garage_Sticker"						: return  -12.	+ C_VOLUME_MENU_UI;
+		case "SFX_Lap"									: return  -19.	+ C_VOLUME_MENU_UI;
+		case "SFX_LapFinal"								: return  -19.	+ C_VOLUME_MENU_UI;
+		case "SFX_StartRace_Go"							: return  -19.	+ C_VOLUME_MENU_UI;
+		case "SFX_StartRace_Go_SplitScreen"				: return  -19.	+ C_VOLUME_MENU_UI;
+		case "SFX_TrackBuilder_TrackValidateFinishLine"	: return  -12.	+ C_VOLUME_MENU_UI;
+		case "SFX_UI_DJPig_Appear"						: return  -19.	+ C_VOLUME_MENU_UI;
+		case "SFX_UI_DJPig_Disappear"					: return  -19.	+ C_VOLUME_MENU_UI;
+		case "SFX_UI_DJPig_DislikeTrack"				: return  -19.	+ C_VOLUME_MENU_UI;
+		case "SFX_UI_DJPig_LikeTrack"					: return  -19.	+ C_VOLUME_MENU_UI;
+		case "SFX_UI_DJPig_MuteTrack"					: return  -19.	+ C_VOLUME_MENU_UI;
+		case "SFX_UI_DJPig_MuteTrack_v2"				: return  -19.	+ C_VOLUME_MENU_UI;
+		case "SFX_UI_GarageLateralCurtain_IN"			: return  -12.	+ C_VOLUME_MENU_UI;
+		case "SFX_UI_GarageLateralCurtain_OUT"			: return  -12.	+ C_VOLUME_MENU_UI;
+		case "SFX_UI_ScoringAppear"						: return  -19.	+ C_VOLUME_MENU_UI;
+		case "SFX_UI_ScoringPitch_1"					: return  -19.	+ C_VOLUME_MENU_UI;
+		case "SFX_UI_ScoringPitch_2"					: return  -19.	+ C_VOLUME_MENU_UI;
+		case "SFX_UI_ScoringPitch_3"					: return  -19.	+ C_VOLUME_MENU_UI;
+		case "SFX_UI_ScoringPitch_4"					: return  -19.	+ C_VOLUME_MENU_UI;
+		case "SFX_UI_ScoringPitch_5"					: return  -19.	+ C_VOLUME_MENU_UI;
+		case "SFX_UI_ScoringPitch_FinalScoreNumber"		: return  -19.	+ C_VOLUME_MENU_UI;
+		case "SFX_UI_SelectTrack_Canyon"				: return   -9.  + C_VOLUME_MENU_UI;
+		case "SFX_UI_SelectTrack_Lagoon"				: return   -9.  + C_VOLUME_MENU_UI;
+		case "SFX_UI_SelectTrack_Stadium"				: return   -9.  + C_VOLUME_MENU_UI;
+		case "SFX_UI_SelectTrack_Valley"				: return   -9.  + C_VOLUME_MENU_UI;
+		case "SFX_UI_UseCoin_Arcade"					: return  -10.	+ C_VOLUME_MENU_UI;
+		case "SFX_UI_Whoosh_Down"						: return  -15.	+ C_VOLUME_MENU_UI;
+		case "SFX_UI_Whoosh_Up"							: return  -15.	+ C_VOLUME_MENU_UI;
+		case "SFX_UI_WhooshMultiplayer_v1"				: return  -19.	+ C_VOLUME_MENU_UI;
+		case "SFX_UI_WhooshMultiplayer_v2"				: return  -19.	+ C_VOLUME_MENU_UI;
+		case "SFX_UI_WhooshMultiplayer_v3"		 		: return  -19.	+ C_VOLUME_MENU_UI;
+		case "TM_AMB_Garage_Loop"						: return  -21.	+ C_VOLUME_MENU_UI;
+		case "MenuSelect"					  			: return  -19.	+ C_VOLUME_MENU_UI;
+		case "SFX_UI_MusicEditor_AddToTrackList"		: return  -6.	+ C_VOLUME_MENU_UI;
+		case "SFX_UI_MusicEditor_Cursor"	 			: return  -18.	+ C_VOLUME_MENU_UI;
+		case "SFX_UI_MusicEditor_CutMusic_1"			: return  -12.	+ C_VOLUME_MENU_UI;
+		case "SFX_UI_MusicEditor_CutMusic_2" 			: return  -12.	+ C_VOLUME_MENU_UI;
+		case "SFX_UI_MusicEditor_CutMusic_3"   			: return  -12.	+ C_VOLUME_MENU_UI;
+		case "SFX_UI_MusicEditor_Enter"		 			: return  -10.	+ C_VOLUME_MENU_UI;
+		case "SFX_UI_MusicEditor_Exit"	   				: return  -10.	+ C_VOLUME_MENU_UI;
+		case "SFX_UI_MusicEditor_RemoveToTrackList"		: return  -6.	+ C_VOLUME_MENU_UI;
+
+		
+		// MAP EDITOR
+		case "EditorAutoFinish" 						: return  -18.	+ C_VOLUME_MENU_UI;
+		case "EditorBlockHelp" 							: return  -18.	+ C_VOLUME_MENU_UI;
+		case "EditorBlockMove" 							: return  -18.	+ C_VOLUME_MENU_UI;
+		case "EditorBlockMoveDown"						: return  -18.	+ C_VOLUME_MENU_UI;
+		case "EditorBlockMoveUp"						: return  -18.	+ C_VOLUME_MENU_UI;
+		case "EditorBlockRotate"						: return  -18.	+ C_VOLUME_MENU_UI;
+		case "EditorCameraZoom"							: return  -18.	+ C_VOLUME_MENU_UI;
+		case "EditorDisplayUI"							: return  -18.	+ C_VOLUME_MENU_UI;
+		case "EditorPlaceBlockCheckpoint"				: return  -16.	+ C_VOLUME_MENU_UI;
+		case "EditorPlaceBlockCommon"					: return  -18.	+ C_VOLUME_MENU_UI;
+		case "EditorPlaceBlockDeco"						: return  -18.	+ C_VOLUME_MENU_UI;
+		case "EditorPlaceBlockFinish"					: return  -16.	+ C_VOLUME_MENU_UI;
+		case "EditorPlaceBlockStart"					: return  -16.	+ C_VOLUME_MENU_UI;
+		case "EditorPopUp"								: return  -18.	+ C_VOLUME_MENU_UI;
+		case "EditorRandomGenerationFinished"			: return  -18.	+ C_VOLUME_MENU_UI;
+		case "EditorRemoveBlock"						: return  -18.	+ C_VOLUME_MENU_UI;
+		case "EditorSimpleSelectMacroblock"				: return  -18.	+ C_VOLUME_MENU_UI;
+		case "EditorSimpleSelectFamily"					: return  -18.	+ C_VOLUME_MENU_UI;
+		case "EditorTestStart"							: return  -18.	+ C_VOLUME_MENU_UI;
+		case "EditorValidationStop"						: return  -18.	+ C_VOLUME_MENU_UI;
+		case "EditorWrongAction"						: return  -18.	+ C_VOLUME_MENU_UI;
+		case "EditorBlockSelection"						: return  -18.	+ C_VOLUME_MENU_UI;
+		case "EditorClicRosace"							: return  -18.  + C_VOLUME_MENU_UI;
+		case "EditorMenuMove"							: return  -18.  + C_VOLUME_MENU_UI;
+		case "EditorMenuCancel"							: return  -18.  + C_VOLUME_MENU_UI;
+		case "EditorMenuValid"							: return  -18.  + C_VOLUME_MENU_UI;
+	}
+	
+	Logger::Warn("[GetVolumedB] Can't find "^_Sound);
+	return 0.;
+}
+
+
+
+Real GetVolume(Text _Sound)
+{
+	switch(_Sound)
+	{
+		case "StateFlying" 								: return  0.5;
+	}	
+	
+	log("[GetVolume] : Can't find "^_Sound);
+	return 0.;
+}
+
+
+
+Real GetLPF_CutoffRatio(Text _Case)
+{
+	switch(_Case)
+	{
+		case "PauseMenuEnabled" 						: return  0.4;
+		case "MenuMusicLocal"							: return  0.4;
+	}
+	
+	log("[GetLPF_CutoffRatio] : Can't find "^_Case);
+	return 1.;
+}
+
+
+
+Real GetPosX(Text _Case)
+{
+	switch(_Case)
+	{
+		case "MenuChopperOnline"						: return  -C_POSX_SIDE_LARGE;
+		case "MenuChopperLocal"							: return  -C_POSX_SIDE_MEDIUM;
+		case "MenuChopperSolo"							: return   0.;
+		case "MenuChopperEditor"						: return   C_POSX_SIDE_MEDIUM;
+		
+		case "MenuPeopleOnline"							: return  -C_POSX_SIDE_MEDIUM;
+		case "MenuPeopleLocal"							: return   0.;
+		case "MenuPeopleSolo"							: return   C_POSX_SIDE_MEDIUM;
+		case "MenuPeopleEditor"							: return   C_POSX_SIDE_LARGE;
+		
+		case "MenuRadioOnline"							: return   0.2;
+		case "MenuRadioLocal"							: return   -C_POSX_SIDE_MEDIUM;
+		case "MenuRadioSolo"							: return   -C_POSX_SIDE_LARGE;
+		case "MenuRadioEditor"							: return   -C_POSX_SIDE_LARGE;
+		
+		case "MenuConstructionOnline"					: return   C_POSX_SIDE_LARGE;
+		case "MenuConstructionLocal"					: return   C_POSX_SIDE_LARGE;
+		case "MenuConstructionSolo"						: return   C_POSX_SIDE_MEDIUM;
+		case "MenuConstructionEditor"					: return   -0.2;
+	}
+	
+	log("[GetPosX] : Can't find "^_Case);
+	return 0.;
+}
+
+
+
+Vec3 GetPanRadiusLfe(Text _Case)
+{
+	switch(_Case)
+	{
+		case "MusicIngame"								: return <0., 0.88, -24.>;
+		case "MusicPause"								: return <0., 0.71, -21.>;
+		case "MusicReplay"								: return <0., 0.71, -21.>;
+		case "MusicStandby"								: return <0., 0.71, -21.>;
+		case "MusicMenu"								: return <0., 1.,   -20.>;
+		case "MusicIntro"								: return <0., 0.88, -14.>;
+		case "MenuSFX"									: return <0., 0.35, -21.>;
+		case "MenuAmbiance"								: return <0., 100., -21.>;
+		case "MenuUISpreadLarge"						: return <0., 1.,   -14.>;
+		case "MenuStartRace"							: return <0., 0.9,  -6.>;
+		case "TransitionIngameChopper"					: return <0., 0.9,  -18.>;
+		case "FinishLine"								: return <0., 0.7,  -20.>;
+		case "StateFlying"								: return <0., 0.88, -100.>;
+		case "SpeedEffectStart"							: return <0., 0.4, -16.>;
+	}
+	
+	log("[GetPosX] : Can't find "^_Case);
+	return <0., 0., -100.>;
+}
+
+
+Void LoadVolumeVoicesSetting(Real Volume_Voices) {
+	G_Volume_Voices = Volume_Voices;
+}
+
+
+Void LoadVolumeMusicsSetting(Real Volume_Musics) {
+	G_Volume_Musics = Volume_Musics;
+	// log("G_Volume_Musics: "  ^ G_Volume_Musics);
+}
+
+
+Void LoadSettings(Real Volume_Musics, Real Volume_Voices) {
+	LoadVolumeMusicsSetting(Volume_Musics);
+	LoadVolumeVoicesSetting(Volume_Voices);
+}
+

@@ -1,0 +1,315 @@
+#Include "Libs/Nadeo/Common/Core/Logger.Script.txt"									as Logger
+#Include "Libs/Nadeo/Common/ManiascriptTools/Sort.Script.txt"								as SortTools
+#Include "TextLib"																as TextLib
+
+declare Text[Text]						G_BasePath;
+declare CDataFileMgr::EMediaType[Text]	G_FileType;
+declare Text[Text]						G_Thumbnail;
+declare Text[Text]						G_FilePrefix;
+declare CTaskResult_FileList[Text]		G_ListTaskResult;
+declare Boolean[Text]					G_HasFetched;
+declare Boolean[Text]					G_Flatten;
+declare Boolean[Text]					G_IsSortingFromDescendingOrder;
+declare Boolean[Text]					G_IsSortingFromDateRatherThanName;
+declare Integer[Text]					G_CurrentPage;
+declare Integer[Text]					G_MaxPages;
+declare Integer[Text]					G_ElemsPerPage;
+declare Integer[][Text]					G_AllPages;
+
+CTaskResult_FileList GetTaskResult(Text _BrowserName)
+{
+	return G_ListTaskResult[_BrowserName];
+}
+
+Void SetAllPages(Text _BrowserName, Integer[] _Value)
+{
+	G_CurrentPage[_BrowserName]	= 0;
+	G_AllPages[_BrowserName] = _Value;
+	G_MaxPages[_BrowserName] = G_AllPages[_BrowserName].count - 1;
+}
+
+Integer GetElemsPerPage(Text _BrowserName)
+{
+	if (!G_ElemsPerPage.existskey(_BrowserName)) {
+		return 0;
+	}
+	return G_ElemsPerPage[_BrowserName];
+}
+
+Integer GetStartingIndexForPage(Text _BrowserName, Integer _CurrentPage)
+{
+	if (!G_AllPages.existskey(_BrowserName) || !G_AllPages[_BrowserName].existskey(_CurrentPage)) {
+		return 0;
+	}
+	return G_AllPages[_BrowserName][_CurrentPage];
+}
+
+Integer GetCurrentPageIndex(Text _BrowserName)
+{
+	return G_CurrentPage[_BrowserName] + 1;
+}
+
+Integer GetMaxPages(Text _BrowserName)
+{
+	return G_MaxPages[_BrowserName] + 1;
+}
+
+Void Load(Text _BrowserName, Text _BasePath, CDataFileMgr::EMediaType _MediaType, Text _Thumbnail, Text _FilePrefix)
+{
+	G_BasePath[_BrowserName]						= _BasePath;
+	G_FileType[_BrowserName]						= _MediaType;
+	G_Thumbnail[_BrowserName]						= _Thumbnail;
+	G_FilePrefix[_BrowserName]						= _FilePrefix;
+	G_ListTaskResult[_BrowserName]					= Null;
+	G_HasFetched[_BrowserName]						= False;
+	G_Flatten[_BrowserName]							= False;
+	G_IsSortingFromDescendingOrder[_BrowserName]	= False;
+	G_IsSortingFromDateRatherThanName[_BrowserName]	= False;
+	G_CurrentPage[_BrowserName]						= 0;
+	G_MaxPages[_BrowserName]						= 0;
+	G_ElemsPerPage[_BrowserName]					= 12;
+	G_AllPages[_BrowserName]						= Integer[];
+}
+
+Void Load(Text _BrowserName, Text _BasePath, CDataFileMgr::EMediaType _MediaType, Text _Thumbnail)
+{
+	Load(_BrowserName, _BasePath, _MediaType, _Thumbnail, "file://" ^ _BasePath);
+}
+
+Void Load(Text _BrowserName, Text _BasePath, CDataFileMgr::EMediaType _MediaType)
+{
+	Load(_BrowserName, _BasePath, _MediaType, "NoThumbnail");
+}
+
+Text FullPath(Text _BrowserName, Text _Path)
+{
+	return G_BasePath[_BrowserName] ^ _Path;
+}
+
+Void FetchData(Text _BrowserName, Text _Path, Boolean _Flatten)
+{
+	G_HasFetched[_BrowserName] = False;
+	if (G_ListTaskResult[_BrowserName] != Null) {
+		DataFileMgr.TaskResult_Release(G_ListTaskResult[_BrowserName].Id);
+	}
+	G_ListTaskResult[_BrowserName] = DataFileMgr.Media_GetGameList(G_FileType[_BrowserName], _Path, _Flatten);
+}
+
+Void FetchData(Text _BrowserName, Text _Path)
+{
+	FetchData(_BrowserName, _Path, G_Flatten[_BrowserName]);
+}
+
+Text FolderParentPath(Text _BrowserName)
+{
+	if (G_ListTaskResult[_BrowserName] == Null) {
+		return "";
+	}
+	return G_ListTaskResult[_BrowserName].ParentPath;
+}
+
+Void SwitchFlatten(Text _BrowserName)
+{
+	if (G_Flatten[_BrowserName]) {
+		G_Flatten[_BrowserName] = False;
+	} else {
+		G_Flatten[_BrowserName] = True;
+	}
+}
+
+Void SwitchSortOrder(Text _BrowserName)
+{
+	if (G_IsSortingFromDescendingOrder[_BrowserName]) {
+		G_IsSortingFromDescendingOrder[_BrowserName] = False;
+	} else {
+		G_IsSortingFromDescendingOrder[_BrowserName] = True;
+	}
+}
+
+Void SwitchSortCriterion(Text _BrowserName)
+{
+	if (G_IsSortingFromDateRatherThanName[_BrowserName]) {
+		G_IsSortingFromDateRatherThanName[_BrowserName] = False;
+	} else {
+		G_IsSortingFromDateRatherThanName[_BrowserName] = True;
+	}
+}
+
+Text[Text] GetMetadataFromFile(Text _BrowserName, Text _File)
+{
+	declare SplitFileName = TextLib::Split("\\", _File);
+	declare Text ThumbnailImage;
+	declare Text SecondThumbnailImage;
+	if (G_Thumbnail[_BrowserName] == "NoThumbnail") {
+		ThumbnailImage = "";
+		SecondThumbnailImage = "File";
+	} else if (G_Thumbnail[_BrowserName] == "") {
+		ThumbnailImage = G_FilePrefix[_BrowserName] ^ _File;
+		SecondThumbnailImage = "";
+	} else {
+		ThumbnailImage = G_Thumbnail[_BrowserName];
+		SecondThumbnailImage = "EmptyThumbnail";
+	}
+	return [	"Path"		=> G_FilePrefix[_BrowserName] ^ _File,
+				"Name"		=> SplitFileName[SplitFileName.count - 1],
+				"ExtraContextImage" => "",
+				"Thumbnail"	=> ThumbnailImage,
+				"SecondThumbnailImage"		=> SecondThumbnailImage,
+				"Author"	=> "",
+				"Flag"		=> "",
+				"State"		=> "Available",
+				"Logo"		=> ""];
+}
+
+Text[Text] GetMetadataFromFolder(Text _BrowserName, Text _Folder)
+{
+	declare SplitSubFolder = TextLib::Split("\\", _Folder);
+	return [	"CardType"		=> "Folder",
+			"Name"			=> SplitSubFolder[SplitSubFolder.count - 1],
+			"Path"			=> _Folder,
+			"SecondThumbnailImage" => "Folder",
+			"Thumbnail1"	=> "", // ??
+			"Thumbnail2"	=> "", // ??
+			"Thumbnail3"	=> "", // ??
+			"State"			=> "Available"];
+}
+
+Text[] GetAllSortedFiles(Text _BrowserName, Boolean _IsSortingFromDateRatherThanName, Boolean _IsSortingFromDescendingOrder)
+{
+	declare Text[] Result;
+	declare Text[] IntermediateResult;
+	foreach(File in G_ListTaskResult[_BrowserName].Files) {
+		IntermediateResult.add(File);
+	}
+	declare Integer SortOrder = SortTools::Array_IncreasingOrder();
+	if (_IsSortingFromDescendingOrder) {
+		SortOrder = SortTools::Array_DecreasingOrder();
+	}
+	declare Integer[] SortedIndexes = SortTools::SortTools_GetSortSwapArray(IntermediateResult, SortOrder);
+	foreach(SortedIndex in SortedIndexes) {
+		Result.add(G_ListTaskResult[_BrowserName].Files[SortedIndex]);
+	}
+	return Result;
+}
+
+Text[] GetAllSortedFolders(Text _BrowserName, Boolean _IsSortingFromDateRatherThanName, Boolean _IsSortingFromDescendingOrder)
+{
+	declare Text[] Result;
+	declare Text[] IntermediateResult;
+	foreach(SubFolder in G_ListTaskResult[_BrowserName].SubFolders) {
+		IntermediateResult.add(SubFolder);
+	}
+	declare Integer SortOrder = SortTools::Array_IncreasingOrder();
+	if (_IsSortingFromDescendingOrder) {
+		SortOrder = SortTools::Array_DecreasingOrder();
+	}
+	declare Integer[] SortedIndexes = SortTools::SortTools_GetSortSwapArray(IntermediateResult, SortOrder);
+	foreach(SortedIndex in SortedIndexes) {
+		Result.add(G_ListTaskResult[_BrowserName].SubFolders[SortedIndex]);
+	}
+	return Result;
+}
+
+Text[Text] GetMetadata(Text _BrowserName, Text _Path)
+{
+	declare Text[Text] Result;
+	foreach (File in G_ListTaskResult[_BrowserName].Files)
+	{
+		if (File == _Path)
+		{
+			return GetMetadataFromFile(_BrowserName, File);
+		}
+	}
+
+	Logger::Warn("Path non trouvé : " ^ _Path);
+	return Result;
+}
+
+Void UpdateMainData(Text _BrowserName)
+{
+	declare Integer[] AllPages;
+	declare Integer NbElems = 0;
+	AllPages.add(0);
+	//declare Text[] RequestedSubFolders = GetAllSortedFolders(G_IsSortingFromDateRatherThanName[_BrowserName], G_IsSortingFromDescendingOrder[_BrowserName]);
+	// TODO : Attendre les fonctions de Falguiere et ne pas faire ça tout seul
+	foreach(SubFolder in G_ListTaskResult[_BrowserName].SubFolders) {
+		if (SubFolder == "Font\\" || SubFolder == "MEDIABROWSER_HiddenResources\\") {
+			continue;
+		}
+		NbElems += 1;
+		if (NbElems % G_ElemsPerPage[_BrowserName] == 0) {
+			AllPages.add(0);
+		}
+	}
+	//declare Text[] RequestedFiles = GetAllSortedFiles(G_IsSortingFromDateRatherThanName[_BrowserName], G_IsSortingFromDescendingOrder[_BrowserName]);
+	declare Boolean IsEndPage = False;
+	declare UnfilteredMediaIndex = 0;
+	foreach(File in G_ListTaskResult[_BrowserName].Files) {
+		UnfilteredMediaIndex += 1;
+		IsEndPage = False;
+		NbElems += 1;
+		if (NbElems % G_ElemsPerPage[_BrowserName] == 0) {
+			AllPages.add(UnfilteredMediaIndex);
+			IsEndPage = True;
+		}
+	}
+	if (IsEndPage) {
+		if (!AllPages.remove(UnfilteredMediaIndex)) {
+			Logger::Warn("AllPages.remove(UnfilteredMediaIndex) did not work");
+		}
+	}
+	SetAllPages(_BrowserName, AllPages);
+}
+
+Text[Text][] GetMainData(Text _BrowserName) {
+	declare Text[Text][] Result;
+	//declare Text[] RequestedSubFolders = GetAllSortedFolders(G_IsSortingFromDateRatherThanName[_BrowserName], G_IsSortingFromDescendingOrder[_BrowserName]);
+	// TODO : Attendre les fonctions de Falguiere et ne pas faire ça tout seul
+	for (FolderIndex, G_CurrentPage[_BrowserName] * G_ElemsPerPage[_BrowserName], (G_CurrentPage[_BrowserName] + 1) * G_ElemsPerPage[_BrowserName] - 1) {
+		if (!G_ListTaskResult[_BrowserName].SubFolders.existskey(FolderIndex)) {
+			break;
+		}
+		declare SubFolder = G_ListTaskResult[_BrowserName].SubFolders[FolderIndex];
+		if (SubFolder == "Font\\" || SubFolder == "MEDIABROWSER_HiddenResources\\") {
+			continue;
+		}
+		Result.add(GetMetadataFromFolder(_BrowserName, SubFolder));
+	}
+	//declare Text[] RequestedFiles = GetAllSortedFiles(G_IsSortingFromDateRatherThanName[_BrowserName], G_IsSortingFromDescendingOrder[_BrowserName]);
+	declare MediaIndex = G_AllPages[_BrowserName][G_CurrentPage[_BrowserName]];
+	declare UnfilteredMediaIndex = MediaIndex;
+	while(Result.count < G_ElemsPerPage[_BrowserName]) {
+		if (!G_ListTaskResult[_BrowserName].Files.existskey(UnfilteredMediaIndex)) {
+			break;
+		}
+		declare Text File = G_ListTaskResult[_BrowserName].Files[UnfilteredMediaIndex];
+		MediaIndex += 1;
+		UnfilteredMediaIndex += 1;
+		Result.add(GetMetadataFromFile(_BrowserName, File));
+	}
+	return Result;
+}
+
+Boolean HasFetched(Text _BrowserName)
+{
+	if ((G_ListTaskResult[_BrowserName] != Null) && !G_ListTaskResult[_BrowserName].IsProcessing && G_ListTaskResult[_BrowserName].HasSucceeded && !G_HasFetched[_BrowserName]) {
+		G_HasFetched[_BrowserName] = True;
+		return True;
+	}
+	return False;
+}
+
+
+Void InputPageUp(Text _BrowserName)
+{
+	if (G_CurrentPage[_BrowserName] > 0) {
+		G_CurrentPage[_BrowserName] += -1;
+	}
+}
+
+Void InputPageDown(Text _BrowserName)
+{
+	if (G_CurrentPage[_BrowserName] < G_MaxPages[_BrowserName]) {
+		G_CurrentPage[_BrowserName] += 1;
+	}
+}

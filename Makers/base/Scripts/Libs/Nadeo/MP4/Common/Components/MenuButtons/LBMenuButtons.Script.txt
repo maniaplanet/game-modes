@@ -1,0 +1,213 @@
+#Include "Libs/Nadeo/MP4/Common/Components/MenuButtons/LBMenuButtonsModular.Script.txt"				as MenuButtons
+#Include "Libs/Nadeo/MP4/Common/ManialinkTools/FontManager.Script.txt"							as Font
+
+#Const C_Opacity_Quad           0.7
+#Const C_Opacity_IMG            1.0
+#Const C_Opacity_Color          0.9
+#Const C_Opacity_Logo           1.0
+#Const C_Opacity_Label          1.0
+#Const C_SizeXQuadColorDefault  1.7
+#Const C_SizeXQuadDefault       78.6
+#Const C_SizeYQuadDefault       12.0
+#Const C_TextSizeDefault        5.0
+#Const C_LabelButtonPosX        -4.
+#Const C_LabelButtonPosY        0.5
+
+declare Real	G_SizeXQuadColor;
+declare Vec2	G_LabelButtonPos;
+
+Vec2[] ButtonPositions(Text[] _EventNames)
+{
+	declare Vec2[] Result;
+	declare Real MarginY = 12.7;
+	declare Real PosY = 31.7;
+	foreach (Event in _EventNames) {
+		Result.add(<-3.8, PosY>);
+		PosY += -MarginY;
+	}
+	return Result;
+}
+
+Vec2[] ButtonSizes(Text[] _EventNames)
+{
+	declare Vec2[] Result;
+	foreach (Event in _EventNames) {
+		Result.add(<C_SizeXQuadDefault, C_SizeYQuadDefault>);
+	}
+	return Result;
+}
+
+Boolean ButtonIsVertical(Text[] _EventNames)
+{
+	return True;
+}
+
+Void SetLabelButtonPosition(Vec2 _LabelButtonPos)
+{
+	G_LabelButtonPos = _LabelButtonPos;
+}
+
+Text ManialinkFrameModels(Real _SizeXQuad, Real _SizeYQuad, Real _TextSizeDefault)
+{
+
+	G_SizeXQuadColor  = C_SizeXQuadColorDefault;
+	if(G_LabelButtonPos == <0.,0.>) G_LabelButtonPos = <C_LabelButtonPosX, C_LabelButtonPosY>;
+
+	declare Text MainFont				= Font::GetFontName("Main");
+	declare Text SubFont				= Font::GetFontName("SubTitle");
+	return """
+	<framemodel id="MenuButtons_FrameModel">
+		<quad id="MenuButtons_Quad"   halign="right"  valign="center" size="{{{_SizeXQuad}}} {{{_SizeYQuad}}}"  pos="0 0" z-index="1" opacity="{{{C_Opacity_Quad}}}" bgcolor="000"/>
+		<quad id="MenuButtons_IMG"    halign="right"  valign="center" size="{{{_SizeXQuad}}} {{{_SizeYQuad}}}"  pos="0 0" z-index="2" opacity="{{{C_Opacity_IMG}}}" hidden="1"/>
+		<quad id="MenuButtons_Color"  halign="left"   valign="center" size="{{{G_SizeXQuadColor}}} {{{_SizeYQuad}}}"  pos="0 0" z-index="1" opacity="{{{C_Opacity_Color}}}" bgcolor="090" scriptevents="1" />
+		<quad id="Quad_Logo"          halign="center" valign="center" size="15 15"  pos="1.5 0" z-index="2" opacity="{{{C_Opacity_Logo}}}" bgcolor="009" style="Icons128x128_1"/>
+		<label id="MenuButtons_Label" halign="right"  valign="center" size="{{{_SizeXQuad + 2.3 * G_LabelButtonPos.X}}} {{{_SizeYQuad}}}" pos="{{{G_LabelButtonPos.X}}} {{{G_LabelButtonPos.Y}}}" textfont="{{{MainFont}}}" textprefix="$t" opacity="{{{C_Opacity_Label}}}" z-index="3" textsize="{{{_TextSizeDefault}}}" textcolor="fff"/>
+	</framemodel>
+	""";
+}
+
+Text ManialinkFrameModels()
+{
+	return ManialinkFrameModels(C_SizeXQuadDefault, C_SizeYQuadDefault, C_TextSizeDefault);
+}
+
+Text Manialink() {
+	return """
+{{{MenuButtons::Manialink("halign=\"right\" valign=\"center\"")}}}
+""";
+}
+
+Text Includes()
+{
+	return MenuButtons::Includes();
+}
+
+Text Declares()
+{
+	return """// -- MenuButtons - Declares
+	//<script>
+	declare Real[]  			G_ControlOpacity;
+	declare Boolean				G_IsFadeIn;
+{{{MenuButtons::FirstDeclares()}}}
+
+	Void MenuButtons_ShowButton(CMlFrame _Button, Integer _ButtonIndex, Text[Text] _ButtonMetadata, Boolean _IsActive, Vec2 _ButtonSize)
+	{
+		declare Real[Boolean] PosX = [False => -_ButtonSize.X * (_ButtonIndex + 1), // TODO : Voir cette formule
+										True => _ButtonSize.X * (_ButtonIndex + 1)];
+		_Button.RelativePosition_V3 = <PosX[G_IsFadeIn], 0.>;
+
+		declare Integer DecaleTime  = 50 * (_ButtonIndex + 1); // TODO : Moduler 50 ???
+
+		declare CMlQuad  MenuButtons_Color <=> (_Button.GetFirstChild("MenuButtons_Color") as CMlQuad);
+		declare CMlLabel MenuButtons_Label <=> (_Button.GetFirstChild("MenuButtons_Label")	as CMlLabel);
+
+		if(!_IsActive) {
+			MenuButtons_Color.BgColor = <0.0, 0.0, 0.0>;
+			MenuButtons_Label.TextColor = <0.6, 0.6, 0.6>;
+		} else {
+			MenuButtons_Label.TextColor = <1., 1., 1.>;
+			MenuButtons_Color.BgColor = BaseLib_TextToColor(_ButtonMetadata["Color"]);
+		}
+		MenuButtons_Label.SetText(_ButtonMetadata["Title"]);
+
+		foreach(Index =>Control in _Button.Controls) {
+			declare OpacityTarget = G_ControlOpacity[Index];
+			if (!_IsActive) {
+				OpacityTarget *= 0.5;
+			}
+			if (Control is CMlLabel) {
+				declare Label <=> (Control as CMlLabel);
+				Label.Opacity = 0.;
+			} else if (Control is CMlQuad) {
+				declare Quad <=> (Control as CMlQuad);
+				Quad.Opacity = 0.;
+			}
+			LibManialink_AnimStop(Control);
+			LibManialink_SetTargetOpacity(Control, OpacityTarget);
+			LibManialink_PresetAnimInsert(Control, DecaleTime-50, 500, "EaseInSine");
+		}
+
+		LibManialink_AnimStop(_Button);
+		LibManialink_SetTargetPosition(_Button, <0., 0.>);
+		LibManialink_PresetAnimInsert(_Button, DecaleTime, 600, "EaseOutCubic");
+	}
+
+	Void MenuButtons_HideButton(CMlFrame _Button, Integer _ButtonIndex, Text[Text] _ButtonMetadata, Boolean _IsActive, Vec2 _ButtonSize)
+	{
+		declare Integer DecaleTime  = 50 * (_ButtonIndex + 1); // TODO : Moduler 50 ???
+		declare Real[Boolean] PosX = [False => -_ButtonSize.X * (_ButtonIndex + 1), // TODO : Voir cette formule
+										True => _ButtonSize.X * (_ButtonIndex + 1)];
+		declare CMlQuad  MenuButtons_Color <=> (_Button.GetFirstChild("MenuButtons_Color") as CMlQuad);
+		declare CMlLabel MenuButtons_Label <=> (_Button.GetFirstChild("MenuButtons_Label")	as CMlLabel);
+		foreach(Control in _Button.Controls)
+		{
+			LibManialink_AnimStop(Control);
+			LibManialink_SetTargetOpacity(Control, 0.);
+			LibManialink_PresetAnimInsert(Control, DecaleTime-50, 500, "EaseInSine");
+		}
+		LibManialink_AnimStop(_Button);
+		LibManialink_SetTargetPosition(_Button, <PosX[G_IsFadeIn], 0.>);
+		LibManialink_PresetAnimInsert(_Button, DecaleTime, 600, "EaseInCubic");
+	}
+
+	Void MenuButtons_SelectButton(CMlFrame _Button, Text[Text] _ButtonMetadata)
+	{
+	}
+
+	Void MenuButtons_FocusButton(CMlFrame _Button, Text[Text] _ButtonMetadata)
+	{
+		declare CMlLabel MenuButtons_Label <=> (_Button.GetFirstChild("MenuButtons_Label")	as CMlLabel);
+		LibManialink_SetTargetScale(MenuButtons_Label, 1.05);
+		LibManialink_PresetAnim(MenuButtons_Label, 50, "Linear");
+	}
+
+	Void MenuButtons_UnFocusButton(CMlFrame _Button, Text[Text] _ButtonMetadata)
+	{
+		declare CMlLabel MenuButtons_Label <=> (_Button.GetFirstChild("MenuButtons_Label")	as CMlLabel);
+		LibManialink_SetTargetScale(MenuButtons_Label, 1.);
+		LibManialink_PresetAnim(MenuButtons_Label, 50, "Linear");
+		MenuButtons_Label.TextColor = <1., 1., 1.>;
+	}
+
+	Void MenuButtons_UpdateLightFocus(CMlFrame _Button, Text[Text] _ButtonMetadata, Integer _TimeSinceFocusInMilliseconds)
+	{
+		declare CMlLabel MenuButtons_Label <=> (_Button.GetFirstChild("MenuButtons_Label")	as CMlLabel);
+
+		declare Real Pourcentage = (ML::Sin(_TimeSinceFocusInMilliseconds * 0.01) * 0.5 + 0.5);
+		declare Vec3 Color = BaseLib_TextToColor(_ButtonMetadata["Color"]);
+		declare Real LabelColor_X       = 1.0 - Pourcentage * (1. - Color.X);
+		declare Real LabelColor_Y       = 1.0 - Pourcentage * (1. - Color.Y);
+		declare Real LabelColor_Z       = 1.0 - Pourcentage * (1. - Color.Z);
+
+		MenuButtons_Label.TextColor = <LabelColor_X, LabelColor_Y, LabelColor_Z>;
+	}
+
+{{{MenuButtons::SecondDeclares()}}}
+	Void MP4_MenuButtons_Init()
+	{
+		MenuButtons_Init();
+		G_ControlOpacity.add({{{C_Opacity_Quad}}});
+		G_ControlOpacity.add({{{C_Opacity_IMG}}});
+		G_ControlOpacity.add({{{C_Opacity_Color}}});
+		G_ControlOpacity.add({{{C_Opacity_Logo}}});
+		G_ControlOpacity.add({{{C_Opacity_Label}}});
+	}
+
+	Void MP4_MenuButtons_Show(Integer _State)
+	{
+		G_IsFadeIn = (_State == C_Pages_GOTONEXTPAGE);
+		MenuButtons_Show();
+	}
+
+	Void MP4_MenuButtons_Hide(Integer _State)
+	{
+		G_IsFadeIn = (_State == C_Pages_GOTOPREVIOUSPAGE);
+		MenuButtons_Hide();
+	}
+
+	Void MP4_MenuButtons_Loop()
+	{
+		MenuButtons_Loop();
+	}
+	""";
+}

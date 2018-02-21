@@ -1,0 +1,163 @@
+#Include "Libs/Nadeo/MP4/Common/Components/DynamicFormDisplayer/LBDynamicFormDisplayer.Script.txt"		as DynamicFormDisplayer
+#Include "Libs/Nadeo/MP4/Common/DesignManialinks.Script.txt"			as DesignManialinks
+#Include "Libs/Nadeo/MP4/Common/ManialinkTools/FontManager.Script.txt"					as Font
+#Include "Libs/Nadeo/Common/Core/LayerBuilder.Script.txt"			as LayerBuilder
+
+#Const C_PlayLogoUrl	"file://Media/MEDIABROWSER_HiddenResources/Common/Images/Menus/Buttons/NextLogo.dds"
+#Const C_EmptyLogoUrl	"file://Media/MEDIABROWSER_HiddenResources/Common/Images/Menus/Buttons/EmptyLogo.dds"
+#Const C_ScriptParamsLogoUrl	"file://Media/MEDIABROWSER_HiddenResources/Common/Images/Menus/Buttons/ScriptParametersLogo.dds"
+#Const C_LoadLogoUrl	"file://Media/MEDIABROWSER_HiddenResources/Common/Images/Menus/Buttons/LoadLogo.dds"
+#Const C_SaveLogoUrl	"file://Media/MEDIABROWSER_HiddenResources/Common/Images/Menus/Buttons/SaveLogo.dds"
+#Const C_NextLogoUrl	"file://Media/MEDIABROWSER_HiddenResources/Common/Images/Menus/Buttons/NextLogo.dds"
+
+#Const C_NameLocalizations		[	"TimeAttack"	=> _("|GameMode|Time Attack"),
+									"Rounds"		=> _("|GameMode|Rounds"),
+									"Cups"			=> _("|GameMode|Cup"),
+									"TimeLimit"		=> _("Time limit :"),
+									"LapNb"			=> _("Number of Laps :"),
+									"ScoreLimit"	=> _("Point limit :"),
+									"RoundsPerMap"	=> _("Rounds per map :"),
+									"NbWinners"		=> _("Number of winners :"),
+									"Mode"			=> _("Mode"),
+									"Name"			=> _("Name")]
+
+Real[][] GetChunkAttributePositions() {
+	return [[-15., -65.]];
+}
+
+Text Build() {
+	declare Text	MainFont				= Font::GetFontName("Main");
+	DynamicFormDisplayer::Init("", "", C_NameLocalizations, <-105., 50.2>, <80., 124.>);
+	declare Text Manialink = """
+	{{{DynamicFormDisplayer::ManialinkFrameModels()}}}
+
+	<frame id="Frame_All">
+		<frame z-index="1">
+		<frame pos="-141 35">
+			<label halign="left" valign="center" pos="0. 6." textsize="6.5" textprefix="$t" textfont="{{{MainFont}}}" text="{{{
+		_("Game mode")
+		}}}" textcolor="fff"/>
+			<quad z-index="1"  halign="right" valign="top"    pos="74 0." size="74 0.15" bgcolor="FFF" opacity="1."/>
+			<quad z-index="1"  halign="right" valign="bottom" pos="74 0." size="16.5 0.2" bgcolor="FFF" opacity="1."/>
+		</frame>
+{{{DesignManialinks::ManialinkSecondaryButtonLarge(<-140., 15.>, <71., 15.>, _("Script Parameters"), C_ScriptParamsLogoUrl, "", "", "MatchSettingsEditor_Edit")}}}
+		<frame pos="-141 -16">
+			<label halign="left" valign="center" pos="0. 6." textsize="6.5" textprefix="$t" textfont="{{{MainFont}}}" text="{{{
+		_("File")
+		}}}" textcolor="fff"/>
+			<quad z-index="1"  halign="right" valign="top"    pos="74 0." size="74 0.2" bgcolor="FFF" opacity="1."/>
+			<quad z-index="1"  halign="right" valign="bottom" pos="74 0." size="16.5 0.2" bgcolor="FFF" opacity="1."/>
+		</frame>
+{{{DesignManialinks::ManialinkSecondaryButtonLarge(<-140., -35.>, <71., 15.>, _("|File|Load"), C_LoadLogoUrl, "", "", "LoadButton")}}}
+{{{DesignManialinks::ManialinkSecondaryButtonLarge(<-140., -53.>, <71., 15.>, _("|File|Save"), C_SaveLogoUrl, "", "", "SaveButton")}}}
+{{{DesignManialinks::ManialinkMainButtonLarge(<100., -32.3>, <52.8, 18.>, "BUTTON 0", C_NextLogoUrl, "", "Button0")}}}
+		</frame>
+		<frame>
+{{{DynamicFormDisplayer::ManialinkMainBody()}}}
+		</frame>
+	</frame>
+
+	""";
+	declare Text Includes = """
+{{{DynamicFormDisplayer::Includes()}}}
+	""";
+	declare Text Declares = """
+{{{DynamicFormDisplayer::Declares()}}}
+
+	declare Text G_EventPrefix;
+
+	Void Refresh()
+	{
+		declare Text	MatchSettingsEditor_EventNamePrefix			for Page;
+		declare Text[]	MatchSettingsEditor_ButtonNames				for Page;
+		declare Text	MatchSettingsEditor_MediaTitle				for Page;
+		declare Text[]	MatchSettingsEditor_SecondaryButtonNames	for Page;
+		declare Text	MatchSettingsEditor_AddToListButtonName		for Page;
+
+		G_EventPrefix = MatchSettingsEditor_EventNamePrefix;
+		foreach (ButtonIndex => ButtonName in MatchSettingsEditor_ButtonNames) {
+			declare Frame <=> Page.GetFirstChild("Button" ^ ButtonIndex ^ "_Frame");
+			if (Frame != Null && ButtonName == "") {
+				Frame.Hide();
+			} else if (Frame != Null && ButtonName != "") {
+				Frame.Show();
+			}
+			declare Label <=> (Page.GetFirstChild("Button" ^ ButtonIndex ^ "_Label") as CMlLabel);
+			if (Label != Null) {
+				Label.SetText(ButtonName);
+			} else {
+				log(Now ^ ") WARNING : Too many button names!");
+			}
+		}
+	}
+
+	Void Show(Integer _State, Text _PreviousPage)
+	{
+		SendCustomEvent("UpdateBarreSection", ["NewMatchSettings"]);
+		EnableMenuNavigation(True,False,Null,3);
+		FormDisplayer_Show();
+	}
+
+	Void Hide(Integer _State, Text _NextPage)
+	{
+		BaseLib_Hide();
+	}
+
+	Void Input_Select()
+	{
+	}
+
+	Void Init()
+	{
+		DesignManialinks_SecondaryButton_Deactivate("MatchSettingsEditor_Edit");
+		FormDisplayer_Init();
+		SendCustomEvent("UpdateBarreSection", ["NewMatchSettings"]);
+	}
+
+	Void Loop()
+	{
+		FormDisplayer_Loop();
+		declare Boolean MatchSettingsEditor_Refresh				for Page;
+		if (MatchSettingsEditor_Refresh) {
+			Refresh();
+			MatchSettingsEditor_Refresh = False;
+		}
+		foreach(Event in PendingEvents) {
+			switch(Event.Type) {
+				case CMlEvent::Type::MouseClick: {
+					if (Event.ControlId == "LoadButton") {
+						SendCustomEvent("MatchSettingsEditor_LoadMatchSettings", Text[]);
+					} else if (Event.ControlId == "SaveButton") {
+						SendCustomEvent("MatchSettingsEditor_SaveMatchSettings", Text[]);
+					} else if (Event.ControlId == "Button0") {
+						Input_Select();
+						SendCustomEvent(G_EventPrefix ^ "_Button_0", Text[]);
+					} else if (Event.ControlId == "MatchSettingsEditor_Edit") {
+						SendCustomEvent("MatchSettingsEditor_Edit", Text[]);
+					}
+				}
+				case CMlEvent::Type::PluginCustomEvent: {
+					switch(Event.CustomEventType) {
+						case "FormDisplayer_UpdateAttributes" : {
+							declare Text[][]	Page_FormDisplayer_ChunkSettingValues			for Page;
+							declare Boolean		Page_CanSave									for Page;
+							if (Page_FormDisplayer_ChunkSettingValues[0][0] == "") {
+								DesignManialinks_SecondaryButton_Deactivate("MatchSettingsEditor_Edit");
+							} else {
+								DesignManialinks_SecondaryButton_Activate("MatchSettingsEditor_Edit");
+							}
+							if (Page_CanSave) {
+								DesignManialinks_MainButton_Activate("Button0");
+							} else {
+								DesignManialinks_MainButton_Deactivate("Button0");
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+""";
+
+	return LayerBuilder::Build("MatchSettingsEditorForm", Manialink, Includes, Declares);
+}

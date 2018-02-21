@@ -1,0 +1,107 @@
+#Include "TextLib"				as TextLib
+
+declare CTaskResult_StringIntList G_TaskPlayerGroups;
+declare Text[]  G_PlayerGroups;
+
+Void LoadFriendGroups(CUserV2Manager _UserMgr)
+{
+	if(G_TaskPlayerGroups != Null) {
+		_UserMgr.TaskResult_Release(G_TaskPlayerGroups.Id);
+		G_TaskPlayerGroups = Null;
+	}
+	G_TaskPlayerGroups = _UserMgr.GetGroups(_UserMgr.MainUser.Id);
+}
+
+Void Load(CUserV2Manager _UserMgr)
+{
+	LoadFriendGroups(_UserMgr);
+}
+
+Void LoadIngame(CUser _User)
+{
+	declare Text[] PlayerGroups for _User;
+	G_PlayerGroups = PlayerGroups;
+}
+
+Void Loop(CUserV2Manager _UserMgr, CUser _User)
+{
+	if(G_TaskPlayerGroups != Null)
+	{
+		if(!G_TaskPlayerGroups.IsProcessing)
+		{
+			if(G_TaskPlayerGroups.HasSucceeded)
+			{
+				//log("G_TaskPlayerGroups: " ^ G_TaskPlayerGroups.Values);
+				G_PlayerGroups.clear();
+				foreach(Value in G_TaskPlayerGroups.Values)
+				{
+					G_PlayerGroups.add(Value);
+				}
+				declare Text[] PlayerGroups for _User;
+				PlayerGroups = G_PlayerGroups;
+			}
+			_UserMgr.TaskResult_Release(G_TaskPlayerGroups.Id);
+			G_TaskPlayerGroups = Null;
+		}
+	}
+}
+
+Integer GetPlayerGroupsCount()
+{
+	return G_PlayerGroups.count;
+}
+
+Integer GetZoneCount(Text _ZonePath)
+{
+	declare Text[] Zones = TextLib::Split("|", _ZonePath);
+	return G_PlayerGroups.count + Zones.count;
+}
+
+Integer GetRegionZoneCount(Text _ZonePath)
+{
+	declare Text[] Zones = TextLib::Split("|", _ZonePath);
+	return Zones.count;
+}
+
+Text Get_ZoneText(Text _ZonePath, Integer _ZoneRanking)
+{
+	declare Text[] Zones = TextLib::Split("|", _ZonePath);
+	if(Zones.count <= 0 || _ZoneRanking < 0) return "";
+	if(_ZoneRanking >= Zones.count) {
+		declare Integer Index = _ZoneRanking - Zones.count;
+		if(G_PlayerGroups.existskey(Index)) {
+			return G_PlayerGroups[Index];
+		} else {
+			return "";
+		}
+	}
+	declare Text Zone;
+	for (ZoneIndex, 0, _ZoneRanking) {
+		Zone ^= Zones[ZoneIndex];
+		if (ZoneIndex < _ZoneRanking) {
+			Zone ^= "|";
+		}
+	}
+	return Zone;
+}
+
+Text Get_ZoneLabelText(Text _ZonePath, Integer _ZoneRanking)
+{
+	declare Text[] Zones = TextLib::Split("|", _ZonePath);
+	if (Zones.count == 0) {
+		return _("|You are offline|Offline");
+	}
+	if(_ZoneRanking < 0) {
+		return "";
+	}
+	if(_ZoneRanking <= Zones.count - 1)
+	{
+		return Zones[_ZoneRanking];
+	} else {
+		declare Integer Index = _ZoneRanking - Zones.count;
+		if(G_PlayerGroups.existskey(Index)) {
+			return G_PlayerGroups[Index];
+		}
+	}
+	return "";
+}

@@ -1,0 +1,157 @@
+#Include "Libs/Nadeo/Common/Core/Logger.Script.txt"	as Logger
+#Include "TextLib"								as TextLib
+#Include "Libs/Nadeo/MP4/Common/GlobalVariables.Script.txt"	as GlobalVariables
+
+#Const C_BaseFileTM		"file://Media/MEDIABROWSER_HiddenResources/MakerTM/XML/LocalPlayXMLs/BaseLocalPlay.xml"
+#Const C_BaseFileSM		"file://Media/MEDIABROWSER_HiddenResources/MakerSM/XML/LocalPlayXMLs/BaseLocalPlay.xml"
+
+#Const C_IdsToNames [
+"SingleMap" => _("Single Map"),
+"VersusReplay" => _("Versus Replay"),
+"HotSeat" => _("Hot Seat"),
+"SplitScreen" => _("Split Screen"),
+"LocalNetHack" => _("Local Network"),
+"LocalNetwork" => _("Local Network")]
+
+declare Boolean		G_IsActive;
+declare Text		G_Color;
+declare Text[]		G_BaseIds;
+declare Text[]		G_DefaultBaseIds;
+declare Text[]		G_BaseTitleNames;
+declare Text[]		G_BaseMakerNames;
+declare Text[]		G_UGCAssets;
+declare Boolean[]	G_IsVisibleInMaker;
+declare Boolean[]	G_IsActivated;
+
+Void Private_ReadBase(Text _XML)
+{
+	G_BaseIds.clear();
+	G_BaseTitleNames.clear();
+	G_BaseMakerNames.clear();
+	G_IsVisibleInMaker.clear();
+	G_IsActivated.clear();
+	G_UGCAssets.clear();
+	if (_XML == "") {
+		return;
+	}
+	declare Document				<=> Xml.Create(_XML);
+	declare LocalModes				<=> Document.Root;
+	foreach(LocalMode in LocalModes.Children) {
+		if (LocalMode.GetAttributeBoolean("isdefault", False)) {
+			declare Text AssetId = LocalMode.GetAttributeText("id", "");
+			if (!G_DefaultBaseIds.exists(AssetId) && G_DefaultBaseIds.count != 0) {
+				continue;
+			}
+			G_BaseIds.add(AssetId);
+			G_BaseTitleNames.add(LocalMode.GetAttributeText("titlename", ""));
+			if (C_IdsToNames.existskey(AssetId)) {
+				G_BaseMakerNames.add(C_IdsToNames[AssetId]);
+			} else {
+				G_BaseMakerNames.add(LocalMode.GetAttributeText("makername", ""));
+			}
+			G_IsVisibleInMaker.add(LocalMode.GetAttributeBoolean("isvisibleinmaker", True));
+			G_IsActivated.add(LocalMode.GetAttributeBoolean("isactivated", True));
+		} else {
+			G_UGCAssets.add(LocalMode.GetAttributeText("id", ""));
+		}
+	}
+	foreach(BaseId in G_DefaultBaseIds) {
+		if (G_BaseIds.exists(BaseId)) {
+			continue;
+		}
+		G_BaseIds.add(BaseId);
+		G_BaseTitleNames.add(BaseId);
+		if (C_IdsToNames.existskey(BaseId)) {
+			G_BaseMakerNames.add(C_IdsToNames[BaseId]);
+		} else {
+			G_BaseMakerNames.add(BaseId);
+		}
+		G_IsVisibleInMaker.add(True);
+		G_IsActivated.add(True);
+	}
+	Xml.Destroy(Document);
+}
+
+Void ReadBase(Text _XML)
+{
+	Private_ReadBase(_XML);
+}
+
+Void ReadBase()
+{
+	declare Text[Integer] BaseFiles = [GlobalVariables::LaunchContext_Maker() => C_BaseFileTM,
+										GlobalVariables::LaunchContext_MakerSM() => C_BaseFileSM];
+	declare Text BaseFile = BaseFiles[GlobalVariables::GetLaunchContext()];
+	declare GetRequest				<=> Http.CreateGet(BaseFile);
+	wait(GetRequest.IsCompleted);
+	if (GetRequest.StatusCode != 200)
+	{
+		Logger::Warn("LocalPlayXmlReader : le fichier n'a pas été trouvé");
+		return;
+	}
+	G_DefaultBaseIds = G_BaseIds;
+	Private_ReadBase(GetRequest.Result);
+	Http.Destroy(GetRequest);
+}
+
+Void AnalyzeXML(Text _XML)
+{
+	if (_XML == "")
+	{
+		return;
+	}
+	declare Document				<=> Xml.Create(_XML);
+	declare LocalPlay				<=> Document.Root;
+
+	if (LocalPlay == Null)
+	{
+		Logger::Warn("Texte mal formaté : balise LocalPlay non trouvée");
+		Xml.Destroy(Document);
+		return;
+	}
+	G_Color = LocalPlay.GetAttributeText("color", "0F8");
+	G_IsActive = LocalPlay.GetAttributeBoolean("activated", True);
+	declare LocalModes = LocalPlay.GetFirstChild("localmodes");
+	ReadBase(Document.TextContents);
+	Xml.Destroy(Document);
+}
+
+Text GetColor()
+{
+	return G_Color;
+}
+
+Boolean IsActive()
+{
+	return G_IsActive;
+}
+
+Text[] GetBaseIds()
+{
+	return G_BaseIds;
+}
+
+Text[] GetBaseTitleNames()
+{
+	return G_BaseTitleNames;
+}
+
+Text[] GetBaseMakerNames()
+{
+	return G_BaseMakerNames;
+}
+
+Text[] GetUGCAssets()
+{
+	return G_UGCAssets;
+}
+
+Boolean[] GetIsVisibleInMaker()
+{
+	return G_IsVisibleInMaker;
+}
+
+Boolean[] GetIsActivated()
+{
+	return G_IsActivated;
+}

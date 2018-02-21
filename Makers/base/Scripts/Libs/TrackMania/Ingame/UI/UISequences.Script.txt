@@ -1,0 +1,539 @@
+/**
+ *	ScoreTable Library
+ * 	Especially made for console
+ */
+
+
+#Include "Libs/Nadeo/Manialink2.Script.txt" 							as Manialink
+#Include "Libs/Nadeo/Common/Ingame/IngameLayers.Script.txt" 								as Layers
+//#Include "Libs/Trackmania/Ingame/Ghosts.Script.txt" 				as Ghosts
+#Include "Libs/Nadeo/Common/ManialinkTools/UIPadButtons.Script.txt"							as UIButtons
+#Include "Libs/Nadeo/MP4/Common/Colors.Script.txt" 						as Colors
+#Include "Libs/Nadeo/MP4/Common/ManialinkTools/FontManager.Script.txt" 					as Font
+
+#Include "MathLib" as ML
+
+#Const SoundPath				"file://Media/Sounds/TMConsole/"
+#Const TMC_Sound_Chopper 		"chopper.ogg"
+#Const TMC_Sound_IntroSound		"tm2h_cine_preview07.ogg"
+#Const C_ImgBase				"file://Media/Images/TMConsole/Ingame/"
+
+declare Boolean						G_IdleFocusOn;
+declare Integer						G_ReplayCarIndex;
+declare Integer						G_ReplayCamIndex;
+declare Integer						G_StartTimerReplay;
+
+// ---------------------------------- //
+// Intro
+Void IntroSequence() {
+	foreach (Player in AllPlayers) {
+		declare UI <=> UIManager.GetUI(Player);
+		declare TMC_HasSeenIntro for UI = False;
+		TMC_HasSeenIntro = False;
+	}
+
+	declare Boolean IntroSequenceIsFinished = False;
+	while(!IntroSequenceIsFinished) {
+		foreach (Player in AllPlayers) {
+			declare UI <=> UIManager.GetUI(Player);
+			if (UI != Null) {
+				declare TMC_HasSeenIntro for UI = False;
+				if (!TMC_HasSeenIntro) {	
+					Player.IsSpawned = True;
+					UI.UISequence = CUIConfig::EUISequence::Intro;
+					TMC_HasSeenIntro = True;
+				}
+				if (Player.IsSpawned && UI.UISequence == CUIConfig::EUISequence::Intro && UI.UISequenceIsCompleted) {
+					IntroSequenceIsFinished = True;
+				} else {
+					yield;
+				}
+			}
+		}
+		
+		foreach(I => Pad in Input.Pads) {
+			if(Pad.IdleDuration == 0) {
+				IntroSequenceIsFinished = True;
+				foreach (Player in AllPlayers) {
+					declare UI <=> UIManager.GetUI(Player);
+					if (UI != Null) {
+						UI.UISequence = CUIConfig::EUISequence::Playing;
+						// Player.IsSpawned = False;
+					}
+				}
+			}
+		}	
+	}
+}
+
+Void SpawnPlayer() {
+	foreach(Player in Players) {
+		Player.IsSpawned = True;
+	}
+}
+
+Void ComposeVideoTransitionLayer() {
+	declare Text VideoTransitionMaps = "file://Media/Manialinks/Trackmania/Video/transition_ingame_helico1.webm";
+	declare Text MLText = """
+		<script><!--
+			#Include "MathLib" as ML
+			#Const DebugName  "L_VideoTransition"
+
+			Void AnimTestTransition() {
+				declare CMlMediaPlayer  VideoTransition <=> (Page.GetFirstChild("VideoTransitionBrowseTracks") as CMlMediaPlayer);
+				VideoTransition.Show();
+				VideoTransition.StopAndRewind();
+				VideoTransition.Play();
+			}
+			
+			Void PreloadSounds()
+			{
+				// Audio.CreateSound("{{{SoundPath}}}" ^ {{{TMC_Sound_Chopper}}}));
+			}
+			
+			main() {
+				
+				// declare CMlQuad Quad_Black 	<=> (Page.MainFrame.GetFirstChild("BlackScreen")	as CMlQuad);
+				declare netread Integer Net_VideoTransitionStartUpdate for UI;
+				declare netread Integer Net_VideoTransitionStopUpdate for UI;
+				declare			Integer Pre_VideoTransitionStartUpdate 	= Net_VideoTransitionStartUpdate;
+				declare			Integer Pre_VideoTransitionStopUpdate 	= Net_VideoTransitionStopUpdate;
+				
+				PreloadSounds();
+				while(True) {
+					yield;
+					if(Pre_VideoTransitionStartUpdate != Net_VideoTransitionStartUpdate) {
+						// log(Now^">START VIDEO");
+						AnimTestTransition();
+						Pre_VideoTransitionStartUpdate = Net_VideoTransitionStartUpdate;
+					}
+					
+					if(Pre_VideoTransitionStopUpdate != Net_VideoTransitionStopUpdate) {
+						// log(Now^">STOP VIDEO");
+						declare CMlMediaPlayer  VideoTransition <=> (Page.GetFirstChild("VideoTransitionBrowseTracks") as CMlMediaPlayer);
+						VideoTransition.Hide();
+						VideoTransition.StopAndRewind();
+						Pre_VideoTransitionStopUpdate = Net_VideoTransitionStopUpdate;
+					}
+				}
+			}
+		--></script>
+		
+		<frame id="GlobalHud" pos="0 0 0">
+			<video id="VideoTransitionBrowseTracks" halign="center" valign="center" hidden="1" looping="0"
+				size="320 180" scale="1." data="{{{VideoTransitionMaps}}}" pos="0 0 30" play="1"
+			/>
+		</frame>
+	""";
+	
+	declare Layer <=> Layers::Get("VideoTransitionLayer");
+	if(Layer == Null) {
+		Layers::Create("VideoTransitionLayer", MLText);
+	}
+	
+	Layer <=> Layers::Get("VideoTransitionLayer");
+	Layer.Type = CUILayer::EUILayerType::Normal;
+	Layers::Attach("VideoTransitionLayer");
+}
+
+Void ComposeVideoTrailerLayer() {
+	declare Text VideoTrailer = "file://Media/Manialinks/Trackmania/Video/tmce_cine_preview07.webm";
+	declare Text MLText = """
+		<script><!--
+			#Include "MathLib" as ML
+			#Const DebugName  "L_VideoTransition"
+
+			Void AnimTestTransition() {
+				declare CMlMediaPlayer  VideoIntro <=> (Page.GetFirstChild("VideoIntro") as CMlMediaPlayer);
+				VideoIntro.Show();
+				VideoIntro.StopAndRewind();
+				VideoIntro.Play();
+			}
+			
+			Void PreloadSounds()
+			{
+				Audio.CreateSound("{{{SoundPath}}}{{{TMC_Sound_IntroSound}}}");
+			}
+			
+			main() {
+				
+				// declare netread Integer Net_VideoIntroStartUpdate 	for UI;
+				// declare netread Integer Net_VideoIntroStopUpdate 	for UI;
+				declare Quad_Font				<=> (Page	.GetFirstChild("Quad_Font") 				as CMlQuad);
+				declare netread Integer Net_VideoIntroStartUpdate 	for UI;
+				declare netread Integer Net_VideoIntroStopUpdate 	for UI;
+				
+				declare			Integer Pre_VideoIntroStartUpdate 	= Net_VideoIntroStartUpdate;
+				declare			Integer Pre_VideoIntroStopUpdate 	= Net_VideoIntroStopUpdate;
+				
+				declare Integer StartVideoInternUpdate 		= 0;
+				declare Integer Pre_StartVideoInternUpdate 	= 0;
+				
+				declare Integer StopVideoInternUpdate 		= 0;
+				declare Integer Pre_StopVideoInternUpdate 	= 0;
+				
+				declare netwrite Boolean Net_IsTrailerOn for UI;
+				
+				declare Integer TimerVideo = 94000;
+				while(True) {
+					yield;
+					if(Pre_VideoIntroStartUpdate != Net_VideoIntroStartUpdate || Pre_StartVideoInternUpdate != StartVideoInternUpdate) {
+						//Audio.LimitSceneSoundVolumedB = -200.0;
+						//Audio.LimitUiSoundVolumedB = -200.0;
+						Net_IsTrailerOn = True;
+						declare CMlMediaPlayer  VideoIntro <=> (Page.GetFirstChild("VideoIntro") as CMlMediaPlayer);
+						VideoIntro.Show();
+						VideoIntro.StopAndRewind();
+						VideoIntro.Play();
+						TimerVideo = 94000;
+						
+						Quad_Font.Visible = True;
+						
+						Pre_VideoIntroStartUpdate 	= Net_VideoIntroStartUpdate;
+						Pre_StartVideoInternUpdate 	= StartVideoInternUpdate;
+					}
+					
+					if(Pre_VideoIntroStopUpdate != Net_VideoIntroStopUpdate || Pre_StopVideoInternUpdate != StopVideoInternUpdate) {
+						//Audio.LimitSceneSoundVolumedB = 0.0;
+						//Audio.LimitUiSoundVolumedB = 0.0;
+						Net_IsTrailerOn = False;
+						declare CMlMediaPlayer  VideoIntro <=> (Page.GetFirstChild("VideoIntro") as CMlMediaPlayer);
+						VideoIntro.Hide();
+						VideoIntro.StopAndRewind();
+						
+						if(Net_VideoIntroStopUpdate != Pre_VideoIntroStopUpdate) {
+							Quad_Font.Visible = False;
+						}
+						
+						Pre_VideoIntroStopUpdate 	= Net_VideoIntroStopUpdate;
+						Pre_StopVideoInternUpdate 	= StopVideoInternUpdate;
+					}
+					
+					foreach(Event in PendingEvents) {
+						if(Event.KeyName == "T") {
+							if(Net_IsTrailerOn) {
+								StopVideoInternUpdate += 1;
+							} else {
+								StartVideoInternUpdate += 1;
+							}
+						}
+					}
+					
+					if(TimerVideo > 0) {
+						TimerVideo -= Period;
+					} else {
+						StopVideoInternUpdate += 1;
+					}
+				}
+			}
+		--></script>
+		
+		<frame id="GlobalHud" pos="0 0 50">
+		
+			<quad id="Quad_Font" pos="0. 0. 50." size="320 180" halign="center" valign="center" bgcolor="000" hidden="1"/>
+			<video id="VideoIntro" halign="center" valign="center" hidden="1" looping="0"
+				size="320 180" scale="1." data="{{{VideoTrailer}}}" pos="0 0 50" play="1"
+			/>
+		</frame>
+	""";
+	
+	declare Layer <=> Layers::Get("VideoTransitionLayer");
+	if(Layer == Null) {
+		Layers::Create("VideoTransitionLayer", MLText);
+	}
+	
+	Layer <=> Layers::Get("VideoTransitionLayer");
+	Layer.Type = CUILayer::EUILayerType::Normal;
+	Layers::Attach("VideoTransitionLayer");
+}
+
+Void StartTransitionVideo() {
+	foreach(Player in Players) {
+		declare UI <=> UIManager.GetUI(Player);
+		declare netwrite Integer Net_VideoTransitionStartUpdate for UI;
+		Net_VideoTransitionStartUpdate += 1;
+	}
+}
+
+Void StopTransitionVideo() {
+	foreach(Player in Players) {
+		declare UI <=> UIManager.GetUI(Player);
+		declare netwrite Integer Net_VideoTransitionStopUpdate for UI;
+		Net_VideoTransitionStopUpdate += 1;
+	}
+}
+
+Void StartIntroVideo(CTmPlayer _Player) {
+	declare UI <=> UIManager.GetUI(_Player);
+	declare netwrite Integer Net_VideoIntroStartUpdate for UI;
+	Net_VideoIntroStartUpdate += 1;
+}
+
+Void StopIntroVideo(CTmPlayer _Player) {
+	declare UI <=> UIManager.GetUI(_Player);
+	declare netwrite Integer Net_VideoIntroStopUpdate for UI;
+	Net_VideoIntroStopUpdate += 1;
+}
+
+Void SetStandByView() {
+	foreach(Player in Players) {
+		declare UI <=> UIManager.GetUI(Player);
+		declare Boolean OnCustomClip for UI;
+		if(UI.UISequence != CUIConfig::EUISequence::CustomMTClip_WithUIInteraction) {
+			UI.UISequence_CustomMTClip = "";
+			UI.UISequence = CUIConfig::EUISequence::UIInteraction;
+			/*
+			UI.UISequence_CustomMTClip = "mapstandby";
+			UI.UISequence = CUIConfig::EUISequence::CustomMTClip_WithUIInteraction;
+			*/
+		}
+	}
+}
+
+Void SetReplayCameraType(Integer _CamType) {
+	foreach(Player in Players) {
+		declare UI <=> UIManager.GetUI(Player);
+		UI.SpectatorForceCameraType = _CamType;
+	}
+}
+
+Void SetReplayGhostFocus(Ident _GhostIdent) {
+	foreach(Player in Players) {
+		declare UI <=> UIManager.GetUI(Player);
+		if(_GhostIdent != NullId) {
+			UI.SpectatorForcedTarget = _GhostIdent;
+		}
+	}
+}
+
+
+Boolean IsReplayOff() {
+	return !G_IdleFocusOn;
+}
+
+Void SetReplayOff() {
+	G_IdleFocusOn = False;
+}
+
+Void Loop() {
+	if(G_IdleFocusOn) {
+		
+		foreach(Player in Players) {
+			declare UI <=> UIManager.GetUI(Player);
+			
+			declare netread Integer Net_ReplayFocusOutUpdate for UI;
+			declare 		Integer Pre_ReplayFocusOutUpdate for UI;
+			
+			if(Pre_ReplayFocusOutUpdate != Net_ReplayFocusOutUpdate) {
+				if(G_IdleFocusOn) {
+					//Ghosts::RemoveAllGhosts();
+					G_IdleFocusOn = False;
+				}
+				Pre_ReplayFocusOutUpdate = Net_ReplayFocusOutUpdate;
+			}
+		}
+	}
+}
+
+Void ReplayCamLoop(CGhost[Ident] _ReplayGhosts) {
+	foreach(Player in Players) {
+		declare UI <=> UIManager.GetUI(Player);
+		declare netread Integer Net_ReplayCarUpdate for UI;
+		declare			Integer Pre_ReplayCarUpdate for UI;
+
+		declare netread Integer Net_ReplayCamUpdate for UI;		
+		declare			Integer Pre_ReplayCamUpdate for UI;
+		
+		// declare netread Integer Net_ReplayFocusOutUpdate for UI;
+		// declare 		Integer Pre_ReplayFocusOutUpdate for UI;
+		
+		if(Pre_ReplayCarUpdate != Net_ReplayCarUpdate) {
+			if(Net_ReplayCarUpdate > Pre_ReplayCarUpdate) {
+				if(G_ReplayCarIndex < _ReplayGhosts.count-1) {
+					G_ReplayCarIndex += 1;
+				} else {
+					G_ReplayCarIndex = 0;
+				}
+			} else {
+				if(G_ReplayCarIndex > 0) {
+					G_ReplayCarIndex -= 1;
+				} else {
+					G_ReplayCarIndex = _ReplayGhosts.count-1;
+				}
+			}
+			
+			declare Integer I = 0;
+			declare Ident GhostIdent = NullId;
+			
+			foreach(IdentGhost => Ghost in _ReplayGhosts) {
+				if(I == G_ReplayCarIndex) {
+					GhostIdent = IdentGhost;
+				}
+				I += 1;
+			}
+			
+			SetReplayGhostFocus(GhostIdent);
+			Pre_ReplayCarUpdate = Net_ReplayCarUpdate;
+		}
+		
+		if(Pre_ReplayCamUpdate != Net_ReplayCamUpdate) {
+			if(Net_ReplayCamUpdate > Pre_ReplayCamUpdate) {
+				if(G_ReplayCamIndex < 2) {
+					G_ReplayCamIndex += 1;
+				} else {
+					G_ReplayCamIndex = 0;
+				}
+			} else {
+				if(G_ReplayCamIndex > 0) {
+					G_ReplayCamIndex -= 1;
+				} else {
+					G_ReplayCamIndex = 2;
+				}
+			}
+			SetReplayCameraType(G_ReplayCamIndex);
+			Pre_ReplayCamUpdate = Net_ReplayCamUpdate;
+		}
+		
+	}
+}
+
+Void InputReplayManialink() {
+		declare Text MLText = """
+		<frame id=""  pos="0 0 35" scale="0.0">
+			
+		</frame>
+	
+		<script><!--
+			#Const C_NbPlayersMax 0
+			
+			main()
+			{
+				declare netwrite Integer Net_ReplayCarUpdate for UI;
+				declare netwrite Integer Net_ReplayCamUpdate for UI;		
+				
+				// declare netread Integer Net_ReplayFocusInUpdate for UI;
+				// declare 		Integer Pre_ReplayFocusInUpdate for UI;
+				
+				EnableMenuNavigation(False, False, Null, 0);
+				declare Boolean PrePageIsVisible 	= PageIsVisible;
+				
+				while(True) {
+					yield;
+					if (!PageIsVisible || InputPlayer == Null) continue;
+
+					if(PrePageIsVisible != PageIsVisible) {
+						EnableMenuNavigation(PageIsVisible, False, Null, 0);
+						PrePageIsVisible = PageIsVisible;
+					}
+				
+					//--------------------------------
+					// EVENTS LOOP                    
+					foreach (Event in PendingEvents) 
+					{
+						// log(Event.MenuNavAction);
+						if(Event.MenuNavAction == CMlEvent::EMenuNavAction::Left) {
+							Net_ReplayCarUpdate += 1;
+						}
+						if(Event.MenuNavAction == CMlEvent::EMenuNavAction::Right) {
+							Net_ReplayCarUpdate -= 1;
+						}
+						if(Event.MenuNavAction == CMlEvent::EMenuNavAction::Up) {
+							Net_ReplayCamUpdate += 1;
+						}
+						if(Event.MenuNavAction == CMlEvent::EMenuNavAction::Down) {
+							Net_ReplayCamUpdate -= 1;
+						}
+						if(Event.MenuNavAction == CMlEvent::EMenuNavAction::AppMenu)
+						{
+							ShowInGameMenu();
+						}
+						// if(Event.MenuNavAction == CMlEvent::EMenuNavAction::Select) {
+							
+						// }
+					}
+				}
+			}
+		--></script>
+	""";
+	
+	declare Text LayerName = "InputReplayManialink";
+	Layers::Create(LayerName, MLText);
+	Layers::Attach(LayerName);
+}
+
+Void SetInputReplayVisibility(Boolean _Show) {
+	Layers::SetVisibility("InputReplayManialink", _Show);
+}
+
+Boolean IsIdleFocus() {
+	foreach(Player in Players) {
+		declare UI <=> UIManager.GetUI(Player);
+		declare netread Boolean Net_IdleFocus for UI;
+		return Net_IdleFocus;
+	}
+	return False;
+}
+
+Void IdleFocusInML() {
+	foreach(Player in Players) {
+		declare UI <=> UIManager.GetUI(Player);
+		declare netwrite Integer Net_IdleFocusInUpdate for UI;
+		Net_IdleFocusInUpdate += 1;
+	}
+}
+
+Void IdleFocusOutML() {
+	foreach(Player in Players) {
+		declare UI <=> UIManager.GetUI(Player);
+		declare netwrite Integer Net_IdleFocusOutUpdate for UI;
+		Net_IdleFocusOutUpdate += 1;
+	}
+}
+
+Void SetIdleFocus() {
+	// Layers::SetVisibility("InputIdleManialink", True);
+	IdleFocusInML();
+	G_IdleFocusOn = True;
+}
+
+Void LaunchPlayingSequence() {
+	foreach(Player in Players) {
+		declare UI <=> UIManager.GetUI(Player);
+		UI.UISequence = CUIConfig::EUISequence::Playing;
+	}
+}
+
+Boolean StartReplaySequence() {
+	foreach(Player in Players) {
+		declare UI <=> UIManager.GetUI(Player);
+		if(UI.UISequence != CUIConfig::EUISequence::EndRound) {
+			UI.UISequence = CUIConfig::EUISequence::EndRound;
+			//UI.SpectatorObserverMode = CUIConfig::EObserverMode::Forced;
+			UI.SpectatorForceCameraType = 0;
+			return True;
+		}
+	}
+	return False;
+}
+
+Boolean IsReplaySequence() {
+	foreach(Player in Players) {
+		declare UI <=> UIManager.GetUI(Player);
+		if(UI.UISequence == CUIConfig::EUISequence::EndRound && Now > G_StartTimerReplay) {
+			return True;
+		}
+	}
+	return False;
+}
+
+Void LaunchReplaySequence() {
+	if(StartReplaySequence()) {
+		foreach(Player in Players) {
+			Player.IsSpawned = False;
+		}
+	}
+}
+
+Void InitIdleFocus() {
+	G_IdleFocusOn = False;
+}

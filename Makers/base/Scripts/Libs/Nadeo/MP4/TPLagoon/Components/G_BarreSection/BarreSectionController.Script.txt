@@ -1,0 +1,166 @@
+#Include "Libs/Nadeo/Common/Core/MenuLayers.Script.txt"											as Layers
+#Include "Libs/Nadeo/Common/Core/Logger.Script.txt"												as Logger
+#Include "Libs/Nadeo/Common/Core/SectionsManager.Script.txt"										as SectionsManager
+#Include "TextLib"																			as TextLib
+#Include "MathLib"																			as MathLib
+
+//APIs
+#Include "Libs/Nadeo/MP4/TPLagoon/Components/Solo/SoloAPI.Script.txt"									as SoloAPI
+#Include "Libs/Nadeo/MP4/TPLagoon/Components/Multiplayer/MultiplayerAPI.Script.txt"						as MultiplayerAPI
+
+//Layers
+#Include "Libs/Nadeo/MP4/TPLagoon/Components/G_BarreSection/LBBarreSection.Script.txt"					as LBBarreSection
+
+#Const C_BGBase				"file://Media/Video/TPLagoon/"
+#Const C_LBBarreSection	    "BarreSection"
+
+declare Text[]			G_BarreSectionId;
+declare Text[][Text]	G_BarreSectionNames;
+declare Text[][Text]	G_BarreSectionLogos;
+declare Text[][Text]	G_BarreSectionTexts;
+declare Text[Text]		G_BarreSectionTitle;
+declare Text[Text]		G_BarreSectionDisplayType;
+
+Void UpdateBarreSection(Boolean _Visibility)
+{
+	declare CUILayer LayerToSend <=> Layers::Get(C_LBBarreSection);
+	if(LayerToSend == Null) return;
+	LayerCustomEvent(LayerToSend, "UpdateAll", [""^_Visibility]);
+}
+
+Void Build(Text _LayerName, Boolean _Attach) {
+
+	declare Text MLText;
+	switch(_LayerName) {
+		case(C_LBBarreSection):{
+			MLText = LBBarreSection::Build();
+		}
+	}
+
+	if(MLText == "") {
+		Logger::Warn("Unknown Page: "^_LayerName);
+		return;
+	}
+	
+	Layers::Create(_LayerName, MLText);
+	
+	declare CUILayer Layer <=> Layers::Get(_LayerName);
+	declare Text Page_LayerName for Layer.LocalPage;
+	
+	Page_LayerName = _LayerName;
+	if(_Attach) Layers::Attach(_LayerName);
+}
+
+Void AddConfiguration(Text _Id, Text _MainTitle, Text[] _Names, Text[] _Logos, Text[] _Text, Text _DisplayType) {
+	if (!G_BarreSectionId.exists(_Id)) {
+		G_BarreSectionId.add(_Id);
+	}
+	G_BarreSectionNames[_Id] = _Names;
+	G_BarreSectionLogos[_Id] = _Logos;
+	G_BarreSectionTitle[_Id] = _MainTitle;
+	G_BarreSectionTexts[_Id] = _Text;
+	G_BarreSectionDisplayType[_Id] = _DisplayType;
+}
+
+Void AddConfiguration(Text _Id, Text _MainTitle, Text[] _Names, Text[] _Logos, Text[] _Text) {
+	AddConfiguration(_Id, _MainTitle, _Names, _Logos, _Text, "");
+}
+
+Void AddConfiguration(Text _Id, Text _MainTitle, Text[] _Names, Text[] _Logos) {
+	AddConfiguration(_Id, _MainTitle, _Names, _Logos, Text[]);
+}
+
+Void UpdateRanking()
+{
+	declare CUILayer		LayerToSend = Layers::Get(C_LBBarreSection);
+	declare Text[][Text]	Ranking_ZoneTexts		for LayerToSend.LocalPage;
+	declare Text[Text]		Ranking_RemainingPoints	for LayerToSend.LocalPage;
+	declare Text[Text]		Ranking_AllPoints		for LayerToSend.LocalPage;
+	Ranking_ZoneTexts["Solo"]				= SoloAPI::GetCampaignPlayerRanking();
+	//L16N You need %1 medals of the solo campaign to be promoted
+	Ranking_RemainingPoints["Solo"]			= TextLib::Compose(_("%1 medals left"), TextLib::ToText(SoloAPI::Get_NbMedalsToNextPromotion()));
+	Ranking_AllPoints["Solo"]				= SoloAPI::GetSkillPoints();
+	Ranking_ZoneTexts["Multiplayer"]		= MultiplayerAPI::GetMultiplayerPlayerRanking();
+	//L16N You need %1 Ladder Points to be promoted to the next echelon
+	Ranking_RemainingPoints["Multiplayer"]	= TextLib::Compose(_("%1 LP left"), TextLib::ToText(MultiplayerAPI::Get_PointsToNextPromotion()));
+	Ranking_AllPoints["Multiplayer"]				= TextLib::ToText(MathLib::NearestInteger(MultiplayerAPI::GetLadderPoints()));
+	LayerCustomEvent(LayerToSend, "SetRanking", Text[]);
+}
+
+Void SetConfiguration(Text _Id) {
+	declare CUILayer LayerToSend <=> Layers::Get(C_LBBarreSection);
+	if(LayerToSend == Null) return;
+
+	declare Text[] BarreSectionName			for LayerToSend.LocalPage;
+	declare Text[] BarreSectionLogo			for LayerToSend.LocalPage;
+	declare Vec3   BarreSectionColor		for LayerToSend.LocalPage;
+	declare Text   BarreSectionTitle		for LayerToSend.LocalPage;
+	declare Text   BarreSectionDisplayType	for LayerToSend.LocalPage;
+	
+	if(!G_BarreSectionId.exists(_Id)) {
+		Logger::Warn("SetConfiguration sur une layer qui n'est pas enregistrée sur la BarreSection : " ^ _Id);
+		return;
+	}
+	BarreSectionName		= G_BarreSectionNames[_Id];
+	BarreSectionLogo		= G_BarreSectionLogos[_Id];
+	BarreSectionColor		= SectionsManager::GetSection_Color();
+	BarreSectionTitle		= G_BarreSectionTitle[_Id];
+	BarreSectionDisplayType	= G_BarreSectionDisplayType[_Id];
+
+	LayerCustomEvent(LayerToSend, "UpdateAll", [""]);
+	UpdateRanking();
+}
+
+Void Load() {
+	Build(C_LBBarreSection, False);
+
+}
+
+Void SetText(Text[] _Text)
+{
+	declare CUILayer LayerToSend <=> Layers::Get(C_LBBarreSection);
+	declare Text[] BarreSectionText  for LayerToSend.LocalPage;
+	BarreSectionText = _Text;
+	if(LayerToSend == Null) return;
+	LayerCustomEvent(LayerToSend, "UpdateText", [""]);
+}
+
+Void SetLogos(Text _Id, Text[] _Logos)
+{
+	declare CUILayer LayerToSend <=> Layers::Get(C_LBBarreSection);
+	declare Text[] BarreSectionLogo  for LayerToSend.LocalPage;
+	G_BarreSectionLogos[_Id] = _Logos;
+	BarreSectionLogo = _Logos;
+	if(LayerToSend == Null) return;
+	LayerCustomEvent(LayerToSend, "UpdateLogos", [""]);
+}
+
+Void Click(Integer _ClickIndex)
+{
+	declare CUILayer LayerToSend <=> Layers::Get(C_LBBarreSection);
+	if(LayerToSend == Null) return;
+	LayerCustomEvent(LayerToSend, "Click", [TextLib::ToText(_ClickIndex)]);
+}
+
+Void Loop() {
+	foreach(Event in PendingEvents) {
+		if(Event.Type != CManiaAppEvent::EType::LayerCustomEvent) continue;
+		switch(Event.CustomEventType) {
+			case "Barre_PageUp": {
+				declare CUILayer LayerToSend <=> Layers::Get(C_LBBarreSection);
+				if(LayerToSend == Null) return;
+				LayerCustomEvent(LayerToSend, "BarreSection_PageUp", [""]);
+			}
+			case "Barre_PageDown": {
+				declare CUILayer LayerToSend <=> Layers::Get(C_LBBarreSection);
+				if(LayerToSend == Null) return;
+				LayerCustomEvent(LayerToSend, "BarreSection_PageDown", [""]);
+			}
+			case "Barre_Cancel": {
+				declare CUILayer LayerToSend <=> Layers::Get(C_LBBarreSection);
+				if(LayerToSend == Null) return;
+				LayerCustomEvent(LayerToSend, "BarreSection_InputCancel", [""]);
+			}
+		}
+	}
+}

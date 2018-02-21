@@ -1,0 +1,287 @@
+#Include "Libs/Nadeo/Common/Core/MenuLayers.Script.txt"											as Layers
+#Include "Libs/Nadeo/Common/Core/Pages.Script.txt"												as Pages
+#Include "Libs/Nadeo/Common/Core/Logger.Script.txt"												as Logger
+#Include "Libs/Nadeo/Common/Core/SectionsManager.Script.txt"										as SectionsManager
+#Include "Libs/Nadeo/MP4/Common/Components/MenuButtonsOld/LBMenuButtons.Script.txt"												as MenuButtons
+#Include "Libs/Nadeo/MP4/Common/Components/ReplayBrowser/ReplayBrowserController.Script.txt"	as ReplayBrowserController
+#Include "Libs/Nadeo/MP4/Common/Components/TrackBrowser/TrackBrowserController.Script.txt"		as TrackBrowserController
+#Include "Libs/Nadeo/MP4/Common/Components/MatchSettingsEditor/MatchSettingsEditorController.Script.txt" as MatchSettingsEditorController
+#Include "Libs/Nadeo/MP4/TPLagoon/Components/NewAsset/NewAssetController.Script.txt"			as NewAssetController
+#Include "Libs/Nadeo/MP4/Common/Components/ScriptBrowser/ScriptBrowserController.Script.txt"	as ScriptBrowserController
+#Include "Libs/Nadeo/MP4/Common/GlobalVariables.Script.txt"										as GlobalVariables
+#Include "Libs/Nadeo/MP4/Common/LoadingScreen.Script.txt"										as LoadingScreen
+
+//Layers
+#Include "Libs/Nadeo/MP4/TitlePackMaker/Components/Component_DataCreation/LBDataCreation.Script.txt"	            as LBDataCreation
+#Include "Libs/Nadeo/MP4/TitlePackMaker/Components/Component_DataCreation/LBDataCreation_TitleTools.Script.txt"	    as LBDataCreation_TitleTools
+#Include "Libs/Nadeo/MP4/TitlePackMaker/Components/Component_DataCreation/LBDataCreation_ScriptEditor.Script.txt"	as LBDataCreation_ScriptEditor
+
+//APIs
+#Include "Libs/Nadeo/MP4/TitlePackMaker/Components/Component_DataCreation/DataCreationAPI.Script.txt"	as DataCreationAPI
+
+
+declare Text		G_BaseFolderName;
+declare Text		G_ThumbnailPath;
+
+Void AnalyzeXML(Text _XML)
+{
+}
+
+Text GenerateXML ()
+{
+	return "";
+}
+
+Void Build(Text _LayerName, Boolean _Attach) {
+
+	declare Text MLText;
+	switch(_LayerName) {
+		case("DataCreation"):{
+			MLText = LBDataCreation::Build();
+		}
+		case("DataCreation_TitleTools"):{
+			MLText = LBDataCreation_TitleTools::Build();
+		}
+		case("DataCreation_ScriptEditor"):{
+			MLText = LBDataCreation_ScriptEditor::Build();
+		}
+	}
+
+	if(MLText == "") {
+		Logger::Warn("Unknown Page: "^_LayerName);
+		return;
+	}
+	
+	Layers::Create(_LayerName, MLText);
+	
+	declare CUILayer Layer <=> Layers::Get(_LayerName);
+	declare Text Page_LayerName for Layer.LocalPage;
+	
+	Page_LayerName = _LayerName;
+	if(_Attach) Layers::Attach(_LayerName);
+}
+
+Void Build(Text _LayerName) {
+	Build(_LayerName, False);
+
+}
+
+
+Void Load() {
+	DataCreationAPI::Load();
+	Build("DataCreation");
+	Build("DataCreation_TitleTools");
+	Build("DataCreation_ScriptEditor");
+	Pages::Compose("DataCreation", ["DataCreation"]);
+	Pages::Compose("DataCreation_TitleTools", ["DataCreation_TitleTools"]);
+	Pages::Compose("DataCreation_ScriptEditor", ["DataCreation_ScriptEditor"]);
+	SectionsManager::AddSection("DataCreation", "DataCreation");
+	while (!DataCreationAPI::HasFinished()) {
+		DataCreationAPI::Loop();
+		yield;
+	}
+
+	G_BaseFolderName = "Modes\\Trackmania\\";
+	if (GlobalVariables::GetLaunchContext() == GlobalVariables::LaunchContext_MakerSM()) {
+		G_BaseFolderName = "Modes\\Shootmania\\";
+	}
+
+	declare Text ProjectEnviro for LocalUser;
+	declare Text[] ButtonsName  = [_("Map Editor"),		_("Replay Editor"), _("Car Painter"),	_("Title Tools"),	_("Game Mode Editor"),	_("Match Settings Editor")];
+	declare Vec2[] ButtonsPos   = [<-3.8, 31.7>,		<-3.8, 19.>,		<-3.8, 6.3>,		<-3.8, -6.4>,		<-3.8, -19.1>,			<-3.8, -31.8>];
+	declare Text[] ButtonsEvent = ["DataCreation_0",	"DataCreation_1",	"DataCreation_2",	"DataCreation_3",	"DataCreation_4",		"DataCreation_5"];
+	if(ProjectEnviro == "Storm")
+	{
+		ButtonsName  = [_("Map Editor"),	_("Replay Editor"),	_("Title Tools"),		_("Game Mode Editor"),	_("Match Settings Editor")];
+		ButtonsPos   = [<-3.8, 31.7>, 		<-3.8, 19.>,		<-3.8, 6.3>,			<-3.8, -6.4>,			<-3.8, -19.1>];
+		ButtonsEvent = ["DataCreation_0",	"DataCreation_1",	"DataCreation_3",		"DataCreation_4",		"DataCreation_5"];
+	}
+	MenuButtons::ChangeData("DataCreation", ButtonsName,
+										  ButtonsPos,
+										  ButtonsEvent,
+										  <0.1 ,0.1, 0.1>);
+	ButtonsName  = [_("Item Editor"), _("Interface designer"), _("Ghost Editor"), _("Module Studio"), _("Mesh Modeler"), _("Action Maker"), _("Editor Creator")];
+	ButtonsPos   = [<-3.8, 31.7>, <-3.8, 19.>, <-3.8, 6.3>, <-3.8, -6.4>, <-3.8, -19.1>, <-3.8, -31.8>, <-3.8, -44.5>];
+	ButtonsEvent = ["TitleTools_0",	"TitleTools_1",	"TitleTools_2",	"TitleTools_3",	"TitleTools_4",	"TitleTools_5",	"TitleTools_6"];
+	if(ProjectEnviro != "Storm")
+	{
+		ButtonsName  = [_("Item Editor"), _("Interface designer"), _("Ghost Editor"), _("Module Studio"), _("Mesh Modeler"), _("Editor Creator")];
+		ButtonsPos   = [<-3.8, 31.7>, <-3.8, 19.>, <-3.8, 6.3>, <-3.8, -6.4>, <-3.8, -19.1>, <-3.8, -31.8>];
+		ButtonsEvent = ["TitleTools_0",	"TitleTools_1",	"TitleTools_2",	"TitleTools_3",	"TitleTools_4",	"TitleTools_6"];
+	}
+	MenuButtons::ChangeData("DataCreation_TitleTools", ButtonsName,
+										  ButtonsPos,
+										  ButtonsEvent,
+										  <0.1 ,0.1, 0.1>);
+}
+
+Void Loop() {
+	DataCreationAPI::Loop();
+	foreach(Event in PendingEvents) {
+		if(Event.Type != CManiaAppEvent::EType::LayerCustomEvent) continue;
+		switch(Event.CustomEventType) {
+			case "BrowseInExplorer": {
+				if (Event.CustomEventData.count != 1) {
+					continue;
+				}
+				if (!OpenFileInExplorer(Event.CustomEventData[0])) {
+					Logger::Warn("DataCreationController : Resources : OpenFileInExplorer did not work");
+				}
+			}
+			case "OpenLink": {
+				// TODO : checker si le titre a déjà été publié (sinon, la page d'admin n'existe pas je pense).
+				if (TitleEdition != Null && TitleEdition.EditedTitleInfo != Null) {
+					declare Text LinkUrl = Event.CustomEventData[0];
+					declare TitleInfo <=> TitleEdition.EditedTitleInfo;
+					OpenLink(LinkUrl, CManiaApp::ELinkType::ExternalBrowser);
+				}
+			}
+			case "DataCreation_0": {
+				declare Text MapTerm = _("Tracks");
+				declare Text ProjectEnviro for LocalUser;
+				if (ProjectEnviro == "Storm") {
+					MapTerm = _("Maps");
+				}
+				TrackBrowserController::Show("DefaultEditor", [//L16N |Infinitive| In a popup, a button to modify the selected file
+					_("Edit")], MapTerm,
+					//L16N |Noun| In a popup, a button to create a new element
+					[_("|relative to a map|New")], "EditorsClassicMapEditor", False);
+			}
+			case "DefaultEditor_Button_0" : {
+				declare Text MapPath		= Event.CustomEventData[0];
+				declare Text MapThumbnail	= Event.CustomEventData[1];
+				LoadingScreen::SetLoadingType(0, MapThumbnail);
+				Pages::GotoPrevious();
+				TitleFlow.EditMap(MapPath, "", "");
+			}
+			case "DefaultEditor_SecondaryButton_0" : {
+				TrackBrowserController::MakeIdle();
+				NewAssetController::Show("BrowseTracks");
+			}
+			case "DataCreation_1": {
+				ReplayBrowserController::Show("EditReplay", [//L16N |Infinitive| In a popup, a button to modify the selected file
+					_("Edit")],
+					//L16N |Noun, plural| The files playing back a sequence of gameplay with customizable camera
+					_("Replays"), Text[],
+					//L16N In a popup, a button to make a selection of multiple elements
+					_("|Infinitive|Add to list"));
+			}
+			case "EditReplay_Button_0" : {
+				declare Text ReplayPath			= Event.CustomEventData[0];
+				declare Text ReplayThumbnail	= Event.CustomEventData[1];
+				declare Text[] ReplayList;
+				if (ReplayBrowserController::HasPathsList()) {
+					ReplayList = ReplayBrowserController::GetPathsList();
+					if (!ReplayList.exists(ReplayPath)) {
+						ReplayList.add(ReplayPath);
+					}
+				} else {
+					ReplayList = [ReplayPath];
+				}
+				LoadingScreen::SetLoadingType(0, "");
+				TitleFlow.EditReplay(ReplayList);
+			}
+			case "DataCreation_2": {
+				LoadingScreen::SetLoadingType(0, "");
+				TitleFlow.EditSkins();
+			}
+			case "DataCreation_3": {
+				Pages::GotoNext("DataCreation_TitleTools");
+			}
+			case "DataCreation_4": {
+				Pages::GotoNext("DataCreation_ScriptEditor");
+			}
+			case "DataCreation_5": {
+				MatchSettingsEditorController::Show("MatchSettingsEdit", [""], "", Text[]);
+			}
+			case "TitleTools_0" : {
+				LoadingScreen::SetLoadingType(0, "");
+				TitleControl.OpenEditor(CTitleFlow::EEditorType::ItemEditor);
+			}
+			case "TitleTools_1" : {
+				LoadingScreen::SetLoadingType(0, "");
+				TitleControl.OpenEditor(CTitleFlow::EEditorType::InterfaceDesigner);
+			}
+			case "TitleTools_2" : {
+				declare Text MapTerm = _("Tracks");
+				declare Text ProjectEnviro for LocalUser;
+				if (ProjectEnviro == "Storm") {
+					MapTerm = _("Maps");
+				}
+				TrackBrowserController::Show("Ghost", [//L16N |Infinitive| In a popup, a button to modify the selected file
+					_("Edit")], MapTerm);
+			}
+			case "Ghost_Button_0" : {
+				declare Text MapPath = Event.CustomEventData[0];
+				LoadingScreen::SetLoadingType(0, "");
+				TitleFlow.EditGhosts(MapPath);
+			}
+			case "TitleTools_3" : {
+				LoadingScreen::SetLoadingType(0, "");
+				TitleControl.OpenEditor(CTitleFlow::EEditorType::ModuleStudio);
+			}
+			case "TitleTools_4" : {
+				LoadingScreen::SetLoadingType(0, "");
+				TitleControl.OpenEditor(CTitleFlow::EEditorType::MeshModeler);
+			}
+			case "TitleTools_5" : {
+				LoadingScreen::SetLoadingType(0, "");
+				TitleControl.OpenEditor(CTitleFlow::EEditorType::ActionMaker);
+			}
+			case "TitleTools_6" : {
+				LoadingScreen::SetLoadingType(0, "");
+				TitleControl.OpenEditor(CTitleFlow::EEditorType::EditorEditor);
+			}
+			case "ScriptEditor_Select0" : {
+				ScriptBrowserController::Show("ScriptEditor_Script", G_BaseFolderName, [//L16N |Infinitive| In a popup, a button to select
+					_("Choose")],
+					_("|GameModes|Scripts"),
+					Text[]);
+			}
+			case "ScriptEditor_Select1" : {
+				declare Text MapTerm = _("Tracks");
+				declare Text ProjectEnviro for LocalUser;
+				if (ProjectEnviro == "Storm") {
+					MapTerm = _("Maps");
+				}
+				TrackBrowserController::Show("ScriptEditor_Track", [//L16N |Infinitive| In a popup, a button to modify the selected file
+					_("Edit")], MapTerm,
+					//L16N |Noun| In a popup, a button to create a new element
+					[_("|relative to a map|New")], "EditorsClassicMapEditor", False);
+			}
+			case "ScriptEditor_Track_Button_0" : {
+				declare Text MapPath = Event.CustomEventData[0];
+				declare Text ThumbnailPath = Event.CustomEventData[1];
+				G_ThumbnailPath = ThumbnailPath;
+				//log("MapPath: " ^ MapPath);
+				Pages::GotoPrevious();
+				declare CUILayer LayerToSend = Layers::Get("DataCreation_ScriptEditor");
+				LayerCustomEvent(LayerToSend, "UpdateMap", [MapPath]);
+			}
+			case "ScriptEditor_Track_SecondaryButton_0" : {
+				NewAssetController::Show("BrowseTracks");
+			}
+			case "ScriptEditor_Script_Button_0" : {
+				declare Text ScriptPath = Event.CustomEventData[0];
+				//log("ScriptPath: " ^ ScriptPath);
+				Pages::GotoPrevious();
+				declare CUILayer LayerToSend = Layers::Get("DataCreation_ScriptEditor");
+				LayerCustomEvent(LayerToSend, "UpdateScript", [ScriptPath]);
+			}
+			case "ScriptEditor_Launch" : {
+				declare Text   Mode            = Event.CustomEventData[0];
+				declare Text[] MapList         = [Event.CustomEventData[1]];
+				// TODO : Remplacer Mode et MapList par un MatchSettings
+				declare Integer MaxPlayerCount = 256;
+
+				LoadingScreen::SetLoadingType(0, G_ThumbnailPath);
+				wait(TitleFlow.IsReady);
+				TitleFlow.CreateServer(LocalUser.Login, "", MaxPlayerCount, "", "", MapList, Mode, "");
+			}
+			case "ScriptEditor_Documentation" : {
+				declare Text LinkUrl = "https://www.maniaplanet.com/documentation/maniascript#mania-script";
+				OpenLink(LinkUrl, CManiaApp::ELinkType::ExternalBrowser);
+			}
+		}
+	}
+}

@@ -1,0 +1,196 @@
+#Const C_NumberOfFramesInsidePrompt 6
+#Const C_LabelRankDecalY			7.
+
+Text ManialinkFrameModels(Text _LabelPromptStyle)
+{
+	return """
+	<framemodel id="Frame_Prompt">
+		<label id="Label_Prompt"		{{{_LabelPromptStyle}}}/>
+	</framemodel>
+	""";
+}
+
+Text ManialinkFrameModels()
+{
+	return ManialinkFrameModels("""halign="left"	valign="center" size="55 2"
+		pos="13 5.4" textsize="2" textcolor="fff" textprefix="$t" """);
+}
+
+Text AllFrames(Integer _NumberOfFramesInsidePrompt)
+{
+	declare Text Result;
+	for (FrameIndex, 0, _NumberOfFramesInsidePrompt - 1) {
+		Result ^=
+"""				<frameinstance modelid="Frame_Prompt" pos="0 {{{C_LabelRankDecalY * FrameIndex}}}  "   id="Frame_InstanceRank{{{FrameIndex}}}" />
+""";
+	}
+	Result ^=
+"""				<frameinstance modelid="Frame_Prompt" pos="0 {{{C_LabelRankDecalY * (_NumberOfFramesInsidePrompt - 1)}}}"   id="Frame_InstanceRank_" />
+""";
+return Result;
+}
+
+Text ManialinkMainBody(Text _EventControlId, Integer _NumberOfFramesInsidePrompt)
+{
+	return """
+	<frame pos="-100 {{{C_LabelRankDecalY}}}" size="200 3.5">
+		<frame pos="100 {{{- C_LabelRankDecalY}}}">
+			<frame id="{{{_EventControlId}}}_PromptFrame" pos="0 {{{- C_LabelRankDecalY * _NumberOfFramesInsidePrompt}}}" hidden="1">
+{{{AllFrames(_NumberOfFramesInsidePrompt)}}}
+			</frame>
+		</frame>
+	</frame>
+	""";
+}
+
+Text ManialinkMainBody(Text _EventControlId)
+{
+	return ManialinkMainBody(_EventControlId, C_NumberOfFramesInsidePrompt);
+}
+
+Text ManialinkMainBody()
+{
+	return ManialinkMainBody("");
+}
+
+Text Includes()
+{
+	return """
+	#Const C_Prompt_TimeScrollRanking	1000
+	#Const C_Prompt_TimeTick			4000
+	""";
+}
+
+// REQUIRES Manialink::Load()
+Text Declares()
+{
+	return """
+	// <script>
+	declare Text[]			G_Private_Prompt_AllRankingScrollIds;
+	declare Text[]			G_Private_Prompt_TextArray;
+	declare Integer			G_Private_Prompt_ArrayIndex;
+	declare Integer			G_Private_Prompt_TimeRanking;
+	declare Integer			G_Private_Prompt_TimeReplaceFrame;
+	declare Integer			G_Private_Prompt_PrevTimeReplaceFrame;
+
+	Real Get_InfoRankingPosY(Integer _RankingIndex)
+	{
+		return {{{-C_LabelRankDecalY}}} * (G_Private_Prompt_TextArray.count - _RankingIndex - 2);
+	}
+
+	Void ReplaceFrames(Text _ControlId)
+	{
+		declare CMlFrame PromptFrame <=> (Page.GetFirstChild(_ControlId ^ "_PromptFrame") as CMlFrame);
+		PromptFrame.RelativePosition_V3.Y = Get_InfoRankingPosY(G_Private_Prompt_ArrayIndex);
+	}
+
+	Void ReplaceFrames()
+	{
+		foreach(CtrlId in G_Private_Prompt_AllRankingScrollIds) {
+			ReplaceFrames(CtrlId);
+		}
+	}
+
+	Void Prompt_Update(Text _ControlId, Text[] _TextArray)
+	{
+		if (!G_Private_Prompt_AllRankingScrollIds.exists(_ControlId)) {
+			G_Private_Prompt_AllRankingScrollIds.add(_ControlId);
+		}
+		declare CMlFrame PromptFrame <=> (Page.GetFirstChild(_ControlId ^ "_PromptFrame") as CMlFrame);
+		if (PromptFrame == Null) {
+			log(Now ^ ") WARN : Prompt_Update : " ^ _ControlId ^ " n'existe pas");
+			return;
+		}
+		G_Private_Prompt_TextArray = _TextArray;
+		if (G_Private_Prompt_TextArray.count != 0) {
+			PromptFrame.Show();
+		} else {
+			PromptFrame.Hide();
+		}
+		foreach (Rank => Ranking in G_Private_Prompt_TextArray) {
+			declare Frame_InstanceRank			<=> (PromptFrame.GetFirstChild("Frame_InstanceRank" ^ Rank) as CMlFrame);
+			declare Label_Prompt				<=> (Frame_InstanceRank.GetFirstChild("Label_Prompt") as CMlLabel);
+			Label_Prompt.Opacity = 1.;
+			Label_Prompt.SetText(Ranking);
+			if (Rank == 0) {
+				declare Frame_InstanceRankExtra			<=> (PromptFrame.GetFirstChild("Frame_InstanceRank_") as CMlFrame);
+				declare Label_Prompt					<=> (Frame_InstanceRankExtra.GetFirstChild("Label_Prompt") as CMlLabel);
+				Label_Prompt.Opacity = 1.;
+				Label_Prompt.SetText(Ranking);
+				Frame_InstanceRankExtra.RelativePosition_V3.Y = {{{C_LabelRankDecalY}}} * G_Private_Prompt_TextArray.count;
+			}
+		}
+		G_Private_Prompt_TimeRanking		= Now + C_Prompt_TimeTick;
+		ReplaceFrames(_ControlId);
+	}
+
+	Void Prompt_Update(Text[] _TextArray)
+	{
+		Prompt_Update("", _TextArray);
+	}
+
+	Void Prompt_Hide(Text _ControlId)
+	{
+		declare CMlFrame PromptFrame <=> (Page.GetFirstChild(_ControlId ^ "_PromptFrame") as CMlFrame);
+		for (Rank, 0, {{{C_NumberOfFramesInsidePrompt - 1}}}) {
+			declare Frame_InstanceRank			<=> (PromptFrame.GetFirstChild("Frame_InstanceRank" ^ Rank) as CMlFrame);
+			declare Label_Prompt				<=> (Frame_InstanceRank.GetFirstChild("Label_Prompt") as CMlLabel);
+			Label_Prompt.Opacity = 0.;
+			if (Rank == 0) {
+				declare Frame_InstanceRankExtra			<=> (PromptFrame.GetFirstChild("Frame_InstanceRank_") as CMlFrame);
+				declare Label_Prompt					<=> (Frame_InstanceRankExtra.GetFirstChild("Label_Prompt") as CMlLabel);
+				Label_Prompt.Opacity = 0.;
+			}
+		}
+	}
+
+	Void NextRankingScrollSpecific(Text _ControlId)
+	{
+		declare CMlFrame PromptFrame <=> (Page.GetFirstChild(_ControlId ^ "_PromptFrame") as CMlFrame);
+		LibManialink_AnimStop(PromptFrame);
+		PromptFrame.RelativePosition_V3.Y = Get_InfoRankingPosY(G_Private_Prompt_ArrayIndex-1);
+		declare Real NewPositionY = Get_InfoRankingPosY(G_Private_Prompt_ArrayIndex);
+		declare Vec2 NewQuadPosition = <PromptFrame.RelativePosition_V3.X, NewPositionY>;
+		LibManialink_SetTargetPosition(PromptFrame, NewQuadPosition);
+		LibManialink_PresetAnim(PromptFrame, C_Prompt_TimeScrollRanking, "EaseLinear");
+	}
+
+	Void NextRankingScroll()
+	{
+		G_Private_Prompt_ArrayIndex += 1;
+		if(G_Private_Prompt_ArrayIndex >= G_Private_Prompt_TextArray.count - 1)
+		{
+			G_Private_Prompt_ArrayIndex = -1;
+		}
+		foreach(CtrlId in G_Private_Prompt_AllRankingScrollIds) {
+			NextRankingScrollSpecific(CtrlId);
+		}
+	}
+
+	Void Prompt_Init()
+	{
+		G_Private_Prompt_ArrayIndex			= -1;
+		G_Private_Prompt_TimeRanking		= Now + C_Prompt_TimeTick;
+	}
+
+	Void Prompt_Loop()
+	{
+		if(Now > G_Private_Prompt_TimeRanking && G_Private_Prompt_TimeRanking != -1)
+		{
+			if (G_Private_Prompt_TextArray.count > 1) {
+				NextRankingScroll();
+				G_Private_Prompt_TimeRanking      = Now + C_Prompt_TimeTick;
+				G_Private_Prompt_TimeReplaceFrame = Now + C_Prompt_TimeScrollRanking + 100;
+			} else {
+				G_Private_Prompt_TimeRanking = -1;
+			}
+		}
+		if(Now > G_Private_Prompt_TimeReplaceFrame && G_Private_Prompt_TimeReplaceFrame != G_Private_Prompt_PrevTimeReplaceFrame)
+		{
+			ReplaceFrames();
+			G_Private_Prompt_PrevTimeReplaceFrame = G_Private_Prompt_TimeReplaceFrame;
+		}
+	}
+
+	""";
+}

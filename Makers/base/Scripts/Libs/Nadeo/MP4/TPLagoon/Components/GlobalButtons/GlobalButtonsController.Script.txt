@@ -1,0 +1,94 @@
+#Include "Libs/Nadeo/Common/Core/MenuLayers.Script.txt"											as Layers
+#Include "Libs/Nadeo/Common/Core/Logger.Script.txt"												as Logger
+
+//APIs
+#Include "Libs/Nadeo/MP4/TPLagoon/Components/Solo/SoloAPI.Script.txt"									as SoloAPI
+#Include "Libs/Nadeo/MP4/TPLagoon/Components/Multiplayer/MultiplayerAPI.Script.txt"						as MultiplayerAPI
+
+//Layers
+#Include "Libs/Nadeo/MP4/TPLagoon/Components/GlobalButtons/LBGlobalButtons.Script.txt"					as LBGlobalButtons
+
+#Const C_BGBase				"file://Media/Video/TPLagoon/"
+#Const C_LBGlobalButtons	"GlobalButtons"
+
+Void UpdateHome(Boolean _Visibility)
+{
+	declare CUILayer LayerToSend <=> Layers::Get(C_LBGlobalButtons);
+	if(LayerToSend == Null) return;
+	LayerCustomEvent(LayerToSend, "UpdateHome", [""^_Visibility]);
+}
+
+Void UpdateBack(Boolean _Visibility)
+{
+	declare CUILayer LayerToSend <=> Layers::Get(C_LBGlobalButtons);
+	if(LayerToSend == Null) return;
+	LayerCustomEvent(LayerToSend, "UpdateBack", [""^_Visibility]);
+}
+
+Void SetRanking()
+{
+	declare CUILayer LayerToSend <=> Layers::Get(C_LBGlobalButtons);
+	declare Text[Text]		Ranking_ZoneScores		for LayerToSend.LocalPage;
+	declare Text			Ranking_PromotionMedal	for LayerToSend.LocalPage;
+	Ranking_ZoneScores["Solo"]				= SoloAPI::GetSkillPoints();
+	Ranking_ZoneScores["Multiplayer"]		= MultiplayerAPI::GetMultiplayerEchelon();
+	Ranking_PromotionMedal					= SoloAPI::Get_PromotionMedal();
+}
+
+Void UpdateSection(Text _SectionName)
+{
+	SetRanking();
+	declare Text[Text] Logo_Sections      for LocalUser;
+	declare Text LogoPath;
+	declare Text DisplayType = _SectionName;
+	if(Logo_Sections.existskey(_SectionName)) LogoPath = Logo_Sections[_SectionName];
+	declare CUILayer LayerToSend <=> Layers::Get(C_LBGlobalButtons);
+	if(LayerToSend == Null) return;
+	LayerCustomEvent(LayerToSend, "UpdateUI", [LogoPath, DisplayType]);
+}
+
+Void Build(Text _LayerName, Boolean _Attach) {
+
+	declare Text MLText;
+	switch(_LayerName) {
+		case(C_LBGlobalButtons):{
+			MLText = LBGlobalButtons::Build();
+		}
+	}
+
+	if(MLText == "") {
+		Logger::Warn("Unknown Page: "^_LayerName);
+		return;
+	}
+	
+	Layers::Create(_LayerName, MLText);
+	
+	declare CUILayer Layer <=> Layers::Get(_LayerName);
+	declare Text Page_LayerName for Layer.LocalPage;
+	
+	Page_LayerName = _LayerName;
+	if(_Attach) Layers::Attach(_LayerName);
+}
+
+Void Load() {
+	Build(C_LBGlobalButtons, True);
+
+}
+
+Void Loop() {
+	foreach(Event in PendingEvents) {
+		if(Event.Type != CManiaAppEvent::EType::LayerCustomEvent) continue;
+		switch(Event.CustomEventType) {
+			case "GotoHome": {
+				declare CUILayer LayerToSend <=> Layers::Get(C_LBGlobalButtons);
+				if(LayerToSend == Null) return;
+				LayerCustomEvent(LayerToSend, "UpdateGlobalButtons", [""]);
+			}
+			case "GotoBack": {
+				declare CUILayer LayerToSend <=> Layers::Get(C_LBGlobalButtons);
+				if(LayerToSend == Null) return;
+				LayerCustomEvent(LayerToSend, "UpdateGlobalButtons", [""]);
+			}
+		}
+	}
+}

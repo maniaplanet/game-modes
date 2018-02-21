@@ -1,0 +1,261 @@
+#Include "TextLib"										as TextLib
+#Include "Libs/Nadeo/Common/Core/Logger.Script.txt"			as Logger
+#Include "Libs/Nadeo/Common/Core/MenuLayers.Script.txt"		as Layers
+
+#Const C_MaxNbAssets	9 // TODO : Mettre en commun avec AssetMaker.Script.txt
+
+// INFOS INSCRITES EN DUR (Récupérées dans un XML de base)
+declare Text[]				G_LayerNames;
+declare Text[][Text]		G_DefaultAssetsId;
+declare Text[][Text]		G_DefaultAssetsTitleName;
+declare Text[][Text]		G_DefaultAssetsMakerName;
+declare Boolean[][Text]		G_IsVisibleInMaker;
+declare Text[Text]			G_SpecialParamName;
+declare Text[][Text]		G_DefaultVisibleInMakerAssetsId;
+declare Integer[][Text]		G_SwapFromAllToVisibleIds;
+declare Boolean[Text]		G_CanScroll;
+// INFOS MANIPULABLES (Dépendent du Title fait par le Maker)
+declare Boolean[][Text]		G_ActivatedDefaultAssets;
+declare Text[][Text]		G_UGCAssets;
+declare Boolean[Text]		G_SpecialParamIsActivated;
+// VARIABLES INSTANTANEES
+declare Integer[Text]		G_CurrentPage;
+declare Integer[Text]		G_MaxPages;
+// VARIABLES DE COMMUNICATION AVEC LE CONTROLLER
+declare Boolean[Text]		G_IsAskingNewAsset;
+
+Boolean Private_IsValid(Text[] _TextArray, Integer _ArrayIndex)
+{
+	return (_TextArray.existskey(_ArrayIndex) && _TextArray[_ArrayIndex] != "");
+}
+
+Void Init(Text _LayerName, Text[] _DefaultAssetsId, Text[] _DefaultAssetsTitleName,
+	Text[] _DefaultAssetsMakerName, Text[] _UGCAssets, Boolean[] _IsVisibleInMaker,
+	Boolean _CanScroll, Boolean[] _ActivatedDefaultAssets, Text _SpecialParamName, Boolean _SpecialParamIsActivated)
+{
+	if (!G_LayerNames.exists(_LayerName)) {
+		G_LayerNames							.add(_LayerName);
+	}
+	G_DefaultAssetsId[_LayerName]				= _DefaultAssetsId;
+	G_DefaultAssetsTitleName[_LayerName]		= _DefaultAssetsTitleName;
+	G_DefaultAssetsMakerName[_LayerName]		= _DefaultAssetsMakerName;
+	G_IsVisibleInMaker[_LayerName]				= _IsVisibleInMaker;
+	G_SpecialParamName[_LayerName]				= _SpecialParamName;
+	G_DefaultVisibleInMakerAssetsId[_LayerName]	= Text[];
+	G_SwapFromAllToVisibleIds[_LayerName]		= Integer[];
+	foreach(DefaultAssetIndex => DefaultAssetId in _DefaultAssetsId) {
+		if (_IsVisibleInMaker[DefaultAssetIndex]) {
+			G_DefaultVisibleInMakerAssetsId[_LayerName]	.add(DefaultAssetId);
+			G_SwapFromAllToVisibleIds[_LayerName]		.add(DefaultAssetIndex);
+		}
+	}
+	G_CanScroll[_LayerName]						= _CanScroll;
+
+	G_ActivatedDefaultAssets[_LayerName]		= _ActivatedDefaultAssets;
+	G_UGCAssets[_LayerName]						= _UGCAssets;
+	G_SpecialParamIsActivated[_LayerName]		= _SpecialParamIsActivated;
+
+	G_CurrentPage[_LayerName]					= 0;
+	G_MaxPages[_LayerName]						= 1;
+
+	G_IsAskingNewAsset[_LayerName]				= False;
+}
+
+Void Init(Text _LayerName, Text[] _DefaultAssetsId, Text[] _DefaultAssetsTitleName,
+	Text[] _DefaultAssetsMakerName, Text[] _UGCAssets, Boolean[] _IsVisibleInMaker, Boolean _CanScroll, Boolean[] _ActivatedDefaultAssets)
+{
+	Init(_LayerName, _DefaultAssetsId, _DefaultAssetsTitleName, _DefaultAssetsMakerName,
+		_UGCAssets, _IsVisibleInMaker, _CanScroll, _ActivatedDefaultAssets, "", False);
+}
+
+Void Init(Text _LayerName, Text[] _DefaultAssetsId, Text[] _DefaultAssetsTitleName,
+	Text[] _DefaultAssetsMakerName, Text[] _UGCAssets, Boolean[] _IsVisibleInMaker, Boolean _CanScroll)
+{
+	declare Boolean[] ActivatedDefaultAssets;
+	foreach(Id in _DefaultAssetsId) {
+		ActivatedDefaultAssets.add(True);
+	}
+	Init(_LayerName, _DefaultAssetsId, _DefaultAssetsTitleName, _DefaultAssetsMakerName,
+		_UGCAssets, _IsVisibleInMaker, _CanScroll, ActivatedDefaultAssets);
+}
+
+Void ShowPage(Text _LayerName, Integer _PageIndex)
+{
+	if ((_PageIndex != 0) && (!G_CanScroll[_LayerName])) {
+		Logger::Warn("Asset : ShowPage sur une autre page que la seule page (ne peut pas scroller)");
+	}
+	G_CurrentPage[_LayerName] = _PageIndex;
+	declare CUILayer Layer <=> Layers::Get(_LayerName);
+	declare Text[] Asset_DefaultAsset			for Layer.LocalPage;
+	declare Boolean[] Asset_ActivatedDefault	for Layer.LocalPage;
+	declare Text[] Asset_UGCAsset				for Layer.LocalPage;
+	declare Boolean Asset_ExtraParamTrue		for Layer.LocalPage;
+	declare Integer Asset_CurrentPage			for Layer.LocalPage;
+	declare Integer Asset_MaxPageNb				for Layer.LocalPage;
+	Asset_DefaultAsset.clear();
+	Asset_ActivatedDefault.clear();
+	Asset_UGCAsset.clear();
+	Asset_ExtraParamTrue = G_SpecialParamIsActivated[_LayerName];
+	G_MaxPages[_LayerName] = ((G_DefaultVisibleInMakerAssetsId[_LayerName].count + G_UGCAssets[_LayerName].count) / C_MaxNbAssets) + 1;
+	for (IndexInPage, 0, C_MaxNbAssets - 1) {
+		declare Integer DataIndex		= IndexInPage + C_MaxNbAssets * _PageIndex;
+		declare Integer UGCDataIndex	= DataIndex - G_DefaultVisibleInMakerAssetsId[_LayerName].count;
+		if (G_SwapFromAllToVisibleIds[_LayerName].existskey(DataIndex)
+			&& Private_IsValid(G_DefaultAssetsMakerName[_LayerName], G_SwapFromAllToVisibleIds[_LayerName][DataIndex])) {
+			Asset_DefaultAsset.add(G_DefaultAssetsMakerName[_LayerName][G_SwapFromAllToVisibleIds[_LayerName][DataIndex]]);
+			Asset_ActivatedDefault.add(G_ActivatedDefaultAssets[_LayerName][G_SwapFromAllToVisibleIds[_LayerName][DataIndex]]);
+		} else if (Private_IsValid(G_UGCAssets[_LayerName], UGCDataIndex)) {
+			Asset_UGCAsset.add(G_UGCAssets[_LayerName][UGCDataIndex]);
+		} else {
+			Asset_UGCAsset.add("");
+		}
+	}
+	Asset_CurrentPage	= G_CurrentPage[_LayerName] + 1;
+	Asset_MaxPageNb		= G_MaxPages[_LayerName];
+	LayerCustomEvent(Layer, "GetAssets", Text[]);
+}
+
+Void PageDown(Text _LayerName)
+{
+	ShowPage(_LayerName, G_CurrentPage[_LayerName] - 1);
+}
+
+Void PageUp(Text _LayerName)
+{
+	ShowPage(_LayerName, G_CurrentPage[_LayerName] + 1);
+}
+
+Void RemoveAsset(Text _LayerName, Integer _IndexInPage)
+{
+	declare Integer DataIndex		= _IndexInPage + C_MaxNbAssets * G_CurrentPage[_LayerName];
+	declare Integer UGCDataIndex	= DataIndex - G_SwapFromAllToVisibleIds[_LayerName].count;
+	if (UGCDataIndex >= 0) {
+		if (!G_UGCAssets[_LayerName].removekey(UGCDataIndex)) {
+			Logger::Warn("Asset : remove n'a pas fonctionné");
+		}
+	} else {
+		Logger::Warn("Asset : remove utilisé sur des default assets");
+	}
+	ShowPage(_LayerName, G_CurrentPage[_LayerName]);
+}
+
+Void ChangeActivateDefaultAsset(Text _LayerName, Integer _AssetIndex, Boolean _IsActivated)
+{
+	G_ActivatedDefaultAssets[_LayerName][_AssetIndex] = _IsActivated;
+}
+
+Void Loop(Text _LayerName)
+{
+	if (!G_LayerNames.exists(_LayerName)) {
+		return;
+	}
+	foreach(Event in PendingEvents) {
+		if(Event.Type != CManiaAppEvent::EType::LayerCustomEvent) continue;
+		switch(Event.CustomEventType) {
+			case "Asset_ShowRefresh": {
+				if (Event.CustomEventData.exists(_LayerName)) {
+					ShowPage(_LayerName, G_CurrentPage[_LayerName]);
+				}
+			}
+			case "Asset_SetActive": {
+				if (Event.CustomEventData.exists(_LayerName)) {
+					declare AssetIndex	= TextLib::ToInteger(Event.CustomEventData[1]);
+					declare IsActivated	= (Event.CustomEventData[2] == TextLib::ToText(True));
+					ChangeActivateDefaultAsset(_LayerName, AssetIndex, IsActivated);
+				}
+			}
+			case "Asset_AddNew": {
+				if (Event.CustomEventData.exists(_LayerName)) {
+					G_IsAskingNewAsset[_LayerName] = True;
+				}
+			}
+			case "Asset_SpecialParamSwitch": {
+				if (Event.CustomEventData.exists(_LayerName)) {
+					declare IsParamTrue	= (Event.CustomEventData[1] == TextLib::ToText(True));
+					G_SpecialParamIsActivated[_LayerName] = IsParamTrue;
+				}
+			}
+			case "Asset_Remove": {
+				if (Event.CustomEventData.exists(_LayerName)) {
+					declare Integer PositionInPage = TextLib::ToInteger(Event.CustomEventData[1]);
+					RemoveAsset(_LayerName, PositionInPage);
+				}
+			}
+			case "Asset_PageDown": {
+				if (Event.CustomEventData.exists(_LayerName)) {
+					PageDown(_LayerName);
+				}
+			}
+			case "Asset_PageUp": {
+				if (Event.CustomEventData.exists(_LayerName)) {
+					PageUp(_LayerName);
+				}
+			}
+		}
+	}
+}
+
+Boolean IsAskingNewAsset(Text _LayerName)
+{
+	if (!G_IsAskingNewAsset.existskey(_LayerName)) {
+		G_IsAskingNewAsset[_LayerName] = False;
+		return False;
+	}
+	if (G_IsAskingNewAsset[_LayerName]) {
+		G_IsAskingNewAsset[_LayerName] = False;
+		return True;
+	}
+	return False;
+}
+
+Void AddNewAsset(Text _LayerName, Text _Path)
+{
+	G_UGCAssets[_LayerName].add(_Path);
+	ShowPage(_LayerName, G_CurrentPage[_LayerName]);
+}
+
+Boolean GetSpecialParamIsActivated(Text _LayerName)
+{
+	if (G_SpecialParamName[_LayerName] == "") {
+		Logger::Warn("GetSpecialParamIsActivated : Appelé alors qu'il n'y a pas de paramêtre spécial : " ^ _LayerName);
+		return False;
+	}
+	return G_SpecialParamIsActivated[_LayerName];
+}
+
+Text GetXMLAllAssets(Text _LayerName)
+{
+	declare Text Result = "";
+	foreach (DefaultAssetIndex => DefaultAssetId in G_DefaultAssetsId[_LayerName]) {
+		declare TitleName	= G_DefaultAssetsTitleName	[_LayerName][DefaultAssetIndex];
+		declare MakerName	= G_DefaultAssetsMakerName	[_LayerName][DefaultAssetIndex];
+		declare IsVisibleInMaker = G_IsVisibleInMaker	[_LayerName][DefaultAssetIndex];
+		declare IsActivated	= G_ActivatedDefaultAssets	[_LayerName][DefaultAssetIndex];
+		Result ^= """	<asset id="{{{DefaultAssetId}}}" isdefault="yes" titlename="{{{TitleName}}}" makername="{{{MakerName}}}" isvisibleinmaker="{{{IsVisibleInMaker}}}" isactivated="{{{IsActivated}}}"/>
+""";
+	}
+	foreach (UGCAssetId in G_UGCAssets[_LayerName]) {
+		Result ^= """	<asset id="{{{UGCAssetId}}}" isdefault="no" titlename="{{{UGCAssetId}}}" makername="{{{UGCAssetId}}}" isvisibleinmaker="yes"/>
+""";
+	}
+	return Result;
+}
+
+Text GetXMLPublishedAssets(Text _LayerName)
+{
+	declare Text Result = "";
+	foreach (DefaultAssetIndex => DefaultAssetId in G_DefaultAssetsId[_LayerName]) {
+		declare IsVisibleInMaker = G_IsVisibleInMaker	[_LayerName][DefaultAssetIndex];
+		declare TitleName	= G_DefaultAssetsTitleName	[_LayerName][DefaultAssetIndex];
+		declare IsActivated	= G_ActivatedDefaultAssets	[_LayerName][DefaultAssetIndex];
+		if (IsActivated) {
+			Result ^= """	<asset id="{{{DefaultAssetId}}}" isdefault="yes" titlename="{{{TitleName}}}" isvisibleinmaker="{{{IsVisibleInMaker}}}"/>
+""";
+		}
+	}
+	foreach (UGCAssetIndex => UGCAssetId in G_UGCAssets[_LayerName]) {
+		Result ^= """	<asset id="{{{_LayerName}}}_UGCAsset-{{{UGCAssetIndex}}}" isdefault="no" titlename="{{{UGCAssetId}}}"/>
+""";
+	}
+	return Result;
+}

@@ -1,0 +1,784 @@
+/**
+ *	ScoreTable Library
+ * 	Especially made for console
+ */
+
+#Const Version				"2014-07-17"
+#Const ScriptName			"UIMenuCampaign.Script.txt"
+
+#Include "MathLib" as ML
+#Include "TextLib" as TL
+#Include "Libs/Nadeo/Common/Ingame/IngameLayers.Script.txt" 									as Layers
+#Include "Libs/Nadeo/Manialink2.Script.txt" 								as Manialink
+#Include "Libs/Nadeo/Common/ManialinkTools/UIPadButtons.Script.txt"								as UIButtons
+#Include "Libs/Trackmania/Ingame/UI/UIButtonNamesPopup.Script.txt"			as UIButtonNamesPopup
+#Include "Libs/Trackmania/Ingame/Medals.Script.txt"							as Medals
+#Include "Libs/Nadeo/MP4/Common/Colors.Script.txt"								as Colors
+#Include "Libs/Nadeo/MP4/Common/ManialinkTools/FontManager.Script.txt" 							as Font
+
+//Layers
+#Include "Libs/Trackmania/Ingame/UI/Layers/LB_MedalSelection.Script.txt"	as LB_MedalSelection
+#Include "Libs/Trackmania/Ingame/UI/Layers/LB_MenuStart.Script.txt"			as LB_MenuStart
+#Include "Libs/Trackmania/Ingame/UI/Layers/LB_MenuAfterRace.Script.txt"		as LB_MenuAfterRace
+#Include "Libs/Trackmania/Ingame/UI/Layers/LB_RecordCenter.Script.txt"		as LB_RecordCenter
+#Include "Libs/Trackmania/Ingame/UI/Layers/LB_WorldRecord.Script.txt"		as LB_WorldRecord
+
+#Const IMGPATH							"file://Media/Images/TMConsole/Ingame/"
+#Const IMG_BG_LINE_LONGER				"menu-bg-1-2.png"
+
+#Const TMC_MEDAL_AUTHOR					0
+#Const TMC_MEDAL_GOLD					1
+#Const TMC_MEDAL_SILVER					2
+#Const TMC_MEDAL_BRONZE					3
+#Const TMC_MEDAL_PLAYER					4
+#Const TMC_MEDAL_NONE					5
+#Const TMC_MEDAL_ANOTHERPLAYER			6
+#Const TMC_INGAME_RECORDCENTER			11
+#Const TMC_MEDAL_RECORDCENTER			12
+
+#Const TMC_PLAYERCHOICE_CHOOSEGHOST 	1
+#Const TMC_PLAYERCHOICE_QUIT	 		2
+#Const TMC_PLAYERCHOICE_NEXTTRACK 		3
+#Const TMC_PLAYERCHOICE_IMPROVE			4
+#Const TMC_PLAYERCHOICE_REPLAY			6
+
+#Const TMC_RACEMODE_MEDAL				0
+#Const TMC_RACEMODE_ONLINE				1
+
+#Const TMC_RACEMODE_SOLO				1
+#Const TMC_RACEMODE_DOUBLEDRIVER		2
+
+#Const IMG_BG							"slot-medium-bg.dds"
+#Const IMG_FG							"slot-medium-fg.dds"
+#Const C_LAYERNAME_RECORDCENTERPOPUP	"Layer_RecordCenterPopup"
+#Const C_LAYERNAME_WORLDRECORD			"Layer_WorldRecord"
+#Const SOUNDPATH						"file://Media/Sounds/TMConsole/"
+
+#Const C_RACE_MAPNAME_SIZE_X 			70.
+#Const MODE_COLORID_MULTIPLAYER			1
+#Const C_RACE_MAPNAME_SIZE_MEDAL		18
+#Const C_RATIO 							12.962
+#Const C_RATIO_1CIRCLE					0.06566666667
+#Const C_MARGINS_GLOBALRATIO			1.
+#Const C_TimeScrollRanking				1000
+#Const C_LabelRankDecalY				7
+#Const C_RACE_MAPNAME_POSX_MEDAL			-1
+
+#Const C_RECORDCENTER_YES				0
+#Const C_RECORDCENTER_NO				1
+
+#Const C_SoundVoiceMedalBronze	"voice-medal-bronze.wav"
+#Const C_SoundVoiceMedalSilver	"voice-medal-silver.wav"
+#Const C_SoundVoiceMedalGold	"voice-medal-gold.wav"
+#Const C_SoundVoiceMedalAuthor	"voice-medal-author.wav"
+
+//////////////////////////////////////////
+// ALIGN
+#Const vT 	""" valign="top" """
+#Const vC 	""" valign="center" """
+#Const hR 	""" halign="right" """
+
+#Const C_MaxCount_Top					10
+
+#Const C_LAYERNAME_MEDALCOUNT				"TMC_Lib_MedalCount"
+#Const C_LAYERNAME_FRIENDSRECORD			"TMC_Lib_CampaignFriendsRecord"
+
+declare Ident 		G_ThePlayerId;
+declare Integer		G_RaceMode;
+declare Text		G_ModeColorName;
+
+declare Text 		G_FontTitle;
+declare Text 		G_FontMain;
+declare Text 		G_FontMainSmall;
+declare Text 		G_FontChrono;
+declare Text 		G_FontNumberBig;
+
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Return the version number of the script
+ *
+ *	@return		The version number of the script
+ */
+Text GetScriptVersion() 
+{
+	return Version;
+}
+
+// ---------------------------------- //
+/** Return the name of the script
+ *
+ *	@return		The name of the script
+ */
+Text GetScriptName() 
+{
+	return ScriptName;
+}
+
+Text Private_GetMedalCount() {
+	declare Text ML = """
+
+	""";
+
+	return ML;
+
+}
+
+Text Private_GetMedalCountOld() {
+
+	// DYNAMIC SETTINGS
+	declare MapMarginRatio 				= 1.  * C_MARGINS_GLOBALRATIO;
+	declare MapNameMarginY				= 9.  * MapMarginRatio;
+	
+	////////////////////////////
+	// CALCULATIONS
+	declare CircleSize					= C_RATIO_1CIRCLE * C_RACE_MAPNAME_SIZE_X;
+	declare MapNameSizeY 				= C_RACE_MAPNAME_SIZE_X / C_RATIO;
+	declare MapNameSeparator 			= MapNameSizeY * 0.095;
+	declare MapNameSizeYElement			= MapNameSizeY * 2. - MapNameSeparator;
+	declare MapNameSizeXElement			= C_RACE_MAPNAME_SIZE_X * C_RATIO_1CIRCLE * 14.25;
+	declare MapNamePosYMedal			= - MapNameSizeY;
+	declare QuadStyleBg					= """ size="{{{C_RACE_MAPNAME_SIZE_X+4.75}}} {{{MapNameSizeY}}}" image="{{{IMGPATH^IMG_BG_LINE_LONGER}}}" """;
+	declare QuadStyleMedal				= """ size="{{{C_RACE_MAPNAME_SIZE_MEDAL}}} {{{C_RACE_MAPNAME_SIZE_MEDAL}}}"	{{{vC^hR}}}  """;
+	declare QuadStyleBgRight			= """ {{{QuadStyleBg}}} {{{hR}}} """;
+
+	declare Text ML = """
+		<frame id="Frame_MedalCount" pos="{{{160}}} {{{90 - MapNameMarginY - MapNameSizeY*3.}}}">
+			<quad id="Quad_Bg1" 		pos="0. 0. 				   31." 	{{{QuadStyleBgRight}}} />
+			<quad id="Quad_Bg2" 		pos="0. {{{-MapNameSizeY}}}   31." 	{{{QuadStyleBgRight}}} />
+			
+			<frame id="Frame_MedalCountAnim" hidden="0">
+				<quad 	pos="-9. {{{-MapNameSeparator}}}	31."  	size="{{{MapNameSizeXElement}}} {{{MapNameSizeYElement}}}" 	{{{vT}}} 	{{{hR}}} image="{{{IMGPATH^IMG_BG}}}" />
+				<quad 	pos="-9. {{{-MapNameSeparator}}}	32."  	size="{{{MapNameSizeXElement}}} {{{MapNameSizeYElement}}}" 	{{{vT}}} 	{{{hR}}} image="{{{IMGPATH^IMG_FG}}}" />
+				<frame clip="True" clipsizen="{{{MapNameSizeXElement+18.}}} {{{MapNameSizeYElement*0.9}}}" clipposn="{{{-C_RACE_MAPNAME_SIZE_X*0.5 + CircleSize}}} {{{-MapNameSizeY}}}">
+					<quad id="Quad_Medal" 		pos="{{{C_RACE_MAPNAME_POSX_MEDAL-10}}} 	 {{{MapNamePosYMedal}}}   31.2" {{{QuadStyleMedal}}} image="" />
+					<label id="Label_NumberMedalTxt" pos="-72. -5.65 31.2" textsize="8." text="x" textfont="{{{G_FontMain}}}" {{{vC}}} />						
+					<label id="Label_NumberMedal" pos="-67. -5. 31.2" textsize="8." text="27" textfont="{{{G_FontNumberBig}}}" {{{vC}}}/>						
+				</frame>
+			</frame>
+		</frame>
+		
+		<script><!--
+			{{{Manialink::GetIncludes()}}}
+			
+			#Const TMC_MEDAL_AUTHOR   			0
+			#Const TMC_MEDAL_GOLD   			1
+			#Const TMC_MEDAL_SILVER   			2
+			#Const TMC_MEDAL_BRONZE   			3
+			#Const TMC_MEDAL_PLAYER  			4
+			#Const TMC_MEDAL_NONE   			5
+			#Const TMC_MEDAL_ANOTHERPLAYER		6
+			
+			{{{Manialink::Load()}}}
+			{{{Medals::GetMedalFunctions()}}}
+			
+			Text GetMedalVoiceUrl(Integer _Medal)
+			{
+				declare MedalFile 	= "";
+				switch(_Medal)
+				{
+					case TMC_MEDAL_AUTHOR 	: MedalFile = "{{{C_SoundVoiceMedalAuthor}}}";
+					case TMC_MEDAL_GOLD 	: MedalFile = "{{{C_SoundVoiceMedalGold}}}";
+					case TMC_MEDAL_SILVER 	: MedalFile = "{{{C_SoundVoiceMedalSilver}}}";
+					case TMC_MEDAL_BRONZE 	: MedalFile = "{{{C_SoundVoiceMedalBronze}}}";
+					case TMC_MEDAL_NONE 	: MedalFile = ""; 
+					case TMC_MEDAL_PLAYER 	: MedalFile = "";
+				}
+				
+				if(MedalFile == "") return "";
+				
+				return "{{{SOUNDPATH}}}Voices/" ^ MedalFile;
+			}
+			main()
+			{	
+				declare Quad_Medal 			<=> (Page.GetFirstChild("Quad_Medal") as CMlQuad);
+				declare Label_NumberMedal 	<=> (Page.GetFirstChild("Label_NumberMedal") as CMlLabel);
+				
+				Quad_Medal.ImageUrl = GetMedalUrl(0);
+				// Quad_Medal.Colorize = <1.0, 1.0, 1.0>;
+				
+				declare	netread Integer Net_BestMedal 		for UI;
+				
+				declare Boolean VoiceMedalHasBeenPlayed = False;
+				
+				declare M_PrevPageIsVisible = True;
+				declare TimerBeforeMedalUpdate = -1;
+				// declare NewMedalValue = 29;
+				declare CAudioSource SoundVoice; //[Sound] Add
+				// PS4
+				// CurPlayerCamera = 7;
+					
+				
+				while(True) {
+					yield;
+					
+					// log(Now^"[UI VR] CurPlayerCamera: "^CurPlayerCamera);
+					
+					if(M_PrevPageIsVisible != PageIsVisible) {
+						M_PrevPageIsVisible = PageIsVisible;
+						VoiceMedalHasBeenPlayed = False;
+						
+						// Quad_Medal.ImageUrl = GetMedalUrl(TMC_MEDAL_PLAYER);
+						TimerBeforeMedalUpdate = 1000;
+						
+						if(Net_BestMedal == TMC_MEDAL_BRONZE) {
+							LocalBronzeMedalNb += 1;
+						} else if(Net_BestMedal == TMC_MEDAL_SILVER) {
+							LocalSilverMedalNb += 1;
+						} else if(Net_BestMedal == TMC_MEDAL_GOLD) {
+							LocalGoldMedalNb += 1;
+						} else if(Net_BestMedal == TMC_MEDAL_AUTHOR) {
+							LocalAuhorMedalNb += 1;
+						}
+						 
+						// NewMedalValue += 1;
+					}
+					
+					if(TimerBeforeMedalUpdate > 0 && TimerBeforeMedalUpdate <= 1000) {
+						TimerBeforeMedalUpdate -= Period;
+					} else {
+						TimerBeforeMedalUpdate = 1001;
+						if(Net_BestMedal <= TMC_MEDAL_BRONZE) {
+							if(!VoiceMedalHasBeenPlayed) {
+								Quad_Medal.ImageUrl = GetMedalUrl(Net_BestMedal);
+								declare MedalVoice 	= GetMedalVoiceUrl(Net_BestMedal);
+								VoiceMedalHasBeenPlayed = True;
+							}
+							
+							if(Net_BestMedal == TMC_MEDAL_BRONZE) {
+								Label_NumberMedal.Value = LocalBronzeMedalNb^"";
+							} else if(Net_BestMedal == TMC_MEDAL_SILVER) {
+								Label_NumberMedal.Value = LocalSilverMedalNb^"";
+							} else if(Net_BestMedal == TMC_MEDAL_GOLD) {
+								Label_NumberMedal.Value = LocalGoldMedalNb^"";
+								// Label_NumberMedal.Value = 200^"";
+							} else if(Net_BestMedal == TMC_MEDAL_AUTHOR) {
+								Label_NumberMedal.Value = LocalAuhorMedalNb^"";
+							}
+						}
+					}
+				}
+			}
+		--></script>
+	""";
+	
+	return ML;
+}
+
+
+
+Void SetRaceMode(Integer _RaceMode) 
+{
+	if(_RaceMode == TMC_RACEMODE_ONLINE) {
+		declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+		G_RaceMode = TMC_RACEMODE_ONLINE;
+	} else if(_RaceMode == TMC_RACEMODE_MEDAL) {
+		Layers::SetVisibility("Layer_TMC_MedalSelection", True);
+		G_RaceMode = TMC_RACEMODE_MEDAL;
+	}
+}
+
+Boolean PlayerWantsToQuit() 
+{
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netread Integer 	Net_PlayerWantsToQuitUpdate for UI;
+	declare netwrite Integer 	Pre_PlayerWantsToQuitUpdate for UI;
+	
+	if(Pre_PlayerWantsToQuitUpdate != Net_PlayerWantsToQuitUpdate) {
+		Pre_PlayerWantsToQuitUpdate = Net_PlayerWantsToQuitUpdate;
+		return True;
+	}
+	return False;
+}
+
+Boolean PlayerWantsToNextTrack() {
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netread Integer 	Net_PlayerWantsToNextTrackUpdate for UI;
+	declare netwrite Integer 	Pre_PlayerWantsToNextTrackUpdate for UI;
+	
+	if(Pre_PlayerWantsToNextTrackUpdate != Net_PlayerWantsToNextTrackUpdate) {
+		Pre_PlayerWantsToNextTrackUpdate = Net_PlayerWantsToNextTrackUpdate;
+		return True;
+	}
+	return False;
+}
+
+Boolean PlayerHasGiveUp() 
+{
+	declare Boolean PlayerHasGiveUp = False;
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netread Integer 	Net_PlayerHasGiveUpUpdate for UI;
+	declare netwrite Integer 	Pre_PlayerHasGiveUpUpdate for UI;
+	if(Pre_PlayerHasGiveUpUpdate != Net_PlayerHasGiveUpUpdate) {
+		Pre_PlayerHasGiveUpUpdate = Net_PlayerHasGiveUpUpdate;
+		PlayerHasGiveUp = True;
+	}
+	return PlayerHasGiveUp;
+}
+
+Integer GetGhostChosen() 
+{
+	declare Integer GhostChosen = -1;
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netread Integer Net_MedalChosen for UI;
+	GhostChosen = Net_MedalChosen;
+	return GhostChosen;
+}
+
+
+Void SetBestTime(Integer _BestTime) 
+{
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Integer 	Net_BestTime 			for UI;
+	declare netwrite Integer[]	Net_MedalSelectionTime	for UI;
+	Net_BestTime = _BestTime;
+	if(Net_MedalSelectionTime.existskey(0)) Net_MedalSelectionTime[0] 	= _BestTime;
+}
+
+Void UpdateEndRaceTime() 
+{
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Integer 	Net_BestTime 			for UI;
+	declare netwrite Integer[] 	Net_EndRaceTime 		for UI;
+	if(Net_EndRaceTime.existskey(0)) Net_EndRaceTime[0] = Net_BestTime;
+}
+
+Void NewRecord(Integer _Integer) 
+{
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Integer Net_LastBestTime for UI;
+	declare netwrite Integer Net_UpdateNewRecord for UI;
+	Net_LastBestTime = _Integer;
+	Net_UpdateNewRecord += 1;
+}
+
+Integer GetPlayerEndRaceChoice() 
+{
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netread Integer Net_PlayerChoice for UI;
+	return Net_PlayerChoice;
+}
+
+Integer IsSaveGhostUpdate() 
+{
+	declare Integer UpdateSaveGhost = 0;
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netread Integer Net_UpdateSaveGhost for UI;
+	UpdateSaveGhost = Net_UpdateSaveGhost;
+	return UpdateSaveGhost;
+}
+
+Text GetSaveGhostName() 
+{
+	declare Text NetSaveGhostName = "";
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netread Text Net_SaveGhostName for UI;
+	NetSaveGhostName = Net_SaveGhostName;
+	return NetSaveGhostName;
+}
+Void UpdateRace() 
+{
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Integer 	Net_EndRaceUpdate	for UI;
+	declare netwrite Integer 	Net_TimeRace		for UI;
+	declare netwrite Integer[] 	Net_EndRaceTime 	for UI;
+	declare  		Integer 	Net_EndRaceMyRank 	for UI;
+	Net_EndRaceUpdate 			+= 1;
+	// Net_TimeRace 				= _Player.CurRace.Time;
+	// if(Net_EndRaceTime.existskey(0)) Net_EndRaceTime[0] = Net_TimeRace;
+	
+	Net_EndRaceMyRank = 0;
+	
+	// if(Net_EndRaceTime.existskey(1)) Net_EndRaceTime[1] = Net_TimeRace;
+}
+
+Text GetPlayerDisplayableLogin(Text _Login)
+{
+	declare Text[] 	LoginParts 			= TL::Split("_", _Login);
+	declare Text 	DisplayableLogin	= "";
+	if(LoginParts.count > 0) DisplayableLogin = LoginParts[0];
+	return DisplayableLogin;
+}
+
+Void InitPlayer(Integer _BestRank, Integer _BestTime) 
+{
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Integer 	Net_PlayerRank 			for UI;
+	declare netwrite Integer 	Net_BestMedal 			for UI;
+	declare netwrite Integer 	Net_BestTime 			for UI;
+	declare netwrite Integer 	Net_LastBestTime 		for UI;
+	declare netwrite Integer 	Net_UpdateNewRecord 	for UI;
+	declare netwrite Integer	Net_EndRaceUpdate		for UI;
+	declare netwrite Integer	Net_TimeRace			for UI;
+	declare netwrite Integer[] 	Net_EndRaceTime 		for UI;
+	
+	Net_PlayerRank 		= -1;
+	Net_BestMedal 		= _BestRank;
+	Net_BestTime 		= _BestTime;
+	if(Net_EndRaceTime.existskey(0)) Net_EndRaceTime[0] = Net_BestTime;
+	Net_LastBestTime 	= 0;
+	Net_UpdateNewRecord = 0;
+	Net_EndRaceUpdate 	= 0;
+	Net_TimeRace 		= -1;
+}
+
+Void SetVisibilityRecordCenterPopup(Boolean _Visible) {
+	Layers::SetVisibility(C_LAYERNAME_RECORDCENTERPOPUP, _Visible);
+}
+
+Void SetVisibilityWorldRecordPopup(Boolean _Visible) {
+	Layers::SetVisibility(C_LAYERNAME_WORLDRECORD, _Visible);
+}
+
+Void SetRecordCenterPopupMessage(Text _RecordCenterMessage) {
+	declare UI <=> UIManager.GetUI(Players[0]);
+	declare netwrite Text 		Net_RecordCenterPopupMessage		for UI;
+	Net_RecordCenterPopupMessage = _RecordCenterMessage;
+}
+
+Void ConstructRecordCenterPopup() {
+	declare UI <=> UIManager.GetUI(Players[0]);
+	declare netwrite Text 		Net_RecordCenterPopupTitle			for UI;
+	declare netwrite Text 		Net_RecordCenterPopupMessage		for UI;
+	declare netwrite Text 		Net_RecordCenterPopupSubtitle		for UI;
+	declare netwrite Text[] 	Net_RecordCenterPopupInputs			for UI;
+	
+	declare IMGSelect 		= UIButtons::GetImage(CManiaAppEvent::EMenuNavAction::Select);
+	// declare IMGCancel 		= UIButtons::GetImage(CManiaAppEvent::EMenuNavAction::Cancel);
+	declare TXTSelect 		= UIButtonNamesPopup::GetSelectText();
+	// declare TXTCancel 		= _("Back");
+
+	Net_RecordCenterPopupInputs 	= [IMGSelect, TXTSelect];
+	
+	Net_RecordCenterPopupTitle 		= _("Record Center");
+	Net_RecordCenterPopupSubtitle 	= "";
+
+	declare Text MLText = LB_RecordCenter::Build();
+	Layers::Create(C_LAYERNAME_RECORDCENTERPOPUP, MLText);
+	Layers::Attach(C_LAYERNAME_RECORDCENTERPOPUP);
+
+	SetVisibilityRecordCenterPopup(False);
+}
+
+// ---------------------------------- //
+/// Load the library
+Void Load(Ident _PlayerId, Integer[Integer] _MedalsTime) 
+{
+	G_FontTitle 				= Font::GetFontName("Title");
+	G_FontMain 					= Font::GetFontName("Main");
+	G_FontMainSmall 			= Font::GetFontName("MainSmall");
+	G_FontChrono 				= Font::GetFontName("Chrono");
+	G_FontNumberBig				= Font::GetFontName("NumberBig");
+	
+	declare ColorWhite 			= Colors::GetColor("White");
+	declare ColorGrey 			= Colors::GetColor("Grey");
+	// declare ColorXmlBlack 			= Colors::GetColorXml("Black");
+	// declare ColorXmlRed 			= Colors::GetColorXml("Red");
+	// declare ColorXmlWhite 			= Colors::GetColorXml("White");
+	// declare ColorXmlGrey 			= Colors::GetColorXml("Grey");
+	// declare ColorXmlYellow			= Colors::GetColorXml("Yellow");
+	
+	UIButtons::Load();
+	G_ModeColorName  = Colors::GetModeColorName(5); // 2 = Campaign
+	G_RaceMode 		 = TMC_RACEMODE_MEDAL;
+	G_ThePlayerId 	 = _PlayerId;
+	declare Player 	<=> Players[G_ThePlayerId];
+	declare UI 		<=> UIManager.GetUI(Player);
+	
+	declare IMGSelect 	= UIButtons::GetImage(CManiaAppEvent::EMenuNavAction::Select);
+	declare IMGCancel 	= UIButtons::GetImage(CManiaAppEvent::EMenuNavAction::Cancel);
+	
+	//L16N Confirmation button for a popup
+	declare TXTSelect 	= UIButtonNamesPopup::GetSelectText();
+	declare TXTCancel 	= UIButtonNamesPopup::GetBackText();
+	
+	declare netwrite Integer[Integer] 	Net_MedalsTimes for UI;
+	Net_MedalsTimes = _MedalsTime;
+
+	declare netwrite Text[] 	Net_MenuMedalSelectionInputs	for UI;
+	declare netwrite Text[] 	Net_MenuActionInputs			for UI;
+	declare netwrite Text[] 	Net_MenuMainInputs				for UI;
+	// Net_MenuMedalSelectionInputs 	= [IMGSelect, TXTGo, 	IMGCancel, TXTOChall];
+	Net_MenuMedalSelectionInputs 	= [IMGSelect, TXTSelect]; // HACK EG : je vire "online" pour les playtests, parce que a empche de voir les mdailles
+	Net_MenuActionInputs 			= [IMGSelect, TXTSelect];
+	Net_MenuMainInputs 				= [IMGSelect, TXTSelect, IMGCancel, TXTCancel];
+	
+	declare netwrite Integer 	Net_BestTime 					for UI;
+	declare netwrite Integer[] 	Net_MedalSelectionRank 			for UI;
+	declare netwrite Text[] 	Net_MedalSelectionName 			for UI;
+	declare netwrite Integer[] 	Net_MedalSelectionTime 			for UI;
+	declare netwrite Integer[] 	Net_MedalSelectionMedal			for UI;
+	declare netwrite Integer 	Net_MedalSelectionMyRank 		for UI;
+	declare netwrite Text 		Net_MenuTitle 					for UI;
+	declare netwrite Text 		Net_MenuSubtitle 				for UI;
+	declare netwrite Text 		Net_MenuActionTitle 			for UI;
+	declare netwrite Text 		Net_MenuActionSubtitle 			for UI;
+	declare netwrite Text 		Net_MedalSelectionTitle 		for UI;
+	declare netwrite Text 		Net_MedalSelectionSubtitle 		for UI;
+	declare netwrite Integer[] 	Net_EndRaceRank 				for UI;
+	declare netwrite Text[] 	Net_EndRaceName 				for UI;
+	declare netwrite Integer[] 	Net_EndRaceTime 				for UI;
+	declare netwrite Integer[] 	Net_EndRaceMedal				for UI;
+	declare netwrite Integer 	Net_EndRaceMyRank 				for UI;
+	declare netwrite Integer 	Net_TimeRace					for UI;
+	declare netwrite Text		Net_ImproveButtonContent		for UI;
+	declare netwrite Text		Net_PersonalButtonContent		for UI;
+	// declare netwrite Integer	Net_RaceMode					for UI;
+	
+	//declare netread  Boolean	Net_CanNextTrack 				for UI;
+	declare  Boolean	Solo_NextTrackIsPossible 				for Users[0];
+	
+	Net_ImproveButtonContent 	= _("Improve");
+	Net_PersonalButtonContent 	= _("Drive alone");
+	
+	Net_EndRaceRank	.clear();
+	Net_EndRaceName	.clear();
+	Net_EndRaceTime	.clear();
+	Net_EndRaceMedal.clear();
+	Net_EndRaceMyRank = 0;
+	
+	
+	Net_EndRaceRank	.add(0);
+	// Net_EndRaceName	.add(GetPlayerDisplayableLogin(Player.Login));
+	Net_EndRaceName	.add(Player.User.Name);
+	Net_EndRaceTime	.add(Net_BestTime);
+	Net_EndRaceMedal.add(-1);
+	
+	Net_EndRaceRank	.add(1);
+	Net_EndRaceName	.add(Player.User.Name);
+	Net_EndRaceTime	.add(Net_TimeRace);
+	Net_EndRaceMedal.add(-1);
+	
+	Net_MedalSelectionRank	.clear();
+	Net_MedalSelectionName	.clear();
+	Net_MedalSelectionTime	.clear();
+	Net_MedalSelectionMedal	.clear();
+	Net_MedalSelectionMyRank = 0;
+
+	Net_MedalSelectionRank	.add(0);
+	Net_MedalSelectionName	.add(Player.User.Name);
+	Net_MedalSelectionTime	.add(Net_BestTime);
+	Net_MedalSelectionMedal	.add(-1);
+
+	foreach(I => Medal in _MedalsTime)
+	{
+		if(I > 0)
+		{
+			Net_MedalSelectionName	.add(Medals::GetMedalName(I));
+			Net_MedalSelectionTime	.add(Medal);
+			Net_MedalSelectionMedal	.add(I);
+		}
+	}
+
+	//MENUACTIONSOLO
+	declare LayerName			= "Layer_TMC_MenuActionSolo";
+	declare Text MLText = LB_MenuAfterRace::Build();
+	Layers::Create(LayerName, MLText);
+	Layers::Attach(LayerName);
+
+	//MEDALSELECTION
+	LayerName			= "Layer_TMC_MedalSelection";
+	MLText = LB_MedalSelection::Build();
+	Layers::Create(LayerName, MLText);
+	Layers::Attach(LayerName);
+
+	//MENU
+	LayerName		= "Menu";
+	MLText = LB_MenuStart::Build();
+	Layers::Create(LayerName, MLText);
+	Layers::SetType(LayerName, CUILayer::EUILayerType::InGameMenu);
+	Layers::Attach(LayerName);
+	
+
+	//ConstructRecordCenterPopup();
+	// SetVisibilityRecordCenterPopup(Boolean _Visible)
+	Layers::SetVisibility("Layer_TMC_MedalSelection", 			False);
+	Layers::SetVisibility("Layer_TMC_MenuActionSolo", 			False);
+	
+	Layers::Create(C_LAYERNAME_MEDALCOUNT, Private_GetMedalCount());
+	Layers::Attach(C_LAYERNAME_MEDALCOUNT);
+	Layers::SetAnimationTypeOut(C_LAYERNAME_MEDALCOUNT, CUILayer::EUILayerAnimation::RightFast);
+	Layers::SetVisibility(C_LAYERNAME_MEDALCOUNT, False);
+
+
+	//MAPWORLDRECORD
+	MLText = LB_WorldRecord::Build();
+	Layers::Create(C_LAYERNAME_WORLDRECORD, MLText);
+	Layers::Attach(C_LAYERNAME_WORLDRECORD);
+	Layers::SetVisibility(C_LAYERNAME_WORLDRECORD, False);
+}
+
+Integer GetRecordCenterChoice() {
+	declare UI <=> UIManager.GetUI(Players[0]);
+	declare netread Integer Net_RecordCenterChoice for UI;
+	return Net_RecordCenterChoice;
+}
+
+Integer GetWorldRecordChoice() {
+	declare UI <=> UIManager.GetUI(Players[0]);
+	declare netread Integer Net_WorldRecordChoice for UI;
+	return Net_WorldRecordChoice;
+}
+
+//World Record Login
+Text[] GetWorldRecordChoices() {
+
+	declare UI <=> UIManager.GetUI(Players[0]);
+	declare netread Text[] Net_WorldRecordChoices for UI;
+	return Net_WorldRecordChoices;
+}
+
+//World Record Replay
+Text[] GetWorldRecordChoices_Replay() {
+
+	declare UI <=> UIManager.GetUI(Players[0]);
+	declare netread Text[] Net_WorldRecordChoices_Replay for UI;
+	return Net_WorldRecordChoices_Replay;
+}
+
+//World Record FileName
+Text[] GetWorldRecordChoices_FileName() {
+
+	declare UI <=> UIManager.GetUI(Players[0]);
+	declare netread Text[] Net_WorldRecordChoices_FileName for UI;
+	return Net_WorldRecordChoices_FileName;
+}
+
+Void HideMenuPage() {
+	Layers::SetAnimationTypeOut("Layer_TMC_MedalSelection", CUILayer::EUILayerAnimation::LeftFast);
+	Layers::SetAnimationTypeOut("Layer_TMC_SoloAR", 		CUILayer::EUILayerAnimation::LeftFast);
+	Layers::SetVisibility("Layer_TMC_MedalSelection", False);
+	Layers::SetVisibility("Layer_TMC_SoloAR", False);
+}
+
+Integer GetRaceMode() {
+	return G_RaceMode;
+}
+
+Void SetImproveButtonContent(Text _Content) {
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Text Net_ImproveButtonContent for UI;
+	Net_ImproveButtonContent = _Content;
+}
+
+Void SetJokerButtonContent(Text _Content) {
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Text Net_JokerButtonContent for UI;
+	Net_JokerButtonContent = _Content;
+}
+
+Void SetPersonalButtonContent(Text _Content) {
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Text Net_PersonalButtonContent for UI;
+	Net_PersonalButtonContent = _Content;
+}
+
+Integer CheckMedalChallengeAnswer() {
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netread Boolean Net_Layer_TMC_MedalSelection_PopupChoice 	for UI;
+	declare netread Integer Net_Layer_TMC_MedalSelection_PopupUpdate 	for UI;
+	declare netwrite Integer Prev_Layer_TMC_MedalSelection_PopupUpdate 	for UI;
+
+	if(Prev_Layer_TMC_MedalSelection_PopupUpdate != Net_Layer_TMC_MedalSelection_PopupUpdate) {
+		Prev_Layer_TMC_MedalSelection_PopupUpdate = Net_Layer_TMC_MedalSelection_PopupUpdate;
+		
+		if(Net_Layer_TMC_MedalSelection_PopupChoice == True) {
+			return 1;
+		} else {
+			return 2;
+		}
+	}
+	return 0;
+}
+
+Void StartMenuLoop() {
+	// CheckSwitchChallenge();
+	if(G_RaceMode == TMC_RACEMODE_ONLINE) {
+		// CheckSwitchTable();
+	}
+}
+
+Void SetMedalCountVisible(Boolean _Visible) {
+	Layers::SetVisibility(C_LAYERNAME_MEDALCOUNT, _Visible);
+}
+
+Void SetStartMenuVisibility(Boolean _Visible) {
+	//aaa
+	if(G_RaceMode == TMC_RACEMODE_MEDAL) {
+		Layers::SetAnimationTypeOut("Layer_TMC_MedalSelection", CUILayer::EUILayerAnimation::LeftFast);
+		Layers::SetVisibility("Layer_TMC_MedalSelection", _Visible);
+		// log("Set Medal selection visible");
+	}
+}
+
+Void SetFinalMenuVisibility(Boolean _Visible) {
+	if(G_RaceMode == TMC_RACEMODE_MEDAL) {
+		Layers::SetAnimationTypeOut("Layer_TMC_MenuActionSolo", CUILayer::EUILayerAnimation::LeftFast);
+		Layers::SetVisibility("Layer_TMC_MenuActionSolo", _Visible);
+	}
+}
+
+Boolean GetFinalMenuVisibility() {
+	return Layers::IsLayerVisible("Layer_TMC_MenuActionSolo");
+}
+
+Void SetFinalFocusButton(Integer _IndexButton) {
+	//UIPopupBuilder::SetDefaultFocusedButton("Layer_TMC_MenuActionSolo", _IndexButton);
+}
+
+Void SetMedalFocusButton(Integer _IndexButton) {
+	//UIPopupBuilder::SetDefaultFocusedButton("Layer_TMC_MedalSelection", _IndexButton);
+}
+/*
+Void SetTrackRecordCenterVisibility() {
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Integer Net_ShowTrackRecordCenterUpdate for UI;
+	Net_ShowTrackRecordCenterUpdate += 1;
+}
+*/
+
+Void SetOpponent(Integer _Opponent, Integer _RaceTime)
+{
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Text[] 	Net_EndRaceName 				for UI;
+	declare netwrite Integer[] 	Net_EndRaceTime 				for UI;
+	declare netwrite Integer[] 	Net_EndRaceMedal				for UI;
+	// if(Net_EndRaceTime.existskey(0)) Net_EndRaceTime[0] = Medals::GetMedalTime(_Opponent);
+	if(Net_EndRaceTime.existskey(0)) Net_EndRaceTime[0] = _RaceTime;
+	if(Net_EndRaceName.existskey(0)) Net_EndRaceName[0] = Medals::GetMedalName(_Opponent);
+	if(Net_EndRaceMedal.existskey(0)) Net_EndRaceMedal[0] = _Opponent;
+}
+
+Void SetFriendsRecordsVisibility(Boolean _Visible) {
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	if(_Visible) {
+		declare netwrite 	Integer Net_ShowTrackRecordCenterUpdate for UI;
+		Net_ShowTrackRecordCenterUpdate += 1;
+	} else {
+		declare netwrite 	Integer Net_HideTrackRecordCenterUpdate for UI;
+		Net_HideTrackRecordCenterUpdate += 1;
+	}
+}
+
+/*
+Void HideFriendsRecordsVisibility(Boolean _Visible) {
+	declare netread 	Integer Net_HideTrackRecordCenterUpdate for UI;
+	Net_HideTrackRecordCenterUpdate += 1;
+}
+*/
+
+Integer GetFriendsRecordsChoice() {
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netread Integer Net_FriendsOpponent_Choice for UI;
+	return Net_FriendsOpponent_Choice;
+}
+
+Text GetFriendsOpponentUrl() {
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netread Text Net_FriendsOpponent_Url for UI;
+	// log(Net_FriendsOpponent_Url);
+	return Net_FriendsOpponent_Url;
+}

@@ -1,0 +1,537 @@
+#Include "Libs/Nadeo/Common/Core/MenuLayers.Script.txt"											as Layers
+#Include "Libs/Nadeo/Common/Core/Logger.Script.txt"												as Logger
+#Include "Libs/Nadeo/MP4/Common/ManialinkTools/FontManager.Script.txt"							as Font
+
+#Const C_MenuButtons_MaxCount	12
+#Const C_Opacity_Quad           0.7
+#Const C_Opacity_IMG            1.0
+#Const C_Opacity_Color          0.9
+#Const C_Opacity_Logo           1.0
+#Const C_Opacity_Label          1.0
+#Const C_SizeXQuadColorDefault  1.7
+#Const C_SizeXQuadDefault       78.6
+#Const C_SizeYQuadDefault       12.0
+#Const C_TextSizeDefault        5.0
+#Const C_LabelButtonPosX        -4.
+#Const C_LabelButtonPosY        0.5
+
+declare Real	G_SizeXQuadColor;
+declare Vec2	G_LabelButtonPos;
+
+Void SetLabelButtonPosition(Vec2 _LabelButtonPos)
+{
+	G_LabelButtonPos = _LabelButtonPos;
+}
+
+Text IncludeInFrameModels(Real _SizeXQuad, Real _SizeYQuad, Real _TextSizeDefault) {
+
+	G_SizeXQuadColor  = C_SizeXQuadColorDefault;
+	if(G_LabelButtonPos == <0.,0.>) G_LabelButtonPos = <C_LabelButtonPosX, C_LabelButtonPosY>;
+
+	declare Text MainFont				= Font::GetFontName("Main");
+	declare Text SubFont				= Font::GetFontName("SubTitle");
+	return """
+	<framemodel id="MenuButtons_FrameModel">
+		<quad id="MenuButtons_Quad"   halign="right"  valign="center" size="{{{_SizeXQuad}}} {{{_SizeYQuad}}}"  pos="0 0" z-index="1" opacity="{{{C_Opacity_Quad}}}" bgcolor="000" scriptevents="1" />
+		<quad id="MenuButtons_IMG"    halign="right"  valign="center" size="{{{_SizeXQuad}}} {{{_SizeYQuad}}}"  pos="0 0" z-index="2" opacity="{{{C_Opacity_IMG}}}" hidden="1"/>
+		<quad id="MenuButtons_Color"  halign="left"   valign="center" size="{{{G_SizeXQuadColor}}} {{{_SizeYQuad}}}"  pos="0 0" z-index="1" opacity="{{{C_Opacity_Color}}}" bgcolor="090" scriptevents="1" />
+		<quad id="Quad_Logo"          halign="center" valign="center" size="15 15"  pos="1.5 0" z-index="2" opacity="{{{C_Opacity_Logo}}}" bgcolor="009" style="Icons128x128_1"/>
+		<label id="MenuButtons_Label" halign="right"  valign="center" size="{{{_SizeXQuad + 2.3 * G_LabelButtonPos.X}}} {{{_SizeYQuad}}}" pos="{{{G_LabelButtonPos.X}}} {{{G_LabelButtonPos.Y}}}" textfont="{{{MainFont}}}" textprefix="$t" opacity="{{{C_Opacity_Label}}}" z-index="3" textsize="{{{_TextSizeDefault}}}" textcolor="fff"/>
+	</framemodel>
+	""";
+}
+
+Text IncludeInFrameModels() {
+	return IncludeInFrameModels(C_SizeXQuadDefault, C_SizeYQuadDefault, C_TextSizeDefault);
+}
+
+Text IncludeInManialink() {
+	//declare Text MLText = "<frame id=\"MenuButtons_ButtonsFrame\">\n";
+	declare Text MLText = """
+	<frame id="MenuButtons_ButtonsFrame">""";
+	for(ButtonIndex, 0, C_MenuButtons_MaxCount - 1)
+	{
+		MLText ^= """<frameinstance modelid="MenuButtons_FrameModel" id="MenuButtons_FrameInstance-{{{ButtonIndex}}}" hidden="1" pos="300 0"/>
+""";
+	}
+	MLText ^= """
+
+		</frame>""";
+	return MLText;
+}
+
+Text Includes()
+{
+	return """// -- MenuButtons - Includes
+	#Include "TextLib" as MenuButtons_TextLib
+	""";
+}
+
+Text Declares() {
+	return """// -- MenuButtons - Declares
+	declare Integer				G_HideTime;
+	declare Real[]  			G_ControlOpacity;
+	declare Integer				G_MenuButton_Focus;
+	declare Text[]				G_Private_MenuButtons_ButtonNames;
+	declare Text[]				G_Private_MenuButtons_ExtraParams;
+	declare Vec2[]				G_Private_MenuButtons_Positions;
+	declare Text[]				G_Private_MenuButtons_EventNames;
+	declare Vec3				G_Private_MenuButtons_SectionColor;
+	declare CMlFrame[]			G_Private_MenuButtons_Buttons;
+	declare CMlLabel[]			G_Private_MenuButtons_Labels;
+	declare CMlQuad[]			G_Private_MenuButtons_Color;
+	declare Integer[CMlControl]	G_Private_MenuButtons_ButtonIndexFromClickedQuad;""";
+}
+
+Text Functions() {
+	return """	Void MenuButtons_Init()
+	{
+		declare CMlFrame ButtonsFrame <=> (Page.GetFirstChild("MenuButtons_ButtonsFrame") as CMlFrame);
+		for(ButtonIndex, 0, {{{C_MenuButtons_MaxCount - 1}}}) {
+			declare CMlFrame ButtonFrame <=> (ButtonsFrame.GetFirstChild("MenuButtons_FrameInstance-" ^ ButtonIndex) as CMlFrame);
+			G_Private_MenuButtons_Buttons.add(ButtonFrame);
+			declare CMlLabel ButtonLabel <=> (ButtonFrame.GetFirstChild("MenuButtons_Label") as CMlLabel);
+			G_Private_MenuButtons_Labels.add(ButtonLabel);
+			declare CMlControl ButtonQuad <=> ButtonFrame.GetFirstChild("MenuButtons_Quad");
+			G_Private_MenuButtons_ButtonIndexFromClickedQuad[ButtonQuad] = ButtonIndex;
+			
+			declare CMlQuad ButtonColor <=> (ButtonFrame.GetFirstChild("MenuButtons_Color") as CMlQuad);
+			G_Private_MenuButtons_Color.add(ButtonColor);
+			
+		}
+		G_MenuButton_Focus = -1;
+		G_HideTime = -1;
+		G_ControlOpacity.add({{{C_Opacity_Quad}}});
+		G_ControlOpacity.add({{{C_Opacity_IMG}}});
+		G_ControlOpacity.add({{{C_Opacity_Color}}});
+		G_ControlOpacity.add({{{C_Opacity_Logo}}});
+		G_ControlOpacity.add({{{C_Opacity_Label}}});
+	}
+
+	Void MenuButtons_Loop()
+	{
+
+	}
+
+	Void Private_MenuButtons_RefreshButtons() {
+		foreach(Button in G_Private_MenuButtons_Buttons) {
+			Button.Hide();
+		}
+		foreach(ButtonIndex => ButtonName in G_Private_MenuButtons_ButtonNames) {
+			G_Private_MenuButtons_Buttons[ButtonIndex].Show();
+			G_Private_MenuButtons_Buttons[ButtonIndex].RelativePosition_V3.Y = G_Private_MenuButtons_Positions[ButtonIndex].Y;
+			declare CorrectButtonName = ButtonName;
+			declare SplitNames = MenuButtons_TextLib::Split("\\/", CorrectButtonName);
+			if (SplitNames.count != 0) {
+				CorrectButtonName = SplitNames[SplitNames.count - 1];
+			}
+			SplitNames = MenuButtons_TextLib::Split(".", CorrectButtonName);
+			if (SplitNames.count > 2) {
+				CorrectButtonName = SplitNames[SplitNames.count - 3];
+			}
+			G_Private_MenuButtons_Labels[ButtonIndex].SetText(CorrectButtonName);
+			G_Private_MenuButtons_Color[ButtonIndex].BgColor = G_Private_MenuButtons_SectionColor;
+		}
+	}
+
+	Void Private_MenuButtons_ChangeData() {
+		declare Text[] Page_MenuButtons_ButtonNames		for Page;
+		declare Vec2[] Page_MenuButtons_ButtonPositions	for Page;
+		declare Text[] Page_MenuButtons_EventNames		for Page;
+		declare Vec3   Page_MenuButtons_SectionColor	for Page;
+		G_Private_MenuButtons_ButtonNames	= Page_MenuButtons_ButtonNames;
+		G_Private_MenuButtons_Positions		= Page_MenuButtons_ButtonPositions;
+		G_Private_MenuButtons_EventNames	= Page_MenuButtons_EventNames;
+		G_Private_MenuButtons_SectionColor	= Page_MenuButtons_SectionColor;
+		Private_MenuButtons_RefreshButtons();
+	}
+
+	Void MenuButtons_SetExtraParams(Text[] _ExtraParams)
+	{
+		G_Private_MenuButtons_ExtraParams = _ExtraParams;
+	}
+
+	Void SetMenuPosX(Real[] _PosX)
+	{
+		declare Text[] Page_MenuButtons_ButtonNames		for Page;
+		for(I, 0, Page_MenuButtons_ButtonNames.count-1)
+		{
+
+			declare CMlFrame ButtonsFrame <=> (Page.GetFirstChild("MenuButtons_ButtonsFrame")               as CMlFrame);
+			declare CMlFrame ButtonFrame  <=> (ButtonsFrame.GetFirstChild("MenuButtons_FrameInstance-" ^ I) as CMlFrame);
+			ButtonFrame.RelativePosition.X = _PosX[I];
+		}
+	}
+
+	Void SetMenuPosX(Real _PosX)
+	{
+		declare Real[] PosX;
+		declare Text[] Page_MenuButtons_ButtonNames		for Page;
+		for(I, 0, Page_MenuButtons_ButtonNames.count-1)
+		{
+			PosX.add(_PosX);
+		}
+		SetMenuPosX(PosX);
+	}
+
+	Void LaunchTransition(Boolean _IsShow, Real _TargetPosX, Integer _DecaleTime, Boolean _FadeIn)
+	{
+		declare Real TargetPosX;
+		declare Text Animation;
+
+		declare Integer AddDecale  = 50;
+		declare Integer DecaleTime = 0;
+		if(_IsShow) DecaleTime  = _DecaleTime;
+		else        DecaleTime  = 0;
+
+		declare Text[] Page_MenuButtons_ButtonNames		for Page;
+		declare Vec2[] Page_MenuButtons_ButtonPositions	for Page;
+		declare Boolean[]	Page_MenuButtons_ButtonIsActive	for Page;
+		for(I, 0, Page_MenuButtons_ButtonNames.count-1)
+		{
+
+			declare CMlFrame ButtonsFrame      <=> (Page.GetFirstChild("MenuButtons_ButtonsFrame")               as CMlFrame);
+			declare CMlFrame ButtonFrame       <=> (ButtonsFrame.GetFirstChild("MenuButtons_FrameInstance-" ^ I) as CMlFrame);
+			declare CMlQuad  MenuButtons_IMG   <=> (ButtonFrame.GetFirstChild("MenuButtons_IMG") as CMlQuad);
+			declare CMlQuad  MenuButtons_Color <=> (ButtonFrame.GetFirstChild("MenuButtons_Color") as CMlQuad);
+			declare CMlLabel MenuButtons_Label <=> (ButtonFrame.GetFirstChild("MenuButtons_Label")	as CMlLabel);
+			LibManialink_AnimStop(ButtonFrame);
+
+			if(_FadeIn)
+			{
+				foreach(Index =>Control in ButtonFrame.Controls)
+				{
+					declare OpacityTarget = G_ControlOpacity[Index];
+					if (Control is CMlLabel) {
+						declare Label <=> (Control as CMlLabel);
+						Label.Opacity = 0.;
+
+					}
+					else if (Control is CMlQuad) {
+						declare Quad <=> (Control as CMlQuad);
+						Quad.Opacity = 0.;
+					}
+
+					if(!Page_MenuButtons_ButtonIsActive[I])
+					{
+						OpacityTarget = OpacityTarget*0.5;
+						MenuButtons_IMG.ChangeImageUrl("");
+						MenuButtons_Color.BgColor = <0.0, 0.0, 0.0>;
+						MenuButtons_Label.TextColor = <0.6, 0.6, 0.6>;
+					}
+					else
+					{
+						MenuButtons_Label.TextColor = <1., 1., 1.>;
+						MenuButtons_Color.BgColor = G_Private_MenuButtons_SectionColor;
+						//MenuButtons_Label
+					}
+
+					LibManialink_AnimStop(Control);
+					LibManialink_SetTargetOpacity(Control, OpacityTarget);
+					LibManialink_PresetAnimInsert(Control, DecaleTime-50, 500, "EaseInSine");
+				}
+			}
+
+			if(_IsShow)
+			{
+				Animation   = "EaseOutCubic";
+				//ButtonFrame.RelativePosition.X = 300.;
+				TargetPosX  = Page_MenuButtons_ButtonPositions[I].X;
+			}
+			else
+			{
+				TargetPosX  = _TargetPosX;
+				Animation   = "EaseInCubic";
+			}
+
+			LibManialink_AnimStop(ButtonFrame);
+			LibManialink_SetTargetPosition(ButtonFrame, <TargetPosX, Page_MenuButtons_ButtonPositions[I].Y>);
+			LibManialink_PresetAnimInsert(ButtonFrame, DecaleTime, 600, Animation);
+			
+			DecaleTime += AddDecale;
+		}
+
+
+	}
+	
+	Void LaunchTransition(Boolean _IsShow, Real _TargetPosX, Integer _DecaleTime)
+	{
+		LaunchTransition(_IsShow, _TargetPosX, _DecaleTime, False);
+	}
+
+	Void LaunchTransition(Boolean _IsShow)
+	{
+		LaunchTransition(_IsShow, 0., 300);
+	}
+
+	Void UpdateLightFocus()
+	{
+		if(G_HideTime > Now || G_MenuButton_Focus <= -1) return;
+
+		declare CMlFrame ButtonsFrame      <=> (Page.GetFirstChild("MenuButtons_ButtonsFrame") as CMlFrame);
+		declare CMlFrame ButtonFrame       <=> (ButtonsFrame.GetFirstChild("MenuButtons_FrameInstance-" ^ G_MenuButton_Focus) as CMlFrame);
+		declare CMlLabel MenuButtons_Label <=> (ButtonFrame.GetFirstChild("MenuButtons_Label")	as CMlLabel);
+
+		declare Real Pourcentage = (ML::Sin(Now * 0.01) * 0.5 +0.5);
+		declare Real LabelColor_X       = 1.0 - Pourcentage * (1. - G_Private_MenuButtons_SectionColor.X);
+		declare Real LabelColor_Y       = 1.0 - Pourcentage * (1. - G_Private_MenuButtons_SectionColor.Y);
+		declare Real LabelColor_Z       = 1.0 - Pourcentage * (1. - G_Private_MenuButtons_SectionColor.Z);
+		
+		MenuButtons_Label.TextColor = <LabelColor_X, LabelColor_Y, LabelColor_Z>;
+	}
+
+	Void LightFocus()
+	{
+
+		if(G_HideTime > Now || G_MenuButton_Focus <= -1) return;
+
+		declare CMlFrame ButtonsFrame      <=> (Page.GetFirstChild("MenuButtons_ButtonsFrame") as CMlFrame);
+		declare CMlFrame ButtonFrame       <=> (ButtonsFrame.GetFirstChild("MenuButtons_FrameInstance-" ^ G_MenuButton_Focus) as CMlFrame);
+		declare CMlLabel MenuButtons_Label <=> (ButtonFrame.GetFirstChild("MenuButtons_Label")	as CMlLabel);
+
+		LibManialink_SetTargetScale(MenuButtons_Label, 1.05);
+		LibManialink_PresetAnim(MenuButtons_Label, 50, "Linear");
+	}
+
+	Void UnlightFocus()
+	{
+		if(G_HideTime > Now || G_MenuButton_Focus == -1) return;
+		
+		declare CMlFrame ButtonsFrame      <=> (Page.GetFirstChild("MenuButtons_ButtonsFrame") as CMlFrame);
+		declare CMlFrame ButtonFrame       <=> (ButtonsFrame.GetFirstChild("MenuButtons_FrameInstance-" ^ G_MenuButton_Focus) as CMlFrame);
+		declare CMlLabel MenuButtons_Label <=> (ButtonFrame.GetFirstChild("MenuButtons_Label")	as CMlLabel);
+		
+		MenuButtons_Label.TextColor = <1., 1., 1.>;
+		LibManialink_SetTargetScale(MenuButtons_Label, 1.0);
+		LibManialink_PresetAnim(MenuButtons_Label, 50, "Linear");
+	}
+
+	Void HideMenu()
+	{
+		G_HideTime = 2000+Now;
+		LaunchTransition(False, -200., 0);
+	}
+
+
+	Integer GetNextButton()
+	{
+		declare Boolean[]	Page_MenuButtons_ButtonIsActive	for Page;
+		declare Text[] 		Page_MenuButtons_ButtonNames	for Page;
+		if(G_MenuButton_Focus < Page_MenuButtons_ButtonNames.count-1)
+		{
+			for(I, G_MenuButton_Focus+1, Page_MenuButtons_ButtonNames.count-1)
+			{
+				if(Page_MenuButtons_ButtonIsActive[I]) return I;
+			}
+		}
+		return -1;
+	}
+
+	Integer GetPrevButton()
+	{
+		declare Boolean[]	Page_MenuButtons_ButtonIsActive	for Page;
+		declare Text[] 		Page_MenuButtons_ButtonNames	for Page;
+		declare Integer IndexMax = G_MenuButton_Focus-1;
+		for(I, 0, IndexMax)
+		{
+			declare Integer Index = IndexMax - I;
+			if(Page_MenuButtons_ButtonIsActive[Index]) return Index;
+		}
+		return -1;
+	}
+
+	Integer GetFirstButton()
+	{
+		declare Boolean[]	Page_MenuButtons_ButtonIsActive	for Page;
+		declare Text[] 		Page_MenuButtons_ButtonNames	for Page;
+		for(I, 0, Page_MenuButtons_ButtonNames.count-1)
+		{
+			if(Page_MenuButtons_ButtonIsActive[I]) return I;
+		}
+
+		return 0;
+	}
+
+	Void ClickOnButton(Integer _ButtonIndex)
+	{
+		Audio.PlaySoundEvent(CAudioManager::ELibSound::Valid, 1, 0.0);
+		declare Boolean[]	Page_MenuButtons_ButtonIsActive	for Page;
+		if(!Page_MenuButtons_ButtonIsActive[_ButtonIndex]) return;
+		declare ExtraParam = "";
+		if (G_Private_MenuButtons_ExtraParams.existskey(_ButtonIndex)) {
+			ExtraParam = G_Private_MenuButtons_ExtraParams[_ButtonIndex];
+		}
+		SendCustomEvent(G_Private_MenuButtons_EventNames[_ButtonIndex], [ExtraParam]);
+	}
+
+	""";
+}
+
+Text Init() {
+	return "MenuButtons_Init();";
+}
+
+Text IncludeInMain() {
+	return """
+	""";
+}
+
+Text IncludeInWhile(Text[] _ButtonAction) {
+	
+	declare Text Input_Up    = _ButtonAction[0];
+	declare Text Input_Down  = _ButtonAction[1];
+	declare Text Input_Left  = _ButtonAction[2];
+	declare Text Input_Right = _ButtonAction[3];
+	return """
+
+			declare Boolean Page_MenuButtons_Refresh for Page;
+			if (Page_MenuButtons_Refresh) {
+				Private_MenuButtons_ChangeData();
+				Page_MenuButtons_Refresh = False;
+			}
+
+			UpdateLightFocus();
+
+			foreach(Event in PendingEvents) {
+				if(G_HideTime > Now) continue;
+				switch(Event.Type) {
+					case CMlEvent::Type::MouseClick: {
+						if (G_Private_MenuButtons_ButtonIndexFromClickedQuad.existskey(Event.Control)) {
+							declare ButtonIndex = G_Private_MenuButtons_ButtonIndexFromClickedQuad[Event.Control];
+							ClickOnButton(ButtonIndex);
+						}
+					}
+					case CMlEvent::Type::MouseOver: {
+						Audio.PlaySoundEvent(CAudioManager::ELibSound::Focus, 1, 0.0);
+						declare Boolean[]	Page_MenuButtons_ButtonIsActive	for Page;
+						if (G_Private_MenuButtons_ButtonIndexFromClickedQuad.existskey(Event.Control)) {
+							declare ButtonIndex = G_Private_MenuButtons_ButtonIndexFromClickedQuad[Event.Control];
+							if(!Page_MenuButtons_ButtonIsActive[ButtonIndex]) continue;
+							UnlightFocus();
+							G_MenuButton_Focus = ButtonIndex;
+							LightFocus();
+						}
+					}
+					case CMlEvent::Type::MouseOut: {
+						if (G_Private_MenuButtons_ButtonIndexFromClickedQuad.existskey(Event.Control)) {
+							UnlightFocus();
+							G_MenuButton_Focus = -1;
+						}
+					}
+					case CMlEvent::Type::MenuNavigation: {
+						switch(Event.MenuNavAction) {
+							case CMlEvent::EMenuNavAction::Select : {
+								if(G_MenuButton_Focus == -1) G_MenuButton_Focus = 0;
+								ClickOnButton(G_MenuButton_Focus);
+							}
+							case CMlEvent::EMenuNavAction::Up : {
+								{{{Input_Up}}}
+							}
+							case CMlEvent::EMenuNavAction::Down : {
+								{{{Input_Down}}}
+							}
+							case CMlEvent::EMenuNavAction::Left : {
+								{{{Input_Left}}}
+							}
+							case CMlEvent::EMenuNavAction::Right : {
+								{{{Input_Right}}}
+							}
+
+						}
+					}
+				}
+			}""";
+}
+
+Text IncludeInWhile(Boolean IsButtonVertical) {
+	
+	declare Text Input_Up;
+	declare Text Input_Down;
+	declare Text Input_Left;
+	declare Text Input_Right;
+
+	declare Text PreviousButton =
+	 """
+		if(G_MenuButton_Focus > 0)
+		{
+			declare Integer PrevButton = GetPrevButton();
+			if(PrevButton != -1)
+			{
+				UnlightFocus();
+				G_MenuButton_Focus = PrevButton;
+				LightFocus();
+			}
+		}
+		else
+		{
+			G_MenuButton_Focus = GetFirstButton();
+			LightFocus();
+		}
+		""";
+
+
+	declare Text NextButton =
+	 """
+		declare Integer NextButton = GetNextButton();
+		if(NextButton != -1)
+		{
+			UnlightFocus();
+			G_MenuButton_Focus = NextButton;
+			LightFocus();
+		}
+		""";
+
+	if(IsButtonVertical)
+	{
+		Input_Up   = PreviousButton;
+		Input_Down = NextButton;
+	}
+	else
+	{
+
+		Input_Left  = PreviousButton;
+		Input_Right = NextButton;
+	}
+	return IncludeInWhile([Input_Up, Input_Down, Input_Left, Input_Right]);
+}
+Text IncludeInWhile() {
+	return IncludeInWhile(True);
+}
+
+
+Void ChangeData(Text _LayerNameToChangeData, Text[] _ButtonNames, Vec2[] _Positions, Text[] _EventNames, Vec3 _SectionColor) {
+	declare CUILayer LayerToChangeData = Layers::Get(_LayerNameToChangeData);
+	if (LayerToChangeData == Null) {
+		Logger::Warn("ChangeData de MenuButtons : Layer non trouvée");
+		return;
+	}
+	if ((_ButtonNames.count != _Positions.count) || (_Positions.count != _EventNames.count)) {
+		Logger::Warn("ChangeData de MenuButtons : Les arrays n'ont pas le même nombre d'éléments");
+		return;
+	}
+	declare Text[]    Page_MenuButtons_ButtonNames		for LayerToChangeData.LocalPage;
+	declare Vec2[]    Page_MenuButtons_ButtonPositions	for LayerToChangeData.LocalPage;
+	declare Text[]    Page_MenuButtons_EventNames		for LayerToChangeData.LocalPage;
+	declare Boolean[] Page_MenuButtons_ButtonIsActive	for LayerToChangeData.LocalPage;
+	declare Vec3      Page_MenuButtons_SectionColor		for LayerToChangeData.LocalPage;
+	declare Boolean   Page_MenuButtons_Refresh			for LayerToChangeData.LocalPage;
+	Page_MenuButtons_ButtonNames		= _ButtonNames;
+	Page_MenuButtons_ButtonPositions	= _Positions;
+	Page_MenuButtons_EventNames			= _EventNames;
+	Page_MenuButtons_SectionColor		= _SectionColor;
+	Page_MenuButtons_Refresh			= True;
+	for(I, 0, Page_MenuButtons_ButtonNames.count-1)
+	{
+		Page_MenuButtons_ButtonIsActive.add(True);
+	}
+}
+
+Void SetButtonActive(Text _LayerNameToChangeData, Boolean[] _ButtonLock)
+{
+	declare CUILayer LayerToChangeData = Layers::Get(_LayerNameToChangeData);
+	if (LayerToChangeData == Null) return;
+	
+	declare Boolean[]	Page_MenuButtons_ButtonIsActive	for LayerToChangeData.LocalPage;
+	Page_MenuButtons_ButtonIsActive = _ButtonLock;
+	LayerCustomEvent(LayerToChangeData, "UpdateButtonLock", [""]);
+}

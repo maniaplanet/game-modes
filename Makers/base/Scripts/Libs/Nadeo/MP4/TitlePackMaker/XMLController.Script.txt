@@ -1,0 +1,230 @@
+#Include "TextLib"																					as TextLib
+#Include "Libs/Nadeo/MP4/TitlePackMaker/Components/Component_Campaign/CampaignController.Script.txt"	as CampaignController
+#Include "Libs/Nadeo/MP4/TitlePackMaker/Components/Component_Online/OnlineController.Script.txt"		as OnlineController
+#Include "Libs/Nadeo/MP4/TitlePackMaker/Components/Component_LocalPlay/LocalPlayController.Script.txt"	as LocalPlayController
+#Include "Libs/Nadeo/MP4/TitlePackMaker/Components/Component_Editor/EditorController.Script.txt"		as EditorController
+#Include "Libs/Nadeo/MP4/TitlePackMaker/Components/Component_Style/StyleController.Script.txt"			as StyleController
+#Include "Libs/Nadeo/MP4/TitlePackMaker/Components/Component_Resources/ResourcesController.Script.txt"	as ResourcesController
+#Include "Libs/Nadeo/MP4/TitlePackMaker/Components/Component_Ingame/IngameController.Script.txt"		as IngameController
+
+#Include "Libs/Nadeo/MP4/Common/ManiascriptTools/XmlSeparator.Script.txt"												as XmlSeparator
+
+#Const C_XMLTitleMakerFilePath	"file://Media/XML/User/Resources.xml"
+#Const C_ReqTimeout				10000
+
+declare Text[] G_ResourcesFolders;
+declare Boolean[Text] G_FolderIsPublic;
+declare Boolean[Text] G_FolderIsInternal;
+
+
+Void AnalyzeXML(Text _XML)
+{
+	declare Text ProjectEnviro for LocalUser;
+	declare Boolean TitleWasMadeOnce for LocalUser;
+	declare Text[Text] XMLPart = XmlSeparator::SeparateXML(_XML, [	["Campaign", "Solo"],
+																	["Style", "global"],
+																	["Online", "Multiplayer"],
+																	["LocalPlay", "LocalPlay"],
+																	["Editor", "Editors"],
+																	["Ingame", "Ingame"],
+																	["Resources", "Resources"]]);
+	ProjectEnviro = XmlSeparator::GetProjectEnviro();
+	TitleWasMadeOnce = XmlSeparator::GetTitleWasMadeOnce();
+	CampaignController::AnalyzeXML(XMLPart["Campaign"]);
+	StyleController::AnalyzeXML(XMLPart["Style"]);
+	OnlineController::AnalyzeXML(XMLPart["Online"]);
+	LocalPlayController::AnalyzeXML(XMLPart["LocalPlay"]);
+	EditorController::AnalyzeXML(XMLPart["Editor"]);
+	ResourcesController::AnalyzeXML(XMLPart["Resources"]);
+	IngameController::AnalyzeXML(XMLPart["Ingame"]);
+}
+
+Text GenerateXML ()
+{
+	declare Text ProjectEnviro for LocalUser;
+	declare Boolean TitleWasMadeOnce for LocalUser;
+	declare XMLProjectEnviro = "";
+	declare XMLTitleWasMadeOnce = "";
+	if (ProjectEnviro != "")
+	{
+		XMLProjectEnviro = " projectenviro=\"" ^ ProjectEnviro ^ "\"";
+	}
+	if (TitleWasMadeOnce) {
+		XMLTitleWasMadeOnce = " titlewasmadeonce=\"yes\"";
+	}
+	return """<titlePackXML{{{XMLProjectEnviro}}}{{{XMLTitleWasMadeOnce}}}>
+{{{StyleController::GenerateXML()}}}
+{{{CampaignController::GenerateXML()}}}
+{{{OnlineController::GenerateXML()}}}
+{{{LocalPlayController::GenerateXML()}}}
+{{{EditorController::GenerateXML()}}}
+{{{ResourcesController::GenerateXML()}}}
+{{{IngameController::GenerateXML()}}}
+	<Profile>
+		<param id="0" MonParam="aaa" />
+	</Profile>
+</titlePackXML>""";
+}
+
+Integer[] GetWarningSections()
+{
+	declare Integer[] Result;
+	if (!StyleController::CanPublishXML()) {
+		Result.add(0);
+	}
+	if (!CampaignController::CanPublishXML()) {
+		Result.add(1);
+	}
+	if (!OnlineController::CanPublishXML()) {
+		Result.add(2);
+	}
+	if (!LocalPlayController::CanPublishXML()) {
+		Result.add(3);
+	}
+	if (!EditorController::CanPublishXML()) {
+		Result.add(4);
+	}
+	return Result;
+}
+
+Boolean IsEmpty()
+{
+	return (	!CampaignController::IsActivated()
+			&&	!OnlineController::IsActivated()
+			&&	!LocalPlayController::IsActivated()
+			&&	!EditorController::IsActivated());
+}
+
+Text CanPublishXMLResult()
+{
+	if (IsEmpty()) {
+		return _("This title has no valid sections. Aborting publication.");
+	}
+	declare Text WarningText;
+	if (!StyleController::CanPublishXML()) {
+		WarningText ^= """Style is incomplete :
+{{{StyleController::PublishXMLError()}}}""";
+	}
+	if (!CampaignController::CanPublishXML()) {
+		WarningText ^= """{{{TextLib::GetTranslatedText("Solo campaign is incomplete :")}}}
+{{{CampaignController::PublishXMLError()}}}""";
+	}
+	if (!OnlineController::CanPublishXML()) {
+		WarningText ^= "Online is incomplete\n";
+	}
+	if (!LocalPlayController::CanPublishXML()) {
+		WarningText ^= "Local Play is incomplete\n";
+	}
+	if (!EditorController::CanPublishXML()) {
+		WarningText ^= "Editor is incomplete\n";
+	}
+	if (WarningText == "") {
+		return "OK";
+	}
+	return TextLib::GetTranslatedText("Following errors occurred :") ^ "\n" ^ WarningText;
+}
+
+Text PublishXMLWarnings()
+{
+	declare Text Result = "";
+	if (CampaignController::HasNoMaps() && CampaignController::IsActive()) {
+		Result ^= TextLib::GetTranslatedText("Solo campaign has no maps, but is still active.") ^ "\n\t" ^ TextLib::GetTranslatedText("This title will have no solo campaign.");
+	}
+	return Result;
+}
+
+Text PublishXML ()
+{
+	declare Text ProjectEnviro for LocalUser;
+	declare XMLProjectEnviro = "";
+	if (ProjectEnviro != "")
+	{
+		XMLProjectEnviro = " projectenviro=\"" ^ ProjectEnviro ^ "\"";
+	}
+	return """<titlePackXML{{{XMLProjectEnviro}}}>
+{{{StyleController::PublishXML()}}}
+{{{CampaignController::PublishXML()}}}
+{{{OnlineController::PublishXML()}}}
+{{{LocalPlayController::PublishXML()}}}
+{{{EditorController::PublishXML()}}}
+{{{ResourcesController::PublishXML()}}}
+{{{IngameController::PublishXML()}}}
+	<Profile>
+		<param id="0" MonParam="aaa" />
+	</Profile>
+</titlePackXML>""";
+}
+
+
+Text Private_LoadXml(Text _Path) {
+	declare XmlFile = "";
+	
+	// @Debug
+	//return XmlTmp::Get(_Path);
+	
+	declare Req <=> Http.CreateGet(_Path);
+	declare ReqEndTime = Now + C_ReqTimeout;
+	declare Success = False;
+	
+	while (Now < ReqEndTime) {
+		if (Req.IsCompleted) {
+			XmlFile = Req.Result;
+			Success = True;
+			break;
+		}
+		yield; //HACK - virer Yield
+	}
+	if (!Success) 	log(Now^"WARNING: [TPMaker] Private_LoadXml(): Failed to load: "^_Path);
+	else 		 	log(Now^"[TPMaker] Private_LoadXml(): XML successfully loaded: "^_Path);
+
+	Http.Destroy(Req);
+	
+	return XmlFile;
+}
+
+Void LoadResourcesFolderFromXML()
+{
+	declare Text ResourcesXML;
+	if (TitleEdition != Null) {
+		ResourcesXML = TitleEdition.File_ReadText("Media/XML/Resources.xml");
+	}
+	
+	declare Text XMLContent;
+	if (ResourcesXML == "")
+	{
+		XMLContent = Private_LoadXml(C_XMLTitleMakerFilePath);
+	} else {
+		XMLContent = ResourcesXML;
+	}
+	declare XmlStruct	= Xml.Create(XMLContent);
+	
+	G_ResourcesFolders.clear();
+	G_FolderIsPublic.clear();
+	G_FolderIsInternal.clear();
+	
+	foreach(ResourceNode in XmlStruct.Root.Children) {
+		// log(ResourceNode.Name);
+		if(ResourceNode.Name == "folder") {
+			declare Text FolderName = ResourceNode.GetAttributeText("name", "");
+			if(FolderName != "") {
+				G_ResourcesFolders.add(FolderName);
+				G_FolderIsPublic[FolderName] = ResourceNode.GetAttributeBoolean("public", False);
+				G_FolderIsInternal[FolderName] = ResourceNode.GetAttributeBoolean("internal", False);
+			}
+		}
+	}
+}
+
+Text[] GetResourcesFolders() {
+	return G_ResourcesFolders;
+}
+
+Boolean FolderIsPublic(Text _FolderName) {
+	if(G_FolderIsPublic.existskey(_FolderName)) return G_FolderIsPublic[_FolderName];
+	return False;
+}
+
+Boolean FolderIsInternal(Text _FolderName) {
+	if(G_FolderIsInternal.existskey(_FolderName)) return G_FolderIsInternal[_FolderName];
+	return False;
+}

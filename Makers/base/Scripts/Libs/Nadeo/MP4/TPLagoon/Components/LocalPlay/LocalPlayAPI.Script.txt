@@ -1,0 +1,334 @@
+#Include "TextLib"																as TextLib
+#Include "Libs/Nadeo/Common/ManiascriptTools/Sort.Script.txt"								as SortTools
+
+#Const C_ElemsMaxCountPerLine			9
+
+#Const C_FilterTypes					["Text"   , "Text"     , "Integer"   , "Text"   ]
+
+#Const C_ARRAY_NOORDER					0
+#Const C_ARRAY_INCREASINGORDER			1
+#Const C_ARRAY_DECREASINGORDER			2
+
+declare Text[][Integer]		G_Category;
+declare Integer				G_Private_ListDisplayer_CurrentPage;
+declare Integer				G_Private_ListDisplayer_MaxPages;
+declare Text[Text][]		G_Private_ListDisplayer_ListData;
+
+declare Text				G_TextFilter;
+declare Integer[Integer]	G_SortStatePerButton;
+declare Integer[]			G_SortedIds;
+
+declare Integer				G_NumberOfServers;
+declare Boolean				G_HasFetched;
+declare Boolean				G_HasGivenServerInfo;
+declare Integer				G_ServerFocusIndex;
+declare Text				G_ServerPassword;
+
+declare Boolean				G_ServerIsSpectate;
+declare Boolean				G_HasNewServerList;
+
+declare Boolean				G_ServerIsPrivate;
+declare Boolean				G_ServerIsPrivateForSpectator;
+
+declare Boolean				G_HasFailed;
+
+Void Private_ListDisplayer_SetTextFilter(Text _Filter, Text[] _Elem_Name)
+{
+	declare Integer[] SortedIds;
+	G_Private_ListDisplayer_CurrentPage = 1;
+	foreach (NameIndex => Name in _Elem_Name)
+	{
+		declare Boolean IsSymbol = TextLib::Find(_Filter, Name, False, False);
+		if(IsSymbol) SortedIds.add(NameIndex);
+	}
+	G_TextFilter = _Filter;
+	G_SortedIds = SortedIds;
+}
+
+Void Private_ListDisplayer_SetTextFilter(Text _Filter)
+{
+	Private_ListDisplayer_SetTextFilter(_Filter, G_Category[0]);
+}
+
+Void Private_ListDisplayer_SortFromSwapArray(Integer[] _SwapArray)
+{
+	declare Integer[] New_SortedIds;
+	foreach(Index in _SwapArray)
+	{
+		declare Integer NewId = Index;
+		if(G_SortedIds.exists(NewId))
+		{
+			New_SortedIds.add(NewId);
+		}
+	}
+	G_SortedIds = New_SortedIds;
+	G_Private_ListDisplayer_CurrentPage = 1;
+}
+
+Void Private_ListDisplayer_CheckSorts()
+{
+	//Sort
+	declare Integer[] SortSwapArray;
+	for(QuadId, 0, C_FilterTypes.count - 1)
+	{
+		declare Integer SortState = G_SortStatePerButton[QuadId];
+		if(SortState != C_ARRAY_NOORDER)
+		{
+			declare Integer[] SortSwapArray = SortTools::SortTools_GetSortSwapArray(G_Category[QuadId], SortState);
+			Private_ListDisplayer_SortFromSwapArray(SortSwapArray);
+		}
+	}
+}
+
+Void Private_ListDisplayer_SortElements(Integer _QuadId)
+{
+	G_Private_ListDisplayer_CurrentPage = 1;
+	for(I, 0, C_FilterTypes.count - 1)
+	{
+		if(I == _QuadId)
+		{
+			switch(G_SortStatePerButton[I])
+			{
+				case C_ARRAY_NOORDER: {
+					G_SortStatePerButton[I] = C_ARRAY_INCREASINGORDER;
+				}
+			}
+		} else {
+			G_SortStatePerButton[I] = C_ARRAY_NOORDER;
+		}
+	}
+	//Sort
+	Private_ListDisplayer_SetTextFilter(G_TextFilter);
+	Private_ListDisplayer_CheckSorts();
+}
+
+Void Private_ListDisplayer_Input_PageUp()
+{
+	if(G_Private_ListDisplayer_CurrentPage > 1)
+	{
+		G_Private_ListDisplayer_CurrentPage += -1;
+	}
+}
+
+Void Private_ListDisplayer_Input_PageDown()
+{
+	if(G_Private_ListDisplayer_CurrentPage < G_Private_ListDisplayer_MaxPages || G_Private_ListDisplayer_MaxPages <= -1)
+	{
+		G_Private_ListDisplayer_CurrentPage += 1;
+	}
+}
+
+Void Load()
+{
+	G_HasFetched					= True;
+	G_HasGivenServerInfo			= True;
+	for(I, 0, C_FilterTypes.count - 1)
+	{
+		if (I == 0) {
+			G_SortStatePerButton[I] = C_ARRAY_INCREASINGORDER;
+		} else {
+			G_SortStatePerButton[I] = C_ARRAY_NOORDER;
+		}
+	}
+}
+
+Boolean HasNewServerList()
+{
+	if (G_HasNewServerList) {
+		G_HasNewServerList = False;
+		return True;
+	}
+	return G_HasNewServerList;
+}
+
+Void SendServerInfos(Integer _CurrentPage)
+{
+	G_Private_ListDisplayer_CurrentPage = _CurrentPage;
+	for (i, 0, C_ElemsMaxCountPerLine - 1) {
+		declare AbsoluteIndex			= i + ((G_Private_ListDisplayer_CurrentPage - 1) * C_ElemsMaxCountPerLine);
+	}
+	G_Private_ListDisplayer_MaxPages	= ((G_SortedIds.count - 1) / C_ElemsMaxCountPerLine + 1);
+	
+	/*declare Integer			List_CurrentPage	for Page;
+	declare Integer			List_MaxPages		for Page;
+	declare Text[Text][]	RequestedListData	for Page;
+	G_Private_ListDisplayer_CurrentPage	= List_CurrentPage + 1;
+	G_Private_ListDisplayer_MaxPages	= List_MaxPages;
+	G_Private_ListDisplayer_ListData	= RequestedListData;
+	Private_ListDisplayer_FillCategoriesFromListData();
+	G_SortedIds.clear();
+	for(I, 0, G_Private_ListDisplayer_ListData.count)
+	{
+		G_SortedIds.add(I);
+	}
+	Private_ListDisplayer_SetTextFilter(G_TextFilter);
+	Private_ListDisplayer_CheckSorts();*/
+}
+
+Void SendServerInfos()
+{
+	SendServerInfos(0);
+}
+
+Integer Get_MaxPages()
+{
+	return G_Private_ListDisplayer_MaxPages;
+}
+
+
+Text[Text] GetDataServerInfo()
+{
+	declare CServerInfo ServerInfoSelect <=> TitleFlow.GetServerInfo_Result;
+	declare Text[Text] DataServerInfo;
+	if (ServerInfoSelect == Null)
+		return Text[Text];
+	DataServerInfo["ServerName"]        = ServerInfoSelect.ServerName;
+	DataServerInfo["Comment"]           = ServerInfoSelect.Comment;
+	DataServerInfo["PlayerCount"]       = ServerInfoSelect.PlayerCount^"";
+	DataServerInfo["MaxPlayerCount"]    = ServerInfoSelect.MaxPlayerCount^"";
+	DataServerInfo["SpectatorCount"]    = ServerInfoSelect.SpectatorCount^"";
+	DataServerInfo["MaxSpectatorCount"] = ServerInfoSelect.MaxSpectatorCount^"";
+	DataServerInfo["ServerLevelText"]   = ServerInfoSelect.ServerLevelText;
+	DataServerInfo["ModeName"]          = ServerInfoSelect.ModeName;
+	DataServerInfo["MapCount"]          = ServerInfoSelect.ChallengeNames.count^"";
+	return DataServerInfo;
+}
+
+Text[] GetPlayerListServerInfo()
+{
+	declare CServerInfo ServerInfoSelect <=> TitleFlow.GetServerInfo_Result;
+	if (ServerInfoSelect == Null)
+		return Text[];
+	declare Text[] PlayerListServerInfo;
+	foreach(PlayerFocus in ServerInfoSelect.PlayerNames)
+	{
+		PlayerListServerInfo.add(PlayerFocus);
+	}
+	return PlayerListServerInfo;
+}
+
+Text[] GetMapListServerInfo()
+{
+	declare CServerInfo ServerInfoSelect <=> TitleFlow.GetServerInfo_Result;
+	if (ServerInfoSelect == Null)
+		return Text[];
+	declare Text[] MapListServerInfo;
+	foreach(MapFocus in ServerInfoSelect.ChallengeNames)
+	{
+		MapListServerInfo.add(MapFocus);
+	}
+	return MapListServerInfo;
+}
+
+Text[Text][] GetServerList()
+{
+	declare Text[]       ServerName;
+	declare Integer[]    ServerPlayerCount;
+	declare Text[]       ServerModeName;
+	declare Integer[]    ServerServerLevel;
+	declare Text[Text][] Result;
+
+	foreach(Index => Server in TitleFlow.LocalServers)
+	{
+		if(Server == Null) continue;
+		else
+		{
+			Result.add(Text[Text]);
+			Result[Index]["CoreData"]      = Index^"";
+			Result[Index]["IsPrivate"]     = Server.IsPrivate^"";
+			Result[Index]["Category0"]     = Server.ServerName;
+			Result[Index]["Category1"]     = Server.ServerLogin;
+			if (Server.MaxPlayerCount == 0) {
+				Result[Index]["Category2"] = Server.PlayerCount ^ "";
+			} else {
+				Result[Index]["Category2"] = Server.PlayerCount ^ "/" ^ Server.MaxPlayerCount;
+			}
+			Result[Index]["Category3"]     = Server.ModeName;
+		}
+	}
+	return Result;
+}
+
+Integer GetCurrentPage()
+{
+	return G_Private_ListDisplayer_CurrentPage + 1;
+}
+
+Void FetchServerInfo(Integer _ServerIndex)
+{
+	G_ServerPassword   = "";
+	if(TitleFlow.IsReady)
+	{
+		G_HasFetched	   = False;
+		TitleFlow.GetServerInfo(TitleFlow.LocalServers[_ServerIndex]);
+	}
+}
+
+Void GetServers()
+{
+	TitleFlow.DiscoverLocalServers();
+}
+
+Boolean HasFailed()
+{
+	return G_HasFailed;
+}
+
+Boolean ServerIsPrivate()
+{
+	return G_ServerIsPrivate;
+}
+
+Boolean ServerIsPrivateForSpectator()
+{
+	return G_ServerIsPrivateForSpectator;
+}
+
+Boolean RequestsPassword()
+{
+	return (G_ServerIsPrivate || G_ServerIsPrivateForSpectator);
+}
+
+Boolean ServerIsDoublePrivate()
+{
+	return (G_ServerIsPrivate && G_ServerIsPrivateForSpectator);
+}
+
+Boolean HasFetched()
+{
+	if (!G_HasGivenServerInfo && G_HasFetched) {
+		G_HasGivenServerInfo = True;
+		return G_HasFetched;
+	}
+	return False;
+}
+
+Void Loop()
+{
+	if(G_NumberOfServers != TitleFlow.LocalServers.count)
+	{
+		G_NumberOfServers = TitleFlow.LocalServers.count;
+		G_HasNewServerList = True;
+	}
+
+	if(TitleFlow.IsReady && !G_HasFetched)
+	{
+		if(TitleFlow.LatestResult == CTitleFlow::EResult::Error_Net_ServerNotFound) {
+			/* Error */
+			log("Error_Net_ServerNotFound");
+			G_HasFailed = True;
+		} else if (TitleFlow.LatestResult == CTitleFlow::EResult::Error_Net_ServerUnreachable) {
+			/* Error */
+			log("Error_Net_ServerUnreachable");
+			G_HasFailed = True;
+		} else if (TitleFlow.LatestResult == CTitleFlow::EResult::Success) {
+			declare CServerInfo ServerInfoSelect <=> TitleFlow.GetServerInfo_Result;
+			if (ServerInfoSelect != Null && (ServerInfoSelect.IsPrivate || ServerInfoSelect.IsPrivateForSpectator)) {
+				G_ServerIsPrivate				= ServerInfoSelect.IsPrivate;
+				G_ServerIsPrivateForSpectator	= ServerInfoSelect.IsPrivateForSpectator;
+			}
+		}
+		G_HasFetched			= True;
+		G_HasGivenServerInfo	= False;
+	}
+}

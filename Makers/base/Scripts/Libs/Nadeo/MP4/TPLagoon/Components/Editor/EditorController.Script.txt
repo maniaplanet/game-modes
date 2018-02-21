@@ -1,0 +1,243 @@
+#Include "TextLib"																			as TextLib
+#Include "Libs/Nadeo/Common/Core/MenuLayers.Script.txt"											as Layers
+#Include "Libs/Nadeo/Common/Core/Pages.Script.txt"												as Pages
+#Include "Libs/Nadeo/Common/Core/Logger.Script.txt"												as Logger
+#Include "Libs/Nadeo/Common/Core/SectionsManager.Script.txt"										as SectionsManager
+#Include "Libs/Nadeo/MP4/Common/Components/TrackBrowser/TrackBrowserController.Script.txt"		as TrackBrowserController
+#Include "Libs/Nadeo/MP4/Common/Components/ReplayBrowser/ReplayBrowserController.Script.txt"	as ReplayBrowserController
+#Include "Libs/Nadeo/MP4/TPLagoon/Components/NewAsset/NewAssetController.Script.txt"			as NewAssetController
+#Include "Libs/Nadeo/MP4/TPLagoon/XMLController.Script.txt"										as XMLController
+#Include "Libs/Nadeo/MP4/Common/Components/MenuButtonsOld/LBMenuButtons.Script.txt"												as MenuButtons
+#Include "Libs/Nadeo/MP4/Common/LoadingScreen.Script.txt"										as LoadingScreen
+#Include "Libs/Nadeo/MP4/Common/SettingsController.Script.txt"  								as SettingsController
+
+#Include "Libs/Nadeo/MP4/TPLagoon/Components/G_BarreSection/BarreSectionController.Script.txt"	as BarreSectionController
+#Include "Libs/Nadeo/MP4/TPLagoon/Components/GlobalButtons/GlobalButtonsController.Script.txt"	as GlobalButtonsController
+
+//Layers
+#Include "Libs/Nadeo/MP4/TPLagoon/Components/Editor/LBEditor.Script.txt"					as LBEditor
+#Include "Libs/Nadeo/MP4/TPLagoon/Components/Editor/LBTitleTools.Script.txt"				as LBTitleTools
+
+#Const C_MaxNumberOfEditors 10
+#Const C_IdsToNames [
+"NewMap" => _("Map Editor"),
+"EditReplay" => _("Replay Editor"),
+"PaintCar" => _("Car Painter"),
+"TitleTools" => _("Title Tools")]
+
+Vec3 GetColor() {
+	declare Text[Text] Colors = XMLController::Get_Color_Sections();
+	if (!Colors.existskey("Editors")) {
+		Logger::Warn("Couleur non trouvée dans les editors");
+		return <0.3, 0.5, 0.9>;
+	}
+	return TextLib::ToColor(Colors["Editors"]);
+}
+
+declare Text	G_MapEditorScriptName;
+declare Integer G_EnviroChoose;
+declare Integer G_FieldChoose;
+declare Integer G_EditorChoose;
+declare Text[]	G_IdsToScriptPath;
+declare Text    G_SettingsXml;
+
+Void Build(Text _LayerName, Boolean _Attach) {
+
+	declare Text MLText;
+	switch(_LayerName) {
+		case("Editor"):{
+			MLText = LBEditor::Build();
+		}
+		case("TitleTools"):{
+			MLText = LBTitleTools::Build();
+		}
+	}
+
+	if(MLText == "") {
+		Logger::Warn("Unknown Page: "^_LayerName);
+		return;
+	}
+
+	Layers::Create(_LayerName, MLText);
+
+	declare CUILayer Layer <=> Layers::Get(_LayerName);
+	declare Text Page_LayerName for Layer.LocalPage;
+
+	Page_LayerName = _LayerName;
+	if(_Attach) Layers::Attach(_LayerName);
+}
+
+Void Build(Text _LayerName) {
+	Build(_LayerName, False);
+}
+
+Void Init()
+{
+}
+
+Text[] GetNames(Text[] _Names, Text[] _Ids)
+{
+	declare Text[] Result = _Names;
+	foreach (IdIndex => Id in _Ids) {
+		if (C_IdsToNames.existskey(Id)) {
+			Result[IdIndex] = C_IdsToNames[Id];
+		}
+	}
+	return Result;
+}
+
+Void Load() {
+	declare G_SectionColor = GetColor();
+	Init();
+	Build("Editor");
+	Build("TitleTools");
+	declare Text ProjectEnviro = XMLController::Get_ProjectEnviro();
+	Pages::Compose("EditorMain", ["Editor", "BarreSection"]);
+	Pages::Compose("TitleTools", ["TitleTools", "BarreSection"]);
+	SectionsManager::AddSection("Editors", "EditorMain"  , "Editor", G_SectionColor);
+	BarreSectionController::AddConfiguration("Editors"   ,
+							//L16N Name for the main menu button, designates the editors of Maniaplanet.
+							_("Editors"), Text[], Text[]);
+	BarreSectionController::AddConfiguration("NewMap"    ,
+							//L16N Name for the main menu button, designates the editors of Maniaplanet.
+							_("Editors"), Text[], Text[]);
+	BarreSectionController::AddConfiguration("Moods"     ,
+							//L16N Name for the main menu button, designates the editors of Maniaplanet.
+							_("Editors"), Text[], Text[]);
+	BarreSectionController::AddConfiguration("TitleTools",
+							//L16N Name for the main menu button, designates the editors of Maniaplanet.
+							_("Editors"), Text[], Text[]);
+	MenuButtons::ChangeData("Editor",	GetNames(XMLController::Buttons_GetNames("Editors"), XMLController::Buttons_GetIds("Editors")),
+										XMLController::Buttons_GetPositions("Editors"),
+										XMLController::Buttons_GetIds("Editors"),
+										G_SectionColor);
+	declare Text[] ButtonsName  = [_("Item Editor"), _("Interface designer"), _("Ghost Editor"), _("Module Studio"), _("Mesh Modeler"), _("Action Maker"), _("Editor Creator")];
+	declare Vec2[] ButtonsPos   = [<-3.8, 31.7>, <-3.8, 19.>, <-3.8, 6.3>, <-3.8, -6.4>, <-3.8, -19.1>, <-3.8, -31.8>, <-3.8, -44.5>];
+	declare Text[] ButtonsEvent = ["TitleTools_0",	"TitleTools_1",	"TitleTools_2",	"TitleTools_3",	"TitleTools_4",	"TitleTools_5",	"TitleTools_6"];
+	if(ProjectEnviro != "Storm")
+	{
+		ButtonsName  = [_("Item Editor"), _("Interface designer"), _("Ghost Editor"), _("Module Studio"), _("Mesh Modeler"), _("Editor Creator")];
+		ButtonsPos   = [<-3.8, 31.7>, <-3.8, 19.>, <-3.8, 6.3>, <-3.8, -6.4>, <-3.8, -19.1>, <-3.8, -31.8>];
+		ButtonsEvent = ["TitleTools_0",	"TitleTools_1",	"TitleTools_2",	"TitleTools_3",	"TitleTools_4",	"TitleTools_6"];
+	}
+
+	MenuButtons::ChangeData("TitleTools", ButtonsName,
+										  ButtonsPos,
+										  ButtonsEvent,
+										  G_SectionColor);
+	G_IdsToScriptPath		= XMLController::Buttons_GetIdsToScriptPath("Editors");
+	G_MapEditorScriptName	= XMLController::Get_MapEditorScriptName();
+	G_SettingsXml			= SettingsController::GetSettingsXmlEditor();
+}
+
+Void Loop() {
+	foreach(Event in PendingEvents) {
+		if(Event.Type != CManiaAppEvent::EType::LayerCustomEvent) continue;
+		switch(Event.CustomEventType) {
+			case "NewMap" : {
+				declare Text MapTerm = _("Tracks");
+				declare Text ProjectEnviro for LocalUser;
+				if (ProjectEnviro == "Storm") {
+					MapTerm = _("Maps");
+				}
+				TrackBrowserController::Show("DefaultEditor", [//L16N |Infinitive| In a popup, a button to modify the selected file
+					_("Edit")], MapTerm,
+					//L16N |Noun| In a popup, a button to create a new element
+					[_("|relative to a map|New")], "EditorsClassicMapEditor", False);
+			}
+			case "EditReplay" : {
+				ReplayBrowserController::Show("EditReplay", [//L16N |Infinitive| In a popup, a button to modify the selected file
+					_("Edit")],
+					//L16N |Noun, plural| The files playing back a sequence of gameplay with customizable camera
+					_("Replays"), Text[],
+					//L16N In a popup, a button to make a selection of multiple elements
+					_("|Infinitive|Add to list"));
+			}
+			case "PaintCar" : {
+				TitleFlow.EditSkins();
+			}
+			case "TitleTools" : {
+				//Menu_Internet();
+				Pages::GotoNext("TitleTools");
+			}
+			case "PublishFile" : {
+				if (TitleControl.CanPublishFiles) {
+					TitleControl.PublishFile("");
+				}
+			}
+			case "EditReplay_Button_0" : {
+				declare Text ReplayPath			= Event.CustomEventData[0];
+				declare Text ReplayThumbnail	= Event.CustomEventData[1];
+				declare Text[] ReplayList;
+				if (ReplayBrowserController::HasPathsList()) {
+					ReplayList = ReplayBrowserController::GetPathsList();
+					if (!ReplayList.exists(ReplayPath)) {
+						ReplayList.add(ReplayPath);
+					}
+				} else {
+					ReplayList = [ReplayPath];
+				}
+				LoadingScreen::SetLoadingType(0, ReplayThumbnail);
+				TitleFlow.EditReplay(ReplayList);
+			}
+			case "DefaultEditor_Button_0" : {
+				declare Text MapPath		= Event.CustomEventData[0];
+				declare Text MapThumbnail	= Event.CustomEventData[1];
+				LoadingScreen::SetLoadingType(0, MapThumbnail);
+				Pages::GotoPrevious();
+				TitleFlow.EditMap(MapPath, G_MapEditorScriptName, G_SettingsXml);
+			}
+			case "DefaultEditor_SecondaryButton_0" : {
+				NewAssetController::Show("BrowseTracks");
+			}
+			case "TitleTools_0" : {
+				TitleControl.OpenEditor(CTitleFlow::EEditorType::ItemEditor);
+			}
+			case "TitleTools_1" : {
+				TitleControl.OpenEditor(CTitleFlow::EEditorType::InterfaceDesigner);
+			}
+			case "TitleTools_2" : {
+				declare Text MapTerm = _("Tracks");
+				declare Text ProjectEnviro for LocalUser;
+				if (ProjectEnviro == "Storm") {
+					MapTerm = _("Maps");
+				}
+				TrackBrowserController::Show("Ghost", [//L16N |Infinitive| In a popup, a button to modify the selected file
+					_("Edit")], MapTerm);
+			}
+			case "TitleTools_3" : {
+				TitleControl.OpenEditor(CTitleFlow::EEditorType::ModuleStudio);
+			}
+			case "TitleTools_4" : {
+				TitleControl.OpenEditor(CTitleFlow::EEditorType::MeshModeler);
+			}
+			case "TitleTools_5" : {
+				TitleControl.OpenEditor(CTitleFlow::EEditorType::ActionMaker);
+			}
+			case "TitleTools_6" : {
+				TitleControl.OpenEditor(CTitleFlow::EEditorType::EditorEditor);
+			}
+			case "Ghost_Button_0" : {
+				declare Text MapPath = Event.CustomEventData[0];
+				TitleFlow.EditGhosts(MapPath);
+			}
+		}
+		for (AssetIndex, 0, C_MaxNumberOfEditors - 1) {
+			if (Event.CustomEventType == "Editor_UGCAsset-" ^ AssetIndex) {
+				if (!G_IdsToScriptPath.existskey(AssetIndex)) {
+					Logger::Warn("Editors loop : Editor custom n° " ^ AssetIndex ^ " ne marche pas");
+				} else {
+					// TODO : Utiliser un browser pour appeler la ligne suivante :
+					// TitleFlow.EditAsset(G_IdsToScriptPath[AssetIndex], "", MediaPath);
+					TitleFlow.EditAsset("Editors/MeshEditor.Editor.Gbx", "", "Stadium_Bloc2.Crystal.Gbx");
+					//TitleFlow.OpenEditor(G_IdsToScriptPath[AssetIndex], "");
+				}
+			}
+		}
+	}
+}
+
+Text GenerateXML ()
+{
+	return "";
+}
