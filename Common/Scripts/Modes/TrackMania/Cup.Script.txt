@@ -4,13 +4,14 @@
 #Extends "Modes/TrackMania/Base/RoundsBase2.Script.txt"
 
 #Const	CompatibleMapTypes	"Race"
-#Const	Version							"2017-07-12"
+#Const	Version							"2018-03-07"
 #Const	ScriptName					"Modes/TrackMania/Cup/Cup.Script.txt"
 
 // ---------------------------------- //
 // Libraries
 // ---------------------------------- //
 #Include "TextLib" as TL
+#Include "MathLib" as ML
 #Include "Libs/Nadeo/Semver.Script.txt" as Semver
 
 // ---------------------------------- //
@@ -211,6 +212,8 @@ if (Semver::Compare(XmlRpc::GetApiVersion(), ">=", "2.2.0")) {
 	Scores::XmlRpc_SendScores(Scores::C_Section_PreEndRound, "");
 }
 
+LogPlayersAndScores("EndRound A");
+
 if (ForceEndRound) {
 	ForcedEndRoundSequence();
 } else {
@@ -278,6 +281,8 @@ if (MM_IsMatchServer()) {
 	declare BestScore = GetBestScore();
 	MM_SetScores([BestScore]);
 }
+
+LogPlayersAndScores("EndRound B");
 ***
 
 ***Match_EndMap***
@@ -539,14 +544,43 @@ Boolean MapIsOver() {
  *	@return					True if the match is over, false otherwise
  */
 Boolean MatchIsOver() {
-	declare NbOfWinners = 0;
+	Log::Log("[Cup] MatchIsOver() check | S_PointsLimit : "^S_PointsLimit);
+	declare NbOfScoreWinners = 0;
 	foreach (Score in Scores) {
-		if (Scores::GetPlayerMatchPoints(Score) > S_PointsLimit) NbOfWinners += 1;
+		if (Scores::GetPlayerMatchPoints(Score) > S_PointsLimit) NbOfScoreWinners += 1;
+	}
+	declare NbOfPlayerWinners = 0;
+	foreach (Player in Players) {
+		if (Scores::GetPlayerMatchPoints(Player.Score) > S_PointsLimit) NbOfPlayerWinners += 1;
 	}
 	
-	declare WinnersLimit = Players.count - 1;
-	if (WinnersLimit < 1) WinnersLimit = 1;
-	if (NbOfWinners >= S_NbOfWinners || NbOfWinners >= WinnersLimit) return True;
+	// If there's only one player he needs to reach the points limit to win
+	// If there's more than one player then all players except one must reach the points limit
+	declare PlayerWinnersLimit = ML::Max(Players.count - 1, 1);
+	Log::Log(""""[Cup] Match is over ? {{{(NbOfScoreWinners >= S_NbOfWinners || NbOfPlayerWinners >= PlayerWinnersLimit)}}} | ({{{NbOfScoreWinners}}} >= {{{S_NbOfWinners}}} || {{{NbOfPlayerWinners}}} >= {{{PlayerWinnersLimit}}})""");
+	if (NbOfScoreWinners >= S_NbOfWinners || NbOfPlayerWinners >= PlayerWinnersLimit) return True;
 	
 	return False;
+}
+
+// ---------------------------------- //
+/** Log the players logins and
+ *	the scores match points
+ *
+ *	@param	_Section									Name of the section where log is called
+ */
+Void LogPlayersAndScores(Text _Section) {
+	if (Env::Get() == Env::Env_Production()) return;
+	
+	declare LogPlayers = "";
+	declare LogScores = "";
+	foreach (Player in Players) {
+		if (LogPlayers != "") LogPlayers ^= ", ";
+		LogPlayers ^= Player.User.Login;
+	}
+	foreach (Score in Scores) {
+		if (LogScores != "") LogScores ^= ", ";
+		LogScores ^= Score.User.Login^" {"^Scores::GetPlayerRoundPoints(Score)^"+"^Scores::GetPlayerMatchPoints(Score)^"}";
+	}
+	Log::Log("[Cup] "^_Section^" > Players ("^Players.count^") : "^LogPlayers^" | Scores ("^Scores.count^") : "^LogScores);
 }
