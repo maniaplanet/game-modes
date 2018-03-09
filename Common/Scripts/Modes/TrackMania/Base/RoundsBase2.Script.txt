@@ -3,7 +3,7 @@
  */
 #Extends "Modes/TrackMania/Base/ModeTrackmania.Script.txt"
 
-#Const	RoundsBaseVersion			"2017-06-20"
+#Const	RoundsBaseVersion			"2018-03-08"
 #Const	RoundsBaseScriptName	"Modes/TrackMania/RoundsBase2.Script.txt"
 // ---------------------------------- //
 // Libraries
@@ -75,6 +75,9 @@ if (Rounds_PointsRepartitionBackUp.count > 0) {
 	Scores::SetPointsRepartition(C_PointsRepartition);
 }
 
+// Enable the pause system
+Pause::SetAvailability(True);
+
 UI::LoadModules([
 	UIModules::C_Module_TimeGap,
 	UIModules::C_Module_SmallScoresTable,
@@ -119,6 +122,7 @@ foreach (Score in Scores) {
 ***Match_InitRound***
 ***
 declare ForceEndRound = False;
+declare SkipPauseRound = False; //< Skip the current round after the pause
 ***
 
 ***Match_StartRound***
@@ -131,12 +135,27 @@ if (S_UseAlternateRules) CutOffTimeLimit = GetFinishTimeout();
 else CutOffTimeLimit = -1;
 SetLapsNb(S_ForceLapsNb);
 ForceEndRound = False;
+SkipPauseRound = False;
 
 // ---------------------------------- //
 // Initialize scores
 foreach (Score in Scores) {
 	Scores::SetPlayerPrevRace(Score, Null);
 	Scores::SetPlayerRoundPoints(Score, 0);
+}
+
+// ---------------------------------- //
+// Setup pause
+if (Pause::IsActive()) {
+	+++Rounds_StartPause+++
+	while (Pause_TM::Loop(Pause::IsActive())) {
+		MB_Yield();
+		+++Rounds_PauseLoop+++
+	}
+	+++Rounds_EndPause+++
+	
+	SkipPauseRound = True;
+	MB_StopRound();
 }
 
 // ---------------------------------- //
@@ -215,13 +234,19 @@ foreach (Event in XmlRpc.PendingEvents) {
 }
 
 // ---------------------------------- //
+// Pause activation
+if (Pause::IsActive()) {
+	ForceEndRound = True;
+}
+
+// ---------------------------------- //
 // End the round 
 // If All players finished
 if (Players.count > 0 && PlayersRacing.count <= 0) MB_StopRound();
 // If time limit is reached
 if (CutOffTimeLimit > 0 && Now >= CutOffTimeLimit) MB_StopRound();
-// If forced end round
-if (ForceEndRound) MB_StopRound();
+// If forced end round or round skipped after pause
+if (ForceEndRound || SkipPauseRound) MB_StopRound();
 ***
 
 // ---------------------------------- //
