@@ -2,7 +2,7 @@
  *	Scores library
  *	Manage players and teams scores
  */
-#Const	Version			"2018-01-02"
+#Const	Version			"2018-03-12"
 #Const	ScriptName	"Libs/Nadeo/TrackMania/Scores.Script.txt"
 
 // ---------------------------------- //
@@ -1535,12 +1535,12 @@ Text Private_XmlRpc_GetScore(CTmScore _Score, Integer _Rank) {
 	if (_Score == Null) return "{}";
 	
 	declare BestRaceTime = -1;
-	declare StuntsScore = 0;
+	declare BestStuntsScore = 0;
 	declare BestRaceRespawns = 0;
 	declare BestRaceCheckpoints = Integer[];
 	if (_Score.BestRace != Null) {
 		BestRaceTime = _Score.BestRace.Time;
-		StuntsScore = _Score.BestRace.Score;
+		BestStuntsScore = _Score.BestRace.Score;
 		BestRaceRespawns = _Score.BestRace.NbRespawns;
 		foreach (Checkpoint in _Score.BestRace.Checkpoints) {
 			BestRaceCheckpoints.add(Checkpoint);
@@ -1556,6 +1556,27 @@ Text Private_XmlRpc_GetScore(CTmScore _Score, Integer _Rank) {
 			BestLapCheckpoints.add(Checkpoint);
 		}
 	}
+	declare PrevRaceTime = -1;
+	declare PrevStuntsScore = 0;
+	declare PrevRaceRespawns = 0;
+	declare PrevRaceCheckpoints = Integer[];
+	if (_Score.PrevRace != Null) {
+		PrevRaceTime = _Score.PrevRace.Time;
+		PrevStuntsScore = _Score.PrevRace.Score;
+		PrevRaceRespawns = _Score.PrevRace.NbRespawns;
+		foreach (Checkpoint in _Score.PrevRace.Checkpoints) {
+			PrevRaceCheckpoints.add(Checkpoint);
+		}
+	}
+	
+	declare PrevRaceJSON = "";
+	if (Semver::Compare(XmlRpc::GetApiVersion(), ">=", "2.5.0")) {
+		PrevRaceJSON = """,
+		"prevracetime": {{{dump(PrevRaceTime)}}},
+		"prevracerespawns": {{{dump(PrevRaceRespawns)}}},
+		"prevracecheckpoints": {{{dump(PrevRaceCheckpoints)}}},
+		"prevstuntsscore": {{{dump(PrevStuntsScore)}}}""";
+	}
 	
 	return """{
 		"login": {{{dump(_Score.User.Login)}}},
@@ -1570,7 +1591,7 @@ Text Private_XmlRpc_GetScore(CTmScore _Score, Integer _Rank) {
 		"bestlaptime": {{{dump(BestLapTime)}}},
 		"bestlaprespawns": {{{dump(BestLapRespawns)}}},
 		"bestlapcheckpoints": {{{dump(BestLapCheckpoints)}}},
-		"stuntsscore": {{{dump(StuntsScore)}}}
+		"stuntsscore": {{{dump(BestStuntsScore)}}}{{{PrevRaceJSON}}}
 	}""";
 }
 
@@ -1856,6 +1877,23 @@ Void Load() {
 		}"
 	]
 	```
+	- Version >=2.5.0: 
+	The players' scores contain the previous race values.
+	```
+	[
+		"{
+			...
+			"players": [
+				{
+					...
+					"prevracetime": 75642,
+					"prevracerespawns": 3,
+					"prevracecheckpoints": [9845, 32658, 52489, 75642],
+					"prevstuntsscore": 657				
+				}
+			]
+		}"
+	]
 	""");
 	XmlRpc::RegisterCallback(C_Callback_PointsRepartition, """
 * Name: {{{C_Callback_PointsRepartition}}}
