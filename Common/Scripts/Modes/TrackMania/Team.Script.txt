@@ -4,7 +4,7 @@
 #Extends "Modes/TrackMania/Base/RoundsBase2.Script.txt"
 
 #Const CompatibleMapTypes	"Race"
-#Const Version							"2018-03-08"
+#Const Version							"2018-04-17"
 #Const ScriptName						"Modes/TrackMania/Team/Team.Script.txt"
 
 // ---------------------------------- //
@@ -19,6 +19,10 @@
 #Setting S_PointsLimit 				5
 #Setting S_MaxPointsPerRound		6	as _("Max points :")	///< The maxium number of points attirbuted to the first player to cross the finish line
 #Setting S_PointsGap						1	as _("Points gap :")	///< The number of points lead a team must have to win the map
+#Setting S_UseCustomPointsRepartition False as _("Use a custom points repartition :") ///< Use a custom points repartition. Default [10, 6, 4, 3, 2, 1]
+#Setting S_RoundsPerMap				-1 as _("Number of rounds per map :") ///< Number of round to play on one map before going to the next one
+#Setting S_MapsPerMatch				-1 as _("Number of maps per match :") ///< Number of maps to play before finishing the match
+#Setting S_UseTieBreak					True as _("Use tie-break :") ///< Continue to play the map until the tie is broken
 #Setting S_WarmUpNb						0	as _("Number of warm up :")
 #Setting S_WarmUpDuration			0	as _("Duration of one warm up :")
 // Matchmaking
@@ -116,7 +120,7 @@ if (Hud != Null && Hud.ScoresTable != Null) {
 Users_SetNbFakeUsers(C_BlueBotsNb, C_RedBotsNb);
 
 if (MM_IsMatchServer()) {
-	MM_SetScores([Scores::GetClanMapPoints(1), Scores::GetClanMapPoints(2)]);
+	MM_SetScores([Scores::GetClanMatchPoints(1), Scores::GetClanMatchPoints(2)]);
 } else {
 	declare WarmUpDuration = S_WarmUpDuration * 1000;
 	MB_WarmUp(S_WarmUpNb, WarmUpDuration);
@@ -128,6 +132,9 @@ foreach (Score in Scores) {
 	declare Team_RoundsPerformance for Score = Real[];
 	Team_RoundsPerformance = Real[];
 }
+// Restore match points
+Scores::SetClanMapPoints(1, Scores::GetClanMatchPoints(1));
+Scores::SetClanMapPoints(2, Scores::GetClanMatchPoints(2));
 
 // ---------------------------------- //
 // Matchmaking : allow substitutes
@@ -249,7 +256,11 @@ if (ForceEndRound || SkipPauseRound) {
 	UIManager.UIAll.UISequence = CUIConfig::EUISequence::Playing;
 	
 	SetFooterText();
+	
 	if (MapIsOver()) {
+		MB_StopMap();
+	}
+	if (MatchIsOver()) {
 		MB_StopMap();
 		MB_StopMatch();
 	}
@@ -258,7 +269,7 @@ if (ForceEndRound || SkipPauseRound) {
 // ---------------------------------- //
 // Set matchmaking scores
 if (MM_IsMatchServer()) {
-	MM_SetScores([Scores::GetClanMapPoints(1), Scores::GetClanMapPoints(2)]);
+	MM_SetScores([Scores::GetClanMatchPoints(1), Scores::GetClanMatchPoints(2)]);
 }
 ***
 
@@ -267,9 +278,9 @@ if (MM_IsMatchServer()) {
 // ---------------------------------- //
 // Ranking
 declare WinningTeam = -1;
-if (Scores::GetClanMapPoints(1) > Scores::GetClanMapPoints(2)) {
+if (Scores::GetClanMatchPoints(1) > Scores::GetClanMatchPoints(2)) {
 	WinningTeam = 1;
-} else if (Scores::GetClanMapPoints(2) > Scores::GetClanMapPoints(1)) {
+} else if (Scores::GetClanMatchPoints(2) > Scores::GetClanMatchPoints(1)) {
 	WinningTeam = 2;
 }
 Scores::SetClanWinner(WinningTeam);
@@ -294,6 +305,9 @@ if (Hud != Null && Hud.ScoresTable != Null) {
 SetFooterText();
 MB_SortScores(CTmMode::ETmScoreSortOrder::TotalPoints);
 Scores::SetDefaultLadderSort(Scores::C_Sort_MapPoints);
+
+// Skip scores table if the match continues
+if (!MB_MapIsRunning() && MB_MatchIsRunning()) MB_SkipPodiumSequence();
 ***
 
 ***Match_BeforeCloseLadder***
@@ -376,13 +390,40 @@ Integer GetFinishTimeout() {
 // ---------------------------------- //
 /// Update the text in the scores table footer
 Void SetFooterText() {
-	if (S_PointsGap > 1) {
-		if (Hud != Null && Hud.ScoresTable != Null) {
-			Hud.ScoresTable.SetFooterText(TL::Compose("%1 "^S_PointsLimit^"  |  %2 "^S_PointsGap, _("Points limit : "), _("Points gap :")));
+	if (Hud != Null && Hud.ScoresTable != Null) {
+		declare Parts = Text[];
+		declare Message = "";
+		if (S_PointsLimit > 0) {
+			if (Parts.count > 0) Message ^= " | ";
+			Message ^= """%{{{Parts.count + 1}}}{{{S_PointsLimit}}}""";
+			//L16N [Team] Number of points to reach to win the match.
+			Parts.add(_("Points limit : "));
 		}
-	} else {
-		if (Hud != Null && Hud.ScoresTable != Null) {
-			Hud.ScoresTable.SetFooterText(TL::Compose("%1 "^S_PointsLimit, _("Points limit : ")));
+		if (S_PointsGap > 1) {
+			if (Parts.count > 0) Message ^= " | ";
+			Message ^= """%{{{Parts.count + 1}}} {{{S_PointsGap}}}""";
+			//L16N [Team] Points gap between the two teams to win.
+			Parts.add(_("Points gap :"));
+		}
+		if (S_RoundsPerMap > 0) {
+			if (Parts.count > 0) Message ^= " | ";
+			Message ^= """%{{{Parts.count + 1}}}{{{MB_GetRoundCount()+1}}}/{{{S_RoundsPerMap}}}""";
+			//L16N [Team] Number of rounds played during the map.
+			Parts.add(_("Rounds : "));
+		}
+		if (S_MapsPerMatch > 0) {
+			if (Parts.count > 0) Message ^= " | ";
+			Message ^= """%{{{Parts.count + 1}}}{{{MB_GetMapCount()}}}/{{{S_MapsPerMatch}}}""";
+			//L16N [Team] Number of maps played during the match.
+			Parts.add(_("Maps : "));
+		}
+		
+		switch (Parts.count) {
+			case 0: Hud.ScoresTable.SetFooterText(Message);
+			case 1: Hud.ScoresTable.SetFooterText(TL::Compose(Message, Parts[0]));
+			case 2: Hud.ScoresTable.SetFooterText(TL::Compose(Message, Parts[0], Parts[1]));
+			case 3: Hud.ScoresTable.SetFooterText(TL::Compose(Message, Parts[0], Parts[1], Parts[2]));
+			case 4: Hud.ScoresTable.SetFooterText(TL::Compose(Message, Parts[0], Parts[1], Parts[2], Parts[3]));
 		}
 	}
 }
@@ -406,8 +447,51 @@ Void ComputeLatestRaceScores() {
 	if (Scores.count <= 0) return;
 	MB_SortScores(CTmMode::ETmScoreSortOrder::PrevRace_Time);
 	
+	// Each player finishing the race scores points from the custom repartition. Default: [10, 6, 4, 3, 2, 1]
+	if (S_UseCustomPointsRepartition) {
+		declare TeamsScores = [0, 0];
+		declare WinningTeam = -1;
+		declare Key = 0;
+		declare PointsRepartition = Scores::GetPointsRepartition();
+		foreach (Score in Scores) {
+			if (Score.TeamNum != 1 && Score.TeamNum != 2) continue;
+			
+			if (Scores::GetPlayerPrevRaceTime(Score) > 0) {
+				declare PlayerPoints = 0;
+				if (PointsRepartition.count > 0) {
+					if (PointsRepartition.existskey(Key)) {
+						PlayerPoints = PointsRepartition[Key];
+					} else {
+						PlayerPoints = PointsRepartition[PointsRepartition.count - 1];
+					}
+				}
+				TeamsScores[Score.TeamNum - 1] += PlayerPoints;
+				Scores::SetPlayerRoundPoints(Score, PlayerPoints);
+				Key += 1;
+			} else {
+				Scores::SetPlayerRoundPoints(Score, 0);
+			}
+		}
+		
+		if (TeamsScores[0] != TeamsScores[1]) {
+			if (TeamsScores[0] > TeamsScores[1]) {
+				WinningTeam = 0;
+			} else {
+				WinningTeam = 1;
+			}
+		}
+		
+		foreach (TeamIndex => Team in Teams) {
+			declare PrevRaceDeltaPoints for Team = 0;
+			if (TeamIndex == WinningTeam) {
+				PrevRaceDeltaPoints = 1;
+			} else {
+				PrevRaceDeltaPoints = 0;
+			}
+		}
+	}
 	// Each player finishing the race scores (MaxPoints - (Rank - 1))
-	if (S_UseAlternateRules) {
+	else if (S_UseAlternateRules) {
 		foreach (Player in AllPlayers) {
 			if (Player.Score == Null) continue;
 			declare IsSpectator for Player.Score = False;
@@ -533,13 +617,30 @@ Void ComputeScores() {
  *	@return		True if it is the case, false otherwise
  */
 Boolean MapIsOver() {
+	return (S_RoundsPerMap > 0 && MB_GetRoundCount() >= S_RoundsPerMap); //< There is a rounds limit and it is reached
+}
+
+
+// ---------------------------------- //
+/** Check if the match is over
+ *
+ *	@return		True if it is the case, false otherwise
+ */
+Boolean MatchIsOver() {
 	declare PointsGap = S_PointsGap;
 	if (PointsGap < 0) PointsGap = 0;
 	
-	if (Scores::GetClanMapPoints(1) >= S_PointsLimit && Scores::GetClanMapPoints(1) - Scores::GetClanMapPoints(2) >= PointsGap) {
+	declare ScoreClan1 = Scores::GetClanMatchPoints(1);
+	declare ScoreClan2 = Scores::GetClanMatchPoints(2);
+	
+	if (S_UseTieBreak && ScoreClan1 == ScoreClan2) {
+		return False;
+	} else if (ScoreClan1 >= S_PointsLimit && ScoreClan1 - ScoreClan2 >= PointsGap) {
 		return True;
-	} else if (Scores::GetClanMapPoints(2) >= S_PointsLimit && Scores::GetClanMapPoints(2) - Scores::GetClanMapPoints(1) >= PointsGap) {
+	} else if (ScoreClan2 >= S_PointsLimit && ScoreClan2 - ScoreClan1 >= PointsGap) {
 		return True;
+	} else if (S_RoundsPerMap > 0 && MB_GetRoundCount() >= S_RoundsPerMap && S_MapsPerMatch > 0 && MB_GetMapCount() >= S_MapsPerMatch) {
+		return True; //< There is a maps limit and it is reached
 	}
 	
 	return False;
