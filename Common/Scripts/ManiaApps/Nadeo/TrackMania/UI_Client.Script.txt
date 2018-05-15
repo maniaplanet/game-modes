@@ -1,7 +1,7 @@
 /**
  * Trackmania UI client library
  */
-#Const Version    "2017-11-27"
+#Const Version    "2018-05-15"
 #Const ScriptName "ManiaApps/Nadeo/TrackMania/UI_Client.Script.txt"
 
 // ---------------------------------- //
@@ -122,7 +122,8 @@ Text Private_CreateMLTimeGap() {
 <manialink version="3" name="Lib_UI2:TimeGap">
 {{{C_Stylesheet}}}
 <framemodel id="Framemodel_Player">
-  <label pos="0 0" size="24 4" valign="center2" textsize="2" class="text-default" id="Label_Name" />
+  <label pos="0 0" size="3.5 4" valign="center2" textsize="2" class="text-default" id="Label_LocalRank" />
+  <label pos="4 0" size="20 4" valign="center2" textsize="2" class="text-default" id="Label_Name" />
   <quad pos="26.5 0" size="2.5 2.5" halign="center" valign="center" colorize="{{{C_ColorHex_White}}}" opacity="0.25" keepratio="Fit" image="{{{C_ImgPath^Img_Arrow}}}" id="Quad_Arrow" />
   <label pos="42 0" size="13 4" halign="right" valign="center2" textcolor="{{{C_ColorHex_BlueGreen}}}" textsize="2" class="text-number" id="Label_Time" />
 </framemodel>
@@ -176,18 +177,17 @@ CTmMlPlayer GetOwner() {
   return Null;
 }
 
-Void UpdateSlot(Integer _SlotNb, CTmScore _Score) {
+Void UpdateSlot(Boolean _IsIndependantLaps, Integer _SlotNb, CTmScore _Score) {
   if (!Frames_Player.existskey(_SlotNb) || !Frames_Background.existskey(_SlotNb)) return;
   declare Frame_Player <=> Frames_Player[_SlotNb];
   declare Label_Time <=> (Frame_Player.GetFirstChild("Label_Time") as CMlLabel);
-  //declare Label_LocalRank <=> (Frame_Player.GetFirstChild("Label_LocalRank") as CMlLabel);
+  declare Label_LocalRank <=> (Frame_Player.GetFirstChild("Label_LocalRank") as CMlLabel);
   declare Label_Name <=> (Frame_Player.GetFirstChild("Label_Name") as CMlLabel);
   declare Quad_Arrow <=> (Frame_Player.GetFirstChild("Quad_Arrow") as CMlQuad);
   declare Frame_Background <=> Frames_Background[_SlotNb];
   declare Quad_Color <=> (Frame_Background.GetFirstChild("Quad_Color") as CMlQuad);
   
   declare Owner <=> GetOwner();
-    
   if (_Score != Null && Scores.count > 0 && Owner != Null) {
     if (!Frame_Player.Visible) Frame_Player.Visible = True;
     if (UseClans && _Score.TeamNum == 1) Quad_Color.BgColor = Teams[0].ColorPrimary;
@@ -215,12 +215,17 @@ Void UpdateSlot(Integer _SlotNb, CTmScore _Score) {
         return;
       }
     } else {
-      if (Owner.CurLap.Checkpoints.count <= 0) {
-        if (_Score.Id == Owner.Score.Id) CheckpointTime = _Score.PrevRace.Time;
-        else CheckpointTime = _Score.BestRace.Time;
+      if (_IsIndependantLaps) {
+        if (Owner.CurLap.Checkpoints.count <= 0) {
+          if (_Score.Id == Owner.Score.Id) CheckpointTime = _Score.PrevRace.Time;
+          else CheckpointTime = _Score.BestRace.Time;
+        } else {
+          if (_Score.Id == Owner.Score.Id) CheckpointTime = Owner.CurLap.Checkpoints[Owner.CurLap.Checkpoints.count - 1];
+          else CheckpointTime = _Score.BestRace.Checkpoints[Owner.CurLap.Checkpoints.count - 1];
+        }
       } else {
-        if (_Score.Id == Owner.Score.Id) CheckpointTime = Owner.CurLap.Checkpoints[Owner.CurLap.Checkpoints.count - 1];
-        else CheckpointTime = _Score.BestRace.Checkpoints[Owner.CurLap.Checkpoints.count - 1];
+        if (_Score.Id == Owner.Score.Id) CheckpointTime = Owner.CurRace.Checkpoints[Owner.CurRace.Checkpoints.count - 1];
+        else CheckpointTime = _Score.BestRace.Checkpoints[Owner.CurRace.Checkpoints.count - 1];
       }
     }
     
@@ -228,13 +233,12 @@ Void UpdateSlot(Integer _SlotNb, CTmScore _Score) {
     if (_SlotNb == 0 && CheckpointTime == LibUI_TimeGap_CheckpointLeadTime) {
       Label_Time.Value = Format^TimeToText(CheckpointTime);
     } else {
-      declare LibUI_TimeGap_CheckpointLeadTime for Owner = 0;
       declare Gap = CheckpointTime - LibUI_TimeGap_CheckpointLeadTime;
       Label_Time.Value = Format^"+"^TimeToText(Gap);
     }
     
     declare LibUI_TimeGap_Rank for _Score = 1;
-    //Label_LocalRank.Value = Format^(LibUI_TimeGap_Rank)^".";
+    Label_LocalRank.Value = Format^(LibUI_TimeGap_Rank)^".";
     Label_Name.Value = "$<"^_Score.User.Name^"$>";
     
     if (Owner.Score.Id == _Score.Id) {
@@ -252,7 +256,7 @@ Void UpdateSlot(Integer _SlotNb, CTmScore _Score) {
   }
 }
 
-Void UpdateTimeGap(Boolean _OnlyTeam) {
+Void UpdateTimeGap(Boolean _IsIndependantLaps, Boolean _OnlyTeam) {
   declare Owner <=> GetOwner();
   if (Owner == Null || Owner.Score == Null) return;
   
@@ -269,15 +273,20 @@ Void UpdateTimeGap(Boolean _OnlyTeam) {
       CheckpointsSort[Player.Score] = Player.CurRace.Checkpoints[Owner.CurRace.Checkpoints.count-1];
     }
   } else {
-    if (Owner.CurLap.Checkpoints.count <= 0 && Owner.Score.PrevRace.Checkpoints.count <= 0) return;
-  
+    if (_IsIndependantLaps && Owner.CurLap.Checkpoints.count <= 0 && Owner.Score.PrevRace.Checkpoints.count <= 0) return;
+    
     declare CheckpointsCount = 0;
-    if (Owner.CurLap.Checkpoints.count <= 0) {
-      CheckpointsSort[Owner.Score] = Owner.Score.PrevRace.Time;
-      CheckpointsCount = Owner.Score.PrevRace.Checkpoints.count;
+    if (_IsIndependantLaps) {
+      if (Owner.CurLap.Checkpoints.count <= 0) {
+        CheckpointsSort[Owner.Score] = Owner.Score.PrevRace.Time;
+        CheckpointsCount = Owner.Score.PrevRace.Checkpoints.count;
+      } else {
+        CheckpointsSort[Owner.Score] = Owner.CurLap.Checkpoints[Owner.CurLap.Checkpoints.count-1];
+        CheckpointsCount = Owner.CurLap.Checkpoints.count;
+      }
     } else {
-      CheckpointsSort[Owner.Score] = Owner.CurLap.Checkpoints[Owner.CurLap.Checkpoints.count-1];
-      CheckpointsCount = Owner.CurLap.Checkpoints.count;
+      CheckpointsSort[Owner.Score] = Owner.CurRace.Checkpoints[Owner.CurRace.Checkpoints.count-1];
+      CheckpointsCount = Owner.CurRace.Checkpoints.count;
     }
     
     foreach (Score in Scores) {
@@ -292,31 +301,32 @@ Void UpdateTimeGap(Boolean _OnlyTeam) {
   
   declare Start = 0;
   declare End = 0;
+  declare SlotsCount = Frames_Player.count - 1; //< First slot is reserved for the leader
   foreach (Score => CheckpointTime in CheckpointsSort) {
     if (Score != Null && Score.Id == Owner.Score.Id) break;
     End +=1;
   }
-  Start = End - Frames_Player.count + 1;
+  Start = End - SlotsCount + 1;
   if (Start < 0) Start = 0;
-  if (End < Frames_Player.count - 1) End = Frames_Player.count - 1;
+  if (End < SlotsCount - 1 + 1) End = SlotsCount - 1 + 1; //< +1 because the first slot is reserved for the leader
   
   declare LibUI_TimeGap_CheckpointLeadTime for Owner = 0;
   declare SlotNb = 0;
   declare I = 0;
   foreach (Score => CheckpointTime in CheckpointsSort) {
     if (I == 0) LibUI_TimeGap_CheckpointLeadTime = CheckpointTime;
-    if (I >= Start && I <= End) {
+    if (I == 0 || (I >= Start && I <= End)) {
       if (Score != Null) {
         declare LibUI_TimeGap_Rank for Score = 1;
         LibUI_TimeGap_Rank = I + 1;
       }
-      UpdateSlot(SlotNb, Score);
+      UpdateSlot(_IsIndependantLaps, SlotNb, Score);
       SlotNb += 1;
     }
     I += 1;
   }
   for (J, SlotNb, Frames_Player.count) {
-    UpdateSlot(J, Null);
+    UpdateSlot(_IsIndependantLaps, J, Null);
   }
 }
 
@@ -336,6 +346,10 @@ main() {
   declare PrevSettingsUpdate = -1;
   declare DisplayTimeGap = True;
   declare OnlyTeam = False;
+  declare IsIndependantLaps = (
+    Net_LibUI_Settings.existskey("IndependantLaps") &&
+    Net_LibUI_Settings["IndependantLaps"] == "True"
+  );
   
   while (True) {
     sleep(250);
@@ -371,6 +385,9 @@ main() {
             } else {
               OnlyTeam = False;
             }
+          }
+          case "IndependantLaps": {
+            IsIndependantLaps = (SettingValue == "True");
           }
         }
       }
@@ -414,7 +431,7 @@ main() {
       }
     }
     
-    if (NeedUpdate) UpdateTimeGap(OnlyTeam);
+    if (NeedUpdate) UpdateTimeGap(IsIndependantLaps, OnlyTeam);
   }
 }
 --></script>
