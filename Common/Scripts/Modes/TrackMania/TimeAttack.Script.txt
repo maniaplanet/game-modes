@@ -4,7 +4,7 @@
 #Extends "Modes/TrackMania/Base/ModeTrackmania.Script.txt"
 
 #Const	CompatibleMapTypes	"Race"
-#Const	Version							"2017-07-12"
+#Const	Version							"2018-05-14"
 #Const	ScriptName					"Modes/TrackMania/TimeAttack/TimeAttack.Script.txt"
 
 // ---------------------------------- //
@@ -18,6 +18,7 @@
 #Setting S_TimeLimit				300	as _("Time limit :") ///< Time limit before going to the next map
 #Setting S_WarmUpNb				0	as _("Number of warm up :")
 #Setting S_WarmUpDuration	0	as _("Duration of one warm up :")
+#Setting S_ForceLapsNb			0 as _("Number of Laps :") //< "< 0" use laps number from map, "== 0" independant laps, "> 0" force laps number
 
 #Setting S_ScriptEnvironment "production"/*/"development"*/
 
@@ -69,6 +70,7 @@ UI::LoadModules([
 	UIModules::C_Module_PrevBestTime,
 	UIModules::C_Module_SpeedAndDistance,
 	UIModules::C_Module_Countdown,
+	UIModules::C_Module_Laps,
 	UIModules::C_Module_MapInfo,
 	UIModules::C_Module_MapRanking,
 	UIModules::C_Module_LiveInfo,
@@ -77,14 +79,12 @@ UI::LoadModules([
 ]);
 UI::SetTimeGapMode("BestRace");
 UI::SetCheckpointTimeMode("BestRace");
-UI::SetIndependantLaps(True);
 ***
 
 ***Match_StartServer***
 ***
 // Initialize mode
 UseClans = False;
-IndependantLaps = True;
 RespawnBehaviour::Set(CTmMode::ETMRespawnBehaviour::GiveUpBeforeFirstCheckPoint);
 WarmUp::SetAvailability(True);
 ChannelProgression::Enable(S_IsChannelServer);
@@ -104,6 +104,12 @@ Users_SetNbFakeUsers(C_BotsNb, 0);
 // Warm up
 declare WarmUpDuration = S_WarmUpDuration * 1000;
 MB_WarmUp(S_WarmUpNb, WarmUpDuration);
+
+// Initialize laps
+IndependantLaps = (S_ForceLapsNb == 0);
+UI::SetIndependantLaps(IndependantLaps);
+if (S_ForceLapsNb > 0) NbLaps = S_ForceLapsNb;
+else NbLaps = -1;
 
 // Initialize race
 StartTime = Now + 3000;
@@ -129,14 +135,20 @@ foreach (Event in PendingEvents) {
 		
 		if (Event.IsEndRace) {
 			Better = Scores::SetPlayerBestRaceIfBetter(Event.Player.Score, Event.Player.CurRace, CTmResult::ETmRaceResultCriteria::Time);
-			if (Better) Scores::SetPlayerBestLap(Event.Player.Score, Event.Player.CurRace);
+			if (IndependantLaps) {
+				if (Better) Scores::SetPlayerBestLap(Event.Player.Score, Event.Player.CurRace);
+			} else {
+				declare BetterLap = Scores::SetPlayerBestLapIfBetter(Event.Player.Score, Event.Player.CurLap, CTmResult::ETmRaceResultCriteria::Time);
+			}
 			Scores::SetPlayerPrevRace(Event.Player.Score, Event.Player.CurRace);
 			TM::EndRace(Event.Player);
 			MB_SortScores(CTmMode::ETmScoreSortOrder::BestRace_Time);
 		} else if (Event.IsEndLap) {
 			Better = Scores::SetPlayerBestLapIfBetter(Event.Player.Score, Event.Player.CurLap, CTmResult::ETmRaceResultCriteria::Time);
-			if (Better) Scores::SetPlayerBestRace(Event.Player.Score, Event.Player.CurLap);
-			Scores::SetPlayerPrevRace(Event.Player.Score, Event.Player.CurLap);
+			if (IndependantLaps) {
+				if (Better) Scores::SetPlayerBestRace(Event.Player.Score, Event.Player.CurLap);
+				Scores::SetPlayerPrevRace(Event.Player.Score, Event.Player.CurLap);
+			}
 			MB_SortScores(CTmMode::ETmScoreSortOrder::BestRace_Time);
 		}
 		
