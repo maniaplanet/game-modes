@@ -1,0 +1,159 @@
+/**
+ * Chase restart UI
+ */
+#Const Version    "2018-06-25"
+#Const ScriptName "ManiaApps/Nadeo/TrackMania/Chase/Restart_Client.Script.txt"
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Libraries
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+#Include "TextLib" as TL
+#Include "ManiaApps/Nadeo/Layers.Script.txt" as Layers
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Constants
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+#Const C_Layer_Restart "ChaseAttack_Restart"
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Functions
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Private
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/** Get the manialink of the Chase UI
+ *
+ *  @return                           Chase UI manialink
+ */
+Text Private_GetRestartML() {
+	//L16N [Chase Attack] When your teammate want to restart the Text appears and blink
+	declare Text_TheyRestart = _("$<%1$> wants to restart");
+	//L16N [Chase Attack] Text displayed when you request a restart during a race.
+	declare Text_YouRestart = _("You want to restart");
+
+	return """
+<manialink version="3" name="{{{C_Layer_Restart}}}">
+<stylesheet>
+  <style class="text-default" textfont="Oswald" textcolor="ffffff" textsize="3" textemboss="1" />
+</stylesheet>
+<frame z-index="-1" id="frame-global">
+	<frame pos="0 20" id="frame-restart" halign="center">
+		<label id="label-name" size="0 6" halign="center" textsize="8" class="text-default"  />
+		<quad id="label-underline" pos="0 -8.5" z-index="1" size="100 0.666" bgcolor="FFFFFF" opacity="1." halign="center" valign="center"/>
+		<quad id="label-underunderline" pos="0 -9.333" z-index="1" size="10 1" bgcolor="FFFFFF" opacity="1." halign="right" valign="center"/>
+		<label id="label-chrono" pos="0 -10.5" size="0 6" halign="center" textsize="8" class="text-default"  />
+	</frame>
+</frame>
+<script><!--
+#Include "TextLib" as TL
+#Include "MathLib" as ML
+
+declare Real TimeBetweenRefresh;
+declare Real TimeToRefresh;
+declare Real MinimumOpacity;
+declare Real BlinkSpeed;
+declare Boolean FadeOut;
+
+Void InitBlink(){
+	BlinkSpeed = 0.1;
+	TimeBetweenRefresh = 100.;
+	TimeToRefresh = Now + TimeBetweenRefresh;
+	MinimumOpacity = 0.4;
+	FadeOut = True;
+}
+
+CTmMlPlayer GetOwner() {
+  if (GUIPlayer != Null) return GUIPlayer;
+  return InputPlayer;
+}
+
+Void Blink(CMlLabel label){
+	if(Now > TimeToRefresh){
+		TimeToRefresh += TimeBetweenRefresh;
+		if(FadeOut){
+			label.Opacity -= BlinkSpeed;
+			if(label.Opacity < MinimumOpacity){
+				FadeOut = False;
+				label.Opacity = MinimumOpacity;
+			}
+		}
+		else{
+			label.Opacity += BlinkSpeed;
+			if(label.Opacity > 1.){
+				FadeOut = True;
+				label.Opacity = 1.;
+			}
+		}
+	}
+}
+
+main() {
+	declare Frame_Global <=> (Page.GetFirstChild("frame-global") as CMlFrame);
+	declare Frame_Restart <=> (Frame_Global.GetFirstChild("frame-restart") as CMlFrame);
+	declare Label_Name <=> (Frame_Restart.GetFirstChild("label-name") as CMlLabel);
+	declare Label_Underline <=> (Frame_Restart.GetFirstChild("label-underline") as CMlLabel);
+	declare Label_UnderUnderline <=> (Frame_Restart.GetFirstChild("label-underunderline") as CMlLabel);
+	declare Label_Chrono <=> (Frame_Restart.GetFirstChild("label-chrono") as CMlLabel);
+
+	declare PrevName = "";
+	Frame_Restart.Visible = False;
+
+	InitBlink();
+
+	while (True) {
+		yield;
+
+		declare Owner <=> GetOwner();
+		if (Owner != Null) {
+			declare netread Net_ChaseRestart_Name for Owner = "";
+			declare netread Net_ChaseRestart_RestartTime for Owner = 0;
+			if (PrevName != Net_ChaseRestart_Name) {
+				PrevName = Net_ChaseRestart_Name;
+				if (PrevName == "") {
+					Frame_Restart.Visible = False;
+				} 
+				else {
+					Frame_Restart.Visible = True;
+					if (PrevName == Owner.User.Name) {
+						Label_Name.Value = "{{{Text_YouRestart}}}";
+					} 
+					else {
+						Label_Name.Value = TL::Compose("{{{Text_TheyRestart}}}", PrevName);
+					}
+					Label_Underline.Size.X = Label_Name.ComputeWidth(Label_Name.Value);
+					Label_UnderUnderline.RelativePosition_V3.X = Label_Name.ComputeWidth(Label_Name.Value)/2;
+				}
+			}
+			if(Net_ChaseRestart_RestartTime > GameTime){
+				declare Integer SecondBeforeRestart; 
+				SecondBeforeRestart = ML::CeilingInteger((Net_ChaseRestart_RestartTime - GameTime)/1000.);
+				Label_Chrono.Value = TL::ToText(SecondBeforeRestart);
+			}
+		}
+
+		
+		Blink(Label_Chrono);
+	}
+}
+--></script>
+</manialink>
+""";
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Public
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/// Unload the library
+Void Unload() {
+
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/// Load the library
+Void Load() {
+	Unload();
+
+	Layers::Create(C_Layer_Restart, Private_GetRestartML());
+}

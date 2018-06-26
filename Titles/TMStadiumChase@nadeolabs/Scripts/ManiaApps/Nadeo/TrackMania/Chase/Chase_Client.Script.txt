@@ -1,0 +1,1182 @@
+/**
+ * Chase UI
+ */
+#Const Version    "2018-06-11"
+#Const ScriptName "ManiaApps/Nadeo/TrackMania/Chase/Chase_Client.Script.txt"
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Libraries
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+#Include "ManiaApps/Nadeo/Layers.Script.txt" as Layers
+#Include "Libs/Nadeo/TrackMania/Chase/Constants2.Script.txt" as Const
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Constants
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+#Const C_Layer_UI "ChaseUI"
+#Const C_Layer_Markers "ChaseMarkers"
+#Const C_NoNameCheckpoint "-" ///< Default name when no player is selected for next checkpoint
+#Const C_FinishDuration 3000 ///< Display duration of the finish time and penalties
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Functions
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Private
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/** Get the manialink of the Chase UI
+ *
+ *  @return                           Chase UI manialink
+ */
+Text Private_GetChaseML() {
+  declare ImgPath = "file://Media/Manialinks/Nadeo/TrackMania/Chase";
+  declare PointsMax = 10;
+  declare SizeX_Point = 4.;
+  declare SizeX_Gauge = (PointsMax * (SizeX_Point + 1.)) - 1.;
+
+  //L16N [Chase Attack] Legend displayed above the number of penalties cumulated by a clan.
+  declare Text_Penalties = _("Penalties");
+  //L16N [Chase Attack] Display the number of relay failed. %1 is the number of fails.
+  declare Text_FailedRelay = _("Failed relay : %1");
+  //L16N [Chase Attack] The player is under a respawn penalty
+  declare Text_RespawnPenalty = _("Respawn penalty");
+
+  declare GapLeftML = "";
+  declare GapRightML = "";
+  for (I, 1, PointsMax) {
+    GapLeftML ^= """<frameinstance pos="{{{(I-1)*-(SizeX_Point+1)}}} 0" z-index="{{{I}}}" modelid="framemodel-point-gap-left" />""";
+    GapRightML ^= """<frameinstance pos="{{{(I-1)*(SizeX_Point+1)}}} 0" z-index="{{{I}}}" modelid="framemodel-point-gap-right" />""";
+  }
+  return """
+<manialink version="3" name="{{{C_Layer_UI}}}">
+<stylesheet>
+  <style class="bg-dark" opacity="0.5" bgcolor="0b081b" />
+  <style class="bg-blur" style="Bgs1" substyle="BgDialogBlur" opacity="0.1" />
+  <style class="header-small" valign="bottom" opacity="0.5" colorize="fff" image="file://Media/Manialinks/Nadeo/Common/ScoresTable/HeaderSmall.dds" />
+  <style class="header-big" valign="bottom" opacity="0.5" colorize="fff" image="file://Media/Manialinks/Nadeo/Common/ScoresTable/HeaderBig.dds" />
+  <style class="text-default" textsize="3" textfont="OswaldMono" textcolor="fff" textemboss="1" />
+</stylesheet>
+<framemodel id="framemodel-point-gap-left">
+  <quad z-index="0" size="{{{SizeX_Point}}} 6" halign="right" valign="center" class="bg-blur" />
+  <quad z-index="1" size="{{{SizeX_Point}}} 6" halign="right" valign="center" opacity="0.2" bgcolor="000" id="quad-point-bg" />
+  <quad z-index="2" size="{{{SizeX_Point}}} 6" halign="right" valign="center" opacity="0.8" bgcolor="fff" id="quad-point" />
+</framemodel>
+<framemodel id="framemodel-point-gap-right">
+  <quad z-index="0" size="{{{SizeX_Point}}} 6" valign="center" class="bg-blur" />
+  <quad z-index="1" size="{{{SizeX_Point}}} 6" valign="center" opacity="0.2" bgcolor="000" id="quad-point-bg" />
+  <quad z-index="2" size="{{{SizeX_Point}}} 6" valign="center" opacity="0.8" bgcolor="fff" id="quad-point" />
+</framemodel>
+<frame id="frame-global">
+  <frame pos="0 35" z-index="1" id="frame-grade">
+    <quad z-index="2" size="0.4 10" halign="center" valign="center" bgcolor="eee" opacity="0.5" id="quad-line" />
+    <quad z-index="1" size="30 6.7" valign="center" bgcolor="0b081b" opacity="0.5" id="quad-grade" />
+    <label pos="1 -0.2" z-index="3" size="28 6.7" valign="center2" class="text-default" id="label-grade" />
+    <quad pos="30 0" z-index="1" size="30 6.7" valign="center" bgcolor="0b081b" opacity="0.5" id="quad-combo" />
+    <label pos="31 -0.2" z-index="3" size="28 6.7" halign="center" valign="center2" class="text-default" id="label-combo" />
+    <label pos="31 5" z-index="3" size="28 6.7" halign="center" valign="center2" textsize="1" text="Combo" class="text-default" id="label-combo-legend" />
+    <quad z-index="1" size="30 6.7" halign="right" valign="center" bgcolor="0b081b" opacity="0.5" id="quad-points" />
+    <label pos="-1 -0.2" z-index="3" size="28 6.7" halign="right" valign="center2" class="text-default" id="label-points" />
+  </frame>
+  <frame class="spectator-shift">
+    <frame pos="0 -62" z-index="2" hidden="1" id="frame-distance">
+      <label halign="center" valign="center" class="text-default" id="label-distance" />
+      <frame pos="-25 5" id="frame-distance-alt">
+        <label z-index="1" halign="right" valign="center2" textsize="3" textemboss="1" textcolor="999" text="" id="label-car-left" />
+        <quad z-index="0" valign="center" size="50 1.5" bgcolor="fff" id="quad-distance" />
+        <quad pos="0.2 -0.2" z-index="-1" valign="center" size="50 1.5" bgcolor="000" id="quad-distance-bg" />
+        <label pos="50.1 0" z-index="2" valign="center2" textsize="3" textemboss="1" textcolor="999" text="" id="label-car-right" />
+      </frame>
+    </frame>
+    <frame pos="0 -55" z-index="3" scale="0.6" hidden="1" id="frame-compass">
+      <label z-index="6" size="18 6" halign="center" valign="center2" textsize="8" text="0M" class="text-default" id="label-distance" />
+      <quad pos="0 0.7" z-index="5" size="20 10" halign="center" valign="center" opacity="0.8" bgcolor="000" />
+      <quad z-index="4" size="30 30" halign="center" valign="center" colorize="000" image="{{{ImgPath}}}/OuterCircle.dds" id="quad-outer-circle" />
+      <label pos="0 12" z-index="3" size="10 10" halign="center" valign="bottom" textsize="7" textcolor="f00" textemboss="1" text="" id="label-compass" />
+      <quad z-index="2" size="20 20" halign="center" valign="center" opacity="0.5" colorize="fff" image="{{{ImgPath}}}/Car.dds" id="quad-car" />
+      <frame pos="0.1 0" z-index="1" size="15 30" halign="right" valign="center">
+        <quad z-index="1" size="30 30" halign="center" valign="center" colorize="333" image="{{{ImgPath}}}/InnerCircle.dds" id="quad-left" />
+        <quad z-index="0" size="30 30" halign="center" valign="center" colorize="999" image="{{{ImgPath}}}/InnerCircle.dds" />
+      </frame>
+      <frame pos="-0.1 0" z-index="0" size="15 30" rot="180" halign="right" valign="center">
+        <quad z-index="1" size="30 30" halign="center" valign="center" colorize="333" image="{{{ImgPath}}}/InnerCircle.dds" id="quad-right" />
+        <quad z-index="0" size="30 30" halign="center" valign="center" colorize="999" image="{{{ImgPath}}}/InnerCircle.dds" />
+      </frame>
+    </frame>
+  </frame>
+  <frame z-index="0" pos="0 80" id="frame-header">
+    <frame pos="-21 0">
+      <quad z-index="0" size="15 0.6" rot="180" halign="right" class="header-small" id="quad-header-small" />
+      <quad z-index="1" pos="15 0" size="5 0.6" rot="180" halign="right" class="header-big" id="quad-header-big" />
+      <frame pos="10 3.5" z-index="4">
+        <quad z-index="1" size="20 6" halign="center" valign="center" class="bg-blur" />
+        <quad z-index="2" size="20 6" halign="center" valign="center" class="bg-dark" id="quad-team-color" />
+        <label pos="0 -0.25" z-index="3" size="20 6" halign="center" valign="center2" textsize="4" text="0" class="text-default" id="label-round-points" />
+      </frame>
+      <frame pos="-1 3.5" z-index="2" id="frame-gap-points">
+        {{{GapLeftML}}}
+      </frame>
+      <frame pos="-1 3.5" z-index="3" hidden="1" id="frame-gap-gauge">
+        <quad z-index="0" size="{{{SizeX_Gauge}}} 6" halign="right" valign="center" class="bg-blur" />
+        <quad z-index="1" size="{{{SizeX_Gauge}}} 6" halign="right" valign="center" opacity="0.2" bgcolor="000" id="quad-gauge-bg" />
+        <quad z-index="2" size="{{{SizeX_Gauge}}} 6" halign="right" valign="center" opacity="0.8" bgcolor="fff" id="quad-gauge" />
+      </frame>
+    </frame>
+    <frame pos="1 0">
+      <quad z-index="1" size="5 0.6" rot="180" halign="right" class="header-big" id="quad-header-big" />
+      <quad z-index="0" pos="5 0" size="15 0.6" rot="180" halign="right" class="header-small" id="quad-header-small" />
+      <frame pos="10 3.5" z-index="4">
+        <quad z-index="1" size="20 6" halign="center" valign="center" class="bg-blur" />
+        <quad z-index="2" size="20 6" halign="center" valign="center" class="bg-dark" id="quad-team-color" />
+        <label pos="0 -0.25" z-index="3" size="20 6" halign="center" valign="center2" textsize="4" text="0" class="text-default" id="label-round-points" />
+      </frame>
+      <frame pos="21 3.5" z-index="2" id="frame-gap-points">
+        {{{GapRightML}}}
+      </frame>
+      <frame pos="21 3.5" z-index="3" hidden="1" id="frame-gap-gauge">
+        <quad z-index="0" size="{{{SizeX_Gauge}}} 6" valign="center" class="bg-blur" />
+        <quad z-index="1" size="{{{SizeX_Gauge}}} 6" valign="center" opacity="0.2" bgcolor="000" id="quad-gauge-bg" />
+        <quad z-index="2" size="{{{SizeX_Gauge}}} 6" valign="center" opacity="0.8" bgcolor="fff" id="quad-gauge" />
+      </frame>
+    </frame>
+  </frame>
+  <frame id="frame-chase-info">
+    <frame class="spectator-shift">
+      <frame pos="0 -70" id="frame-next-checkpoint">
+        <label pos="0 0.3" size="35 6" halign="center" valign="center2" textfont="OswaldMono" textsize="6" textemboss="1" text="{{{C_NoNameCheckpoint}}}" id="label-next-player" />
+      </frame>
+    </frame>
+    <frame pos="0 76" hidden="1" id="frame-next-checkpoint-spectator">
+      <frame pos="-20 0">
+        <frame id="frame-next-checkpoint-team-1">
+          <label pos="0 0.3" size="30 6" halign="center" valign="center2" textfont="OswaldMono" textsize="3" textemboss="1" text="{{{C_NoNameCheckpoint}}}" id="label-next-player" />
+        </frame>
+      </frame>
+      <frame pos="22 0">
+        <frame id="frame-next-checkpoint-team-2">
+          <label pos="0 0.3" size="30 6" halign="center" valign="center2" textfont="OswaldMono" textsize="3" textemboss="1" text="{{{C_NoNameCheckpoint}}}" id="label-next-player" />
+        </frame>
+      </frame>
+    </frame>
+    <frame class="spectator-shift">
+      <label pos="0 -68" size="200 6" halign="center" valign="center2" textfont="OswaldMono" textsize="5" textemboss="1" id="label-distance" />
+    </frame>
+    <frame pos="0 65" id="frame-relay-time">
+      <label halign="center" textemboss="1" textfont="OswaldMono" id="label-relay-time" />
+    </frame>
+    <frame pos="157 -45" hidden="1" id="frame-penalties">
+      <label halign="right" textemboss="1" textfont="OswaldMono" textsize="1.5" text="{{{Text_Penalties}}}" />
+      <label pos="0 -4" halign="right" textemboss="1" textfont="OswaldMono" textsize="5" text="0" id="label-penalties" />
+    </frame>
+    <frame pos="0 30" hidden="1" id="frame-finish">
+      <frame id="frame-visible">
+        <label halign="center" textemboss="1" textfont="OswaldMono" textsize="5" id="label-penalties" />
+        <label pos="0 -6" halign="center" textemboss="1" textfont="OswaldMono" textsize="10" id="label-time" />
+      </frame>
+    </frame>
+  </frame>
+</frame>
+<frame class="spectator-shift">
+  <label pos="0 -69.7" size="54 6" halign="center" valign="center2" textfont="OswaldMono" textsize="6" textemboss="1" textcolor="f90" text="{{{Text_RespawnPenalty}}}" hidden="1" id="label-respawn-penalty" />
+</frame>
+<script><!--
+#Include "MathLib" as ML
+#Include "TextLib" as TL
+
+#Const C_TeamSpectated  0
+#Const C_Team1      1
+#Const C_Team2      2
+
+CTmMlPlayer GetOwner() {
+  if (GUIPlayer != Null) return GUIPlayer;
+  return InputPlayer;
+}
+
+Integer GetCurrentClan(CTmMlPlayer _Player) {
+  if (_Player == Null) return -1;
+  
+  if (UseClans) {
+    return _Player.CurrentClan;
+  } else {
+    declare netread Net_Chase_ChaseAttackClan for _Player = -1;
+    return Net_Chase_ChaseAttackClan;
+  }
+
+  return -1;
+}
+
+Void SetDistanceVisibility(CUIConfig::EUISequence _UISequence, Ident _NextRelayPlayerId, CTmMlPlayer _Owner, CMlFrame _Frame_Distance) {
+  if (_Frame_Distance == Null) return;
+
+  _Frame_Distance.Visible = (_UISequence == CUIConfig::EUISequence::Playing && _NextRelayPlayerId != NullId && _Owner != Null && _NextRelayPlayerId != _Owner.Id);
+}
+
+Void UpdateRoundPoints(Integer _Clan, Integer _RoundPoints, Integer _RoundPointsLimit, CMlFrame _Frame_Header) {
+  if (_Frame_Header == Null) return;
+
+  if (_Frame_Header.Controls.existskey(_Clan - 1)) {
+    declare Frame_Clan <=> (_Frame_Header.Controls[_Clan - 1] as CMlFrame);
+    declare Label_RoundPoints <=> (Frame_Clan.GetFirstChild("label-round-points") as CMlLabel);
+    if (_RoundPointsLimit == 0) {
+      Label_RoundPoints.Value = TL::ToText(_RoundPoints);
+    } else {
+      Label_RoundPoints.Value = _RoundPoints^"/"^_RoundPointsLimit;
+    }
+  }
+}
+
+Void UpdatePointsGap(Integer[Integer] _RoundPoints, Integer _MaxPointsGap, CMlFrame _Frame_Header) {
+  if (_Frame_Header == Null) return;
+
+  declare RoundPoints = [1 => 0, 2 => 0];
+  for (Clan, 1, 2) {
+    if (_RoundPoints.existskey(Clan)) RoundPoints[Clan] = _RoundPoints[Clan];
+  }
+  declare PointsGap = RoundPoints[1] - RoundPoints[2];
+
+  foreach (Key => Control in _Frame_Header.Controls) {
+    declare Frame_Clan <=> (Control as CMlFrame);
+    declare Frame_GapPoints <=> (Frame_Clan.GetFirstChild("frame-gap-points") as CMlFrame);
+    declare Frame_GapGauge <=> (Frame_Clan.GetFirstChild("frame-gap-gauge") as CMlFrame);
+
+    declare Clan = Key + 1;
+
+    // Use gauge
+    if (_MaxPointsGap > Frame_GapPoints.Controls.count) {
+      declare Ratio = 0.;
+      if (_MaxPointsGap != 0) Ratio = ML::Abs(PointsGap / (_MaxPointsGap * 1.));
+      if (Ratio < 0.) Ratio = 0.;
+      else if (Ratio > 1.) Ratio = 1.;
+
+      declare Quad_Gauge <=> (Frame_GapGauge.GetFirstChild("quad-gauge") as CMlQuad);
+      declare Quad_GaugeBg <=> (Frame_GapGauge.GetFirstChild("quad-gauge-bg") as CMlQuad);
+
+      if ((Clan == 1 && PointsGap > 0) || (Clan == 2 && PointsGap < 0)) {
+        Quad_Gauge.Size.X = Quad_GaugeBg.Size.X * Ratio;
+      } else {
+        Quad_Gauge.Size.X = 0.;
+      }
+
+      Frame_GapPoints.Visible = False;
+      Frame_GapGauge.Visible = True;
+    }
+    // Use points
+    else {
+      Frame_GapPoints.Visible = True;
+      Frame_GapGauge.Visible = False;
+
+      foreach (Key => Control in Frame_GapPoints.Controls) {
+        declare Frame_Point <=> (Control as CMlFrame);
+
+        if (Key < _MaxPointsGap) {
+          declare Quad_Point <=> (Frame_Point.GetFirstChild("quad-point") as CMlQuad);
+          declare Point = Key + 1;
+
+          if ((Clan == 1 && PointsGap > 0) || (Clan == 2 && PointsGap < 0)) {
+            Quad_Point.Visible = (PointsGap >= Point);
+          } else {
+            Quad_Point.Visible = False;
+          }
+          Frame_Point.Visible = True;
+        } else {
+          Frame_Point.Visible = False;
+        }
+      }
+    }
+  }
+}
+
+Void DisplayCheckpointGrade(Text _Grade, Vec3 _Color, Integer _Combo, Integer _Score, CMlFrame _Frame_Grade) {
+  if (_Frame_Grade == Null) return;
+
+  declare Label_Points <=> (_Frame_Grade.GetFirstChild("label-points") as CMlLabel);
+  declare Label_Grade <=> (_Frame_Grade.GetFirstChild("label-grade") as CMlLabel);
+  declare Label_Combo <=> (_Frame_Grade.GetFirstChild("label-combo") as CMlLabel);
+  declare Label_ComboLegend <=> (_Frame_Grade.GetFirstChild("label-combo-legend") as CMlLabel);
+  declare Quad_Points <=> (_Frame_Grade.GetFirstChild("quad-points") as CMlQuad);
+  declare Quad_Grade <=> (_Frame_Grade.GetFirstChild("quad-grade") as CMlQuad);
+  declare Quad_Combo <=> (_Frame_Grade.GetFirstChild("quad-combo") as CMlQuad);
+  declare Quad_Line <=> (_Frame_Grade.GetFirstChild("quad-line") as CMlQuad);
+
+  //L16N [Chase] Short text meaning points, displayed next to a score. eg: 123 Pts.
+  declare Points = TL::ToUpperCase(TL::Compose("%1 %2", TL::ToText(_Score), _("|Points|Pts")));
+  declare Combo = TL::ToUpperCase("×"^_Combo);
+  declare Grade = TL::ToUpperCase(_Grade);
+  Label_Points.Value = Points;
+  Label_Grade.Value = Grade;
+  Label_Grade.TextColor = _Color;
+  Label_Combo.Value = Combo;
+
+  declare PointsSizeX = Label_Points.ComputeWidth(Points, True) + 2.;
+  Quad_Points.Size.X = PointsSizeX;
+  Label_Points.Size.X = PointsSizeX - 2.;
+
+  declare GradeSizeX = Label_Grade.ComputeWidth(Grade) + 2.;
+  Quad_Grade.Size.X = GradeSizeX;
+  Label_Grade.Size.X = GradeSizeX - 2.;
+
+  declare ComboSizeX = Label_Combo.ComputeWidth(Combo) + 2.;
+  if (ComboSizeX < 8.) ComboSizeX = 8.;
+  Quad_Combo.Size.X = ComboSizeX;
+  Label_Combo.Size.X = ComboSizeX;
+  Label_ComboLegend.Size.X = ComboSizeX;
+  Quad_Combo.RelativePosition_V3.X = GradeSizeX + 1.;
+  Label_Combo.RelativePosition_V3.X = Quad_Combo.RelativePosition_V3.X + (ComboSizeX * 0.5);
+  Label_ComboLegend.RelativePosition_V3.X = Quad_Combo.RelativePosition_V3.X + (ComboSizeX * 0.5);
+
+  if (_Combo > 1) {
+    Label_Combo.Visible = True;
+    Label_ComboLegend.Visible = True;
+    Quad_Combo.Visible = True;
+  } else {
+    Label_Combo.Visible = False;
+    Label_ComboLegend.Visible = False;
+    Quad_Combo.Visible = False;
+  }
+
+  if (_Grade == "") {
+    _Frame_Grade.Visible = False;
+  } else {
+    declare FadeOutDuration = 250;
+    _Frame_Grade.Visible = True;
+    Label_Points.Opacity = 1.;
+    Label_Combo.Opacity = 1.;
+    Label_ComboLegend.Opacity = 1.;
+    Label_Grade.Opacity = 1.;
+    Quad_Points.Opacity = 0.5;
+    Quad_Grade.Opacity = 0.5;
+    Quad_Combo.Opacity = 0.5;
+    Quad_Line.Opacity = 0.5;
+    AnimMgr.Add(Label_Points, "", 0, CAnimManager::EAnimManagerEasing::QuadOut);
+    AnimMgr.Add(Label_Combo, "", 0, CAnimManager::EAnimManagerEasing::QuadOut);
+    AnimMgr.Add(Label_ComboLegend, "", 0, CAnimManager::EAnimManagerEasing::QuadOut);
+    AnimMgr.Add(Label_Grade, "", 0, CAnimManager::EAnimManagerEasing::QuadOut);
+    AnimMgr.Add(Quad_Points, "", 0, CAnimManager::EAnimManagerEasing::QuadOut);
+    AnimMgr.Add(Quad_Grade, "", 0, CAnimManager::EAnimManagerEasing::QuadOut);
+    AnimMgr.Add(Quad_Combo, "", 0, CAnimManager::EAnimManagerEasing::QuadOut);
+    AnimMgr.Add(Quad_Line, "", 0, CAnimManager::EAnimManagerEasing::QuadOut);
+    AnimMgr.Add(Label_Points, "<label opacity=\"0\" />", Now + 3000, FadeOutDuration, CAnimManager::EAnimManagerEasing::QuadOut);
+    AnimMgr.Add(Label_Combo, "<label opacity=\"0\" />", Now + 3000, FadeOutDuration, CAnimManager::EAnimManagerEasing::QuadOut);
+    AnimMgr.Add(Label_ComboLegend, "<label opacity=\"0\" />", Now + 3000, FadeOutDuration, CAnimManager::EAnimManagerEasing::QuadOut);
+    AnimMgr.Add(Label_Grade, "<label opacity=\"0\" />", Now + 3000, FadeOutDuration, CAnimManager::EAnimManagerEasing::QuadOut);
+    AnimMgr.Add(Quad_Points, "<quad opacity=\"0\" />", Now + 3000, FadeOutDuration, CAnimManager::EAnimManagerEasing::QuadOut);
+    AnimMgr.Add(Quad_Grade, "<quad opacity=\"0\" />", Now + 3000, FadeOutDuration, CAnimManager::EAnimManagerEasing::QuadOut);
+    AnimMgr.Add(Quad_Combo, "<quad opacity=\"0\" />", Now + 3000, FadeOutDuration, CAnimManager::EAnimManagerEasing::QuadOut);
+    AnimMgr.Add(Quad_Line, "<quad opacity=\"0\" />", Now + 3000, FadeOutDuration, CAnimManager::EAnimManagerEasing::QuadOut);
+  }
+}
+
+Void UpdateNextCheckpoint(CMlFrame _Frame, Text _Name, Integer _CheckpointNb) {
+  declare Label_NextPlayer <=> (_Frame.GetFirstChild("label-next-player") as CMlLabel);
+  
+  if (_Name != "{{{C_NoNameCheckpoint}}}") {
+    Label_NextPlayer.Value = _Name;
+  } else {
+    Label_NextPlayer.Value = "-";
+  }
+  Label_NextPlayer.TextColor = <1., 1., 1.>;
+  
+  _Frame.Visible = True;
+}
+
+Void UpdateNextCheckpoint(Text _Name, Integer _CheckpointNb) {
+  declare Frame_NextCheckpoint <=> (Page.GetFirstChild("frame-next-checkpoint") as CMlFrame);
+  declare Label_NextPlayer <=> (Frame_NextCheckpoint.GetFirstChild("label-next-player") as CMlLabel);
+
+  declare Chase_CheckpointStatus for This = {{{Const::C_CheckpointStatus_Wait}}};
+  Chase_CheckpointStatus = {{{Const::C_CheckpointStatus_Wait}}};
+  
+  if (GUIPlayer == Null) {
+    Frame_NextCheckpoint.Visible = False;
+  } else {
+    // First checkpoint
+    if (_CheckpointNb < 0) {
+      Label_NextPlayer.Value = "Go";
+      Label_NextPlayer.TextColor = <0., 0.7, 0.>;
+      Label_NextPlayer.TextSizeReal = 6.;
+      Chase_CheckpointStatus = {{{Const::C_CheckpointStatus_Go}}};
+    } else if (GUIPlayer.CurRace.Checkpoints.count >= _CheckpointNb && _Name == "{{{C_NoNameCheckpoint}}}") {
+      Label_NextPlayer.Value = "{{{_("Wait")}}}";
+      Label_NextPlayer.TextColor = <0.9, 0., 0.>;
+      Label_NextPlayer.TextSizeReal = 6.;
+    } else if (GUIPlayer.CurRace.Checkpoints.count < _CheckpointNb /*&& _Name == "{{{C_NoNameCheckpoint}}}"*/) {
+      Label_NextPlayer.Value = "Go";
+      Label_NextPlayer.TextColor = <0., 0.7, 0.>;
+      Label_NextPlayer.TextSizeReal = 6.;
+      Chase_CheckpointStatus = {{{Const::C_CheckpointStatus_Go}}};
+    } else if (_Name != "{{{C_NoNameCheckpoint}}}") {
+      if (GUIPlayer.User.Name == _Name) {
+        Label_NextPlayer.Value = "Go";
+        Label_NextPlayer.TextColor = <0., 0.7, 0.>;
+        Label_NextPlayer.TextSizeReal = 6.;
+        Chase_CheckpointStatus = {{{Const::C_CheckpointStatus_Go}}};
+      } else {
+        declare TeamColor = "fff";
+        if (UseClans && Teams.existskey(GetCurrentClan(GUIPlayer)-1)) {
+          TeamColor = TL::ColorToText(Teams[GetCurrentClan(GUIPlayer)-1].ColorPrimary);
+        }
+        //L16N [Chase] Message telling the player to wait for its teammate. %1 is the nickname of the teammate. eg: "Wait for RandomName"
+        Label_NextPlayer.Value = TL::Compose("{{{_("Wait for $<%1$> $<%2$>")}}}", "$"^TeamColor^"⏺", _Name);
+        Label_NextPlayer.TextColor = <0.9, 0., 0.>;
+        Label_NextPlayer.TextSizeReal = 4.;
+      }
+    } else {
+      Label_NextPlayer.Value = "Go";
+      Label_NextPlayer.TextColor = <0., 0.7, 0.>;
+      Label_NextPlayer.TextSizeReal = 6.;
+      Chase_CheckpointStatus = {{{Const::C_CheckpointStatus_Go}}};
+    }
+    
+    Frame_NextCheckpoint.Visible = True;
+  }
+}
+
+main() {
+  declare Frame_Global <=> (Page.GetFirstChild("frame-global") as CMlFrame);
+  declare Frame_Distance <=> (Page.GetFirstChild("frame-distance") as CMlFrame);
+  declare Label_Distance <=> (Frame_Distance.GetFirstChild("label-distance") as CMlLabel);
+  declare Frame_DistanceAlt <=> (Page.GetFirstChild("frame-distance-alt") as CMlFrame);
+  declare Label_CarLeft <=> (Frame_DistanceAlt.GetFirstChild("label-car-left") as CMlLabel);
+  declare Label_CarRight <=> (Frame_DistanceAlt.GetFirstChild("label-car-right") as CMlLabel);
+  declare Quad_Distance <=> (Frame_DistanceAlt.GetFirstChild("quad-distance") as CMlQuad);
+  declare Quad_DistanceBg <=> (Frame_DistanceAlt.GetFirstChild("quad-distance-bg") as CMlQuad);
+  declare Frame_Header <=> (Page.GetFirstChild("frame-header") as CMlFrame);
+  declare Frame_Grade <=> (Page.GetFirstChild("frame-grade") as CMlFrame);
+  declare Frame_Compass <=> (Page.GetFirstChild("frame-compass") as CMlFrame);
+  declare Label_Compass <=> (Frame_Compass.GetFirstChild("label-compass") as CMlLabel);
+  declare Label_CompassDist <=> (Frame_Compass.GetFirstChild("label-distance") as CMlLabel);
+  declare Quad_CompassLeft <=> (Frame_Compass.GetFirstChild("quad-left") as CMlQuad);
+  declare Quad_CompassRight <=> (Frame_Compass.GetFirstChild("quad-right") as CMlQuad);
+  declare Quad_OuterCircle <=> (Frame_Compass.GetFirstChild("quad-outer-circle") as CMlQuad);
+  declare Quad_Car <=> (Frame_Compass.GetFirstChild("quad-car") as CMlQuad);
+  declare Frame_ChaseInfo <=> (Frame_Global.GetFirstChild("frame-chase-info") as CMlFrame);
+  declare Label_RelayTime <=> (Frame_ChaseInfo.GetFirstChild("label-relay-time") as CMlLabel);
+  declare Frames_NextCheckpoint = [
+    C_TeamSpectated => (Frame_ChaseInfo.GetFirstChild("frame-next-checkpoint") as CMlFrame),
+    C_Team1 => (Frame_ChaseInfo.GetFirstChild("frame-next-checkpoint-team-1") as CMlFrame),
+    C_Team2 => (Frame_ChaseInfo.GetFirstChild("frame-next-checkpoint-team-2") as CMlFrame)
+  ];
+  declare Frame_NextCheckpointSpectator <=> (Frame_ChaseInfo.GetFirstChild("frame-next-checkpoint-spectator") as CMlFrame);
+  declare Frame_Penalties <=> (Frame_ChaseInfo.GetFirstChild("frame-penalties") as CMlFrame);
+  declare Label_Penalties <=> (Frame_Penalties.GetFirstChild("label-penalties") as CMlLabel);
+  declare Frame_Finish <=> (Frame_ChaseInfo.GetFirstChild("frame-finish") as CMlFrame);
+  declare Frame_FinishVisible <=> (Frame_Finish.GetFirstChild("frame-visible") as CMlFrame);
+  declare Label_FinishPenalties <=> (Frame_Finish.GetFirstChild("label-penalties") as CMlLabel);
+  declare Label_FinishTime <=> (Frame_Finish.GetFirstChild("label-time") as CMlLabel);
+  declare Label_RespawnPenalty <=> (Page.GetFirstChild("label-respawn-penalty") as CMlLabel);
+
+  declare netread Integer Net_Chase_PointsGap for Teams[0];
+  declare netread Integer[Integer] Net_Chase_RoundPoints for Teams[0];
+  declare netread Net_MAChase_NextRelayLogin for Teams[0] = Text[Integer];
+  declare netread Net_MAChase_HeaderIsVisible for Teams[0] = True;
+  declare netread Net_MAChase_RoundPointsLimit for Teams[0] = 0;
+  declare netread Integer Net_Chase_NextPlayerUpdate for Teams[0];
+  declare netread Text[Integer] Net_Chase_NextPlayer for Teams[0];
+  declare netread Integer[Integer] Net_Chase_NextCheckpoint for Teams[0];
+  declare netread Integer[Integer] Net_Chase_RelayTime for Teams[0];
+  declare netwrite Integer Net_Chase_SpectatingClan for UI;
+  declare netread Net_MAChase_PenaltiesVisible for Teams[0] = False;
+  declare netread Net_MAChase_FinishVisible for Teams[0] = False;
+
+  declare NextRelayLogin = "";
+  declare NextRelayPlayerId = NullId;
+  declare RelayHideTime = -1;
+  declare FinishHideTime = -1;
+
+  declare PrevUISequence = CUIConfig::EUISequence::None;
+  declare PrevRelayLogin = "";
+  declare PrevTeamColor = [0 => <-1., -1., -1.>, 1 => <-1., -1., -1.>];
+  declare PrevRoundPoints = [1 => -2, 2 => -2];
+  declare PrevPointsGap = -2;
+  declare PrevCheckpointGradeUpdate = -2;
+  declare PrevRoundPointsLimit = Net_MAChase_RoundPointsLimit - 1;
+  declare PrevClan = -1;
+  declare PrevNextPlayerUpdate = -1;
+  declare PrevSpecPlayerId = NullId;
+  declare PrevIsSpectatorClient = Frame_NextCheckpointSpectator.Visible;
+  declare PrevPenaltiesVisible = Frame_Penalties.Visible;
+  declare PrevPenalties = -123;
+  declare PrevFinishVisible = Frame_Finish.Visible;
+  declare PrevFinishUpdate = -123;
+  declare PrevIsWaitingRespawnPenalty = Label_RespawnPenalty.Visible;
+  declare PrevRespawnPenaltyEndTime = -1;
+  declare PrevGUIPlayerId = NullId;
+  declare PrevInputPlayerId = NullId;
+
+  declare PrevGlobalIsVisible = True;
+  Frame_Global.Visible = PrevGlobalIsVisible;
+
+  declare PrevHeaderIsVisible = False;
+  Frame_Header.Visible = PrevHeaderIsVisible;
+
+  while (True) {
+    yield;
+
+    declare Owner <=> GetOwner();
+
+    if (PrevUISequence != UI.UISequence) {
+      PrevUISequence = UI.UISequence;
+      //SetDistanceVisibility(UI.UISequence, NextRelayPlayerId, Owner, Frame_Distance);
+      SetDistanceVisibility(UI.UISequence, NextRelayPlayerId, Owner, Frame_Compass);
+    }
+
+    if (PrevHeaderIsVisible != Net_MAChase_HeaderIsVisible) {
+      PrevHeaderIsVisible = Net_MAChase_HeaderIsVisible;
+      Frame_Header.Visible = Net_MAChase_HeaderIsVisible;
+    }
+
+    if (PrevPenaltiesVisible != Net_MAChase_PenaltiesVisible) {
+      PrevPenaltiesVisible = Net_MAChase_PenaltiesVisible;
+      Frame_Penalties.Visible = Net_MAChase_PenaltiesVisible;
+    }
+
+    if (PrevFinishVisible != Net_MAChase_FinishVisible) {
+      PrevFinishVisible = Net_MAChase_FinishVisible;
+      Frame_Finish.Visible = Net_MAChase_FinishVisible;
+    }
+
+    if (
+      (GUIPlayer == Null && PrevGUIPlayerId != NullId) ||
+      (InputPlayer == Null && PrevInputPlayerId != NullId) ||
+      (GUIPlayer != Null && PrevGUIPlayerId != GUIPlayer.Id) ||
+      (InputPlayer != Null && PrevInputPlayerId != InputPlayer.Id)
+    ) {
+      if (GUIPlayer != Null) PrevGUIPlayerId = GUIPlayer.Id;
+      else PrevGUIPlayerId = NullId;
+      if (InputPlayer != Null) PrevInputPlayerId = InputPlayer.Id;
+      else PrevInputPlayerId = NullId;
+      
+      Page.GetClassChildren("spectator-shift", Page.MainFrame, True);
+      foreach (Control in Page.GetClassChildren_Result) {
+        if (GUIPlayer != InputPlayer) {
+          Control.RelativePosition_V3.Y = 10.;
+        } else {
+          Control.RelativePosition_V3.Y = 0.;
+        }
+      }
+    }
+
+    if (Owner != Null) {
+      declare OwnerCurrentClan = GetCurrentClan(Owner);
+
+      declare netread Net_MAChase_GlobalIsVisible for Owner = True;
+      if (PrevGlobalIsVisible != Net_MAChase_GlobalIsVisible) {
+        PrevGlobalIsVisible = Net_MAChase_GlobalIsVisible;
+        Frame_Global.Visible = Net_MAChase_GlobalIsVisible;
+      }
+
+      declare netread Net_MAChase_Penalties for Owner = 0;
+      if (PrevPenalties != Net_MAChase_Penalties) {
+        PrevPenalties = Net_MAChase_Penalties;
+        Label_Penalties.Value = TL::ToText(Net_MAChase_Penalties);
+        if (Net_MAChase_Penalties > 0) {
+          Label_Penalties.TextColor = <1., 0., 0.>;
+        } else {
+          Label_Penalties.TextColor = <1., 1., 1.>;
+        }
+      }
+
+      declare netread Net_MAChase_FinishUpdate for Owner = -1;
+      if (PrevFinishUpdate != Net_MAChase_FinishUpdate) {
+        PrevFinishUpdate = Net_MAChase_FinishUpdate;
+        declare netread Net_MAChase_FinishTime for Owner = -1;
+        if (Net_MAChase_FinishTime >= 0) {
+          FinishHideTime = Now + {{{C_FinishDuration}}};
+          Label_FinishPenalties.Value = TL::Compose("{{{Text_FailedRelay}}}", TL::ToText(Net_MAChase_Penalties));
+          declare Milliseconds = TL::ToText(Net_MAChase_FinishTime % 10);
+          Label_FinishTime.Value = TL::TimeToText(Net_MAChase_FinishTime, True)^Milliseconds;
+          Frame_FinishVisible.Visible = True;
+        } else {
+          FinishHideTime = Now;
+        }
+      }
+
+      declare netread Net_MAChase_IsWaitingRespawnPenalty for Owner = False;
+      if (PrevIsWaitingRespawnPenalty != Net_MAChase_IsWaitingRespawnPenalty) {
+        PrevIsWaitingRespawnPenalty = Net_MAChase_IsWaitingRespawnPenalty;
+        Label_RespawnPenalty.Visible = Net_MAChase_IsWaitingRespawnPenalty;
+      }
+
+      declare netread Net_MAChase_RespawnPenaltyEndTime for Owner = -1;
+      if (PrevRespawnPenaltyEndTime != Net_MAChase_RespawnPenaltyEndTime) {
+        PrevRespawnPenaltyEndTime = Net_MAChase_RespawnPenaltyEndTime;
+        if (PrevRespawnPenaltyEndTime < 0) {
+          Label_RespawnPenalty.Value = "{{{Text_RespawnPenalty}}}";
+        }
+      }
+
+      declare netread Net_MAChase_CheckpointGradeUpdate for Owner = -1;
+      if (PrevCheckpointGradeUpdate != Net_MAChase_CheckpointGradeUpdate) {
+        PrevCheckpointGradeUpdate = Net_MAChase_CheckpointGradeUpdate;
+
+        declare netread Net_MAChase_CheckpointGrade for Owner = "";
+        declare netread Net_MAChase_CheckpointGradeColor for Owner = <1., 1., 1.>;
+        declare netread Net_MAChase_CheckpointGradeCombo for Owner = 0;
+        declare netread Net_MAChase_CheckpointGradeScore for Owner = 0;
+        DisplayCheckpointGrade(Net_MAChase_CheckpointGrade, Net_MAChase_CheckpointGradeColor, Net_MAChase_CheckpointGradeCombo, Net_MAChase_CheckpointGradeScore, Frame_Grade);
+      }
+
+      declare TmpNextRelayLogin = "";
+      if (Net_MAChase_NextRelayLogin.existskey(OwnerCurrentClan)) {
+        TmpNextRelayLogin = Net_MAChase_NextRelayLogin[OwnerCurrentClan];
+      }
+      if (NextRelayLogin != TmpNextRelayLogin) {
+        NextRelayLogin = TmpNextRelayLogin;
+
+        if (NextRelayLogin == "") {
+          NextRelayPlayerId = NullId;
+        } else {
+          foreach (Player in Players) {
+            if (Player.User.Login == NextRelayLogin) {
+              NextRelayPlayerId = Player.Id;
+              break;
+            }
+          }
+        }
+
+        //SetDistanceVisibility(UI.UISequence, NextRelayPlayerId, Owner, Frame_Distance);
+        SetDistanceVisibility(UI.UISequence, NextRelayPlayerId, Owner, Frame_Compass);
+      }
+      
+      if (NextRelayPlayerId != NullId && Players.existskey(NextRelayPlayerId)) {
+        declare NextRelayPlayer <=> Players[NextRelayPlayerId];
+        declare OwnerPosition = <Owner.Position.X, 0., Owner.Position.Z>;
+        declare NextRelayPlayerPosition = <NextRelayPlayer.Position.X, 0., NextRelayPlayer.Position.Z>;
+        declare Distance = ML::NearestInteger(ML::Distance(OwnerPosition, NextRelayPlayerPosition));
+        declare Speed = Owner.DisplaySpeed - NextRelayPlayer.DisplaySpeed;
+        declare VisualSpeed = "";
+        if (Speed > 150) VisualSpeed = "";
+        else if (Speed > 50) VisualSpeed = "";
+        else if (Speed >= 0) VisualSpeed = "";
+        else if (Speed >= -50) VisualSpeed = "";
+        else if (Speed >= -150) VisualSpeed = "";
+        else VisualSpeed = "";
+        Label_Distance.Value = Distance^"m "^VisualSpeed;
+
+        declare Ratio = Distance / 200.;
+        if (Ratio > 1.) Ratio = 1.;
+        Quad_Distance.Size.X = 50. * Ratio;
+        Quad_DistanceBg.Size.X = 50. * Ratio;
+        Label_CarRight.RelativePosition_V3.X = Quad_Distance.Size.X + 0.1;
+        Frame_DistanceAlt.RelativePosition_V3.X = Quad_Distance.Size.X * -0.5;
+
+        Label_CompassDist.Value = Distance^"m";
+        Ratio = 1. - Ratio;
+        if (Ratio < 0.5) {
+          Quad_CompassLeft.RelativeRotation = 180. - (360. * Ratio);
+          Quad_CompassRight.RelativeRotation = 180.;
+        } else {
+          Quad_CompassLeft.RelativeRotation = 0.;
+          Quad_CompassRight.RelativeRotation = -360. * Ratio;
+        }
+
+        declare OwnerAim = Owner.AimDirection;
+        declare RelayPlayerDirection = NextRelayPlayer.Position - Owner.Position;
+        OwnerAim.Y = 0.;
+        RelayPlayerDirection.Y = 0.;
+        declare Angle = ML::OrientedAngle(RelayPlayerDirection, OwnerAim);
+        declare Side = ML::CrossProduct(RelayPlayerDirection, OwnerAim);
+        if (Side.Y < 0) Angle *= -1.;
+        Label_Compass.RelativePosition_V3 = <12. * ML::Sin(Angle), 12. * ML::Cos(Angle)>;
+        Label_Compass.RelativeRotation = Angle * 180./ML::PI();
+      }
+
+      if (PrevClan != OwnerCurrentClan) {
+        PrevClan = OwnerCurrentClan;
+        if (UseClans && Teams.existskey(OwnerCurrentClan-1)) {
+          Label_Compass.TextColor = Teams[OwnerCurrentClan-1].ColorPrimary;
+        }
+      }
+    }
+
+    if (PrevTeamColor[0] != Teams[0].ColorPrimary || PrevTeamColor[1] != Teams[1].ColorPrimary) {
+      PrevTeamColor[0] = Teams[0].ColorPrimary;
+      PrevTeamColor[1] = Teams[1].ColorPrimary;
+
+      if (UseClans && Owner != Null && Teams.existskey(GetCurrentClan(Owner)-1)) {
+        Label_Compass.TextColor = Teams[GetCurrentClan(Owner)-1].ColorPrimary;
+      }
+
+      foreach (Team => Control in Frame_Header.Controls) {
+        declare Frame_Team = (Control as CMlFrame);
+        declare Quad_HeaderSmall <=> (Frame_Team.GetFirstChild("quad-header-small") as CMlQuad);
+        declare Quad_HeaderBig <=> (Frame_Team.GetFirstChild("quad-header-big") as CMlQuad);
+        declare Quad_TeamColor <=> (Frame_Team.GetFirstChild("quad-team-color") as CMlQuad);
+        Quad_HeaderSmall.Colorize = Teams[Team].ColorPrimary;
+        Quad_HeaderBig.Colorize = Teams[Team].ColorPrimary;
+        Quad_TeamColor.BgColor = Teams[Team].ColorPrimary;
+
+        declare Frame_GapPoints <=> (Frame_Team.GetFirstChild("frame-gap-points") as CMlFrame);
+        foreach (Control in Frame_GapPoints.Controls) {
+          declare Frame_Point <=> (Control as CMlFrame);
+          declare Quad_PointBg <=> (Frame_Point.GetFirstChild("quad-point-bg") as CMlQuad);
+          declare Quad_Point <=> (Frame_Point.GetFirstChild("quad-point") as CMlQuad);
+          Quad_PointBg.BgColor = Teams[Team].ColorPrimary * 0.5;
+          Quad_Point.BgColor = Teams[Team].ColorPrimary;
+        }
+
+        declare Frame_GapGauge <=> (Frame_Team.GetFirstChild("frame-gap-gauge") as CMlFrame);
+        declare Quad_GaugeBg <=> (Frame_GapGauge.GetFirstChild("quad-gauge-bg") as CMlQuad);
+        declare Quad_Gauge <=> (Frame_GapGauge.GetFirstChild("quad-gauge") as CMlQuad);
+        Quad_GaugeBg.BgColor = Teams[Team].ColorPrimary * 0.5;
+        Quad_Gauge.BgColor = Teams[Team].ColorPrimary;
+      }
+    }
+
+    declare RoundPointsUdpdated = False;
+    for (Clan, 1, 2) {
+      if (Net_Chase_RoundPoints.existskey(Clan)) {
+        if (PrevRoundPoints[Clan] != Net_Chase_RoundPoints[Clan]) {
+          PrevRoundPoints[Clan] = Net_Chase_RoundPoints[Clan];
+          UpdateRoundPoints(Clan, Net_Chase_RoundPoints[Clan], Net_MAChase_RoundPointsLimit, Frame_Header);
+          RoundPointsUdpdated = True;
+        }
+      } else if (PrevRoundPoints[Clan] != 0) {
+        PrevRoundPoints[Clan] = 0;
+        UpdateRoundPoints(Clan, 0, Net_MAChase_RoundPointsLimit, Frame_Header);
+        RoundPointsUdpdated = True;
+      }
+    }
+
+    if (PrevPointsGap != Net_Chase_PointsGap || RoundPointsUdpdated) {
+      PrevPointsGap = Net_Chase_PointsGap;
+      UpdatePointsGap(Net_Chase_RoundPoints, Net_Chase_PointsGap, Frame_Header);
+    }
+
+    if (PrevRoundPointsLimit != Net_MAChase_RoundPointsLimit) {
+      PrevRoundPointsLimit = Net_MAChase_RoundPointsLimit;
+
+      for (Clan, 1, 2) {
+        if (Net_Chase_RoundPoints.existskey(Clan)) {
+          UpdateRoundPoints(Clan, Net_Chase_RoundPoints[Clan], Net_MAChase_RoundPointsLimit, Frame_Header);
+        } else if (PrevRoundPoints.existskey(Clan)) {
+          UpdateRoundPoints(Clan, PrevRoundPoints[Clan], Net_MAChase_RoundPointsLimit, Frame_Header);
+        }
+      }
+    }
+    
+    if (PrevIsSpectatorClient != IsSpectatorClient) {
+      PrevIsSpectatorClient = IsSpectatorClient;
+      Frame_NextCheckpointSpectator.Visible = IsSpectatorClient && UseClans;
+    }
+    
+    if (PrevNextPlayerUpdate != Net_Chase_NextPlayerUpdate) {
+      PrevNextPlayerUpdate = Net_Chase_NextPlayerUpdate;
+      
+      declare GUIPlayerCurrentClan = GetCurrentClan(GUIPlayer);
+      if (
+        GUIPlayer != Null &&
+        Net_Chase_NextPlayer.existskey(GUIPlayerCurrentClan) &&
+        Net_Chase_NextCheckpoint.existskey(GUIPlayerCurrentClan)
+      ) {
+        UpdateNextCheckpoint(Net_Chase_NextPlayer[GUIPlayerCurrentClan], Net_Chase_NextCheckpoint[GUIPlayerCurrentClan]);
+      } else {
+        UpdateNextCheckpoint("{{{C_NoNameCheckpoint}}}", -1);
+      }
+      
+      if (UseClans) {
+        for (Clan, 1, 2) {
+          if (
+            Net_Chase_NextPlayer.existskey(Clan) &&
+            Net_Chase_NextCheckpoint.existskey(Clan)
+          ) {
+            UpdateNextCheckpoint(Frames_NextCheckpoint[Clan], Net_Chase_NextPlayer[Clan], Net_Chase_NextCheckpoint[Clan]);
+          } else {
+            UpdateNextCheckpoint(Frames_NextCheckpoint[Clan], "{{{C_NoNameCheckpoint}}}", -1);
+          }
+        }
+      }
+      
+      if (
+        GUIPlayer != Null &&
+        Net_Chase_RelayTime.existskey(GUIPlayerCurrentClan) &&
+        Net_Chase_RelayTime[GUIPlayerCurrentClan] >= 0
+      ) {
+        declare RelayTime = Net_Chase_RelayTime[GUIPlayerCurrentClan];
+        if (RelayTime < 1000) {
+          Label_RelayTime.Value = "";//TL::Compose("%1 : %2ms", "{{{_("Relay duration")}}}", TL::ToText(RelayTime));
+          RelayHideTime = Now + 2750;
+        } else {
+          Label_RelayTime.Value = "";
+        }
+      } else {
+        Label_RelayTime.Value = "";
+      }
+    }
+    
+    if (RelayHideTime > 0 && RelayHideTime <= Now) {
+      RelayHideTime = -1;
+      Label_RelayTime.Value = "";
+    }
+
+    if (FinishHideTime > 0 && FinishHideTime <= Now) {
+      FinishHideTime = -1;
+      Frame_FinishVisible.Visible = False;
+    }
+    
+    if (
+      GUIPlayer != Null && 
+      GUIPlayer.Id != InputPlayer.Id && 
+      PrevSpecPlayerId != GUIPlayer.Id
+    ) {
+      declare GUIPlayerCurrentClan = GetCurrentClan(GUIPlayer);
+      PrevSpecPlayerId = GUIPlayer.Id;
+      Net_Chase_SpectatingClan = GUIPlayerCurrentClan;
+
+      SetDistanceVisibility(UI.UISequence, NextRelayPlayerId, Owner, Frame_Compass);
+      
+      if (Net_Chase_NextPlayer.existskey(GUIPlayerCurrentClan) && Net_Chase_NextCheckpoint.existskey(GUIPlayerCurrentClan)) {
+        UpdateNextCheckpoint(Net_Chase_NextPlayer[GUIPlayerCurrentClan], Net_Chase_NextCheckpoint[GUIPlayerCurrentClan]);
+      } else {
+        UpdateNextCheckpoint("{{{C_NoNameCheckpoint}}}", -1);
+      }
+    }
+
+    if (Label_RespawnPenalty.Visible && PrevRespawnPenaltyEndTime >= 0) {
+      if (GameTime <= PrevRespawnPenaltyEndTime) {
+        Label_RespawnPenalty.Value = TL::Compose("%1 : %2", "{{{Text_RespawnPenalty}}}", TL::ToText((PrevRespawnPenaltyEndTime - GameTime) / 1000 + 1));
+      } else {
+        Label_RespawnPenalty.Value = "{{{Text_RespawnPenalty}}}";
+      }
+    }
+  }
+}
+--></script>
+</manialink>
+""";
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/** Get the manialink of the markers
+ *
+ *  @return                           Chase UI manialink
+ */
+Text Private_GetMarkersML() {
+  declare Img_CheckpointGo = "file://Media/Manialinks/Nadeo/TrackMania/Chase/Go.dds";
+  declare Img_CheckpointStop = "file://Media/Manialinks/Nadeo/TrackMania/Chase/Stop.dds";
+
+  declare MarkersPlayers = "";
+  for (I, 0, 49) {
+    MarkersPlayers ^= """<frame id="marker-player-{{{I}}}"><frameinstance modelid="framemodel-marker-player" /></frame>""";
+  }
+  declare MarkersCheckpoints = "";
+  for (I, 0, 49) {
+    MarkersCheckpoints ^= """<frameinstance modelid="framemodel-marker-checkpoint" id="marker-checkpoint-{{{I}}}" />""";
+  }
+  return """
+<manialink version="3" name="{{{C_Layer_Markers}}}">
+<stylesheet>
+  <style class="text-default" textsize="3" textfont="OswaldMono" textcolor="fff" textemboss="1" />
+</stylesheet>
+<framemodel id="framemodel-marker-relay">
+  <frame id="frame-content" hidden="1">
+    <frame id="frame-shift">
+      <frame pos="0 10" z-index="0">
+        <label z-index="1" size="20 5" halign="center" valign="center2" textsize="1" class="text-default" id="label-name" />
+        <quad z-index="0" size="21 5" halign="center" valign="center" opacity="0.3" bgcolor="000" id="quad-name" />
+      </frame>
+      <label z-index="1" size="5 5" halign="center" valign="center2" text="⏺" class="text-default" id="label-position" />
+      <label z-index="2" size="5 5" halign="center" valign="center2" text="▲" class="text-default" id="label-direction" />
+    </frame>
+  </frame>
+</framemodel>
+<framemodel id="framemodel-marker-player">
+  <frame id="frame-content" hidden="1">
+    <frame id="frame-shift">
+      <label z-index="1" size="20 5" halign="center" valign="center2" textsize="1" text="⏹" class="text-default" id="label-name" />
+      <quad z-index="0" size="21 5" halign="center" valign="center" opacity="0.3" bgcolor="000" id="quad-name" />
+    </frame>
+  </frame>
+</framemodel>
+<framemodel hidden="1" id="framemodel-marker-checkpoint">
+  <quad size="20 20" halign="center" valign="center" keepratio="fit" image="{{{Img_CheckpointStop}}}" id="quad-checkpoint-status" />
+  <label pos="0 -3" size="40 20" halign="center" valign="center" textfont="OswaldMono" textsize="5" textemboss="1" id="label-checkpoint-status" />
+</framemodel>
+<frame z-index="-100" id="frame-global">
+  <frame id="marker-relay-clan1">
+    <frameinstance modelid="framemodel-marker-relay" />
+  </frame>
+  <frame id="marker-relay-clan2">
+    <frameinstance modelid="framemodel-marker-relay" />
+  </frame>
+  <frame id="frame-markers-players">
+    {{{MarkersPlayers}}}
+  </frame>
+  <frame id="frame-markers-checkpoints">
+    {{{MarkersCheckpoints}}}
+  </frame>
+</frame>
+<script><!--
+#Include "MathLib" as ML
+
+#Const C_PosMax <70., 70.>
+#Const C_PosMin <-70., -45.>
+
+CTmMlPlayer GetOwner() {
+  if (GUIPlayer != Null) return GUIPlayer;
+  return InputPlayer;
+}
+
+Integer GetCurrentClan(CTmMlPlayer _Player) {
+  if (_Player == Null) return -1;
+  
+  if (UseClans) {
+    return _Player.CurrentClan;
+  } else {
+    declare netread Net_Chase_ChaseAttackClan for _Player = -1;
+    return Net_Chase_ChaseAttackClan;
+  }
+
+  return -1;
+}
+
+Void UpdateMarkerName(Text _Name, Integer _Clan, CMlLabel _Label_Name, CMlQuad _Quad_Name) {
+  if (_Label_Name == Null || _Quad_Name == Null) return;
+
+  _Label_Name.Value = _Name;
+  if (!UseClans) {
+    _Quad_Name.BgColor = <0., 0., 0.>;
+  } else if (_Clan == 1) {
+    _Quad_Name.BgColor = Teams[0].ColorPrimary;
+  } else if (_Clan == 2) {
+    _Quad_Name.BgColor = Teams[1].ColorPrimary;
+  }
+  declare SizeX = _Label_Name.ComputeWidth(_Name);
+  if (SizeX > 20.) SizeX = 20.;
+  _Quad_Name.Size.X = SizeX + 1.;
+}
+
+Void UpdateMarkers(Text[Integer] _RelayLogins, Text[] _PlayersLogins, Text[] _PlayersNames, Integer[] _PlayersClans, CMlFrame _Frame_Content1, CMlFrame _Frame_Content2, CMlFrame _Frame_MarkersPlayers) {
+  if (_Frame_Content1 == Null || _Frame_Content2 == Null || _Frame_MarkersPlayers == Null) return;
+
+  declare Label_Position1 <=> (_Frame_Content1.GetFirstChild("label-position") as CMlLabel);
+  declare Label_Direction1 <=> (_Frame_Content1.GetFirstChild("label-direction") as CMlLabel);
+  declare Label_Name1 <=> (_Frame_Content1.GetFirstChild("label-name") as CMlLabel);
+  declare Quad_Name1 <=> (_Frame_Content1.GetFirstChild("quad-name") as CMlQuad);
+  declare Label_Position2 <=> (_Frame_Content2.GetFirstChild("label-position") as CMlLabel);
+  declare Label_Direction2 <=> (_Frame_Content2.GetFirstChild("label-direction") as CMlLabel);
+  declare Label_Name2 <=> (_Frame_Content2.GetFirstChild("label-name") as CMlLabel);
+  declare Quad_Name2 <=> (_Frame_Content2.GetFirstChild("quad-name") as CMlQuad);
+
+  _Frame_Content1.Visible = False;
+  _Frame_Content2.Visible = False;
+
+  declare Owner <=> GetOwner();
+
+  foreach (Clan => Login in _RelayLogins) {
+    if (Owner != Null && GetCurrentClan(Owner) == Clan && Owner.User.Login != Login) {
+      if (!UseClans) {
+        _Frame_Content1.Visible = True;
+        Label_Position1.TextColor = <1., 1., 1.>;
+        Label_Direction1.TextColor = <1., 1., 1.>;
+        foreach (Player in Players) {
+          if (Player.User.Login == Login) {
+            UpdateMarkerName(Player.User.Name, Clan, Label_Name1, Quad_Name1);
+            break;
+          }
+        }
+      } else if (Clan == 1) {
+        _Frame_Content1.Visible = True;
+        Label_Position1.TextColor = Teams[0].ColorPrimary;
+        Label_Direction1.TextColor = Teams[0].ColorPrimary;
+        foreach (Player in Players) {
+          if (Player.User.Login == Login) {
+            UpdateMarkerName(Player.User.Name, Clan, Label_Name1, Quad_Name1);
+            break;
+          }
+        }
+      } else if (Clan == 2) {
+        _Frame_Content2.Visible = True;
+        Label_Position2.TextColor = Teams[1].ColorPrimary;
+        Label_Direction2.TextColor = Teams[1].ColorPrimary;
+        foreach (Player in Players) {
+          if (Player.User.Login == Login) {
+            UpdateMarkerName(Player.User.Name, Clan, Label_Name2, Quad_Name2);
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  foreach (Key => Control in _Frame_MarkersPlayers.Controls) {
+    declare Frame_MarkerPlayer <=> (Control as CMlFrame);
+    declare Frame_Content <=> (Frame_MarkerPlayer.GetFirstChild("frame-content") as CMlFrame);
+    Frame_Content.Visible = False;
+
+    if (_PlayersLogins.existskey(Key) && _PlayersClans.existskey(Key) && _PlayersNames.existskey(Key)) {
+      declare Login = _PlayersLogins[Key];
+      declare Clan = _PlayersClans[Key];
+      declare Name = _PlayersNames[Key];
+      Frame_MarkerPlayer.ZIndex = Key * 1.;
+
+      if (Owner != Null && Owner.User.Login != Login && GetCurrentClan(Owner) == Clan) {
+        declare Label_Name <=> (Frame_Content.GetFirstChild("label-name") as CMlLabel);
+        declare Quad_Name <=> (Frame_Content.GetFirstChild("quad-name") as CMlQuad);
+        UpdateMarkerName(Name, Clan, Label_Name, Quad_Name);
+        Frame_Content.Visible = True;
+      }
+    }
+  }
+}
+
+Void UpdateMarker(CMlFrame _Frame_Content, CMlFrame _Frame_Shift, CMlLabel _Label_Position, CMlLabel _Label_Direction) {
+  if (_Frame_Content == Null || _Label_Position == Null || _Label_Direction == Null) return;
+
+  if (
+    _Frame_Content.AbsolutePosition_V3.X < C_PosMin.X ||
+    _Frame_Content.AbsolutePosition_V3.X > C_PosMax.X ||
+    _Frame_Content.AbsolutePosition_V3.Y < C_PosMin.Y ||
+    _Frame_Content.AbsolutePosition_V3.Y > C_PosMax.Y
+  ) {
+    _Label_Position.Opacity = 1.;
+    _Label_Position.RelativePosition_V3 = <0., 0.>;
+    declare Angle = ML::OrientedAngle(
+      <0., 0., 1.>,
+      <_Frame_Content.AbsolutePosition_V3.X, 0., _Frame_Content.AbsolutePosition_V3.Y>
+    );
+    _Label_Direction.RelativeRotation = Angle * 180./ML::PI();
+    _Label_Direction.RelativePosition_V3 = <5. * ML::Sin(Angle), 5. * ML::Cos(Angle)>;
+    _Label_Direction.Visible = True;
+    _Label_Position.Opacity = ML::Abs(ML::Cos(((Now % 1000) / 1000.) * 2. * ML::PI()));
+  } else {
+    _Label_Position.Opacity = 0.7;
+    _Label_Position.RelativePosition_V3 = <0., 5.>;
+    _Label_Direction.Visible = False;
+  }
+
+  if (_Frame_Content.AbsolutePosition_V3.Y < C_PosMin.Y) {
+    _Frame_Shift.RelativePosition_V3.Y = C_PosMin.Y - _Frame_Content.AbsolutePosition_V3.Y;
+  } else if (_Frame_Shift.RelativePosition_V3.Y != 0.) {
+    _Frame_Shift.RelativePosition_V3.Y = 0.;
+  }
+}
+
+main() {
+  declare Marker_RelayClan1 <=> (Page.GetFirstChild("marker-relay-clan1") as CMlFrame);
+  declare Frame_Content1 <=> (Marker_RelayClan1.GetFirstChild("frame-content") as CMlFrame);
+  declare Frame_Shift1 <=> (Frame_Content1.GetFirstChild("frame-shift") as CMlFrame);
+  declare Label_Position1 <=> (Frame_Shift1.GetFirstChild("label-position") as CMlLabel);
+  declare Label_Direction1 <=> (Frame_Shift1.GetFirstChild("label-direction") as CMlLabel);
+  declare Marker_RelayClan2 <=> (Page.GetFirstChild("marker-relay-clan2") as CMlFrame);
+  declare Frame_Content2 <=> (Marker_RelayClan2.GetFirstChild("frame-content") as CMlFrame);
+  declare Frame_Shift2 <=> (Frame_Content2.GetFirstChild("frame-shift") as CMlFrame);
+  declare Label_Position2 <=> (Frame_Shift2.GetFirstChild("label-position") as CMlLabel);
+  declare Label_Direction2 <=> (Frame_Shift2.GetFirstChild("label-direction") as CMlLabel);
+  declare Frame_MarkersPlayers <=> (Page.GetFirstChild("frame-markers-players") as CMlFrame);
+  declare Frame_MarkersCheckpoints <=> (Page.GetFirstChild("frame-markers-checkpoints") as CMlFrame);
+
+  declare netread Net_MAChase_RelayUpdate for Teams[0] = -1;
+  declare netread Net_MAChase_RelayLogins for Teams[0] = Text[Integer];
+  declare netread Net_MAChase_MarkersLogins for Teams[0] = Text[];
+  declare netread Net_MAChase_MarkersNames for Teams[0] = Text[];
+  declare netread Net_MAChase_MarkersClans for Teams[0] = Integer[];
+
+  declare Chase_CheckpointStatus for This = {{{Const::C_CheckpointStatus_Wait}}};
+
+  declare PrevRelayUpdate = -123;
+  declare PrevDisplayCheckpointsMarkers = Frame_MarkersCheckpoints.Visible;
+  declare PrevCheckpointsNb = -123;
+  declare PrevCheckpointStatus = {{{Const::C_CheckpointStatus_Wait}}};
+
+  while (True) {
+    yield;
+
+    if (UseClans) {
+      if (PrevRelayUpdate != Net_MAChase_RelayUpdate) {
+        PrevRelayUpdate = Net_MAChase_RelayUpdate;
+        UpdateMarkers(Net_MAChase_RelayLogins, Net_MAChase_MarkersLogins, Net_MAChase_MarkersNames, Net_MAChase_MarkersClans, Frame_Content1, Frame_Content2, Frame_MarkersPlayers);
+      }
+    } else {
+      declare Owner <=> GetOwner();
+      if (Owner != Null) {
+        declare netread Net_MAChaseAttack_RelayUpdate for Owner = -1;
+        if (PrevRelayUpdate != Net_MAChaseAttack_RelayUpdate) {
+          PrevRelayUpdate = Net_MAChaseAttack_RelayUpdate;
+          declare netread Net_MAChaseAttack_RelayLogins for Owner = Text[Integer];
+          declare netread Net_MAChaseAttack_MarkersLogins for Owner = Text[];
+          declare netread Net_MAChaseAttack_MarkersNames for Owner = Text[];
+          declare netread Net_MAChaseAttack_MarkersClans for Owner = Integer[];
+          UpdateMarkers(Net_MAChaseAttack_RelayLogins, Net_MAChaseAttack_MarkersLogins, Net_MAChaseAttack_MarkersNames, Net_MAChaseAttack_MarkersClans, Frame_Content1, Frame_Content2, Frame_MarkersPlayers);
+        }
+
+        declare netread Net_MAChase_DisplayCheckpointsMarkers for Owner = False;
+        if (PrevDisplayCheckpointsMarkers != Net_MAChase_DisplayCheckpointsMarkers) {
+          PrevDisplayCheckpointsMarkers = Net_MAChase_DisplayCheckpointsMarkers;
+          Frame_MarkersCheckpoints.Visible = Net_MAChase_DisplayCheckpointsMarkers;
+        }
+        if (PrevCheckpointsNb != MapCheckpointPos.count + MapFinishLinePos.count) {
+          PrevCheckpointsNb = MapCheckpointPos.count + MapFinishLinePos.count;
+          foreach (Key => Control in Frame_MarkersCheckpoints.Controls) {
+            Control.Visible = Key < PrevCheckpointsNb;
+          }
+        }
+        if (PrevCheckpointStatus != Chase_CheckpointStatus) {
+          PrevCheckpointStatus = Chase_CheckpointStatus;
+          foreach (Key => Control in Frame_MarkersCheckpoints.Controls) {
+            declare Frame_MarkerCheckpoint <=> (Control as CMlFrame);
+            declare Quad_CheckpointStatus <=> (Frame_MarkerCheckpoint.GetFirstChild("quad-checkpoint-status") as CMlQuad);
+            declare Label_CheckpointStatus <=> (Frame_MarkerCheckpoint.GetFirstChild("label-checkpoint-status") as CMlLabel);
+            if (PrevCheckpointStatus == {{{Const::C_CheckpointStatus_Go}}}) {
+              Quad_CheckpointStatus.ImageUrl = "{{{Img_CheckpointGo}}}";
+              Label_CheckpointStatus.Value = "Go";
+              Label_CheckpointStatus.TextColor = <0., 0.7, 0.>;
+            } else {
+              Quad_CheckpointStatus.ImageUrl = "{{{Img_CheckpointStop}}}";
+              Label_CheckpointStatus.Value = "{{{_("Wait")}}}";
+              Label_CheckpointStatus.TextColor = <0.9, 0., 0.>;
+            }
+          }
+        }
+      }
+    }
+
+    if (Frame_Content1.Visible) {
+      UpdateMarker(Frame_Content1, Frame_Shift1, Label_Position1, Label_Direction1);
+    }
+    if (Frame_Content2.Visible) {
+      UpdateMarker(Frame_Content2, Frame_Shift2, Label_Position2, Label_Direction2);
+    }
+  }
+}
+--></script>
+</manialink>
+""";
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Public
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/** Return the version number of the script
+ *
+ *  @return                           The version number of the script
+ */
+Text GetScriptVersion() {
+  return Version;
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/** Return the name of the script
+ *
+ *  @return                           The name of the script
+ */
+Text GetScriptName() {
+  return ScriptName;
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/// Unload the library
+Void Unload() {
+
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/// Load the library
+Void Load() {
+  Unload();
+
+  Layers::Create(C_Layer_UI, Private_GetChaseML());
+  Layers::Create(C_Layer_Markers, Private_GetMarkersML());
+  Layers::SetType(C_Layer_Markers, CUILayer::EUILayerType::Markers);
+}

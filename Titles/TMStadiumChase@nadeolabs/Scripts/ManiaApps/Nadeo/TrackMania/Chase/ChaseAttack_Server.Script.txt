@@ -1,0 +1,326 @@
+/**
+ * Chase UI
+ */
+#Const Version    "2018-06-08"
+#Const ScriptName "ManiaApps/Nadeo/TrackMania/Chase/Chase_Server.Script.txt"
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Library
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+#Include "Libs/Nadeo/TrackMania/Chase/Constants2.Script.txt" as Const
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Functions
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Public
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/** Return the version number of the script
+ *
+ *  @return                           The version number of the script
+ */
+Text GetScriptVersion() {
+  return Version;
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/** Return the name of the script
+ *
+ *  @return                           The name of the script
+ */
+Text GetScriptName() {
+  return ScriptName;
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/** Send the login of the next relay
+ *  player to the UI
+ *
+ *	@param	_Clan											Clan of the next relay player
+ *  @param  _Login										The login of the next relay player
+ */
+Void SetRelayPlayer(Integer _Clan, Text _Login) {
+  declare netwrite Net_MAChase_NextRelayLogin for Teams[0] = Text[Integer];
+  Net_MAChase_NextRelayLogin[_Clan] = _Login;
+}
+Void ResetRelayPlayers() {
+	declare netwrite Net_MAChase_NextRelayLogin for Teams[0] = Text[Integer];
+	Net_MAChase_NextRelayLogin = Text[Integer];
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/** Set the visibility of the whole
+ *	Chase UI for a player
+ *
+ *	@param	_Visible									The UI visibility
+ *	@param	_Player										The player to update
+ */
+Void SetVisibility(Boolean _Visible, CTmPlayer _Player) {
+	if (_Player == Null) return;
+	declare netwrite Net_MAChase_GlobalIsVisible for _Player = True;
+	Net_MAChase_GlobalIsVisible = _Visible;
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/** Enable or disable the display of the header
+ *
+ *	@param	_Enable										True to display
+ *																		False to hide
+ */
+Void SetHeaderVisibility(Boolean _Enable) {
+	declare netwrite Net_MAChase_HeaderIsVisible for Teams[0] = True;
+	Net_MAChase_HeaderIsVisible = _Enable;
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/** Set the penalties visibility in the UI
+ *
+ *	@param	_Visible									The penalties visibility
+ */
+Void SetPenaltiesVisibility(Boolean _Visible) {
+	declare netwrite Net_MAChase_PenaltiesVisible for Teams[0] = False;
+	Net_MAChase_PenaltiesVisible = _Visible;
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/** Set the finish visibility in the UI
+ *
+ *	@param	_Visible									The finish visibility
+ */
+Void SetFinishVisibility(Boolean _Visible) {
+	declare netwrite Net_MAChase_FinishVisible for Teams[0] = False;
+	Net_MAChase_FinishVisible = _Visible;
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/** Update the number of penalties
+ *	a player has
+ *
+ *	@param	_Penalties								The number of penalties
+ *	@param	_Player										The player to update
+ */
+Void SetPenalties(Integer _Penalties, CTmPlayer _Player) {
+	if (_Player == Null) return;
+	declare netwrite Net_MAChase_Penalties for _Player = 0;
+	Net_MAChase_Penalties = _Penalties;
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/** Update the finish time of a player
+ *
+ *	@param	_Time											The finish time
+ *	@param	_Player										The player to update
+ */
+Void SetFinishTime(Integer _Finish, CTmPlayer _Player) {
+	if (_Player == Null) return;
+	declare netwrite Net_MAChase_FinishUpdate for _Player = -1;
+	declare netwrite Net_MAChase_FinishTime for _Player = -1;
+	Net_MAChase_FinishTime = _Finish;
+	Net_MAChase_FinishUpdate = Now;
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/** Send the checkpoint grade of a
+ *	player to his UI
+ *
+ *	@param	_Player										The recipient
+ *	@param	_Grade										The grade
+ *	@param	_Color										Color of the grade
+ *	@param	_Combo										Combo counter
+ *	@param	_Score										The score of the player
+ */
+Void SendCheckpointGrade(CTmPlayer _Player, Text _Grade, Vec3 _Color, Integer _Combo, Integer _Score) {
+	if (_Player == Null) return;
+	
+	declare netwrite Net_MAChase_CheckpointGradeUpdate for _Player = -1;
+	declare netwrite Net_MAChase_CheckpointGrade for _Player = "";
+	declare netwrite Net_MAChase_CheckpointGradeColor for _Player = <1., 1., 1.>;
+	declare netwrite Net_MAChase_CheckpointGradeCombo for _Player = 0;
+	declare netwrite Net_MAChase_CheckpointGradeScore for _Player = 0;
+	Net_MAChase_CheckpointGrade = _Grade;
+	Net_MAChase_CheckpointGradeColor = _Color;
+	Net_MAChase_CheckpointGradeCombo = _Combo;
+	Net_MAChase_CheckpointGradeScore = _Score;
+	Net_MAChase_CheckpointGradeUpdate = Now;
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/** Send relay info to the UI
+ *
+ *	@param	_NextCheckpointPlayerId	Id of the player that must cross
+ *																		the next checkpoint for each clan
+ *																		[PlayerId => Clan]
+ *	@param	_MarkersPlayers						Players associated to each marker
+ *	@param	_Player										The player to update
+ *																		Use Null when in Chase, a player when in Chase Attack
+ */
+Void SendRelayInfo(Ident[Integer] _NextCheckpointPlayerId, Integer[CTmPlayer] _MarkersPlayers, CTmPlayer _Player) {
+	declare RelayLogins = Text[Integer];
+	foreach (Clan => PlayerId in _NextCheckpointPlayerId) {
+		if (AllPlayers.existskey(PlayerId)) {
+			RelayLogins[Clan] = AllPlayers[PlayerId].User.Login;
+		}
+	}
+	
+	declare Logins = Text[];
+	declare Names = Text[];
+	declare Clans = Integer[];
+	foreach (Player => Clan in _MarkersPlayers) {
+		if (Player == Null) continue;
+		Logins.add(Player.User.Login);
+		Names.add(Player.User.Name);
+		Clans.add(Clan);
+	}
+	
+	if (_Player == Null) {
+		declare netwrite Net_MAChase_RelayUpdate for Teams[0] = -1;
+		declare netwrite Net_MAChase_RelayLogins for Teams[0] = Text[Integer];
+		declare netwrite Net_MAChase_MarkersLogins for Teams[0] = Text[];
+		declare netwrite Net_MAChase_MarkersNames for Teams[0] = Text[];
+		declare netwrite Net_MAChase_MarkersClans for Teams[0] = Integer[];
+		Net_MAChase_MarkersLogins = Logins;
+		Net_MAChase_MarkersNames = Names;
+		Net_MAChase_MarkersClans = Clans;
+		Net_MAChase_RelayLogins = RelayLogins;
+		Net_MAChase_RelayUpdate = Now;
+	} else {
+		declare netwrite Net_MAChaseAttack_RelayUpdate for _Player = -1;
+		declare netwrite Net_MAChaseAttack_RelayLogins for _Player = Text[Integer];
+		declare netwrite Net_MAChaseAttack_MarkersLogins for _Player = Text[];
+		declare netwrite Net_MAChaseAttack_MarkersNames for _Player = Text[];
+		declare netwrite Net_MAChaseAttack_MarkersClans for _Player = Integer[];
+		Net_MAChaseAttack_MarkersLogins = Logins;
+		Net_MAChaseAttack_MarkersNames = Names;
+		Net_MAChaseAttack_MarkersClans = Clans;
+		Net_MAChaseAttack_RelayLogins = RelayLogins;
+		Net_MAChaseAttack_RelayUpdate = Now;
+	}
+}
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/** Send relay info to the UI
+ *
+ *	@param	_NextCheckpointPlayerId	Id of the player that must cross
+ *																		the next checkpoint for each clan
+ *																		[Clan => PlayerId]
+ *	@param	_MarkersPlayers						Players associated to each marker
+ */
+Void SendRelayInfo(Ident[Integer] _NextCheckpointPlayerId, Integer[CTmPlayer] _MarkersPlayers) {
+	SendRelayInfo(_NextCheckpointPlayerId, _MarkersPlayers, Null);
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/** Update the round points limit
+ *
+ *	@param														The round points limit
+ */
+Void SetRoundPointsLimit(Integer _RoundPointsLimit) {
+	declare netwrite Net_MAChase_RoundPointsLimit for Teams[0] = 0;
+	Net_MAChase_RoundPointsLimit = _RoundPointsLimit;
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/// Force an update in the UI displaying the next checkpoint player
+Void UpdateNextCheckpointPlayer() {
+	declare netwrite Integer Net_Chase_NextPlayerUpdate for Teams[0];
+	Net_Chase_NextPlayerUpdate = Now;
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/** Send the Chase Attack clan of a player
+ *	to the UI
+ *
+ *	@param	_Clan											The clan
+ *	@param	_Player										The player to update
+ */
+Void SetChaseAttackClan(Integer _Clan, CTmPlayer _Player) {
+	if (_Player == Null) return;
+	declare netwrite Net_Chase_ChaseAttackClan for _Player = -1;
+	Net_Chase_ChaseAttackClan = _Clan;
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/** Get the clan a spectator is spectating
+ *
+ *	@param	_Spectator								The spectator to check
+ *
+ *	@return														The clan they are spectating
+ *																		-1 if no clan
+ */
+Integer GetSpectatingClan(CTmPlayer _Spectator) {
+	if (_Spectator == Null) return -1;
+	declare UI <=> UIManager.GetUI(_Spectator);
+	if (UI == Null) return -1;
+	
+	declare netread Integer Net_Chase_SpectatingClan for UI;
+	return Net_Chase_SpectatingClan;
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/** Show/Hide the respawn penalty UI
+ *	of a player
+ *
+ *	@param	_IsWaiting								True to display the UI
+ *																		False otherwise
+ *	@param	_Player										The player to update
+ */
+Void DisplayWaitingRespawnPenalty(Boolean _IsWaiting, CTmPlayer _Player) {
+	if (_Player == Null) return;
+	declare netwrite Net_MAChase_IsWaitingRespawnPenalty for _Player = False;
+	Net_MAChase_IsWaitingRespawnPenalty = _IsWaiting;
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/** Set the time at which the respawn
+ *	penalty of a player will stop
+ *
+ *	@param	_EndTime									The time when the penalty will stop
+ *	@param	_Player										The player to update
+ */
+Void SetRespawnPenaltyEndTime(Integer _EndTime, CTmPlayer _Player) {
+	if (_Player == Null) return;
+	declare netwrite Net_MAChase_RespawnPenaltyEndTime for _Player = -1;
+	Net_MAChase_RespawnPenaltyEndTime = _EndTime;
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/** Show/Hide the markers above the checkpoints
+ *	signaling if the player can cross
+ *	the checkpoint or stop
+ *
+ *	@param	_Visible									True to show, False to hide
+ *	@param	_Player										The player to update
+ */
+Void SetCheckpointMarkersVisibility(Boolean _Visible, CTmPlayer _Player) {
+	if (_Player == Null) return;
+	declare netwrite Net_MAChase_DisplayCheckpointsMarkers for _Player = False;
+	Net_MAChase_DisplayCheckpointsMarkers = _Visible;
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/// Unload the library
+Void Unload() {
+	ResetRelayPlayers();
+	SetHeaderVisibility(True);
+	SetPenaltiesVisibility(False);
+	SetFinishVisibility(False);
+	SendRelayInfo(Ident[Integer], Integer[CTmPlayer]);
+	SetRoundPointsLimit(0);
+	
+	foreach (Player in AllPlayers) {
+		SendCheckpointGrade(Player, "", <1., 1., 1.>, 0, 0);
+		SendRelayInfo(Ident[Integer], Integer[CTmPlayer], Player);
+		SetVisibility(True, Player);
+		SetPenalties(0, Player);
+		SetFinishTime(-1, Player);
+		DisplayWaitingRespawnPenalty(False, Player);
+		SetRespawnPenaltyEndTime(-1, Player);
+		SetCheckpointMarkersVisibility(False, Player);
+	}
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/// Load the library
+Void Load() {
+  Unload();
+}

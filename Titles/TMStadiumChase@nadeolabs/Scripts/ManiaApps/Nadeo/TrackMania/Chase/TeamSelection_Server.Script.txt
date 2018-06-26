@@ -1,0 +1,320 @@
+/**
+ * Chase team selection UI
+ */
+#Const Version    "2018-06-21"
+#Const ScriptName "ManiaApps/Nadeo/TrackMania/Chase/TeamSelection_Server.Script.txt"
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Libraries
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+#Include "Libs/Nadeo/TrackMania/Chase/Constants2.Script.txt" as Const
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Constants
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+#Const C_CanInvitePlayerFromAnotherTeam False //< Can a player select as teammate a player that is already in a team
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Functions
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Public
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/** Allow the display of team selection UI
+ *	for the given player
+ *
+ *	@param	_Enabled									True to display the team selection UI,
+ *																		False otherwise
+ *	@param	_Player										The player to update
+ */
+Void Enable(Boolean _Enabled, CTmPlayer _Player) {
+	if (_Player == Null) return;
+	declare netwrite Net_ChaseTeamSelection_IsEnabled for _Player = False;
+	Net_ChaseTeamSelection_IsEnabled = _Enabled;
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/** Get the validated teammate of a player
+ *	A teammate is validated if both side
+ *	agreed to play together
+ *
+ *	@param	_Player										The player to check
+ *
+ *	@return														The validated teammate if found,
+ *																		Null otherwise
+ */
+CTmPlayer GetValidatedTeammate(CTmPlayer _Player) {
+	if (_Player == Null) return Null;
+	
+	declare ChaseTeamSelection_Teammate for _Player = NullId;
+	if (ChaseTeamSelection_Teammate != NullId && Players.existskey(ChaseTeamSelection_Teammate)) {
+		declare Teammate <=> Players[ChaseTeamSelection_Teammate];
+		declare ChaseTeamSelection_Teammate as ReverseTeammate for Teammate = NullId;
+		if (ReverseTeammate != NullId && Players.existskey(ReverseTeammate) && Players[ReverseTeammate] == _Player) {
+			return Teammate;
+		}
+	}
+	
+	return Null;
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/** Get the requested teammate of a player
+ *	A teammate is requested if at least one side
+ *	agreed to play together
+ *
+ *	@param	_Player										The player to check
+ *
+ *	@return														The requested teammate if found,
+ *																		Null otherwise
+ */
+CTmPlayer GetRequestedTeammate(CTmPlayer _Player) {
+	if (_Player == Null) return Null;
+	
+	declare ChaseTeamSelection_Teammate for _Player = NullId;
+	if (ChaseTeamSelection_Teammate != NullId && Players.existskey(ChaseTeamSelection_Teammate)) {
+		return Players[ChaseTeamSelection_Teammate];
+	}
+	
+	return Null;
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/// Send the current player selection to the UI
+Void UpdatePlayerSelection() {
+	declare PlayerSelection = Text[Text];
+	
+	foreach (Player in Players) {
+		declare ChaseTeamSelection_Teammate for Player = NullId;
+		if (ChaseTeamSelection_Teammate != NullId && Players.existskey(ChaseTeamSelection_Teammate)) {
+			PlayerSelection[Player.User.Login] = Players[ChaseTeamSelection_Teammate].User.Login;
+		}
+	}
+	
+	declare netwrite Net_ChaseTeamSelection_PlayerSelection for Teams[0] = Text[Text];
+	declare netwrite Net_ChaseTeamSelection_PlayerSelectionUpdate for Teams[0] = -1;
+	Net_ChaseTeamSelection_PlayerSelection = PlayerSelection;
+	Net_ChaseTeamSelection_PlayerSelectionUpdate = Now;
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/** Select if the given player use a
+ *	random teammate or not
+ *
+ *	@param	_IsRandom									True to use a random teammate,
+ *																		False otherwise
+ *	@param	_Player										The player to update
+ */
+Void UseRandomTeammate(Boolean _IsRandom, CTmPlayer _Player) {
+	if (_Player == Null) return;
+	
+	declare ChaseTeamSelection_UseRandomTeammate for _Player = False;
+	ChaseTeamSelection_UseRandomTeammate = _IsRandom;
+	
+	declare netwrite Net_ChaseTeamSelection_UseRandomTeammate for _Player = False;
+	Net_ChaseTeamSelection_UseRandomTeammate = ChaseTeamSelection_UseRandomTeammate;
+	
+	if (_IsRandom) {
+		declare ChaseTeamSelection_Teammate for _Player = NullId;
+		ChaseTeamSelection_Teammate = NullId;
+	}
+	
+	UpdatePlayerSelection();
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/** Check if the given player has a
+ *	a random teammate
+ *
+ *	@param	_Player										The player to check
+ *
+ *	@return														True if the player has a random teammate,
+ *																		False otherwise
+ */
+Boolean HasRandomTeammate(CTmPlayer _Player) {
+	if (_Player == Null) return False;
+	
+	declare ChaseTeamSelection_UseRandomTeammate for _Player = False;
+	return ChaseTeamSelection_UseRandomTeammate;
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/** Set the teammate of a player
+ *
+ *	@param	_Teammate									The teammate to associate
+ *	@param	_Player										The player to update
+ */
+Void SetTeammate(CTmPlayer _Teammate, CTmPlayer _Player) {
+	if (_Player == Null) return;
+	
+	declare ChaseTeamSelection_Teammate for _Player = NullId;
+	if (_Teammate != Null && _Player != _Teammate) {
+		if (
+			C_CanInvitePlayerFromAnotherTeam ||
+			GetValidatedTeammate(_Teammate) == Null
+		) {
+			ChaseTeamSelection_Teammate = _Teammate.Id;
+			UseRandomTeammate(False, _Player);
+			
+			// If both players now form a team
+			// Cancel any teammate requests they previously received
+			if (
+				!C_CanInvitePlayerFromAnotherTeam &&
+				GetValidatedTeammate(_Teammate) != Null
+			) {
+				foreach (Player in AllPlayers) {
+					if (Player != _Teammate && Player != _Player) {
+						declare ChaseTeamSelection_Teammate as RequestedTeammate for Player = NullId;
+						if (RequestedTeammate == _Teammate.Id || RequestedTeammate == _Player.Id) {
+							RequestedTeammate = NullId;
+						}
+					}
+				}
+			}
+		}
+	} else {
+		ChaseTeamSelection_Teammate = NullId;
+	}
+	
+	UpdatePlayerSelection();
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/** Send the list of players currently
+ *	in the lobby to the UI
+ *
+ *	@param	_PlayerIds								The id of the players currently in the lobby
+ */
+Void SetLobbyPlayers(Ident[] _PlayerIds) {
+	declare Logins = Text[];
+	foreach (PlayerId in _PlayerIds) {
+		if (AllPlayers.existskey(PlayerId)) {
+			Logins.add(AllPlayers[PlayerId].User.Login);
+		}
+	}
+	
+	declare netwrite Net_ChaseTeamSelection_PlayersInLobby for Teams[0] = Text[];
+	declare netwrite Net_ChaseTeamSelection_PlayersInLobbyUpdate for Teams[0] = -1;
+	Net_ChaseTeamSelection_PlayersInLobby = Logins;
+	Net_ChaseTeamSelection_PlayersInLobbyUpdate = Now;
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/** Find the player owning the given UI
+ *
+ *	@param	_UI												The UI to check
+ *
+ *	@return														The owning player if found,
+ *																		Null otherwise
+ */
+CTmPlayer FindPlayerFromUI(CUIConfig _UI) {
+	if (_UI == Null) return Null;
+	
+	foreach (Player in Players) {
+		if (_UI == UIManager.GetUI(Player)) {
+			return Player;
+		}
+	}
+	
+	return Null;
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/// Update the library
+Void Yield() {
+	foreach (Event in UIManager.PendingEvents) {
+		if (Event.Type == CUIConfigEvent::EType::OnLayerCustomEvent) {
+			switch (Event.CustomEventType) {
+				case Const::C_UIEvent_TeamSelection_SelectPlayer: {
+					if (Event.UI != Null && Event.CustomEventData.existskey(0)) {
+						declare Login = Event.CustomEventData[0];
+						declare Teammate = CTmPlayer;
+						declare Requester = CTmPlayer;
+						
+						foreach (Player in Players) {
+							if (Teammate == Null && Player.User.Login == Login) {
+								Teammate <=> Player;
+							}
+							if (Requester == Null) {
+								declare UI <=> UIManager.GetUI(Player);
+								if (UI == Event.UI) {
+									Requester <=> Player;
+								}
+							}
+							if (Teammate != Null && Requester != Null) {
+								break;
+							}
+						}
+						
+						if (Requester != Null) {
+							declare ChaseTeamSelection_Teammate for Requester = NullId;
+							if (
+								Teammate == Null || (
+									ChaseTeamSelection_Teammate != NullId &&
+									ChaseTeamSelection_Teammate == Teammate.Id
+								)
+							) {
+								SetTeammate(Null, Requester);
+							} else {
+								SetTeammate(Teammate, Requester);
+							}
+						}
+					}
+				}
+				case Const::C_UIEvent_TeamSelection_FindTeammate: {
+					declare Player <=> FindPlayerFromUI(Event.UI);
+					if (Player != Null) {
+						UseRandomTeammate(True, Player);
+					}
+				}
+				case Const::C_UIEvent_TeamSelection_CancelSearch: {
+					declare Player <=> FindPlayerFromUI(Event.UI);
+					if (Player != Null) {
+						UseRandomTeammate(False, Player);
+					}
+				}
+				case Const::C_UIEvent_TeamSelection_CancelInvite: {
+					declare Player <=> FindPlayerFromUI(Event.UI);
+					if (Player != Null) {
+						SetTeammate(Null, Player);
+					}
+				}
+				case Const::C_UIEvent_TeamSelection_LeaveTeam: {
+					declare Player <=> FindPlayerFromUI(Event.UI);
+					if (Player != Null) {
+						declare ValidatedTeammate = GetValidatedTeammate(Player);
+						if (ValidatedTeammate != Null) SetTeammate(Null, ValidatedTeammate);
+						SetTeammate(Null, Player);
+					}
+				}
+			}
+		}
+	}
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/** Initialize a player state when
+ *	they join the server
+ *
+ *	@param	_Player										The player to initialize
+ */
+Void InitializePlayer(CTmPlayer _Player) {
+	Enable(False, _Player);
+	SetTeammate(Null, _Player);
+	UseRandomTeammate(False, _Player);
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/// Unload the library
+Void Unload() {
+	foreach (Player in AllPlayers) {
+		InitializePlayer(Player);
+	}
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/// Load the library
+Void Load() {
+	Unload();
+}

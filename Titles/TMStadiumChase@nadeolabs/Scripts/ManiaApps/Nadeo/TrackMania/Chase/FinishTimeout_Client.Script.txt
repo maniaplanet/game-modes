@@ -1,0 +1,134 @@
+/**
+ * Chase finish timeout UI
+ */
+#Const Version    "2018-06-22"
+#Const ScriptName "ManiaApps/Nadeo/TrackMania/Chase/FinishTimeout_Client.Script.txt"
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Libraries
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+#Include "TextLib" as TL
+#Include "ManiaApps/Nadeo/Layers.Script.txt" as Layers
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Constants
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+#Const C_Layer_FinishTimeout "ChaseAttack_FinishTimeout"
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Functions
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Private
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/** Get the manialink of the finish timeout UI
+ *
+ *  @return                           FinishTimeout UI manialink
+ */
+Text Private_GetFinishTimeoutML() {
+	declare Img_FootLine = "file://Media/Manialinks/Nadeo/TrackMania/Ingame/FootLine_Ranking.dds";
+	//L16N [Chase Attack] Title of a window that display the finish timeouts that the player won on the current map
+	declare Text_FinishTimeout = TL::ToUpperCase(_("Finish timeout"));
+	//L16N [Chase Attack] Message displayed when the last player of team did not manage to cross the finish line before the end of the countdown.
+	declare Text_FinishFailed = _("Finish failed");
+
+	return """
+<manialink version="3" name="{{{C_Layer_FinishTimeout}}}">
+<stylesheet>
+  <style class="text-default" textfont="OswaldMono" textcolor="ffffff" textsize="3" textemboss="1" />
+</stylesheet>
+<frame id="frame-global">
+	<frame pos="0 87" hidden="1" id="frame-finish-timeout">
+		<frame pos="0 -3" z-index="0">
+	    <quad pos="0.1 -3.2" z-index="0" size="60.5 1" halign="center" valign="center" opacity="0.3" image="{{{Img_FootLine}}}" />
+	    <label pos="-30 0" z-index="3" size="59 5" valign="center2" text="{{{Text_FinishTimeout}}}" class="text-default" />
+	  </frame>
+	  <frame pos="0 -7">
+	  	<quad z-index="0" size="60 12" halign="center" style="Bgs1" substyle="BgDialogBlur" opacity="0.1" bluramount="0.1" />
+	  	<quad z-index="1" size="60 12" halign="center" bgcolor="111111" opacity="0.3" />
+	  	<label pos="0 -6" z-index="2" size="58 12" halign="center" valign="center2" textsize="10" hidden="1" class="text-default" id="label-timeout" />
+	  	<label pos="0 -6" z-index="2" size="58 12" halign="center" valign="center2" textsize="10" textcolor="e00" text="{{{Text_FinishFailed}}}" hidden="1" class="text-default" id="label-finish-failed" />
+	  </frame>
+	</frame>
+</frame>
+<script><!--
+#Include "TextLib" as TL
+#Include "MathLib" as ML
+
+CTmMlPlayer GetOwner() {
+  if (GUIPlayer != Null) return GUIPlayer;
+  return InputPlayer;
+}
+
+main() {
+	declare Frame_Global <=> (Page.GetFirstChild("frame-global") as CMlFrame);
+	declare Frame_FinishTimeout <=> (Frame_Global.GetFirstChild("frame-finish-timeout") as CMlFrame);
+	declare Label_Timeout <=> (Frame_FinishTimeout.GetFirstChild("label-timeout") as CMlLabel);
+	declare Label_FinishFailed <=> (Frame_FinishTimeout.GetFirstChild("label-finish-failed") as CMlLabel);
+
+	declare PrevEndTime = -123;
+	declare PrevFinishFailedHideTime = -123;
+	declare DisplayFinishFailed = False;
+
+	while (True) {
+		yield;
+
+		declare Owner <=> GetOwner();
+		if (Owner != Null) {
+			declare netread Net_ChaseFinishTimeout_EndTime for Owner = -1;
+			declare netread Net_ChaseFinishTimeout_FinishFailedHideTime for Owner = -1;
+			if (
+				PrevEndTime != Net_ChaseFinishTimeout_EndTime ||
+				PrevFinishFailedHideTime != Net_ChaseFinishTimeout_FinishFailedHideTime
+			) {
+				PrevEndTime = Net_ChaseFinishTimeout_EndTime;
+				PrevFinishFailedHideTime = Net_ChaseFinishTimeout_FinishFailedHideTime;
+				Frame_FinishTimeout.Visible = PrevEndTime >= 0 || PrevFinishFailedHideTime > GameTime;
+			}
+		}
+
+		if (Owner == Null && Frame_FinishTimeout.Visible) {
+			Frame_FinishTimeout.Visible = False;
+		}
+
+		if (Frame_FinishTimeout.Visible) {
+			if (PrevFinishFailedHideTime >= 0 && GameTime < PrevFinishFailedHideTime) {
+				if (!Label_FinishFailed.Visible) {
+					Label_FinishFailed.Visible = True;
+					Label_Timeout.Visible = False;
+				}
+			} else if (PrevEndTime >= 0) {
+				if (!Label_Timeout.Visible) {
+					Label_Timeout.Visible = True;
+					Label_FinishFailed.Visible = False;
+				}
+				declare RemainingTime = ML::Max(0, PrevEndTime - GameTime);
+				Label_Timeout.Value = TL::TimeToText(RemainingTime, True);
+			} else {
+				Frame_FinishTimeout.Visible = False;
+			}
+		}
+	}
+}
+--></script>
+</manialink>
+""";
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Public
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/// Unload the library
+Void Unload() {
+
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/// Load the library
+Void Load() {
+	Unload();
+
+	Layers::Create(C_Layer_FinishTimeout, Private_GetFinishTimeoutML());
+}

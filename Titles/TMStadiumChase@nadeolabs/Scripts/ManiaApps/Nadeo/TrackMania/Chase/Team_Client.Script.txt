@@ -1,0 +1,175 @@
+/**
+ * Chase team UI
+ */
+#Const Version    "2018-06-08"
+#Const ScriptName "ManiaApps/Nadeo/TrackMania/Chase/Team_Client.Script.txt"
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Libraries
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+#Include "TextLib" as TL
+#Include "ManiaApps/Nadeo/Layers.Script.txt" as Layers
+#Include "Libs/Nadeo/TrackMania/Chase/Constants2.Script.txt" as Const
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Constants
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+#Const C_Layer_Team "ChaseAttack_Team"
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Functions
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Private
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/** Get the manialink of the Chase UI
+ *
+ *  @return                           Chase UI manialink
+ */
+Text Private_GetTeamML() {
+	declare Text_Team = TL::ToUpperCase(_("Team"));
+	//L16N [Chase Attack] Help text displayed alongside the button that allow the player to leave its current team.
+	declare Text_LeaveTeam = _("Leave team");
+	declare Img_FootLine = "file://Media/Manialinks/Nadeo/TrackMania/Ingame/FootLine_Ranking.dds";
+	declare Img_Exit = "file://Media/Manialinks/Nadeo/TrackMania/Chase/Exit.dds";
+
+	declare NamesML = "";
+	for (I, 0, 9) {
+		declare PosY = I * -6;
+		NamesML ^= """<label pos="-35 {{{PosY}}}" halign="left" valign="center2" class="text-default" />""";
+	}
+
+	return """
+<manialink version="3" name="{{{C_Layer_Team}}}">
+<stylesheet>
+  <style class="text-default" textfont="Oswald" textcolor="ffffff" textsize="3" textemboss="1" />
+</stylesheet>
+<frame hidden="1" id="frame-global">
+	<frame pos="148 60" id="frame-team">
+		<frame pos="-18 0" z-index="0">
+			<quad pos="-16.5 -3.2" z-index="0" size="42 0.333" halign="left" valign="center" bgcolor="ffffff" opacity="1"/>
+			<quad pos="20.5 -3.5333" z-index="5" size="5 0.333" halign="left" valign="center" bgcolor="ffffff" opacity="1"/>  	
+			<label pos="-16 0" z-index="3" size="33 5" halign="left" valign="center2" text="{{{Text_Team}}}" class="text-default" />
+	  	</frame>
+	  	<frame pos="-36 0" z-index="2">
+	  		<quad size="5 5" halign="right" valign="center" colorize="000000" image="{{{Img_Exit}}}" scriptevents="1" id="button-leave-team" />
+	  		<label pos="-6 0" size="50 6" halign="right" valign="center2" text="{{{Text_LeaveTeam}}}" hidden="1" class="text-default" id="label-leave-team" />
+	  	</frame>
+		<frame pos="0 -8" z-index="1" id="frame-names">
+			{{{NamesML}}}
+		</frame>
+	</frame>
+</frame>
+<script><!--
+#Include "TextLib" as TL
+
+CTmMlPlayer GetOwner() {
+  if (GUIPlayer != Null) return GUIPlayer;
+  return InputPlayer;
+}
+
+main() {
+	declare Frame_Global <=> (Page.GetFirstChild("frame-global") as CMlFrame);
+	declare Frame_Team <=> (Frame_Global.GetFirstChild("frame-team") as CMlFrame);
+	declare Frame_Names <=> (Frame_Team.GetFirstChild("frame-names") as CMlFrame);
+	declare Label_LeaveTeam <=> (Frame_Team.GetFirstChild("label-leave-team") as CMlLabel);
+
+	declare netread Net_ChaseTeam_IsEnabled for Teams[0] = True;
+
+	declare PrevPlayerNamesUpdate = -123;
+	declare PrevVisible = Frame_Global.Visible;
+
+	while (True) {
+		yield;
+
+		if (PrevVisible != Net_ChaseTeam_IsEnabled) {
+			PrevVisible = Net_ChaseTeam_IsEnabled;
+			Frame_Global.Visible = PrevVisible;
+		}
+
+		if (Frame_Global.Visible) {
+			declare Owner <=> GetOwner();
+			if (Owner != Null) {
+				declare netread Net_ChaseTeam_PlayerNamesUpdate for Owner = -1;
+				if (PrevPlayerNamesUpdate != Net_ChaseTeam_PlayerNamesUpdate) {
+					PrevPlayerNamesUpdate = Net_ChaseTeam_PlayerNamesUpdate;
+
+					declare netread Net_ChaseTeam_PlayerNames for Owner = Text[];
+					if (Net_ChaseTeam_PlayerNames.count > 0) {
+						foreach (Key => Control in Frame_Names.Controls) {
+							declare Label_Name <=> (Control as CMlLabel);
+							if (Net_ChaseTeam_PlayerNames.existskey(Key)) {
+								Label_Name.Value = Net_ChaseTeam_PlayerNames[Key];
+								Label_Name.Visible = True;
+							} else {
+								Label_Name.Visible = False;
+
+							}
+						}
+						Frame_Team.Visible = True;
+					} else {
+						Frame_Team.Visible = False;
+					}
+				}
+			}
+
+			foreach (Event in PendingEvents) {
+				switch (Event.Type) {
+					case CMlScriptEvent::Type::MouseOver: {
+						if (Event.ControlId == "button-leave-team") {
+							(Event.Control as CMlQuad).Colorize = TL::ToColor("33bb33");
+							Label_LeaveTeam.Visible = True;
+						}
+					}
+					case CMlScriptEvent::Type::MouseOut: {
+						if (Event.ControlId == "button-leave-team") {
+							(Event.Control as CMlQuad).Colorize = TL::ToColor("000000");
+							Label_LeaveTeam.Visible = False;
+						}
+					}
+					case CMlScriptEvent::Type::MouseClick: {
+						if (Event.ControlId == "button-leave-team") {
+							SendCustomEvent("{{{Const::C_UIEvent_TeamSelection_LeaveTeam}}}", Text[]);
+						}
+					}
+				}
+			}
+		}
+	}
+}
+--></script>
+</manialink>
+""";
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Public
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/// Update library
+Void Yield() {
+	foreach (Event in PendingEvents) {
+		if (Event.Type == CManiaAppPlaygroundEvent::Type::LayerCustomEvent) {
+			if (Event.CustomEventType == Const::C_UIEvent_TeamSelection_LeaveTeam) {
+				declare EventData = Text[];
+				foreach (Value in Event.CustomEventData) EventData.add(Value);
+				SendCustomEvent(Event.CustomEventType, EventData);
+			}
+		}
+	}
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/// Unload the library
+Void Unload() {
+
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/// Load the library
+Void Load() {
+	Unload();
+
+	Layers::Create(C_Layer_Team, Private_GetTeamML());
+}

@@ -1,0 +1,597 @@
+/**
+ * Chase tutorial UI
+ */
+#Const Version    "2018-06-25"
+#Const ScriptName "ManiaApps/Nadeo/TrackMania/Chase/ChaseTuto_Client.Script.txt"
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Libraries
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+#Include "ManiaApps/Nadeo/Layers.Script.txt" as Layers
+#Include "Libs/Nadeo/Manialink/Grid.Script.txt" as Grid
+#Include "TextLib" as TextLib
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Constants
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+#Const C_Layer_Tuto "ChaseTuto"
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Functions
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Private
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/** Get the manialink of the Chase UI
+ *
+ *  @return                           Chase UI manialink
+ */
+Text Private_GetChaseTutoML() {
+
+	//L16N Title of the GameMode appear in the tutorial
+	declare Text TitleText = "Chase";
+	declare Text SubTitleText =  _("Rules");
+	//L16N %1 represents the style of the text (do not change)
+	declare Text TutoText =  TextLib::Compose(_("Within a team, the $<%1last$> player at a checkpoint has to be $<%1first$> at the next checkpoint."), "$FA0$t");
+	declare Text TutoTextOld = _("Within a team, the $<$0fflast$> player at a checkpoint has to be $<$0fffirst$> at the next checkpoint.");
+	declare Text CheckBoxText = _("At their turn, I will wait for my teammates to cross the checkpoint.");
+	declare Text ValidText = _("Validate");
+	
+	declare Vec3 White = TextLib::ToColor("FFFFFF");
+	declare Vec3 Grey = TextLib::ToColor("A8A8A8");	
+	declare Vec3 Black = TextLib::ToColor("111111");
+
+	//Unité de mesure parcouru par rafraississement (n'affecte pas les voitures)
+	declare Real RoadSpeed = 1.5;
+	//Temps entre avancé de la route en milliseconde (n'affecte pas les voitures)
+	declare Real RefreshTime = 100.;
+	//Espace entre 2 checkpoint
+	declare Real CheckpointSpacing = 350.;
+	//Temps de l'animation des voiture
+	declare Real AnimTime = 1200.;
+	declare Real AnimBumpTime = 200.;
+	declare Real PercentageDistanceBeforeBump = 0.8;
+	//Amplitude de la sinusoidale faite par les voiture
+	declare Real Amplitude = 30.;
+	declare Real AmplitudeBump = 10.;
+
+	return """
+
+	<manialink version="3" name="{{{C_Layer_Tuto}}}">
+		<framemodel id="bandelette" pos="0" >
+			<quad id="Quad_bandelette" pos="0" size="12 1.5" bgcolor="FFF" valign="center" halign="center"/>
+		</framemodel>
+
+		<framemodel id="bandelettesFrame" pos="0" >
+			<frameinstance modelid="bandelette" pos = "0"/>
+			<frameinstance modelid="bandelette" pos = "24"/>	
+			<frameinstance modelid="bandelette" pos = "48"/>	
+			<frameinstance modelid="bandelette" pos = "72"/>	
+			<frameinstance modelid="bandelette" pos = "96"/>	
+			<frameinstance modelid="bandelette" pos = "120"/>	
+			<frameinstance modelid="bandelette" pos = "144"/>	
+			<frameinstance modelid="bandelette" pos = "168"/>	
+			<frameinstance modelid="bandelette" pos = "192"/>
+			<frameinstance modelid="bandelette" pos = "216"/>	
+			<frameinstance modelid="bandelette" pos = "240"/>	
+			<frameinstance modelid="bandelette" pos = "264"/>	
+			<frameinstance modelid="bandelette" pos = "288"/>
+			<frameinstance modelid="bandelette" pos = "312"/>	
+			<frameinstance modelid="bandelette" pos = "336"/>
+		</framemodel>
+
+		<framemodel id="frameAllBandelettes">
+			<frameinstance id="bandelettesInstance" modelid="bandelettesFrame" pos = "0 45"/>
+			<frameinstance id="bandelettesInstance2" modelid="bandelettesFrame" pos = "336 45"/>
+			<frameinstance id="bandelettesInstance3" modelid="bandelettesFrame" pos = "0 -45"/>
+			<frameinstance id="bandelettesInstance4" modelid="bandelettesFrame" pos = "336 -45"/>
+		</framemodel>
+
+		<framemodel id="checkpoint">
+			<quad pos="0 0" size="5 90" bgcolor="0ff"/>
+		</framemodel>
+		<!-- size="320 100" -->
+
+			
+
+
+		<framemodel id="CheckboxeFrame">
+			<quad id="CheckBoxe" pos="-1 -3"  size="14 14" scriptevents="1" image="file://Media/Manialinks/Nadeo/TrackMania/Chase/Checkbox_Open.dds" halign="center" valign="center" imagefocus="file://Media/Manialinks/Nadeo/TrackMania/Chase/Checkbox_Open_Over.dds" keepratio="Fit"/>
+			<label id="CheckBoxeText" pos="10 2" z-index="1" size="300 0.1" text="{{{CheckBoxText}}}" textsize="8" textfont="BiryaniDemiBold" maxline="2" autonewline="1"/>
+		</framemodel>
+
+		<!-- quad pos="25 -8.5" id="ValidateButton"  size="50 17" bgcolor="FFFA" scriptevents="1" style="Bgs1" substyle="BgTitle3_2" halign="center" valign="center"/ -->
+		<framemodel id="ValidateButtonFrame">
+			<frame id="VbBorders">
+				<quad pos="25 10.5" id="VbBorderUp"  z-index="1" size="100.666 0.666" bgcolor="FFFFFF" scriptevents="1" halign="center" valign="center"/>
+				<quad pos="25 -10.5" id="VbBorderDown"  z-index="1" size="100.666 0.666" bgcolor="FFFFFF" scriptevents="1" halign="center" valign="center"/>
+				<quad pos="-25 0" id="VbBorderLeft" z-index="1" size="0.666 20.333" bgcolor="FFFFFF" scriptevents="1" halign="center" valign="center"/>
+				<quad pos="75 0" id="VbBorderRight" z-index="1" size="0.666 20.333" bgcolor="FFFFFF" scriptevents="1" halign="center" valign="center"/>
+			</frame>
+			<quad pos="25 0" id="ValidateButton"  z-index="0" size="100 21" bgcolor="111111" scriptevents="1" opacity="0.7" halign="center" valign="center"/>
+			<label pos="-20 5" id="ValidateButtonText" z-index="2" size="90 10" text="{{{ValidText}}}" textsize="9" textfont="BiryaniDemiBold" textprefix="$t"/>
+			<quad id="BackgroundValidate" pos="-80 -0.5" size="320 25" bgcolor="111111" opacity="0.3" halign="center" valign="center" z-index="-3"/>
+		</framemodel>
+
+		<frame z-index="10" hidden="1" id="frameTuto">
+			<quad pos="0 0" id="background"  z-index="-2" size="320 200" bgcolor="4f4f4f" opacity="1." halign="center" valign="center"/>
+			<frame pos="0 0" id="frame-tuto" scale="0.5">
+				<frame z-index="1">
+					<frame id="canvas" size="320 254.5" halign="center" valign="center">
+						<!-- title & subtitle -->
+						<label id="Title" pos="-153 108.5" text="{{{TitleText}}}" textcolor="FFFFFF" textsize="23" textfont="Oswald" halign="left" valign="center2" textprefix="$s"/>
+						<label id="SubTitle" pos="-152 92.5" text="{{{SubTitleText}}}" textcolor="FFFFFF" textsize="13" textfont="Oswald" halign="left" valign="center2" textprefix="$s"/>
+						<quad id="WhiteBarTitle" pos="-158 103" size="2 30" bgcolor="FFF" halign="center" valign="center" z-index="-2"/>
+						
+						<!-- barre chase title -->
+						<quad pos="0 83.5" z-index="1" size="320 0.666" bgcolor="FFFFFF" opacity="0.3" halign="center" valign="center"/>
+						<quad pos="150 84.333" z-index="1" size="80 1" bgcolor="FFFFFF" opacity="0.3" halign="center" valign="center"/>
+
+						<quad id="WhiteBorder" pos="0 28.7" size="320 103" bgcolor="FFF"  opacity="0.3"  halign="center" valign="center" z-index="-2"/>
+						<quad id="BlackBorder" pos="0 28.7" size="320 97" bgcolor="000"  opacity="0.8"  halign="center" valign="center" z-index="-1"/>
+						<quad id="Road" pos="0 28.7" size="320 90" bgcolor="2b3131" halign="center" valign="center"/>
+						<frameinstance id="AllBandelettes" modelid="frameAllBandelettes" pos = "-160 28.7" z-index="1" halign="center" valign="center"/>			
+						<frameinstance id="checkpointIntance" modelid="checkpoint" pos = "150 73.7"  z-index="5" halign="center" valign="center"/>
+
+						<quad id="Quad_FirstCar" pos="-15 53" colorize="FFFFFF" z-index="2" size="28 32" rot="90" halign="center" valign="center" image="file://Media/Manialinks/Nadeo/TrackMania/Chase/CarFill.dds"/>
+						<quad id="Quad_SecondCar" pos="-15 25" colorize="FFFFFF" z-index="2" size="28 32" rot="90" halign="center" valign="center"image="file://Media/Manialinks/Nadeo/TrackMania/Chase/CarFill.dds"/>
+						<quad id="Quad_BlueBorder" pos="-15 53" colorize="0ff" z-index="2.5" size="28 32" rot="90" halign="center" valign="center" image="file://Media/Manialinks/Nadeo/TrackMania/Chase/CarFillBorder.dds"/>
+						<quad id="Quad_BlackBorder" pos="-15 25" colorize="111111" z-index="2.5" size="28 32" rot="90" halign="center" valign="center"image="file://Media/Manialinks/Nadeo/TrackMania/Chase/CarFillBorder.dds"/>
+						<quad id="Quad_Arrow" opacity="1." pos="-42 53" rot="90" z-index="2" size="12 12" keepratio="Fit" image="file://Media/Manialinks/Nadeo/TrackMania/Chase/Arrow.dds" halign="center" valign="center" modulatecolor="0ff" />
+
+						<quad id="BackgroundText" pos="0 -15" size="320 150" bgcolor="111111" opacity="0.3" halign="center" valign="center" z-index="-3"/>
+						<quad id="BackgroundBlur" pos="0 -72.5" size="320 100" opacity="0" style="Bgs1" substyle="BgDialogBlur" bluramount="0.1" halign="center" valign="center"/>
+						<label pos="-156 -30" size="310 0.1" text="{{{TutoTextOld}}}" textcolor="FFF" textsize="8" textfont="BiryaniDemiBold" maxline="3" autonewline="1"/>
+							
+						<frameinstance id="CheckboxeInstance" modelid="CheckboxeFrame" pos = "-150 -65" z-index="2"/>
+						<quad id="InvisibleBlocker" pos="-160 -60" bgcolor="FF1111" opacity="0." size="20 20" z-index="-2" scriptevents="1" />
+
+						<quad pos="0 -95" z-index="1" size="320 0.666" bgcolor="FFFFFF" scriptevents="1" opacity="0.3" halign="center" valign="center"/>
+						<quad pos="150 -94.167" z-index="1" size="30 1" bgcolor="FFFFFF" scriptevents="1" opacity="0.3" halign="center" valign="center"/>
+						<frameinstance id="ValidateButtonInstance" modelid="ValidateButtonFrame" pos = "80 -110"  z-index="2"/>		
+					</frame>
+				</frame>
+			</frame>
+		</frame>
+		
+
+		<script><!--
+			
+			
+			#Include "MathLib" as MaLayer_MathLib
+
+			declare CMlControl BandelettesInstance;
+			declare CMlFrame BandelettesInstanceFrame;
+				
+			declare CMlControl BandelettesInstance2;
+			declare CMlFrame BandelettesInstanceFrame2;
+			
+			declare CMlControl BandelettesInstance3;
+			declare CMlFrame BandelettesInstanceFrame3;
+			
+			declare CMlControl BandelettesInstance4;
+			declare CMlFrame BandelettesInstanceFrame4;
+			
+			declare CMlControl AllBandelettesInstance;
+			declare CMlFrame AllBandelettesInstanceFrame;
+				
+			declare CMlControl CheckpointIntance;
+			declare CMlFrame CheckpointIntanceFrame;
+			
+			declare CMlControl CanvasInstance;
+			declare CMlFrame CanvasInstanceFrame;
+
+			declare Real PushBandelette;
+				
+			declare Real TimeBetweenRefresh; 
+			declare Real TimeToRefresh ;
+				
+			declare CMlQuad BandeletteQuad;
+			declare Real DistanceBetweenTwoBandelettes;
+				
+			declare Real InitPosition;
+			declare Real InitPosition2;
+			declare Real FinalPosition;
+
+			declare Integer countTeleport;
+
+			Void InitRoad(){
+				BandelettesInstance <=> Page.GetFirstChild("bandelettesInstance");
+				BandelettesInstanceFrame <=> (BandelettesInstance as CMlFrame);
+
+				BandelettesInstance2 <=> Page.GetFirstChild("bandelettesInstance2");
+				BandelettesInstanceFrame2 <=> (BandelettesInstance2 as CMlFrame);
+
+				BandelettesInstance3 <=> Page.GetFirstChild("bandelettesInstance3");
+				BandelettesInstanceFrame3 <=> (BandelettesInstance as CMlFrame);
+
+				BandelettesInstance4 <=> Page.GetFirstChild("bandelettesInstance4");
+				BandelettesInstanceFrame4 <=> (BandelettesInstance2 as CMlFrame);
+				
+				AllBandelettesInstance <=> Page.GetFirstChild("AllBandelettes");
+				AllBandelettesInstanceFrame <=> (BandelettesInstance as CMlFrame);
+				
+				CanvasInstance <=> Page.GetFirstChild("canvas");
+				CanvasInstanceFrame <=> (CanvasInstance as CMlFrame);
+				
+				CheckpointIntance <=> Page.GetFirstChild("checkpointIntance");
+				CheckpointIntanceFrame <=> (CheckpointIntance as CMlFrame);
+				
+				PushBandelette = {{{RoadSpeed}}}*-1.;
+					
+				TimeBetweenRefresh = 5.; 
+				TimeToRefresh = Now+TimeBetweenRefresh;
+				
+				BandeletteQuad = (BandelettesInstanceFrame.GetFirstChild("Quad_bandelette") as CMlQuad);
+				DistanceBetweenTwoBandelettes = BandeletteQuad.Size.X * 2;
+					
+				FinalPosition = BandelettesInstance.RelativePosition_V3.X;	
+				InitPosition = BandelettesInstance2.RelativePosition_V3.X;
+				InitPosition2 = BandelettesInstance4.RelativePosition_V3.X;
+				
+				countTeleport = 0;
+			}
+				
+			declare CMlControl G_FirstCar;
+			declare CMlControl G_SecondCar;
+			declare CMlControl G_BlueBorder;
+			declare CMlControl G_BlackBorder;
+			declare CMlControl G_Arrow;
+
+			declare Real G_TimeBeforeMove;
+			declare Real G_TimeToMoveTheCar;
+
+			
+			//Position
+			declare Vec2 G_PositionFront;
+			declare Vec2 G_PositionBack;
+			declare Vec2 G_PositionTop;
+
+			//Time Anim
+			declare Real G_DurationAnim;
+			declare Real G_DurationAnimBump;
+			declare Real G_TimeFinishAnim;
+			declare Real TimeFinishAnimBump;
+			declare Boolean G_FirstMove;
+
+			declare Real G_SaveTimeNow;
+
+
+
+			Void InitCar(){
+				G_FirstCar <=> Page.GetFirstChild("Quad_FirstCar");
+				G_SecondCar <=> Page.GetFirstChild("Quad_SecondCar");
+				G_BlueBorder <=> Page.GetFirstChild("Quad_BlueBorder");
+				G_BlackBorder <=> Page.GetFirstChild("Quad_BlackBorder");
+				G_Arrow <=> Page.GetFirstChild("Quad_Arrow");
+				
+				G_PositionFront = <G_FirstCar.RelativePosition_V3.X+75, G_SecondCar.RelativePosition_V3.Y>;
+				G_PositionBack = <G_FirstCar.RelativePosition_V3.X-75, G_SecondCar.RelativePosition_V3.Y>;
+				G_PositionTop = <G_FirstCar.RelativePosition_V3.X+25, G_FirstCar.RelativePosition_V3.Y>;
+
+
+				G_TimeBeforeMove = {{{RefreshTime}}};
+				G_SaveTimeNow = Now *1.0;
+
+				G_FirstCar.RelativePosition_V3 = G_PositionFront;
+				G_SecondCar.RelativePosition_V3 = G_PositionBack;
+
+				G_DurationAnim = {{{AnimTime}}};
+				
+				G_DurationAnimBump = {{{AnimBumpTime}}};
+
+				G_FirstMove = True;
+			}
+
+			declare Integer G_CheckpointPassed;
+			declare Boolean G_CheckpointTeleported;
+			declare Real G_CheckpointSpawnOffset;
+
+			Void InitCheckpoint(){
+				G_CheckpointPassed = 0;
+				G_CheckpointTeleported = True;
+				G_CheckpointSpawnOffset = {{{CheckpointSpacing}}};
+				CheckpointIntance.RelativePosition_V3.X = CanvasInstance.RelativePosition_V3.X + CanvasInstance.Size.X/2 + G_CheckpointSpawnOffset;
+			}
+
+			declare Boolean G_CheckboxeChecked;
+
+			Real LagFactor() {
+				return 1. * Period / 7.;
+			}
+
+			Void MoveTheRoad(){
+				if(Now > TimeToRefresh){
+					BandelettesInstance.RelativePosition_V3.X += PushBandelette * LagFactor();
+					BandelettesInstance2.RelativePosition_V3.X += PushBandelette * LagFactor();
+					BandelettesInstance3.RelativePosition_V3.X += PushBandelette * LagFactor();
+					BandelettesInstance4.RelativePosition_V3.X += PushBandelette * LagFactor();
+					CheckpointIntance.RelativePosition_V3.X += PushBandelette * LagFactor();
+					TimeToRefresh = Now+TimeBetweenRefresh;
+				}
+			}
+
+			Void TeleportBandelette(){
+				if(countTeleport % 2  == 0 && BandelettesInstance2.RelativePosition_V3.X <= FinalPosition){
+					BandelettesInstance.RelativePosition_V3.X = InitPosition;
+					BandelettesInstance3.RelativePosition_V3.X = InitPosition;
+					countTeleport += 1;
+				}
+				else if(countTeleport % 2  != 0 && BandelettesInstance.RelativePosition_V3.X <= FinalPosition){
+					BandelettesInstance2.RelativePosition_V3.X = InitPosition2;
+					BandelettesInstance4.RelativePosition_V3.X = InitPosition2;
+					countTeleport += 1;
+				}
+			}
+
+			Void TeleportCheckpoint(){
+				if(CheckpointIntance.RelativePosition_V3.X <= G_PositionBack.X + G_FirstCar.Size.X/2 && G_CheckpointTeleported){
+					G_CheckpointPassed += 1;
+					G_CheckpointTeleported = False;
+					G_TimeToMoveTheCar = Now + G_TimeBeforeMove;
+
+
+					G_FirstMove = True;
+				}
+				if(CheckpointIntance.RelativePosition_V3.X <= CanvasInstance.RelativePosition_V3.X - CanvasInstance.Size.X/2){
+					CheckpointIntance.RelativePosition_V3.X = CanvasInstance.RelativePosition_V3.X + CanvasInstance.Size.X/2 + G_CheckpointSpawnOffset;
+					G_CheckpointTeleported = True;
+				}
+			}
+
+
+			Real Clamp(Real x, Real lowerlimit, Real upperlimit) {
+				declare Real NewX = x;
+				if (NewX < lowerlimit)
+					NewX = lowerlimit;
+				if (NewX > upperlimit)
+					NewX = upperlimit;
+				return NewX;
+			}
+
+			Real SmooshCurve(Real Edge1, Real Edge2, Real x){
+				// Scale, and clamp x to 0..1 range
+				declare Real NewX = x;
+				NewX = Clamp((NewX - Edge1) / (Edge2 - Edge1), 0., 1.0);
+				// Evaluate polynomial
+				return NewX * NewX * NewX * (NewX * (NewX * 6 - 15) + 10);
+			}
+
+			Real SmoothStep(Real Edge0, Real Edge1, Real X) {
+				// Scale, bias and saturate x to 0..1 range
+				declare Real NewX = X;
+				NewX = Clamp((NewX - Edge0) / (Edge1 - Edge0), 0.0, 1.0); 
+				// Evaluate polynomial
+				return NewX * NewX * (3 - 2 * NewX);
+			}
+
+			Void MoveCar(CMlControl Car1, CMlControl Car2) {
+				if(G_FirstMove){
+					G_SaveTimeNow = Now *1.0;
+					G_TimeFinishAnim = G_SaveTimeNow + G_DurationAnim;
+					TimeFinishAnimBump = G_TimeFinishAnim - G_DurationAnimBump;
+					G_FirstMove = False;
+				}
+
+				declare Real BackPositionBump = G_PositionBack.X * {{{PercentageDistanceBeforeBump}}};
+				declare Real G_TimeFinishAnimBump = G_TimeFinishAnim + G_DurationAnimBump;
+
+				
+				if(((Now*1.-G_SaveTimeNow)/G_DurationAnim) <= 1){
+					Car1.RelativePosition_V3.Y = {{{Amplitude}}}*MaLayer_MathLib::Sin(MaLayer_MathLib::PI() * (SmoothStep(G_SaveTimeNow, TimeFinishAnimBump, Now*1.)))+G_PositionFront.Y;			
+				}
+				Car1.RelativePosition_V3.X = G_PositionFront.X + (G_PositionBack.X - G_PositionFront.X)*SmooshCurve(G_SaveTimeNow, G_TimeFinishAnim, Now*1.);
+				Car2.RelativePosition_V3.X = G_PositionBack.X + (G_PositionFront.X - G_PositionBack.X)*SmooshCurve(G_SaveTimeNow, G_TimeFinishAnim, Now*1.);
+			}
+			
+			Void PlaceArrow(CMlControl Car) {
+				declare Vec2 ArrowPosition = G_Arrow.RelativePosition_V3; 
+				ArrowPosition = Car.RelativePosition_V3;
+				ArrowPosition.X += 0;
+				ArrowPosition.Y += 20;
+				G_Arrow.RelativePosition_V3 = ArrowPosition;
+			}
+
+			Void PlaceBorder(CMlControl Car, CMlControl Car2) {
+				G_BlueBorder.RelativePosition_V3 = Car.RelativePosition_V3;
+				G_BlackBorder.RelativePosition_V3 = Car2.RelativePosition_V3;
+			}
+
+			Void AllowValidate(){
+				declare CMlQuad ValidateQuad = (Page.GetFirstChild("ValidateButton") as CMlQuad);
+				declare CMlQuad CheckBoxeQuad = (Page.GetFirstChild("CheckBoxe") as CMlQuad);
+				declare CMlLabel ValidateText = (Page.GetFirstChild("ValidateButtonText") as CMlLabel);
+				declare CMlFrame Borders = (Page.GetFirstChild("VbBorders") as CMlFrame);
+
+				declare persistent Checkboxe_Validated for LocalUser = False;
+
+				if(Checkboxe_Validated){
+					declare CMlQuad InvisibleBlocker = (Page.GetFirstChild("InvisibleBlocker") as CMlQuad);
+					declare CMlLabel CheckBoxeText = (Page.GetFirstChild("CheckBoxeText") as CMlLabel);
+					G_CheckboxeChecked = Checkboxe_Validated;
+					CheckBoxeQuad.ModulateColor = {{{Grey}}};
+					CheckBoxeText.TextColor = {{{Grey}}};
+					InvisibleBlocker.ZIndex = 5.;
+				}
+					
+				if(!G_CheckboxeChecked){
+					CheckBoxeQuad.ImageUrl = "file://Media/Manialinks/Nadeo/TrackMania/Chase/Checkbox_Open.dds";
+					CheckBoxeQuad.ImageUrlFocus = "file://Media/Manialinks/Nadeo/TrackMania/Chase/Checkbox_Open_Over.dds";
+					ValidateQuad.Opacity = 0.;
+					ValidateText.Opacity = 0.45;
+					foreach (Control in Borders.Controls) {
+						declare ControlQuad = (Control as CMlQuad);
+						ControlQuad.Opacity = 0.45;
+					}
+				}
+				else{
+					CheckBoxeQuad.ImageUrl = "file://Media/Manialinks/Nadeo/TrackMania/Chase/Checkbox_Closed.dds";
+					CheckBoxeQuad.ImageUrlFocus = "file://Media/Manialinks/Nadeo/TrackMania/Chase/Checkbox_Closed_Over.dds";
+					ValidateQuad.Opacity = 0.2;
+					ValidateText.Opacity = 1.;
+					foreach (Control in Borders.Controls) {
+						declare ControlQuad = (Control as CMlQuad);
+						ControlQuad.Opacity = 1.;
+					}
+				}
+			}
+
+			Void OnOver(CMlControl Interactive){
+				declare InteractiveId = Interactive.ControlId;
+				switch (InteractiveId) {
+					case "ValidateButton" : {
+						if(G_CheckboxeChecked){
+							declare CMlQuad InteractiveQuad <=> (Interactive as CMlQuad);
+							declare CMlLabel ValidateText = (Page.GetFirstChild("ValidateButtonText") as CMlLabel);
+							InteractiveQuad.BgColor = {{{White}}};
+						}
+					}
+				}
+			}
+
+			Void OnOut(CMlControl Interactive){
+				declare InteractiveId = Interactive.ControlId;
+				switch (InteractiveId) {
+					case "ValidateButton" : {
+						if(G_CheckboxeChecked){
+							declare CMlQuad InteractiveQuad <=> (Interactive as CMlQuad);
+							declare CMlLabel ValidateText = (Page.GetFirstChild("ValidateButtonText") as CMlLabel);
+							InteractiveQuad.BgColor = {{{Black}}};
+						}
+
+					}
+				}
+			}
+
+			Void OnClick(CMlControl Interactive){
+				declare InteractiveId = Interactive.ControlId;
+				declare persistent ChaseTuto_Validated for LocalUser = False;
+				switch (InteractiveId) {
+					case "ValidateButton" : {
+						if(G_CheckboxeChecked){
+							declare CMlQuad InteractiveQuad <=> (Interactive as CMlQuad);
+							ChaseTuto_Validated = True;
+							
+							//une fois validé par l'utilisateur il ne peut plus désigner/resigner le tuto
+							declare persistent Checkboxe_Validated for LocalUser = False;
+							Checkboxe_Validated = True;
+						}
+					}
+					case "CheckBoxe" : {
+						if(!G_CheckboxeChecked){
+							G_CheckboxeChecked = True;
+						}
+						else{
+							G_CheckboxeChecked = False;
+						}
+						AllowValidate();
+					}
+				}
+			}
+
+			Void ProcessEvents() {
+				foreach (Event in PendingEvents) {
+					switch (Event.Type) {
+						case CMlScriptEvent::Type::MouseOver : {
+							OnOver(Event.Control) ;
+						}
+						case CMlScriptEvent::Type::MouseOut : {
+							OnOut(Event.Control) ;
+						}
+						case CMlScriptEvent::Type::MouseClick : {
+							OnClick(Event.Control) ;
+						}
+						case CMlScriptEvent::Type::KeyPress : {
+							if(Event.KeyCode == 40){ //< 40 => "F3"
+								declare netread Net_ChaseTuto_IsInLobby for UI = False;
+								if (Net_ChaseTuto_IsInLobby) {
+									declare persistent ChaseTuto_Validated for LocalUser = False;
+									G_CheckboxeChecked = False;					
+									ChaseTuto_Validated = False;
+									AllowValidate();
+								}
+							}
+						}
+					}
+				}
+			}
+
+			declare Boolean PrevIsEnabled;
+			declare Boolean PrevValidated;
+			declare Boolean PrevIsInLobby;
+			
+			Void CheckTutoValidated(){
+				declare Frame_Tuto <=> (Page.GetFirstChild("frameTuto") as CMlFrame);
+
+				declare netread Net_ChaseTuto_IsEnabled for Teams[0] = True;
+				declare netwrite Net_ChaseTuto_IsViewingTuto for UI = Frame_Tuto.Visible;
+				declare netread Net_ChaseTuto_IsInLobby for UI = False;
+
+				Net_ChaseTuto_IsViewingTuto = Frame_Tuto.Visible;
+
+				declare persistent ChaseTuto_Validated for LocalUser = False;
+				
+				if ( PrevIsEnabled != Net_ChaseTuto_IsEnabled || PrevValidated != ChaseTuto_Validated || PrevIsInLobby != Net_ChaseTuto_IsInLobby ) {
+					PrevIsEnabled = Net_ChaseTuto_IsEnabled;
+					PrevValidated = ChaseTuto_Validated;
+					PrevIsInLobby = Net_ChaseTuto_IsInLobby;
+
+					Frame_Tuto.Visible = Net_ChaseTuto_IsEnabled && !ChaseTuto_Validated;
+
+					Net_ChaseTuto_IsViewingTuto = Frame_Tuto.Visible;
+				}
+			}
+
+			main() {		
+				InitRoad();
+				InitCar();
+				InitCheckpoint();
+				AllowValidate();
+				
+				declare persistent ChaseTuto_Validated for LocalUser = False;
+
+				while (True) {
+					yield;
+					if(ChaseTuto_Validated == False){
+						MoveTheRoad();
+						TeleportBandelette();
+						TeleportCheckpoint();
+						if(G_CheckpointPassed % 2  == 0){
+							MoveCar(G_FirstCar, G_SecondCar);
+							PlaceArrow(G_SecondCar);
+							PlaceBorder(G_SecondCar, G_FirstCar);
+						}
+						else{
+							MoveCar(G_SecondCar, G_FirstCar);
+							PlaceArrow(G_FirstCar);
+							PlaceBorder(G_FirstCar, G_SecondCar);
+						}
+					}
+					ProcessEvents();	
+					CheckTutoValidated();
+					
+				}
+			}
+		--></script>
+		}
+		
+	</manialink>
+	""";
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Public
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/// Unload the library
+Void Unload() {
+	
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/// Load the library
+Void Load() {
+	Unload();
+	Layers::Create(C_Layer_Tuto, Private_GetChaseTutoML());
+}

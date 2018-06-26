@@ -1,0 +1,164 @@
+/**
+ * Chase checkpoint time UI
+ */
+#Const Version    "2018-06-20"
+#Const ScriptName "ManiaApps/Nadeo/TrackMania/Chase/CheckpointTime_Client.Script.txt"
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Libraries
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+#Include "TextLib" as TL
+#Include "ManiaApps/Nadeo/Layers.Script.txt" as Layers
+#Include "Libs/Nadeo/TrackMania/Chase/Constants2.Script.txt" as Const
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Constants
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+#Const C_Layer_CheckpointTime "ChaseAttack_CheckpointTime"
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Functions
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Private
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/** Get the manialink of the checkpoint time UI
+ *
+ *  @return                           CheckpointTime UI manialink
+ */
+Text Private_GetCheckpointTimeML() {
+	declare Sound_Path = "file://Media/Manialinks/Nadeo/Trackmania/Ingame/Sound/";
+	declare Sound_CheckpointNeutral = Sound_Path^"RaceCheckPoint_Experimental.wav";
+	declare Sound_CheckpointWorse = Sound_Path^"RaceCheckPointLate_Experimental.wav";
+	declare Sound_CheckpointBetter = Sound_Path^"RaceCheckPointAhead_Experimental.wav";
+  declare Img_Arrow = "file://Media/Manialinks/Nadeo/TrackMania/Ingame/Arrow.dds";
+
+	return """
+<manialink version="3" name="{{{C_Layer_CheckpointTime}}}">
+<stylesheet>
+  <style class="text-default" textfont="OswaldMono" textcolor="ffffff" textsize="3" textemboss="1" />
+</stylesheet>
+<framemodel id="framemodel-time">
+  <quad z-index="1" size="30 6.7" bgcolor="111111" opacity="0.5" id="quad-color" />
+  <quad pos="3.7 -3.35" z-index="2" size="5 5" halign="center" valign="center" keepratio="fit" opacity="0.9" image="{{{Img_Arrow}}}" hidden="1" id="quad-icon" />
+  <label pos="16.9 -2.8" z-index="3" size="30 8" halign="center" valign="center" textsize="3.5" class="text-default" id="label-time" />
+</framemodel>
+<frame id="frame-global">
+	<frame pos="0 37" hidden="1" id="frame-checkpoint-time">
+		<frameinstance pos="0 2" modelid="framemodel-time" id="frame-time-diff" />
+		<frameinstance pos="-30 0" modelid="framemodel-time" id="frame-time-race" />
+		<quad z-index="2" size="0.4 21" halign="center" valign="center" bgcolor="eee" opacity="0.5" />
+	</frame>
+</frame>
+<script><!--
+#Include "TextLib" as TL
+#Include "MathLib" as ML
+
+CTmMlPlayer GetOwner() {
+  if (GUIPlayer != Null) return GUIPlayer;
+  return InputPlayer;
+}
+
+main() {
+	declare Frame_Global <=> (Page.GetFirstChild("frame-global") as CMlFrame);
+	declare Frame_CheckpointTime <=> (Frame_Global.GetFirstChild("frame-checkpoint-time") as CMlFrame);
+	declare Frame_TimeDiff <=> (Frame_CheckpointTime.GetFirstChild("frame-time-diff") as CMlFrame);
+	declare Frame_TimeRace <=> (Frame_CheckpointTime.GetFirstChild("frame-time-race") as CMlFrame);
+	declare Label_Time <=> (Frame_TimeRace.GetFirstChild("label-time") as CMlLabel);
+	declare Label_Difference <=> (Frame_TimeDiff.GetFirstChild("label-time") as CMlLabel);
+	declare Quad_DiffIcon <=> (Frame_TimeDiff.GetFirstChild("quad-icon") as CMlQuad);
+	declare Quad_DiffColor <=> (Frame_TimeDiff.GetFirstChild("quad-color") as CMlQuad);
+
+	Quad_DiffIcon.Visible = True;
+	
+	declare SoundCheckpointNeutral = Audio.CreateSound("{{{Sound_CheckpointNeutral}}}", 0.0, False, False, False);
+  declare SoundCheckpointWorse = Audio.CreateSound("{{{Sound_CheckpointWorse}}}", 0.0, False, False, False);
+  declare SoundCheckpointBetter = Audio.CreateSound("{{{Sound_CheckpointBetter}}}", 0.0, False, False, False);
+
+	declare PrevHideTime = -123;
+	declare PrevBestTime = -123;
+	declare PrevNewTime = -123;
+
+	while (True) {
+		yield;
+
+		declare Owner <=> GetOwner();
+		if (Owner != Null) {
+			declare netread Net_ChaseCheckpointTime_HideTime for Owner = -1;
+			declare netread Net_ChaseCheckpointTime_BestTime for Owner = -1;
+			declare netread Net_ChaseCheckpointTime_NewTime for Owner = -1;
+			if (
+				PrevHideTime != Net_ChaseCheckpointTime_HideTime ||
+				PrevBestTime != Net_ChaseCheckpointTime_BestTime ||
+				PrevNewTime != Net_ChaseCheckpointTime_NewTime
+			) {
+				PrevHideTime = Net_ChaseCheckpointTime_HideTime;
+				PrevBestTime = Net_ChaseCheckpointTime_BestTime;
+				PrevNewTime = Net_ChaseCheckpointTime_NewTime;
+
+				if (PrevNewTime >= 0) {
+					Label_Time.Value = TL::TimeToText(PrevNewTime, True)^(PrevNewTime % 10);
+				} else {
+					Label_Time.Value = "";
+				}
+				
+				SoundCheckpointNeutral.Stop();
+				SoundCheckpointWorse.Stop();
+				SoundCheckpointBetter.Stop();
+				if (PrevBestTime >= 0) {
+					declare TimeDifference = PrevNewTime - PrevBestTime;
+					declare AbsTimeDifference = ML::Abs(TimeDifference);
+					if (TimeDifference >= 0) {
+						Label_Difference.Value = "+"^TL::TimeToText(AbsTimeDifference, True)^(AbsTimeDifference % 10);
+						Quad_DiffColor.BgColor = {{{Const::C_TimeColor_Worse}}};
+						Quad_DiffIcon.RelativeRotation = 90.;
+						Frame_TimeDiff.RelativePosition_V3.Y = -2.;
+						if (PrevHideTime >= 0 && PrevHideTime > GameTime) SoundCheckpointWorse.Play();
+					} else {
+						Label_Difference.Value = "-"^TL::TimeToText(AbsTimeDifference, True)^(AbsTimeDifference % 10);
+						Quad_DiffColor.BgColor = {{{Const::C_TimeColor_Better}}};
+						Quad_DiffIcon.RelativeRotation = -90.;
+						Frame_TimeDiff.RelativePosition_V3.Y = 2.;
+						if (PrevHideTime >= 0 && PrevHideTime > GameTime) SoundCheckpointBetter.Play();
+					}
+					Frame_TimeDiff.Visible = True;
+				} else {
+					Frame_TimeDiff.Visible = False;
+					if (PrevHideTime >= 0 && PrevHideTime > GameTime) SoundCheckpointNeutral.Play();
+				}
+			}
+		}
+
+		if (Owner == Null && Frame_CheckpointTime.Visible) {
+			Frame_CheckpointTime.Visible = False;
+		}
+
+		if (!Frame_CheckpointTime.Visible && PrevHideTime >= 0 && PrevHideTime > GameTime) {
+			Frame_CheckpointTime.Visible = True;
+		} else if (Frame_CheckpointTime.Visible && (PrevHideTime < 0 || GameTime >= PrevHideTime)) {
+			Frame_CheckpointTime.Visible = False;
+		}
+	}
+}
+--></script>
+</manialink>
+""";
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Public
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/// Unload the library
+Void Unload() {
+
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/// Load the library
+Void Load() {
+	Unload();
+
+	Layers::Create(C_Layer_CheckpointTime, Private_GetCheckpointTimeML());
+}

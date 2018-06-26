@@ -1,0 +1,156 @@
+/**
+ * Chase team confirm UI
+ */
+#Const Version    "2018-06-25"
+#Const ScriptName "ManiaApps/Nadeo/TrackMania/TeamConfirm_Server.Script.txt"
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Libraries
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+#Include "TextLib" as TL
+#Include "Libs/Nadeo/TrackMania/Chase/Constants2.Script.txt" as Const
+#Include "ManiaApps/Nadeo/TrackMania/Chase/TeamSelection_Server.Script.txt" as TeamSelectionUI
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Globales
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //.
+declare Integer G_PopUpHideTime;
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Functions
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Public
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/** Send to a player the selection
+ *	of their teammate
+ *
+ *	@param	_TeammateSelection				The selection of the teammate
+ *	@param	_TeammateName							The name of the teammate
+ *	@param	_Player										The player receiving the info
+ */
+Void SendTeammateSelection(Integer _TeammateSelection, Text _TeammateName, CTmPlayer _Player) {
+	if (_Player == Null) return;
+	
+	declare netwrite Net_ChaseTeamConfirm_TeammateSelection for _Player = Const::C_StayAsTeam_None;
+	declare netwrite Net_ChaseTeamConfirm_TeammateName for _Player = "";
+	Net_ChaseTeamConfirm_TeammateSelection = _TeammateSelection;
+	Net_ChaseTeamConfirm_TeammateName = _TeammateName;
+}
+
+Void SetSelection(Integer _Selection, CTmPlayer _Player) {
+	if (_Player == Null) return;
+	
+	declare ChaseTeamConfirm_Selection for _Player = Const::C_StayAsTeam_None;
+	ChaseTeamConfirm_Selection = _Selection;
+}
+
+Integer GetSelection(CTmPlayer _Player) {
+	if (_Player == Null) return Const::C_StayAsTeam_None;
+	
+	declare ChaseTeamConfirm_Selection for _Player = Const::C_StayAsTeam_None;
+	return ChaseTeamConfirm_Selection;
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/** Show the confirmation pop-up
+ *
+ *	@param	_Duration									The duration of the display
+ */
+Void PopConfirmation(Integer _Duration) {
+	G_PopUpHideTime = Now + _Duration;
+	
+	declare netwrite Net_ChaseTeamConfirm_HideTime for Teams[0] = -1;
+	declare netwrite Net_ChaseTeamConfirm_Duration for Teams[0] = -1;
+	Net_ChaseTeamConfirm_HideTime = G_PopUpHideTime;
+	Net_ChaseTeamConfirm_Duration = _Duration;
+	
+	foreach (Player in AllPlayers) {
+		SendTeammateSelection(Const::C_StayAsTeam_None, "", Player);
+		SetSelection(Const::C_StayAsTeam_None, Player);
+		
+		declare netwrite Net_ChaseTeamConfirm_HasTeammate for Player = False;
+		Net_ChaseTeamConfirm_HasTeammate = (TeamSelectionUI::GetValidatedTeammate(Player) != Null);
+	}
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/** Hide the confirmation pop-up
+ *	This will cancel any ongoing selection
+ *	even if the results were already displayed
+ */
+Void UnpopConfirmation() {
+	G_PopUpHideTime = -1;
+	
+	declare netwrite Net_ChaseTeamConfirm_HideTime for Teams[0] = -1;
+	declare netwrite Net_ChaseTeamConfirm_Duration for Teams[0] = -1;
+	Net_ChaseTeamConfirm_HideTime = G_PopUpHideTime;
+	Net_ChaseTeamConfirm_Duration = -1;
+	
+	foreach (Player in AllPlayers) {
+		SendTeammateSelection(Const::C_StayAsTeam_None, "", Player);
+		SetSelection(Const::C_StayAsTeam_None, Player);
+	}
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/// Update the library
+Void Yield() {
+	if (G_PopUpHideTime >= 0) {
+		if (G_PopUpHideTime >= Now) {
+			foreach (Event in UIManager.PendingEvents) {
+				if (
+					Event.Type == CUIConfigEvent::EType::OnLayerCustomEvent &&
+					Event.UI != Null &&
+					Event.CustomEventType == Const::C_UIEvent_TeamConfirm_Selection &&
+					Event.CustomEventData.existskey(0)
+				) {
+					declare Sender = CTmPlayer;
+					foreach (Player in AllPlayers) {
+						declare UI <=> UIManager.GetUI(Player);
+						if (UI == Event.UI) {
+							Sender <=> Player;
+							break;
+						}
+					}
+					
+					if (Sender != Null) {
+						declare Teammate <=> TeamSelectionUI::GetValidatedTeammate(Sender);
+						if (Teammate != Null) {
+							declare Selection = TL::ToInteger(Event.CustomEventData[0]);
+							SendTeammateSelection(Selection, Sender.User.Name, Teammate);
+							SetSelection(Selection, Sender);
+						}
+					}
+				}
+			}
+		} else {
+			// Apply the selection of the players once the vote and the results were displayed
+			G_PopUpHideTime = -1;
+			foreach (Player in AllPlayers) {
+				declare Selection = GetSelection(Player);
+				if (Selection == Const::C_StayAsTeam_No) {
+					declare Teammate <=> TeamSelectionUI::GetValidatedTeammate(Player);
+					if (Teammate != Null) {
+						TeamSelectionUI::SetTeammate(Null, Teammate);
+						TeamSelectionUI::SetTeammate(Null, Player);
+						SetSelection(Const::C_StayAsTeam_None, Teammate); //< We can cancel the selection of the teammate now that we disdanded its team
+					}
+				}
+			}
+		}
+	}
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/// Unload the library
+Void Unload() {
+	UnpopConfirmation();
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/// Load the library
+Void Load() {
+	Unload();
+}
