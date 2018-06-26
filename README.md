@@ -26,3 +26,4 @@ All titles are available in the Maniaplanet ingame store. They can also be downl
 * [Royal](https://v4.live.maniaplanet.com/ingame/public/titles/download/SMStormRoyal@nadeolabs.Title.Pack.gbx)
 * [Siege](https://v4.live.maniaplanet.com/ingame/public/titles/download/SMStormSiege@nadeolabs.Title.Pack.gbx)
 * [Warlords](https://v4.live.maniaplanet.com/ingame/public/titles/download/SMStormWarlords@nadeolabs.Title.Pack.gbx)
+* [Chase](https://v4.live.maniaplanet.com/ingame/public/titles/download/TMStadiumChase@nadeolabs.Title.Pack.gbx)
