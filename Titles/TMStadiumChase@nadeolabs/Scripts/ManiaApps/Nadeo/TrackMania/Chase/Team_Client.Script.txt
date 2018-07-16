@@ -1,7 +1,7 @@
 /**
  * Chase team UI
  */
-#Const Version    "2018-06-08"
+#Const Version    "2018-07-06"
 #Const ScriptName "ManiaApps/Nadeo/TrackMania/Chase/Team_Client.Script.txt"
 
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
@@ -36,8 +36,8 @@ Text Private_GetTeamML() {
 
 	declare NamesML = "";
 	for (I, 0, 9) {
-		declare PosY = I * -6;
-		NamesML ^= """<label pos="-35 {{{PosY}}}" halign="left" valign="center2" class="text-default" />""";
+		declare PosY = (I * -6)-8;
+		NamesML ^= """<label pos="0 {{{PosY}}}" halign="left" valign="center2" class="text-default" scriptevents="1" id="button-spec-player" />""";
 	}
 
 	return """
@@ -52,11 +52,11 @@ Text Private_GetTeamML() {
 			<quad pos="20.5 -3.5333" z-index="5" size="5 0.333" halign="left" valign="center" bgcolor="ffffff" opacity="1"/>  	
 			<label pos="-16 0" z-index="3" size="33 5" halign="left" valign="center2" text="{{{Text_Team}}}" class="text-default" />
 	  	</frame>
-	  	<frame pos="-36 0" z-index="2">
+	  	<frame pos="-36 0" z-index="2" id="frame-leave-team">
 	  		<quad size="5 5" halign="right" valign="center" colorize="000000" image="{{{Img_Exit}}}" scriptevents="1" id="button-leave-team" />
 	  		<label pos="-6 0" size="50 6" halign="right" valign="center2" text="{{{Text_LeaveTeam}}}" hidden="1" class="text-default" id="label-leave-team" />
 	  	</frame>
-		<frame pos="0 -8" z-index="1" id="frame-names">
+		<frame pos="-35 0" size="43 68" z-index="1" id="frame-names">
 			{{{NamesML}}}
 		</frame>
 	</frame>
@@ -73,12 +73,15 @@ main() {
 	declare Frame_Global <=> (Page.GetFirstChild("frame-global") as CMlFrame);
 	declare Frame_Team <=> (Frame_Global.GetFirstChild("frame-team") as CMlFrame);
 	declare Frame_Names <=> (Frame_Team.GetFirstChild("frame-names") as CMlFrame);
-	declare Label_LeaveTeam <=> (Frame_Team.GetFirstChild("label-leave-team") as CMlLabel);
+	declare Frame_LeaveTeam <=> (Frame_Team.GetFirstChild("frame-leave-team") as CMlFrame);
+	declare Label_LeaveTeam <=> (Frame_LeaveTeam.GetFirstChild("label-leave-team") as CMlLabel);
 
 	declare netread Net_ChaseTeam_IsEnabled for Teams[0] = True;
 
 	declare PrevPlayerNamesUpdate = -123;
 	declare PrevVisible = Frame_Global.Visible;
+	declare PrevGUIPlayerId = NullId;
+	declare PrevInputPlayerId = NullId;
 
 	while (True) {
 		yield;
@@ -97,6 +100,7 @@ main() {
 
 					declare netread Net_ChaseTeam_PlayerNames for Owner = Text[];
 					if (Net_ChaseTeam_PlayerNames.count > 0) {
+						declare netread Net_ChaseTeam_PlayerLogins for Owner = Text[];
 						foreach (Key => Control in Frame_Names.Controls) {
 							declare Label_Name <=> (Control as CMlLabel);
 							if (Net_ChaseTeam_PlayerNames.existskey(Key)) {
@@ -104,7 +108,12 @@ main() {
 								Label_Name.Visible = True;
 							} else {
 								Label_Name.Visible = False;
-
+							}
+							declare PlayerLogin for Label_Name = "";
+							if (Net_ChaseTeam_PlayerLogins.existskey(Key)) {
+								PlayerLogin = Net_ChaseTeam_PlayerLogins[Key];
+							} else {
+								PlayerLogin = "";
 							}
 						}
 						Frame_Team.Visible = True;
@@ -112,6 +121,19 @@ main() {
 						Frame_Team.Visible = False;
 					}
 				}
+			}
+
+			if (
+				(GUIPlayer == Null && PrevGUIPlayerId != NullId) ||
+				(GUIPlayer != Null && PrevGUIPlayerId != GUIPlayer.Id) ||
+				(InputPlayer == Null && PrevInputPlayerId != NullId) ||
+				(InputPlayer != Null && PrevInputPlayerId != InputPlayer.Id)
+			) {
+				if (GUIPlayer != Null) PrevGUIPlayerId = GUIPlayer.Id;
+				else PrevGUIPlayerId = NullId;
+				if (InputPlayer != Null) PrevInputPlayerId = InputPlayer.Id;
+				else PrevInputPlayerId = NullId;
+				Frame_LeaveTeam.Visible = (PrevGUIPlayerId == PrevInputPlayerId);
 			}
 
 			foreach (Event in PendingEvents) {
@@ -131,6 +153,11 @@ main() {
 					case CMlScriptEvent::Type::MouseClick: {
 						if (Event.ControlId == "button-leave-team") {
 							SendCustomEvent("{{{Const::C_UIEvent_TeamSelection_LeaveTeam}}}", Text[]);
+						} else if (Event.ControlId == "button-spec-player") {
+							declare PlayerLogin for Event.Control = "";
+							if (PlayerLogin != "") {
+								SetSpectateTarget(PlayerLogin);
+							}
 						}
 					}
 				}

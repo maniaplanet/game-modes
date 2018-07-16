@@ -1,7 +1,7 @@
 /**
  * Chase medal UI
  */
-#Const Version    "2018-06-25"
+#Const Version    "2018-07-09"
 #Const ScriptName "ManiaApps/Nadeo/TrackMania/Chase/Medal_Client.Script.txt"
 
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
@@ -42,6 +42,7 @@ Text Private_GetMedalML() {
 	declare Text_Gold = _("Gold");
 	declare Text_Silver = _("Silver");
 	declare Text_Bronze = _("Bronze");
+	declare Text_Ranking = _("Ranking");
 	declare Color_Gold = TL::ColorToText(Const::C_MedalColor_Gold);
 	declare Color_Silver = TL::ColorToText(Const::C_MedalColor_Silver);
 	declare Color_Bronze = TL::ColorToText(Const::C_MedalColor_Bronze);
@@ -107,6 +108,11 @@ Text Private_GetMedalML() {
 							<label pos="50 0" size="24 6" halign="right" valign="center2" class="text-default" id="label-next-medal" />
 						</frame>
 					</frame>
+					<frame pos="{{{TableSize.X-41}}} -11" id="frame-rank">
+						<label pos="29 1" size="29 6" halign="right" valign="center2" textsize="18" class="text-default" id="label-rank-current" />
+						<label pos="29.5 6" size="10 6" valign="center2" textsize="5" class="text-default" id="label-rank-total" />
+						<label pos="29 -9.5" size="40 6" halign="center" valign="center2" text="{{{Text_Ranking}}}" class="text-default" />
+					</frame>
 				</frame>
 			</frame>
 		</frame>
@@ -130,18 +136,83 @@ Text Private_GetMedalML() {
 #Include "MathLib" as ML
 #Const Medals [{{{Const::C_Medal_Bronze}}}, {{{Const::C_Medal_Silver}}}, {{{Const::C_Medal_Gold}}}]
 
+declare CMlFrame[Integer] G_Frames_Medal;
 declare CMlQuad[] G_TravellingMedals;
 declare Integer G_TimeWaitTrav;
 declare Integer G_TimeTravAnim;
 declare Boolean G_TravAllow;
 declare Integer G_TimeIncrementMedal;
-declare Integer TempMedalsCount;
+declare Integer G_TempMedalsCount;
+
+declare CAudioSource G_SoundCheckpointNeutral;
+declare CAudioSource G_SoundCheckpointWorse;
+declare CAudioSource G_SoundCheckpointBetter;
+
+declare Integer G_PrevRaceMedalHideTime;
+declare Integer G_PrevMedalCounterHideTime;
+declare Boolean G_DisplayRaceMedal;
+declare Boolean G_DisplayMedalCounter;
+
+//Controller
+declare CMlFrame G_Frame_Global;
+declare CMlFrame G_Frame_RaceMedal;
+declare CMlFrame G_Frame_Times;
+declare CMlFrame G_Frame_RaceTime;
+declare CMlLabel G_Label_RaceTime;
+declare CMlFrame G_Frame_TimeDiff;
+declare CMlLabel G_Label_TimeDiff;
+declare CMlFrame G_Frame_NextMedal;
+declare CMlLabel G_Label_NextMedal;
+
+declare CMlFrame G_Frame_RaceMedalSlide;
+declare CMlFrame G_Frame_RaceMedals;
+declare CMlLabel G_Label_MedalName;
+	
+declare CMlFrame G_Frame_MedalCounter;
+declare CMlFrame G_Frame_MedalCounterSlide;
+declare CMlLabel G_Label_MedalsTotal;
+declare CMlLabel G_Label_MedalsAdd;
+
+Void InitController(){
+	G_Frame_Global = (Page.GetFirstChild("frame-global") as CMlFrame);
+	G_Frame_RaceMedal <=> (G_Frame_Global.GetFirstChild("frame-race-medal") as CMlFrame);
+	G_Frame_Times <=> (G_Frame_RaceMedal.GetFirstChild("frame-times") as CMlFrame);
+	G_Frame_RaceTime <=> (G_Frame_Times.Controls[0] as CMlFrame);
+	G_Label_RaceTime <=> (G_Frame_RaceTime.GetFirstChild("label-race-time") as CMlLabel);
+	G_Frame_TimeDiff <=> (G_Frame_Times.Controls[1] as CMlFrame);
+	G_Label_TimeDiff <=> (G_Frame_TimeDiff.GetFirstChild("label-time-diff") as CMlLabel);
+	G_Frame_NextMedal <=> (G_Frame_Times.Controls[2] as CMlFrame);
+	G_Label_NextMedal <=> (G_Frame_NextMedal.GetFirstChild("label-next-medal") as CMlLabel);
+
+	G_Frame_RaceMedalSlide <=> (G_Frame_RaceMedal.GetFirstChild("frame-slide") as CMlFrame);
+	G_Frame_RaceMedals <=> (G_Frame_RaceMedal.GetFirstChild("frame-race-medals") as CMlFrame);
+	G_Label_MedalName <=> (G_Frame_RaceMedal.GetFirstChild("label-medal-name") as CMlLabel);
+	G_Frame_MedalCounter <=> (G_Frame_Global.GetFirstChild("frame-medal-counter") as CMlFrame);
+	G_Frame_MedalCounterSlide <=> (G_Frame_MedalCounter.GetFirstChild("frame-slide") as CMlFrame);
+	G_Label_MedalsTotal <=> (G_Frame_MedalCounter.GetFirstChild("label-medals-total") as CMlLabel);
+	G_Label_MedalsAdd <=> (G_Frame_MedalCounter.GetFirstChild("label-medals-add") as CMlLabel);
+}
+
+Void InitSound(){
+	G_SoundCheckpointNeutral = Audio.CreateSound("{{{Sound_CheckpointNeutral}}}", 0.0, False, False, False);
+  G_SoundCheckpointWorse = Audio.CreateSound("{{{Sound_CheckpointWorse}}}", 0.0, False, False, False);
+	G_SoundCheckpointBetter = Audio.CreateSound("{{{Sound_CheckpointBetter}}}", 0.0, False, False, False);
+}
 
 Void Init(){
-	declare Frame_TravellingMedals <=> (Page.GetFirstChild("frame-travelling-medals") as CMlFrame);
+	InitController();
+	InitSound();
+
 	G_TimeWaitTrav = 7000;
 	G_TimeIncrementMedal = 250;
-	TempMedalsCount = 0;
+	G_TempMedalsCount = 0;
+
+	G_PrevRaceMedalHideTime = -123;
+	G_PrevMedalCounterHideTime = -123;
+	G_DisplayRaceMedal = False;
+	G_DisplayMedalCounter = False;
+
+	declare Frame_TravellingMedals <=> (Page.GetFirstChild("frame-travelling-medals") as CMlFrame);
 	foreach (Key => Control in Frame_TravellingMedals.Controls){
 		declare Quad_Trav <=> (Control as CMlQuad);
 		G_TravellingMedals.add(Quad_Trav);
@@ -159,25 +230,28 @@ CTmMlPlayer GetOwner() {
   return InputPlayer;
 }
 
+Void HideUnlootMedal(CTmMlPlayer _Owner){
+	declare netread Net_ChaseMedal_RaceMedal for _Owner = {{{Const::C_Medal_Gold}}};
+	foreach (Key => Control in G_Frame_RaceMedals.Controls) {
+		declare Quad_Medal <=> (Control as CMlQuad);
+		if(Net_ChaseMedal_RaceMedal != {{{Const::C_Medal_None}}} && Medals.keyof(Net_ChaseMedal_RaceMedal) >= Key){
+			Quad_Medal.Visible = False;
+			G_TravellingMedals[Key].Visible = False;
+		}
+	}
+}
+
 Void MakeMedalTravel(){
 	declare Owner <=> GetOwner();
 	if (Owner != Null) {
-
 		declare netread Net_ChaseMedal_RaceMedal for Owner = {{{Const::C_Medal_Gold}}};
 
-		declare Frame_RaceMedals <=> (Page.GetFirstChild("frame-race-medals") as CMlFrame);
-			
-		foreach (Key => Control in Frame_RaceMedals.Controls) {
-			declare Quad_Medal <=> (Control as CMlQuad);
-			if(Net_ChaseMedal_RaceMedal != {{{Const::C_Medal_None}}} && Medals.keyof(Net_ChaseMedal_RaceMedal) >= Key){
-				Quad_Medal.Visible = False;
-				G_TravellingMedals[Key].Visible = False;
-			}
-		}
+		HideUnlootMedal(Owner);
+
 		if(Net_ChaseMedal_RaceMedal != {{{Const::C_Medal_None}}}){
 			declare Integer[Integer] MedalToKey = [{{{Const::C_Medal_Gold}}} => 2, {{{Const::C_Medal_Silver}}} => 1, {{{Const::C_Medal_Bronze}}} => 0];
 			declare Integer Key = MedalToKey[Net_ChaseMedal_RaceMedal];
-			G_TravellingMedals[Key].RelativePosition_V3 = Frame_RaceMedals.Controls[0].AbsolutePosition_V3;
+			G_TravellingMedals[Key].RelativePosition_V3 = G_Frame_RaceMedals.Controls[0].AbsolutePosition_V3;
 			G_TravellingMedals[Key].Visible = True;
 			G_TravellingMedals[Key].Size = <17., 17.>;
 			G_TravellingMedals[Key].Opacity = 1.;
@@ -195,51 +269,32 @@ Void MakeMedalTravel(){
 }
 
 
-Void ShowCounter(CMlFrame Frame_Medal){
-		declare Label_MedalTotal <=> (Frame_Medal.GetFirstChild("label-medal-total") as CMlLabel);
-		declare Label_MedalAdd <=> (Frame_Medal.GetFirstChild("label-medal-add") as CMlLabel);
-		if(TempMedalsCount >= 0){
-			Label_MedalTotal.Value = TempMedalsCount ^ "";
+Void ShowCounter(CMlFrame _Frame_Medal){
+		declare Label_MedalTotal <=> (_Frame_Medal.GetFirstChild("label-medal-total") as CMlLabel);
+		declare Label_MedalAdd <=> (_Frame_Medal.GetFirstChild("label-medal-add") as CMlLabel);
+		if(G_TempMedalsCount >= 0){
+			Label_MedalTotal.Value = G_TempMedalsCount ^ "";
 		}
 		Label_MedalAdd.Visible = True;
 }
 
-Void HideCounter(CMlFrame[Integer] Frames_Medal){
-	foreach (Medal => Frame_Medal in Frames_Medal) {
+Void HideCounter(){
+	foreach (Medal => Frame_Medal in G_Frames_Medal) {
 		declare Label_MedalTotal <=> (Frame_Medal.GetFirstChild("label-medal-total") as CMlLabel);
 		declare Label_MedalAdd <=> (Frame_Medal.GetFirstChild("label-medal-add") as CMlLabel);
 			Label_MedalAdd.Visible = False;
 	}
 }
 
-main() {
+Void ColorizeMedal(){
+	declare G_Frame_MedalCounter <=> (G_Frame_Global.GetFirstChild("frame-medal-counter") as CMlFrame);
+	declare Frame_Medals <=> (G_Frame_MedalCounter.GetFirstChild("frame-medals") as CMlFrame);
 
-	Init();
-
-	declare Frame_Global <=> (Page.GetFirstChild("frame-global") as CMlFrame);
-	declare Frame_RaceMedal <=> (Frame_Global.GetFirstChild("frame-race-medal") as CMlFrame);
-	declare Frame_RaceMedalSlide <=> (Frame_RaceMedal.GetFirstChild("frame-slide") as CMlFrame);
-	declare Frame_RaceMedals <=> (Frame_RaceMedal.GetFirstChild("frame-race-medals") as CMlFrame);
-	declare Label_MedalName <=> (Frame_RaceMedal.GetFirstChild("label-medal-name") as CMlLabel);
-	declare Frame_Times <=> (Frame_RaceMedal.GetFirstChild("frame-times") as CMlFrame);
-	declare Frame_RaceTime <=> (Frame_Times.Controls[0] as CMlFrame);
-	declare Label_RaceTime <=> (Frame_RaceTime.GetFirstChild("label-race-time") as CMlLabel);
-	declare Frame_TimeDiff <=> (Frame_Times.Controls[1] as CMlFrame);
-	declare Label_TimeDiff <=> (Frame_TimeDiff.GetFirstChild("label-time-diff") as CMlLabel);
-	declare Frame_NextMedal <=> (Frame_Times.Controls[2] as CMlFrame);
-	declare Label_NextMedal <=> (Frame_NextMedal.GetFirstChild("label-next-medal") as CMlLabel);
-	declare Frame_MedalCounter <=> (Frame_Global.GetFirstChild("frame-medal-counter") as CMlFrame);
-	declare Frame_MedalCounterSlide <=> (Frame_MedalCounter.GetFirstChild("frame-slide") as CMlFrame);
-	declare Label_MedalsTotal <=> (Frame_MedalCounter.GetFirstChild("label-medals-total") as CMlLabel);
-	declare Label_MedalsAdd <=> (Frame_MedalCounter.GetFirstChild("label-medals-add") as CMlLabel);
-	declare Frame_Medals <=> (Frame_MedalCounter.GetFirstChild("frame-medals") as CMlFrame);
-
-	declare Frames_Medal = CMlFrame[Integer];
 	foreach (Key => Control in Frame_Medals.Controls) {
 		if (Medals.existskey(Key)) {
 			declare Medal = Medals[Key];
 			declare Frame_Medal <=> (Control as CMlFrame);
-			Frames_Medal[Medal] = Frame_Medal;
+			G_Frames_Medal[Medal] = Frame_Medal;
 			declare Quad_Medal <=> (Frame_Medal.GetFirstChild("quad-medal") as CMlQuad);
 			switch (Medal) {
 				case {{{Const::C_Medal_Bronze}}}: Quad_Medal.Colorize = {{{Const::C_MedalColor_Bronze}}};
@@ -248,205 +303,257 @@ main() {
 			}
 		}
 	}
+}
 
-	declare SoundCheckpointNeutral = Audio.CreateSound("{{{Sound_CheckpointNeutral}}}", 0.0, False, False, False);
-  declare SoundCheckpointWorse = Audio.CreateSound("{{{Sound_CheckpointWorse}}}", 0.0, False, False, False);
-  declare SoundCheckpointBetter = Audio.CreateSound("{{{Sound_CheckpointBetter}}}", 0.0, False, False, False);
+Void ShowTime(CTmMlPlayer _Owner, Integer _NextMedalTime){
+	declare netread Net_ChaseMedal_RaceTime for _Owner = -1;
 
-  declare netread Net_ChaseMedal_UnlockLesserMedal for Teams[0] = False;
+	if (Net_ChaseMedal_RaceTime >= 0) {
+		G_Label_RaceTime.Value = TL::TimeToText(Net_ChaseMedal_RaceTime, True)^(Net_ChaseMedal_RaceTime%10);
+		G_Frame_RaceTime.Visible = True;
 
-  declare ChaseAttack_ScoresTableIsVisible for This = False;
+		declare netread Net_ChaseMedal_RaceTimeDiff for _Owner = -1;
+		declare TimeDiff = ML::Abs(Net_ChaseMedal_RaceTimeDiff);
+		G_SoundCheckpointNeutral.Stop();
+		G_SoundCheckpointWorse.Stop();
+		G_SoundCheckpointBetter.Stop();
+		if (Net_ChaseMedal_RaceTimeDiff == 0) {
+			G_Frame_TimeDiff.Visible = False;
+			G_SoundCheckpointNeutral.Play();
+		} 
+		else {
+			if (Net_ChaseMedal_RaceTimeDiff > 0) {
+				G_Label_TimeDiff.Value = "+"^TL::TimeToText(TimeDiff, True)^(TimeDiff%10);
+				G_Label_TimeDiff.TextColor = {{{Const::C_TimeColor_Worse}}};
+				G_SoundCheckpointWorse.Play();
+			} 
+			else {
+				G_Label_TimeDiff.Value = "-"^TL::TimeToText(TimeDiff, True)^(TimeDiff%10);
+				G_Label_TimeDiff.TextColor = {{{Const::C_TimeColor_Better}}};
+				G_SoundCheckpointBetter.Play();
+			}
+			G_Frame_TimeDiff.Visible = True;
+		}
 
-	declare PrevRaceMedalHideTime = -123;
-	declare PrevMedalCounterHideTime = -123;
-	declare DisplayRaceMedal = False;
-	declare DisplayMedalCounter = False;
+		if (_NextMedalTime >= 0) {
+			G_Label_NextMedal.Value = TL::TimeToText(_NextMedalTime, True)^(_NextMedalTime%10);
+			G_Frame_NextMedal.Visible = True;
+		}
+		else {
+			G_Frame_NextMedal.Visible = False;
+		}
+	} 
+	else {
+		G_Frame_RaceTime.Visible = False;
+		G_Frame_TimeDiff.Visible = False;
+		G_Frame_NextMedal.Visible = False;
+	}
+}
+
+Void FinishRace(CTmMlPlayer _Owner, Boolean _Net_ChaseMedal_UnlockLesserMedal){
+	declare netread Net_ChaseMedal_RaceMedal for _Owner = {{{Const::C_Medal_Gold}}};
+	if (G_PrevRaceMedalHideTime > GameTime) {
+		G_DisplayRaceMedal = True;
+		HideTravMedals();
+		AnimMgr.Add(G_Frame_RaceMedalSlide, "<frame pos=\"0 0\" hidden=\"0\" />", 250, CAnimManager::EAnimManagerEasing::QuadOut);
+		G_TimeTravAnim = Now + 250 + G_TimeWaitTrav;
+		G_TempMedalsCount = -1;
+		G_TravAllow = True;
+		
+		foreach (Key => Control in G_Frame_RaceMedals.Controls) {
+			declare Quad_Medal <=> (Control as CMlQuad);
+			Quad_Medal.Visible = (
+				Net_ChaseMedal_RaceMedal != {{{Const::C_Medal_None}}} &&
+				(
+					(!_Net_ChaseMedal_UnlockLesserMedal && Medals.keyof(Net_ChaseMedal_RaceMedal) == Key) ||
+					(_Net_ChaseMedal_UnlockLesserMedal && Medals.keyof(Net_ChaseMedal_RaceMedal) >= Key)
+				)
+			);
+		}
+		declare NextMedalTime = -1;
+		declare Text[Integer] RaceMedalToMedalText = [
+			{{{Const::C_Medal_Bronze}}}	=> "{{{Text_Bronze}}}",
+			{{{Const::C_Medal_Silver}}}	=> "{{{Text_Silver}}}",
+			{{{Const::C_Medal_Gold}}}		=> "{{{Text_Gold}}}"
+		];
+		G_Label_MedalName.Value = "";
+		if (RaceMedalToMedalText.existskey(Net_ChaseMedal_RaceMedal)) {
+			G_Label_MedalName.Value = RaceMedalToMedalText[Net_ChaseMedal_RaceMedal];
+		}
+		declare Vec3[Integer] RaceMedalToMedalColor = [
+			{{{Const::C_Medal_Bronze}}}	=> {{{Const::C_MedalColor_Bronze}}},
+			{{{Const::C_Medal_Silver}}}	=> {{{Const::C_MedalColor_Silver}}},
+			{{{Const::C_Medal_Gold}}}		=> {{{Const::C_MedalColor_Gold}}}
+		];
+		if (RaceMedalToMedalColor.existskey(Net_ChaseMedal_RaceMedal)) {
+			G_Label_MedalName.TextColor = RaceMedalToMedalColor[Net_ChaseMedal_RaceMedal];
+		}
+		switch (Net_ChaseMedal_RaceMedal) {
+			case {{{Const::C_Medal_Bronze}}}: {
+				if (Map != Null) NextMedalTime = Map.TMObjective_SilverTime;
+			}
+			case {{{Const::C_Medal_Silver}}}: {
+				if (Map != Null) NextMedalTime = Map.TMObjective_GoldTime;
+			}
+			case {{{Const::C_Medal_Gold}}}: {
+			}
+			default: {
+				if (Map != Null) NextMedalTime = Map.TMObjective_BronzeTime;
+			}
+		}
+		ShowTime(_Owner, NextMedalTime);
+	}
+}
+
+Void MedalSkipIfUserRestart(){
+	if (G_DisplayRaceMedal && GameTime >= G_PrevRaceMedalHideTime) {
+		G_TimeTravAnim = Now;
+		G_TravAllow = False;
+		G_DisplayRaceMedal = False;
+		AnimMgr.Add(G_Frame_RaceMedalSlide, "<frame pos=\"0 -{{{TableSize.Y+5}}}\" hidden=\"1\" />", G_TimeIncrementMedal, CAnimManager::EAnimManagerEasing::QuadOut);
+	}
+}
+
+Void ShowMedalCounter(){
+	G_DisplayMedalCounter = True;
+	AnimMgr.Add(G_Frame_MedalCounterSlide, "<frame pos=\"0 0\" hidden=\"0\" />", 250, CAnimManager::EAnimManagerEasing::QuadOut);
+}
+
+Void HideMedalCounter(){
+	G_DisplayMedalCounter = False;
+	AnimMgr.Add(G_Frame_MedalCounterSlide, "<frame pos=\"-{{{TitleSize+5}}} 0\" hidden=\"1\" />", G_TimeIncrementMedal, CAnimManager::EAnimManagerEasing::QuadOut);
+}
+
+Void ShowMedals(CTmMlPlayer _Owner, Boolean _Net_ChaseMedal_UnlockLesserMedal){
+	declare netread Net_ChaseMedal_MedalCounterMedals for _Owner = Integer[Integer];
+	declare netread Net_ChaseMedal_MedalCounterMedalUnlock for _Owner = {{{Const::C_Medal_None}}};
+	declare netread Net_ChaseMedal_RaceMedal for _Owner = {{{Const::C_Medal_Gold}}};
+
+	declare Total = 0;
+	declare Add = 0;
+
+	ShowMedalCounter();
+
+	foreach (Medal => Frame_Medal in G_Frames_Medal) {
+		declare Label_MedalTotal <=> (Frame_Medal.GetFirstChild("label-medal-total") as CMlLabel);
+		declare Label_MedalAdd <=> (Frame_Medal.GetFirstChild("label-medal-add") as CMlLabel);
+		if (Net_ChaseMedal_MedalCounterMedals.existskey(Medal)) {
+			declare Count = Net_ChaseMedal_MedalCounterMedals[Medal];
+			Total += Count;
+			if((Medal == Net_ChaseMedal_RaceMedal) && G_TempMedalsCount != Count){
+				G_TempMedalsCount = Count;
+				Label_MedalTotal.Value = TL::ToText(Count - 1);
+			}
+			else{
+				Label_MedalTotal.Value = TL::ToText(Count);
+			}
+		} 
+		else if (Net_ChaseMedal_MedalCounterMedals.existskey(Medal)) {
+			Label_MedalTotal.Value = "" ^ Net_ChaseMedal_MedalCounterMedals[Medal];
+		} 
+		else {
+			Label_MedalTotal.Value = "0";
+		}
+		if (
+			Net_ChaseMedal_MedalCounterMedalUnlock != {{{Const::C_Medal_None}}} && (
+				(!_Net_ChaseMedal_UnlockLesserMedal && Net_ChaseMedal_MedalCounterMedalUnlock == Medal) ||
+				(_Net_ChaseMedal_UnlockLesserMedal && Medals.keyof(Net_ChaseMedal_MedalCounterMedalUnlock) >= Medals.keyof(Medal))
+			)
+		) {
+			Label_MedalAdd.Value = "+1";
+			Add += 1;
+		} else {
+			Label_MedalAdd.Value = "";
+		}
+	}
+	G_Label_MedalsTotal.Value = TL::ToText(Total);
+	if (Add > 0) 
+		G_Label_MedalsAdd.Value = "+"^Add;
+	else 
+		G_Label_MedalsAdd.Value = "";
+}
+
+Void LoopMedalTravel(CTmMlPlayer _Owner){
+	declare netread Net_ChaseMedal_RaceMedal for _Owner = {{{Const::C_Medal_Gold}}};
+	if(G_TimeTravAnim > 0 && (Now > G_TimeTravAnim && G_TravAllow)){
+		G_TravAllow = False;
+		MakeMedalTravel();
+	}
+	if((G_TimeTravAnim > 0 && Now > G_TimeTravAnim + G_TimeIncrementMedal)){
+		G_TimeTravAnim = -1; //< Stop the anim or it will continue to run infinitely
+		if (Net_ChaseMedal_RaceMedal == {{{Const::C_Medal_Gold}}}
+			|| Net_ChaseMedal_RaceMedal == {{{Const::C_Medal_Silver}}}
+			|| Net_ChaseMedal_RaceMedal == {{{Const::C_Medal_Bronze}}}) {
+			ShowCounter(G_Frames_Medal[Net_ChaseMedal_RaceMedal]);
+		}
+	}
+}
+
+main() {
+
+	Init();
+	ColorizeMedal();
+
+	declare Frame_Ranking <=> (Page.GetFirstChild("frame-rank") as CMlFrame);
+	declare Label_RankCurrent <=> (Frame_Ranking.GetFirstChild("label-rank-current") as CMlLabel);
+	declare Label_RankTotal <=> (Frame_Ranking.GetFirstChild("label-rank-total") as CMlLabel);
+
+	declare netread Net_ChaseMedal_UnlockLesserMedal for Teams[0] = False;
+	declare ChaseAttack_ScoresTableIsVisible for This = False;
+
+	declare PrevRankCurrent = -123;
+	declare PrevRankTotal = -123;
 
 	while (True) {
 		yield;
 
 		declare Owner <=> GetOwner();
 		if (Owner != Null) {
-			declare netread Net_ChaseMedal_RaceMedal for Owner = {{{Const::C_Medal_Gold}}};
-			if (!Frame_Global.Visible) {
-				Frame_Global.Visible = True;
+			if (!G_Frame_Global.Visible) {
+				G_Frame_Global.Visible = True;
 			}
-
 			declare netread Net_ChaseMedal_RaceMedalHideTime for Owner = -1;
-			if (PrevRaceMedalHideTime != Net_ChaseMedal_RaceMedalHideTime) {
-				PrevRaceMedalHideTime = Net_ChaseMedal_RaceMedalHideTime;
-
-				if (PrevRaceMedalHideTime > GameTime) {
-					DisplayRaceMedal = True;
-					HideTravMedals();
-					AnimMgr.Add(Frame_RaceMedalSlide, "<frame pos=\"0 0\" hidden=\"0\" />", 250, CAnimManager::EAnimManagerEasing::QuadOut);
-					G_TimeTravAnim = Now + 250 + G_TimeWaitTrav;
-					G_TravAllow = True;
-					
-					foreach (Key => Control in Frame_RaceMedals.Controls) {
-						declare Quad_Medal <=> (Control as CMlQuad);
-						Quad_Medal.Visible = (
-							Net_ChaseMedal_RaceMedal != {{{Const::C_Medal_None}}} &&
-							(
-								(!Net_ChaseMedal_UnlockLesserMedal && Medals.keyof(Net_ChaseMedal_RaceMedal) == Key) ||
-								(Net_ChaseMedal_UnlockLesserMedal && Medals.keyof(Net_ChaseMedal_RaceMedal) >= Key)
-							)
-						);
-						// Align medals
-						if (Net_ChaseMedal_UnlockLesserMedal) {
-							Quad_Medal.RelativePosition_V3.X = -3. + (Key * 3.);
-						} else {
-							Quad_Medal.RelativePosition_V3.X = 0.;
-						}
-					}
-					declare NextMedalTime = -1;
-					switch (Net_ChaseMedal_RaceMedal) {
-						case {{{Const::C_Medal_Bronze}}}: {
-							Label_MedalName.Value = "{{{Text_Bronze}}}";
-							Label_MedalName.TextColor = {{{Const::C_MedalColor_Bronze}}};
-							if (Map != Null) NextMedalTime = Map.TMObjective_SilverTime;
-						}
-						case {{{Const::C_Medal_Silver}}}: {
-							Label_MedalName.Value = "{{{Text_Silver}}}";
-							Label_MedalName.TextColor = {{{Const::C_MedalColor_Silver}}};
-							if (Map != Null) NextMedalTime = Map.TMObjective_GoldTime;
-						}
-						case {{{Const::C_Medal_Gold}}}: {
-							Label_MedalName.Value = "{{{Text_Gold}}}";
-							Label_MedalName.TextColor = {{{Const::C_MedalColor_Gold}}};
-						}
-						default: {
-							Label_MedalName.Value = "";
-							if (Map != Null) NextMedalTime = Map.TMObjective_BronzeTime;
-						}
-					}
-
-					declare netread Net_ChaseMedal_RaceTime for Owner = -1;
-					if (Net_ChaseMedal_RaceTime >= 0) {
-						Label_RaceTime.Value = TL::TimeToText(Net_ChaseMedal_RaceTime, True)^(Net_ChaseMedal_RaceTime%10);
-						Frame_RaceTime.Visible = True;
-
-						declare netread Net_ChaseMedal_RaceTimeDiff for Owner = -1;
-						declare TimeDiff = ML::Abs(Net_ChaseMedal_RaceTimeDiff);
-						SoundCheckpointNeutral.Stop();
-						SoundCheckpointWorse.Stop();
-						SoundCheckpointBetter.Stop();
-						if (Net_ChaseMedal_RaceTimeDiff == 0) {
-							Frame_TimeDiff.Visible = False;
-							SoundCheckpointNeutral.Play();
-						} else {
-							if (Net_ChaseMedal_RaceTimeDiff > 0) {
-								Label_TimeDiff.Value = "+"^TL::TimeToText(TimeDiff, True)^(TimeDiff%10);
-								Label_TimeDiff.TextColor = {{{Const::C_TimeColor_Worse}}};
-								SoundCheckpointWorse.Play();
-							} else {
-								Label_TimeDiff.Value = "-"^TL::TimeToText(TimeDiff, True)^(TimeDiff%10);
-								Label_TimeDiff.TextColor = {{{Const::C_TimeColor_Better}}};
-								SoundCheckpointBetter.Play();
-							}
-							Frame_TimeDiff.Visible = True;
-						}
-
-						if (NextMedalTime >= 0) {
-							Label_NextMedal.Value = TL::TimeToText(NextMedalTime, True)^(NextMedalTime%10);
-							Frame_NextMedal.Visible = True;
-						} else {
-							Frame_NextMedal.Visible = False;
-						}
-					} else {
-						Frame_RaceTime.Visible = False;
-						Frame_TimeDiff.Visible = False;
-						Frame_NextMedal.Visible = False;
-					}
-				}
+			if (G_PrevRaceMedalHideTime != Net_ChaseMedal_RaceMedalHideTime) {
+				G_PrevRaceMedalHideTime = Net_ChaseMedal_RaceMedalHideTime;
+				FinishRace(Owner, Net_ChaseMedal_UnlockLesserMedal);
 			}
-
 			declare netread Net_ChaseMedal_MedalCounterHideTime for Owner = -1;
-			if (PrevMedalCounterHideTime != Net_ChaseMedal_MedalCounterHideTime) {
-				PrevMedalCounterHideTime = Net_ChaseMedal_MedalCounterHideTime;
+			if (G_PrevMedalCounterHideTime != Net_ChaseMedal_MedalCounterHideTime) {
+				G_PrevMedalCounterHideTime = Net_ChaseMedal_MedalCounterHideTime;
 
-				if (PrevMedalCounterHideTime > GameTime) {
-					DisplayMedalCounter = True;
-					AnimMgr.Add(Frame_MedalCounterSlide, "<frame pos=\"0 0\" hidden=\"0\" />", 250, CAnimManager::EAnimManagerEasing::QuadOut);
+				if (G_PrevMedalCounterHideTime > GameTime) {
+					ShowMedals(Owner, Net_ChaseMedal_UnlockLesserMedal);
+				}
+				HideCounter();
+			}
+			LoopMedalTravel(Owner);
 
-					declare netread Net_ChaseMedal_MedalCounterMedals for Owner = Integer[Integer];
-					declare netread Net_ChaseMedal_MedalCounterMedalUnlock for Owner = {{{Const::C_Medal_None}}};
-					declare Total = 0;
-					declare Add = 0;
-					foreach (Medal => Frame_Medal in Frames_Medal) {
-						declare Label_MedalTotal <=> (Frame_Medal.GetFirstChild("label-medal-total") as CMlLabel);
-						declare Label_MedalAdd <=> (Frame_Medal.GetFirstChild("label-medal-add") as CMlLabel);
-						if (Net_ChaseMedal_MedalCounterMedals.existskey(Medal)) {
-							declare Count = Net_ChaseMedal_MedalCounterMedals[Medal];
-							Total += Count;
-							if((Medal == Net_ChaseMedal_RaceMedal) && TempMedalsCount != Count){
-								TempMedalsCount = Count;
-								Label_MedalTotal.Value = TL::ToText(Count - 1);
-							}
-							else{
-								Label_MedalTotal.Value = TL::ToText(Count);
-							}
-						} 
-						else if (Net_ChaseMedal_MedalCounterMedals.existskey(Medal)) {
-							Label_MedalTotal.Value = "" ^ Net_ChaseMedal_MedalCounterMedals[Medal];
-						} 
-						else {
-							Label_MedalTotal.Value = "0";
-						}
-						if (
-							Net_ChaseMedal_MedalCounterMedalUnlock != {{{Const::C_Medal_None}}} && (
-								(!Net_ChaseMedal_UnlockLesserMedal && Net_ChaseMedal_MedalCounterMedalUnlock == Medal) ||
-								(Net_ChaseMedal_UnlockLesserMedal && Medals.keyof(Net_ChaseMedal_MedalCounterMedalUnlock) >= Medals.keyof(Medal))
-							)
-						) {
-							Label_MedalAdd.Value = "+1";
-							Add += 1;
-						} else {
-							Label_MedalAdd.Value = "";
-						}
+			if (G_PrevRaceMedalHideTime >= 0) {
+				declare Rank = Scores.keyof(Owner.Score) + 1;
+				if (PrevRankCurrent != Rank) {
+					PrevRankCurrent = Rank;
+					if (PrevRankCurrent > 0) {
+						Label_RankCurrent.Value = TL::ToText(PrevRankCurrent);
+					} else {
+						Label_RankCurrent.Value = TL::ToText(Scores.count);
 					}
-					Label_MedalsTotal.Value = TL::ToText(Total);
-					if (Add > 0) 
-						Label_MedalsAdd.Value = "+"^Add;
-					else 
-						Label_MedalsAdd.Value = "";
 				}
-				HideCounter(Frames_Medal);
-			}
-
-			if(G_TimeTravAnim > 0 && (Now > G_TimeTravAnim && G_TravAllow)){
-				G_TravAllow = False;
-				MakeMedalTravel();
-			}
-			if((G_TimeTravAnim > 0 && Now > G_TimeTravAnim + G_TimeIncrementMedal)){
-				G_TimeTravAnim = -1; //< Stop the anim or it will continue to run infinitely
-				if (Net_ChaseMedal_RaceMedal == {{{Const::C_Medal_Gold}}}
-					|| Net_ChaseMedal_RaceMedal == {{{Const::C_Medal_Silver}}}
-					|| Net_ChaseMedal_RaceMedal == {{{Const::C_Medal_Bronze}}}) {
-					ShowCounter(Frames_Medal[Net_ChaseMedal_RaceMedal]);
+				if (PrevRankTotal != Scores.count) {
+					PrevRankTotal = Scores.count;
+					Label_RankTotal.Value = "/"^PrevRankTotal;
 				}
 			}
 		}
 
-		if (Owner == Null && Frame_Global.Visible) {
-			Frame_Global.Visible = False;
+		if (Owner == Null && G_Frame_Global.Visible) {
+			G_Frame_Global.Visible = False;
 		}
-
-		if (DisplayRaceMedal && GameTime >= PrevRaceMedalHideTime) {
-			G_TimeTravAnim = Now;
-			G_TravAllow = False;
-			DisplayRaceMedal = False;
-			AnimMgr.Add(Frame_RaceMedalSlide, "<frame pos=\"0 -{{{TableSize.Y+5}}}\" hidden=\"1\" />", G_TimeIncrementMedal, CAnimManager::EAnimManagerEasing::QuadOut);
+		MedalSkipIfUserRestart();
+		if (!G_DisplayMedalCounter && ChaseAttack_ScoresTableIsVisible) {
+			ShowMedalCounter();
 		}
-
-		if (!DisplayMedalCounter && ChaseAttack_ScoresTableIsVisible) {
-			DisplayMedalCounter = True;
-			AnimMgr.Add(Frame_MedalCounterSlide, "<frame pos=\"0 0\" hidden=\"0\" />", 250, CAnimManager::EAnimManagerEasing::QuadOut);
-		}
-
-		if (DisplayMedalCounter && GameTime >= PrevMedalCounterHideTime && !ChaseAttack_ScoresTableIsVisible) {
-			DisplayMedalCounter = False;
-			AnimMgr.Add(Frame_MedalCounterSlide, "<frame pos=\"-{{{TitleSize+5}}} 0\" hidden=\"1\" />", G_TimeIncrementMedal, CAnimManager::EAnimManagerEasing::QuadOut);
+		if (G_DisplayMedalCounter && GameTime >= G_PrevMedalCounterHideTime && !ChaseAttack_ScoresTableIsVisible) {
+			HideMedalCounter();
 		}
 	}
 }

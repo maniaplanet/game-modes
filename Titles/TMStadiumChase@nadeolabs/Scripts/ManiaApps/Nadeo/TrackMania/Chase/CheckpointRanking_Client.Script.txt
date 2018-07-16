@@ -1,0 +1,193 @@
+/**
+ * Chase checkpoint ranking UI
+ */
+#Const Version    "2018-07-13"
+#Const ScriptName "ManiaApps/Nadeo/TrackMania/Chase/CheckpointRanking_Client.Script.txt"
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Libraries
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+#Include "ManiaApps/Nadeo/Layers.Script.txt" as Layers
+#Include "Libs/Nadeo/TrackMania/Chase/Constants2.Script.txt" as Const
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Constants
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+#Const C_Layer_CheckpointRanking "ChaseAttack_CheckpointRanking"
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Functions
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Private
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/** Get the manialink of the checkpoint ranking UI
+ *
+ *  @return                           CheckpointRanking UI manialink
+ */
+Text Private_GetCheckpointRankingML() {
+	declare Img_Arrow = "file://Media/Manialinks/Nadeo/TrackMania/Ingame/Arrow_v.dds";
+	declare Ml_Backgrounds = "";
+	declare Ml_Players = "";
+	for (I, 0, Const::C_CheckpointRanking_PlayersNb - 1) {
+		declare PosY = -5.5 * I;
+		Ml_Backgrounds ^= """<frameinstance pos="0 {{{PosY}}}" modelid="framemodel-background" />""";
+		Ml_Players ^= """<frameinstance pos="0 {{{PosY}}}" modelid="framemodel-player" />""";
+	}
+
+	return """
+<manialink version="3" name="{{{C_Layer_CheckpointRanking}}}">
+<stylesheet>
+  <style class="text-default" textfont="Oswald" textcolor="ffffff" textsize="3" textemboss="1" />
+  <style class="text-number" textfont="OswaldMono" textcolor="ffffff" textsize="3" textemboss="1" />
+</stylesheet>
+<framemodel id="framemodel-player">
+  <label pos="0 0" size="3.5 4" valign="center2" textsize="2" class="text-default" id="label-rank" />
+  <label pos="4 0" size="20 4" valign="center2" textsize="2" class="text-default" id="label-name" />
+  <quad pos="26.5 0" size="2.5 2.5" halign="center" valign="center" colorize="ffffff" opacity="0.25" keepratio="Fit" image="{{{Img_Arrow}}}" id="quad-arrow" />
+  <label pos="42 0" size="13 4" halign="right" valign="center2" textcolor="1ec8c2" textsize="2" class="text-number" id="label-time" />
+</framemodel>
+<framemodel id="framemodel-background">
+  <frame size="47 5">
+    <quad size="80 80" rot="-12" style="Bgs1" substyle="BgDialogBlur" opacity="0.1" bluramount="0.1" />
+    <quad size="80 80" rot="-12" bgcolor="0b081b" opacity="0.3" id="quad-color" />
+  </frame>
+</framemodel>
+<frame hidden="1" id="frame-global">
+	<frame pos="48 -52" hidden="1" id="frame-checkpoint-ranking">
+	  <frame pos="6.5 -5.5" z-index="1" id="frame-backgrounds">
+	    {{{Ml_Backgrounds}}}
+	  </frame>
+	  <frame pos="9 -8" z-index="2" id="frame-players">
+	    {{{Ml_Players}}}
+	  </frame>
+	</frame>
+</frame>
+<script><!--
+#Include "TextLib" as TL
+#Include "MathLib" as ML
+
+CTmMlPlayer GetOwner() {
+  if (GUIPlayer != Null) return GUIPlayer;
+  return InputPlayer;
+}
+
+Text TimeToText(Integer _Time) {
+  declare Time = TL::TimeToText(_Time, True);
+  declare Milliseconds = ML::Abs(_Time % 10);
+  if (Milliseconds >= 0) Time ^= TL::ToText(Milliseconds);
+  return Time;
+}
+
+Void UpdateRanking(
+	CMlFrame _Frame_Players,
+	Integer[] _Ranks,
+	Text[] _Names,
+	Integer[] _Times,
+	Integer _PlayerKey
+) {
+	declare LeadTime = -1;
+	foreach (Key => Control in _Frame_Players.Controls) {
+		declare Frame_Player <=> (Control as CMlFrame);
+
+		if (_Ranks.existskey(Key) && _Names.existskey(Key) && _Times.existskey(Key)) {
+			declare Label_Rank <=> (Frame_Player.GetFirstChild("label-rank") as CMlLabel);
+			declare Label_Name <=> (Frame_Player.GetFirstChild("label-name") as CMlLabel);
+			declare Quad_Arrow <=> (Frame_Player.GetFirstChild("quad-arrow") as CMlQuad);
+			declare Label_Time <=> (Frame_Player.GetFirstChild("label-time") as CMlLabel);
+			Label_Rank.Value = _Ranks[Key]^".";
+			Label_Name.Value = _Names[Key];
+
+			if (LeadTime < 0) {
+				LeadTime = _Times[Key];
+				Label_Time.Value = TimeToText(_Times[Key]);
+			} else {
+				declare Gap = _Times[Key] - LeadTime;
+      	Label_Time.Value = "+"^TimeToText(Gap);
+			}
+
+			if (Key == _PlayerKey) {
+	      Label_Time.TextColor = <1., 0.859, 0.208>;
+	      Quad_Arrow.Colorize = <1., 0.859, 0.208>;
+	    } else {
+	      Label_Time.TextColor = <0.117, 0.784, 0.761>;
+	      Quad_Arrow.Colorize = <1., 1., 1.>;
+	    }
+
+			Frame_Player.Visible = True;
+		} else {
+			Frame_Player.Visible = False;
+		}
+	}
+}
+
+main() {
+	declare Frame_Global <=> (Page.GetFirstChild("frame-global") as CMlFrame);
+	declare Frame_CheckpointRanking <=> (Frame_Global.GetFirstChild("frame-checkpoint-ranking") as CMlFrame);
+	declare Frame_Players <=> (Frame_CheckpointRanking.GetFirstChild("frame-players") as CMlFrame);
+
+	declare PrevIsEnabled = False;
+	declare PrevRankingUpdate = -123;
+
+	while (True) {
+		yield;
+
+		declare Owner <=> GetOwner();
+		if (Owner != Null) {
+			declare netread Net_CheckpointRanking_IsEnabled for Owner = False;
+			if (PrevIsEnabled != Net_CheckpointRanking_IsEnabled) {
+				PrevIsEnabled = Net_CheckpointRanking_IsEnabled;
+				Frame_Global.Visible = PrevIsEnabled;
+			}
+
+			declare netread Net_CheckpointRanking_RankingUpdate for Owner = -1;
+			if (PrevRankingUpdate != Net_CheckpointRanking_RankingUpdate) {
+				PrevRankingUpdate = Net_CheckpointRanking_RankingUpdate;
+				
+				declare netread Net_CheckpointRanking_Ranks for Owner = Integer[];
+				if (Net_CheckpointRanking_Ranks.count > 0) {
+					declare netread Net_CheckpointRanking_Names for Owner = Text[];
+					declare netread Net_CheckpointRanking_Times for Owner = Integer[];
+					declare netread Net_CheckpointRanking_PlayerKey for Owner = -1;
+					UpdateRanking(
+						Frame_Players,
+						Net_CheckpointRanking_Ranks,
+						Net_CheckpointRanking_Names,
+						Net_CheckpointRanking_Times,
+						Net_CheckpointRanking_PlayerKey
+					);
+					Frame_CheckpointRanking.Visible = True;
+				} else {
+					Frame_CheckpointRanking.Visible = False;
+				}
+			}
+		}
+
+		if (Owner == Null && Frame_Global.Visible) {
+			Frame_Global.Visible = False;
+			PrevIsEnabled = False;
+		}
+	}
+}
+--></script>
+</manialink>
+""";
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Public
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/// Unload the library
+Void Unload() {
+
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/// Load the library
+Void Load() {
+	Unload();
+
+	Layers::Create(C_Layer_CheckpointRanking, Private_GetCheckpointRankingML());
+}

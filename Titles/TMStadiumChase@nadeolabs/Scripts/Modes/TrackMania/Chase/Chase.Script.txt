@@ -4,7 +4,7 @@
 #Extends "Modes/TrackMania/Base/ModeTrackmania.Script.txt"
 
 #Const	CompatibleMapTypes	"Race"
-#Const	Version							"2018-06-27"
+#Const	Version							"2018-07-13"
 #Const	ScriptName					"Modes/TrackMania/Chase/Chase.Script.txt"
 
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
@@ -14,6 +14,7 @@
 #Include "MathLib" as ML
 #Include "Libs/Nadeo/TrackMania/Chase/Common.Script.txt" as Chase
 #Include "Libs/Nadeo/TrackMania/Chase/Constants2.Script.txt" as Const
+#Include "Libs/Nadeo/TrackMania/Chase/Clans.Script.txt" as Clans
 #Include "ManiaApps/Nadeo/TrackMania/Chase/ChaseAttack_Server.Script.txt" as ChaseUI
 #Include "ManiaApps/Nadeo/TrackMania/Chase/ChaseTuto_Server.Script.txt" as ChaseTuto
 #Include "ManiaApps/Nadeo/TrackMania/Chase/Team_Server.Script.txt" as TeamUI
@@ -24,6 +25,7 @@
 #Include "ManiaApps/Nadeo/TrackMania/Chase/TeamConfirm_Server.Script.txt" as TeamConfirmUI
 #Include "ManiaApps/Nadeo/TrackMania/Chase/FinishTimeout_Server.Script.txt" as FinishTimeoutUI
 #Include "ManiaApps/Nadeo/TrackMania/Chase/CheckpointTime_Server.Script.txt" as CheckpointTimeUI
+#Include "ManiaApps/Nadeo/TrackMania/Chase/CheckpointRanking_Server.Script.txt" as CheckpointRankingUI
 #Include "ManiaApps/Nadeo/TrackMania/Chase/Restart_Server.Script.txt" as RestartUI
 #Include "ManiaApps/Nadeo/TrackMania/Chase/Relay_Server.Script.txt" as RelayUI
 
@@ -94,6 +96,8 @@
 #Const C_MedalPopDuration 3000 ///< Display duration of the medal pop-up at the end of the race
 #Const C_UnlockLesserMedals False ///< Also unlock medals below the one that was just one. eg: gold also unlock bronze and silver.
 #Const C_RelayFailWarningDuration 3000 ///< Display duration of the failed relay warning
+#Const C_SpawnLobbyPlayers False ///< Spawn players currently in the lobby or not
+#Const C_WaypointEventLagProtection True ///< Try to ignore waypoint event from the previous player race
 #Const C_BotsNb 0 ///< Number of bots on the server
 
 #Const C_HudModulePath "Nadeo/TrackMania/Chase/ChaseAttack/Hud.Module.Gbx" ///< Path to the hud module
@@ -119,6 +123,7 @@ Log::RegisterScript(LadderUI::ScriptName, LadderUI::Version);
 Log::RegisterScript(TeamConfirmUI::ScriptName, TeamConfirmUI::Version);
 Log::RegisterScript(FinishTimeoutUI::ScriptName, FinishTimeoutUI::Version);
 Log::RegisterScript(CheckpointTimeUI::ScriptName, CheckpointTimeUI::Version);
+Log::RegisterScript(CheckpointRankingUI::ScriptName, CheckpointRankingUI::Version);
 Log::RegisterScript(RestartUI::ScriptName, RestartUI::Version);
 Log::RegisterScript(RelayUI::ScriptName, RelayUI::Version);
 ***
@@ -135,6 +140,7 @@ LadderUI::Load();
 TeamConfirmUI::Load();
 FinishTimeoutUI::Load();
 CheckpointTimeUI::Load();
+CheckpointRankingUI::Load();
 RestartUI::Load();
 RelayUI::Load();
 ***
@@ -143,6 +149,7 @@ RelayUI::Load();
 ***
 RelayUI::Unload();
 RestartUI::Unload();
+CheckpointRankingUI::Unload();
 CheckpointTimeUI::Unload();
 FinishTimeoutUI::Unload();
 TeamConfirmUI::Unload();
@@ -188,7 +195,6 @@ if (Hud != Null && Hud.ScoresTable != Null) {
 
 // Initialize UI modules
 UI::LoadModules([
-	UIModules::C_Module_TimeGap,
 	UIModules::C_Module_Chrono,
 	UIModules::C_Module_PrevBestTime,
 	UIModules::C_Module_SpeedAndDistance,
@@ -219,6 +225,7 @@ MedalUI::UnlockLesserMedal(C_UnlockLesserMedals);
 // Disable respawn/restart tutorial
 UiDisableHelpMessage = True;
 
+UIManager.UIAll.OverlayHideCheckPointList = True;
 UIManager.UIAll.OverlayHideCheckPointTime = True;
 UIManager.UIAll.OverlayHidePosition = True;
 UIManager.UIAll.OverlayHideEndMapLadderRecap = True;
@@ -236,16 +243,12 @@ foreach (Event in PendingEvents) {
 		LadderUI::InitializePlayer(Event.Player);
 		FinishTimeoutUI::InitializePlayer(Event.Player);
 		RelayUI::InitializePlayer(Event.Player);
+		CheckpointRankingUI::InitializePlayer(Event.Player);
 	}
 }
 
 TeamSelectionUI::Yield();
 TeamConfirmUI::Yield();
-***
-
-***Match_InitServer***
-***
-declare Integer[Integer] RelayStartTime;	///< Start time of the relay
 ***
 
 ***Match_StartServer***
@@ -279,34 +282,15 @@ UIManager.UIAll.LabelsVisibility = CUIConfig::EHudVisibility::Everything;
 
 ***Match_InitMap***
 ***
-declare Integer PrevTimeLimit; ///< Previous time limit of the map
-declare Integer StartTime; ///< Start time of the map
-declare Ident[] LobbyPlayers; //< Id of the Players currently in the lobby
-declare Ident[] WaitingPlayersList; ///< Ids of the players waiting for a team
-declare Ident[] PenaltyList; ///< Ids of the players waiting because of a penalty
-declare Ident[][Integer] MapPlayers; ///< Ids and clans of the players
-declare Integer[Integer] ClansCutOffTimeLimit; ///< CutOffTimeLimit of each clan
-declare Integer[Ident][Integer] ClansFinishTime; ///< Latest race finish time of each player of a clan [Clan => [FinishTime]]
-declare Integer[Ident][Integer][Integer] ClansCheckpointTimes; ///< Time at each checkpoint for the clans [Clan => [LapsNb => [BlockId => Time]]]
-declare Ident[][Ident][Integer][Integer] Progress; ///< Current progress of the race
-declare Integer[Integer] Penalties; ///< Number of penalties of a clan during a race
-declare Integer[] IsInTrainMode; ///< List the clans that are in train mode because one of their player missed
-declare Ident[][Ident][Integer][Integer] CurrentCheckpoint; ///< Current progress at the current checkpoint
-declare Boolean[Ident][Integer][Integer] ValidRelay; ///< Save if the relay was valid at each checkpoint
-declare Integer[Ident][Integer][Integer] LeaderTime; ///< Time of the first player to cross the checkpoint
-declare Real[Ident][Integer][Integer] LeaderSpeed; ///< Speed of the first player to cross the checkpoint
-declare Integer[Ident][Ident][Integer][Integer] CheckpointsScores; ///< Score of each player at each checkpoints
-declare Ident[Integer] NextCheckpointPlayerId;	///< Id of the player that must cross the next checkpoint
-declare Integer[Text][Integer] WaypointEvents_Now; ///< Time at which the event occured
-declare Integer[Text][Integer] WaypointEvents_RaceTime; ///< Time of the player
-declare Ident[Text][Integer] WaypointEvents_PlayerId; ///< Id of the player
-declare Ident[Text][Integer] WaypointEvents_BlockId; ///< Id of the block
-declare Boolean[Text][Integer] WaypointEvents_IsEndRace; ///< Is the finish
-declare Integer[Text][Integer] WaypointEvents_CheckpointInRace; ///< Number of checkpoint crossed
-declare Real[Text][Integer] WaypointEvents_Speed; ///< Speed of the player
-declare Integer PodiumDuration; ///< Duration of the podium display at the end of the map
-declare Integer ScoresTableDuration; ///< Duration of the scores table display at the end of the map
-declare Ident MapFinishBlockId; ///< The unique block id to use for the finish
+declare Integer Map_PrevTimeLimit; ///< Previous time limit of the map
+declare Integer Map_StartTime; ///< Start time of the map
+declare Integer Map_ScreenWinnersDuration; ///< Duration of the winners display at the end of the map
+declare Integer Map_ScreenScoresTableDuration; ///< Duration of the scores table display at the end of the map
+declare Integer Map_ScreenStayAsTeamDuration; ///< Duration of the stay as team display at the end of the map
+declare Text Map_CheckpointMarkersXML; ///< The xml of the markers attached to the checkpoints and finishes
+declare Ident[] Map_LobbyPlayers; ///< Id of the Players currently in the lobby
+declare Integer Map_ClanPlayersNb; ///< Number of players in a clan
+declare Ident Map_FinishBlockId; ///< Id of the finish block to use as default finish
 ***
 
 ***Match_BeforeIntroSequence***
@@ -314,7 +298,7 @@ declare Ident MapFinishBlockId; ///< The unique block id to use for the finish
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
 // Reset the medal count
 foreach (Score in Scores) {
-	CA_ResetMedals(Score);
+	ResetMedals(Score);
 }
 foreach (Player in AllPlayers) {
 	MedalUI::CancelMedalCounter(Player);
@@ -326,8 +310,9 @@ foreach (Player in AllPlayers) {
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
 // Add bot when necessary
 Users_SetNbFakeUsers(C_BotsNb, 0);
-CA_ForceUpdateLobbyPresence(LobbyPlayers);
-TeamSelectionUI::SetLobbyPlayers(LobbyPlayers);
+
+Map_ClanPlayersNb = ML::Max(2, S_TeamPlayersNb);
+TeamSelectionUI::SetLobbyPlayers(Map_LobbyPlayers);
 
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
 // Warm up
@@ -336,23 +321,25 @@ MB_WarmUp(S_WarmUpNb, WarmUpDuration);
 
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
 // Initialize race
-StartTime = Now + 3000;
-PrevTimeLimit = S_TimeLimit;
-SetTimeLimit(StartTime, S_TimeLimit);
-SetLapsNb(S_ForceLapsNb, StartTime, S_TimeLimit);
+Map_StartTime = Now + 3000;
+Map_PrevTimeLimit = S_TimeLimit;
+SetTimeLimit(Map_StartTime, S_TimeLimit);
+SetLapsNb(S_ForceLapsNb, Map_StartTime, S_TimeLimit);
 foreach (Player in AllPlayers) {
-	CA_SetPlayerClan(-1, Player);
-	CA_ResetRespawnPenalty(Player);
 	ChaseUI::SetPenalties(0, Player);
 	ChaseUI::SetFinishTime(-1, Player);
-	ChaseUI::DisplayWaitingRespawnPenalty(False, Player);
 	MedalUI::CancelMedalCounter(Player);
 	RelayUI::CancelFailWarning(Player);
+	TeamSelectionUI::Enable(False, Player);
+	ChaseTuto::IsInLobby(False, Player);
 	declare UI <=> UIManager.GetUI(Player);
 	if (UI != Null) {
 		UI.UIStatus = CUIConfig::EUIStatus::None;
 		UI.SpectatorForceCameraType = -1;
 	}
+	ResetMarkers(Player);
+	declare ChaseAttack_PrevSpectatingClan for Player = -1;
+	ChaseAttack_PrevSpectatingClan = -1;
 }
 
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
@@ -361,7 +348,14 @@ foreach (Score in Scores) {
 	declare Chase_RoundsPerformance for Score = Real[];
 	Chase_RoundsPerformance = Real[];
 	InitScore(Score);
-	CA_SetPlayerBestCheckpointTimes(Integer[Ident][Integer], Score);
+	SetPlayerBestCheckpointTimes(Integer[Ident][Integer], Score);
+	SetPlayerBestCheckpointPoints(Integer[Ident][Integer], Score);
+	ResetStats(Score);
+}
+declare Clans = Clans::GetClans();
+foreach (Clan => PlayerIds in Clans) {
+	Clans::ResetBestTime(Clan);
+	Clans::ResetRelays(Clan);
 }
 if (Hud != Null && Hud.ScoresTable != Null) {
 	Hud.ScoresTable.ResetCustomColumns();
@@ -370,6 +364,15 @@ UpdateRanking();
 
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
 // Initialize checkpoints
+declare I = 0;
+foreach (Pos in MapCheckpointPos) {
+	Map_CheckpointMarkersXML ^= """<marker pos="{{{Pos.X}}} {{{Pos.Y+3}}} {{{Pos.Z}}}" visibility="WhenVisible" distmax="{{{C_CheckpointMarkerDistance}}}" manialinkframeid="marker-checkpoint-{{{I}}}" />""";
+	I += 1;
+}
+foreach (Pos in MapFinishLinePos) {
+	Map_CheckpointMarkersXML ^= """<marker pos="{{{Pos.X}}} {{{Pos.Y+3}}} {{{Pos.Z}}}" visibility="WhenVisible" distmax="{{{C_CheckpointMarkerDistance}}}" manialinkframeid="marker-checkpoint-{{{I}}}" />""";
+	I += 1;
+}
 declare netwrite Integer Net_Chase_NextPlayerUpdate for Teams[0];
 declare netwrite Text[Integer] Net_Chase_NextPlayer for Teams[0];
 declare netwrite Integer[Integer] Net_Chase_NextCheckpoint for Teams[0];
@@ -378,7 +381,6 @@ Net_Chase_NextPlayer.clear();
 Net_Chase_NextCheckpoint.clear();
 Net_Chase_RelayTime.clear();
 Net_Chase_NextPlayerUpdate = Now;
-UpdateMarker(NextCheckpointPlayerId);
 ChaseUI::ResetRelayPlayers();
 
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
@@ -392,342 +394,200 @@ RestartUI::Enable(True);
 ***Match_PlayLoop***
 ***
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
-// Manage spectators
+// Manage switching between player and spectator
+declare Integer[] MarkersClansToUpdate;
 foreach (Spectator in Spectators) {
 	// Player switch to spectator
 	declare ChaseAttack_IsPlayer for Spectator = True;
 	if (ChaseAttack_IsPlayer) {
 		ChaseAttack_IsPlayer = False;
-		ChaseUI::DisplayWaitingRespawnPenalty(False, Spectator);
 		declare UI <=> UIManager.GetUI(Spectator);
 		if (UI != Null) {
 			UI.UIStatus = CUIConfig::EUIStatus::None;
 			UI.SpectatorForceCameraType = -1;
 		}
 	}
+	// Spectated clan
+	declare ChaseAttack_PrevSpectatingClan for Spectator = -1;
+	declare SpectatingClan = ChaseUI::GetSpectatingClan(Spectator);
+	if (ChaseAttack_PrevSpectatingClan != SpectatingClan) {
+		ChaseAttack_PrevSpectatingClan = SpectatingClan;
+		UpdateMarkers(Map_CheckpointMarkersXML, Clans::GetNextCheckpointPlayerIds(), SpectatingClan, Spectator);
+	}
 }
-
-// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
-// Manage players
-declare CTmPlayer[][] WaitingTeamsList;
-declare Ident[] ProcessedTeamPlayers;
 foreach (Player in Players) {
 	// Spectator switch to player
 	declare ChaseAttack_IsPlayer for Player = True;
+	declare ChaseAttack_PrevSpectatingClan for Player = -1;
 	if (!ChaseAttack_IsPlayer) {
 		ChaseAttack_IsPlayer = True;
+		ChaseAttack_PrevSpectatingClan = -1;
 	}
+}
 	
-	declare CurrentClan = CA_GetPlayerClan(Player);
-	declare IsViewingTutorial = ChaseTuto::IsViewingTutorial(Player);
-	declare MustBeInLobby = CurrentClan < 0 && !IsViewingTutorial;
-	// Join lobby
-	if (MustBeInLobby && !CA_IsInLobby(Player)) {
-		LobbyPlayers = CA_JoinLobby(LobbyPlayers, Player);
-		TeamSelectionUI::Enable(True, Player);
-		TeamSelectionUI::SetLobbyPlayers(LobbyPlayers);
-		ChaseTuto::IsInLobby(True, Player);
-	} 
-	// Leave lobby
-	else if (!MustBeInLobby && CA_IsInLobby(Player)) {
-		LobbyPlayers = CA_LeaveLobby(LobbyPlayers, Player);
-		TeamSelectionUI::Enable(False, Player);
-		TeamSelectionUI::SetLobbyPlayers(LobbyPlayers);
-		ChaseUI::DisplayWaitingRespawnPenalty(False, Player);
-		ChaseTuto::IsInLobby(False, Player);
-	}
-	
-	// Player does not have a clan
-	if (CA_IsInLobby(Player)) {
-		declare HasPenalty = CA_HasRespawnPenalty(Player);
-		declare HasRandomTeammate = TeamSelectionUI::HasRandomTeammate(Player);
-		// Player has a penalty
-		if (HasPenalty && !PenaltyList.exists(Player.Id)) {
-			PenaltyList.add(Player.Id);
-			declare Removed = WaitingPlayersList.remove(Player.Id);
-			ChaseUI::DisplayWaitingRespawnPenalty(True, Player);
-		}
-		// Player is waiting for teammates
-		else if (!HasPenalty && HasRandomTeammate && !WaitingPlayersList.exists(Player.Id) && !ProcessedTeamPlayers.exists(Player.Id)) {
-			WaitingPlayersList.add(Player.Id);
-			declare Removed = PenaltyList.remove(Player.Id);
-			ChaseUI::DisplayWaitingRespawnPenalty(False, Player);
-		}
-		// Player has a teammate
-		else if (!HasPenalty && !HasRandomTeammate && !ProcessedTeamPlayers.exists(Player.Id)) {
-			declare ValidatedTeammate <=> TeamSelectionUI::GetValidatedTeammate(Player);
-			
-			// If the teammate I requested is ready to play with a random player, then match him with me
-			if (ValidatedTeammate == Null) {
-				declare RequestedTeammate <=> TeamSelectionUI::GetRequestedTeammate(Player);
-				if (
-					RequestedTeammate != Null &&
-					!CA_HasRespawnPenalty(RequestedTeammate) &&
-					TeamSelectionUI::HasRandomTeammate(RequestedTeammate)
-				) {
-					declare Removed = WaitingPlayersList.remove(Player.Id);
-					ValidatedTeammate <=> RequestedTeammate;
-					TeamSelectionUI::SetTeammate(Player, ValidatedTeammate);
-				}
-			}
-			if (ValidatedTeammate != Null) {
-				ProcessedTeamPlayers.add(ValidatedTeammate.Id);
-				ProcessedTeamPlayers.add(Player.Id);
-				
-				if (
-					CA_GetPlayerClan(ValidatedTeammate) < 0 &&
-					!ChaseTuto::IsViewingTutorial(ValidatedTeammate) &&
-					!CA_HasRespawnPenalty(ValidatedTeammate) &&
-					!TeamSelectionUI::HasRandomTeammate(ValidatedTeammate)
-				) {
-					WaitingTeamsList.add([ValidatedTeammate, Player]);
-				}
-			}
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Manage lobby players
+declare Ident[] RemoveFromLobby;
+foreach (PlayerId in Map_LobbyPlayers) {
+	// Player left the server or switch to spectator
+	if (!Players.existskey(PlayerId)) {
+		if (!RemoveFromLobby.exists(PlayerId)) {
+			RemoveFromLobby.add(PlayerId);
 		}
 	}
+	// Player is in a clan
+	else if (Clans::GetPlayerClan(PlayerId) != Const::C_NoClan) {
+		if (!RemoveFromLobby.exists(PlayerId)) {
+			RemoveFromLobby.add(PlayerId);
+		}
+	}
+}
+if (RemoveFromLobby.count > 0) {
+	Map_LobbyPlayers = RemovePlayersFromLobby(Map_LobbyPlayers, RemoveFromLobby);
+	RemoveFromLobby.clear(); //< The array is re-used below
 }
 
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
-// Manage waiting list
-declare PlayersToRemoveFromWaitingPlayersList = Ident[];
-foreach (PlayerId in WaitingPlayersList) {
-	if (Players.existskey(PlayerId)) {
-		declare Player <=> Players[PlayerId];
-		if (
-			CA_HasRespawnPenalty(Player) ||
-			ChaseTuto::IsViewingTutorial(Player) ||
-			!TeamSelectionUI::HasRandomTeammate(Player)
-		) {
-			PlayersToRemoveFromWaitingPlayersList.add(PlayerId);
-		}
-	} else {
-		PlayersToRemoveFromWaitingPlayersList.add(PlayerId);
-	}
-}
-foreach (PlayerId in PlayersToRemoveFromWaitingPlayersList) {
-	declare Removed = WaitingPlayersList.remove(PlayerId);
-}
-
-// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
-// Manage penalty list
-declare PlayersToRemoveFromPenaltyList = Ident[];
-foreach (PlayerId in PenaltyList) {
+// Manage lobby
+declare Ident[] PlayersSearchingTeammates;
+declare Ident[][] PlayersWithTeammates;
+// Players that already have a teammate and cannot be matched with someone else
+// This array contains the same players than PlayersWithTeammates but with only 
+// one dimension to speed up look up
+declare Ident[] PlayersMatched; 
+foreach (Player in Players) {
+	declare PlayerClan = Clans::GetPlayerClan(Player.Id);
+	// Add player without clan to the lobby
 	if (
-		!Players.existskey(PlayerId) ||
-		!CA_HasRespawnPenalty(Players[PlayerId]) ||
-		ChaseTuto::IsViewingTutorial(Players[PlayerId])
+		PlayerClan == Const::C_NoClan &&
+		!Map_LobbyPlayers.exists(Player.Id)
 	) {
-		PlayersToRemoveFromPenaltyList.add(PlayerId);
+		Map_LobbyPlayers = AddPlayerToLobby(Map_LobbyPlayers, Player);
 	}
-}
-foreach (PlayerId in PlayersToRemoveFromPenaltyList) {
-	declare Removed = PenaltyList.remove(PlayerId);
-	if (Players.existskey(PlayerId)) {
-		ChaseUI::DisplayWaitingRespawnPenalty(False, Players[PlayerId]);
-	}
-}
-
-// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
-// Find a clan for the players
-declare MinPlayersNb = Chase::GetMinPlayersNb(S_TeamPlayersNb);
-while (WaitingPlayersList.count >= MinPlayersNb || WaitingTeamsList.count > 0) {
-	// Find an available clan number
-	declare NewClan = CA_GetNewClanId(MapPlayers);
-	// Add the players in the clan
-	if (!MapPlayers.existskey(NewClan)) {
-		MapPlayers[NewClan] = Ident[];
-		WaypointEvents_Now[NewClan] = Integer[Text];
-		WaypointEvents_RaceTime[NewClan] = Integer[Text];
-		WaypointEvents_PlayerId[NewClan] = Ident[Text];
-		WaypointEvents_BlockId[NewClan] = Ident[Text];
-		WaypointEvents_IsEndRace[NewClan] = Boolean[Text];
-		WaypointEvents_CheckpointInRace[NewClan] = Integer[Text];
-		WaypointEvents_Speed[NewClan] = Real[Text];
-		
-		declare ClanPlayers = CTmPlayer[];
-		if (WaitingPlayersList.count >= MinPlayersNb) {
-			for (I, 1, MinPlayersNb) {
-				declare PlayerId = WaitingPlayersList[0];
-				if (Players.existskey(PlayerId)) {
-					ClanPlayers.add(Players[PlayerId]);
-					declare Removed = WaitingPlayersList.removekey(0);
-				}
-			}
-			if (ClanPlayers.count == 2) {
-				TeamSelectionUI::SetTeammate(ClanPlayers[0], ClanPlayers[1]);
-				TeamSelectionUI::SetTeammate(ClanPlayers[1], ClanPlayers[0]);
-			}
-		} else if (WaitingTeamsList.count > 0) {
-			ClanPlayers = WaitingTeamsList[0];
-			declare Removed = WaitingTeamsList.removekey(0);
-		}
-		
-		foreach (Player in ClanPlayers) {
-			MapPlayers = CA_JoinClan(MapPlayers, Penalties, NewClan, Player.Id);
-			if (TM::IsRacing(Player)) TM::WaitRace(Player);
-		}
-		
-		Log::Log("""[ChaseAttack] Create clan {{{NewClan}}} with {{{ClanPlayers}}}""");
-	} else {
-		Log::Log("""[ChaseAttack] ERROR : trying to create a clan that already exists > NewClan : {{{NewClan}}} | MapPlayers : {{{MapPlayers}}}""");
-		break; //< Should not happen
-	}
-}
-
-// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
-// Manage clans
-declare PlayersToRemoveFromClan = Ident[][Integer];
-foreach (Clan => PlayersIds in MapPlayers) {
-	foreach (PlayerId in PlayersIds) {
+	
+	// Check if the player want to join a clan
+	if (
+		PlayerClan == Const::C_NoClan &&
+		Map_LobbyPlayers.exists(Player.Id) &&
+		!PlayersMatched.exists(Player.Id)
+	) {
+		// Another player accepted this player invitation
+		declare ValidatedTeammate = TeamSelectionUI::GetValidatedTeammate(Player);
 		if (
-			!Players.existskey(PlayerId) || (
-				CA_GetPlayerClan(Players[PlayerId]) >= 0 && (
-					ChaseTuto::IsViewingTutorial(Players[PlayerId]) ||
-					TeamSelectionUI::GetValidatedTeammate(Players[PlayerId]) == Null
-				)
-			)
+			ValidatedTeammate != Null &&
+			Clans::GetPlayerClan(ValidatedTeammate.Id) == Const::C_NoClan &&
+			Map_LobbyPlayers.exists(ValidatedTeammate.Id) &&
+			!PlayersMatched.exists(ValidatedTeammate.Id)
 		) {
-			if (!PlayersToRemoveFromClan.existskey(Clan)) {
-				PlayersToRemoveFromClan[Clan] = Ident[];
-			}
-			PlayersToRemoveFromClan[Clan].add(PlayerId);
-		}
-	}
-}
-// Player leaves clan
-declare PlayersLeavingClan = Integer[Ident];
-foreach (Clan => PlayersIds in PlayersToRemoveFromClan) {
-	foreach (PlayerId in PlayersIds) {
-		PlayersLeavingClan[PlayerId] = Clan;
-		MapPlayers = CA_LeaveClan(MapPlayers, PlayerId);
-	}
-}
-// Clan does not have enough players remaining, disbands it
-declare ClansToRemove = Integer[];
-foreach (Clan => PlayersIds in MapPlayers) {
-	if (PlayersIds.count < MinPlayersNb) {
-		if (!ClansToRemove.exists(Clan)) {
-			ClansToRemove.add(Clan);
-		}
-	}
-}
-// Remove clans
-foreach (Clan in ClansToRemove) {
-	if (MapPlayers.existskey(Clan)) {
-		declare PlayersIds = MapPlayers[Clan];
-		foreach (PlayerId in PlayersIds) {
-			PlayersLeavingClan[PlayerId] = Clan;
-		}
-	}
-	declare Removed = False;
-	Removed = MapPlayers.removekey(Clan);
-	Removed = RelayStartTime.removekey(Clan);
-	Removed = Progress.removekey(Clan);
-	Removed = Penalties.removekey(Clan);
-	Removed = IsInTrainMode.remove(Clan);
-	Removed = CurrentCheckpoint.removekey(Clan);
-	Removed = ValidRelay.removekey(Clan);
-	Removed = LeaderTime.removekey(Clan);
-	Removed = LeaderSpeed.removekey(Clan);
-	Removed = CheckpointsScores.removekey(Clan);
-	Removed = NextCheckpointPlayerId.removekey(Clan);
-	Removed = ClansCutOffTimeLimit.removekey(Clan);
-	Removed = ClansFinishTime.removekey(Clan);
-	Removed = ClansCheckpointTimes.removekey(Clan);
-		
-	Removed = WaypointEvents_Now.removekey(Clan);
-	Removed = WaypointEvents_RaceTime.removekey(Clan);
-	Removed = WaypointEvents_PlayerId.removekey(Clan);
-	Removed = WaypointEvents_BlockId.removekey(Clan);
-	Removed = WaypointEvents_IsEndRace.removekey(Clan);
-	Removed = WaypointEvents_CheckpointInRace.removekey(Clan);
-	Removed = WaypointEvents_Speed.removekey(Clan);
-	
-	declare netwrite Integer Net_Chase_NextPlayerUpdate for Teams[0];
-	declare netwrite Text[Integer] Net_Chase_NextPlayer for Teams[0];
-	declare netwrite Integer[Integer] Net_Chase_NextCheckpoint for Teams[0];
-	declare netwrite Integer[Integer] Net_Chase_RelayTime for Teams[0];
-	Removed = Net_Chase_NextPlayer.removekey(Clan);
-	Removed = Net_Chase_NextCheckpoint.removekey(Clan);
-	Removed = Net_Chase_RelayTime.removekey(Clan);
-	Net_Chase_NextPlayerUpdate = Now;
-	
-	declare Tmp = SetNextCheckpointPlayer(Null, Clan, "", -1, -1, Integer[Integer]);
-	
-	Log::Log("""[ChaseAttack] Destroy clan {{{Clan}}}""");
-}
-// Remove players from clan
-foreach (PlayerId => Clan in PlayersLeavingClan) {
-	MapPlayers = CA_LeaveClan(MapPlayers, PlayerId);
-	if (AllPlayers.existskey(PlayerId)) {
-		declare Player <=> AllPlayers[PlayerId];
-		TM::WaitRace(Player);
-		FinishTimeoutUI::SetTimeout(-1, Player);
-	}
-	UpdateSpectatorAutoTarget(MapPlayers, Clan);
-	
-	// Remove the player from the current checkpoint if he crossed it already
-	declare MinPlayersNb = Chase::GetMinPlayersNb(S_TeamPlayersNb);
-
-	declare TmpCurrentCheckpoint = CurrentCheckpoint;
-	foreach (CheckpointClan => Laps in TmpCurrentCheckpoint) {
-		if (CheckpointClan != Clan) continue;
-		declare ClanNextCheckpointPlayerId = NullId;
-		if (NextCheckpointPlayerId.existskey(Clan))	ClanNextCheckpointPlayerId = NextCheckpointPlayerId[Clan];
-		
-		foreach (Lap => CheckpointsIds in Laps) {
-			foreach (CheckpointId => PlayersIds in CheckpointsIds) {
-				declare Removed = CurrentCheckpoint[CheckpointClan][Lap][CheckpointId].remove(PlayerId);
-				
-				// Check if a new "next checkpoint player" must be annouced for the team who lost a player
-				declare CurrentCheckpointPlayersIds = CurrentCheckpoint[CheckpointClan][Lap][CheckpointId];
+			PlayersWithTeammates.add([Player.Id, ValidatedTeammate.Id]);
+			PlayersMatched.add(Player.Id);
+			PlayersMatched.add(ValidatedTeammate.Id);
+			declare Removed = False;
+			Removed = PlayersSearchingTeammates.remove(Player.Id);
+			Removed = PlayersSearchingTeammates.remove(ValidatedTeammate.Id);
+		} else {
+			// This player invited a player that is searching for a random teammate
+			declare RequestedTeammate = TeamSelectionUI::GetRequestedTeammate(Player);
+			if (
+				RequestedTeammate != Null &&
+				TeamSelectionUI::HasRandomTeammate(RequestedTeammate) &&
+				Clans::GetPlayerClan(RequestedTeammate.Id) == Const::C_NoClan &&
+				Map_LobbyPlayers.exists(RequestedTeammate.Id) &&
+				!PlayersMatched.exists(RequestedTeammate.Id)
+			) {
+				PlayersWithTeammates.add([Player.Id, RequestedTeammate.Id]);
+				PlayersMatched.add(Player.Id);
+				PlayersMatched.add(RequestedTeammate.Id);
+				declare Removed = False;
+				Removed = PlayersSearchingTeammates.remove(Player.Id);
+				Removed = PlayersSearchingTeammates.remove(RequestedTeammate.Id);
+			} else {
+				// This player is searching for a random teammate
 				if (
-					CurrentCheckpointPlayersIds.count > 0 &&
-					CurrentCheckpointPlayersIds.count >= MinPlayersNb
+					TeamSelectionUI::HasRandomTeammate(Player) &&
+					!PlayersSearchingTeammates.exists(Player.Id)
 				) {
-					if (
-						ClanNextCheckpointPlayerId == NullId ||
-						!MapPlayers[Clan].exists(ClanNextCheckpointPlayerId)
-					) {
-						declare LastPlayerId = CurrentCheckpointPlayersIds[CurrentCheckpointPlayersIds.count-1];
-						
-						// Annouced the next checkpoint player
-						if (AllPlayers.existskey(LastPlayerId)) {
-							declare Player <=> AllPlayers[LastPlayerId];
-							if (Player.CurRace != Null && Player.CurRace.Checkpoints.count > 0) {
-								//SendMessage(_("|Chase mode|Next checkpoint"), Player.User.Name, CA_GetPlayerClan(Player), NullId);
-								RelayStartTime = SetNextCheckpointPlayer(
-									Player.User,
-									CA_GetPlayerClan(Player), 
-									Player.User.Name,
-									Player.CurRace.Checkpoints.count, 
-									Player.CurRace.Checkpoints[Player.CurRace.Checkpoints.count - 1],
-									RelayStartTime
-								);
-								NextCheckpointPlayerId[Clan] = Player.Id;
-								Chase::ComputeRelayScore(CheckpointsScores, ValidRelay, CheckpointClan, Lap, CheckpointId);
-								UpdateMarker(NextCheckpointPlayerId);
-							}
-						}
-					}
-				} 
-				// Cancel the current "next checkpoint player" if necessary
-				else if (!MapPlayers[Clan].exists(ClanNextCheckpointPlayerId)) {
-					// Send a message to the players that must wait now
-					//if (RoundWinType == C_WinType_Undefined) {
-						declare ClanMapPlayers = MapPlayers[Clan];
-						foreach (MapPlayerId in ClanMapPlayers) {
-							if (CurrentCheckpointPlayersIds.exists(MapPlayerId) && AllPlayers.existskey(MapPlayerId)) {
-								Message::SendBigMessage(AllPlayers[MapPlayerId], _("|Chase mode|Wait for your teammates"), 3000, 1);
-							}
-						}
-					//}
-					RelayStartTime = SetNextCheckpointPlayer(Null, Clan, C_NoNameCheckpoint, -1, -1, RelayStartTime);
-					NextCheckpointPlayerId[Clan] = NullId;
-					UpdateMarker(NextCheckpointPlayerId);
+					PlayersSearchingTeammates.add(Player.Id);
 				}
 			}
 		}
+	}
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Associate players searching for a random teammate
+declare SomethingWrongHappened = False;
+while (!SomethingWrongHappened && PlayersSearchingTeammates.count >= Map_ClanPlayersNb) {
+	declare PlayerIds = Ident[];
+	for (I, 1, Map_ClanPlayersNb) {
+		declare PlayerId = PlayersSearchingTeammates[0];
+		if (!PlayerIds.exists(PlayerId)) {
+			PlayerIds.add(PlayerId);
+		}
+		declare Removed = PlayersSearchingTeammates.removekey(0);
+		if (!Removed) SomethingWrongHappened = True;
+	}
+	if (!SomethingWrongHappened && PlayerIds.count == Map_ClanPlayersNb) {
+		PlayersWithTeammates.add(PlayerIds);
+	}
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Send the players in their new clan
+foreach (PlayerIds in PlayersWithTeammates) {
+	declare NewClan = Clans::Create();
+	declare CreatedClan = Clans::GetClan(NewClan);
+	if (CreatedClan.count == 0) {
+		foreach (PlayerId in PlayerIds) {
+			Clans::Join(NewClan, PlayerId);
+			if (!RemoveFromLobby.exists(PlayerId)) {
+				RemoveFromLobby.add(PlayerId);
+			}
+			if (AllPlayers.existskey(PlayerId)) {
+				AddPlayerToClan(NewClan, AllPlayers[PlayerId]);
+			}
+		}
+	}
+}
+if (RemoveFromLobby.count > 0) {
+	Map_LobbyPlayers = RemovePlayersFromLobby(Map_LobbyPlayers, RemoveFromLobby);
+	RemoveFromLobby.clear();
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Players want to leave their clan
+// Note : When two players press the leave team button
+// at the same time, we can receive the input of
+// the players at a different frame because of the ping.
+// This means that a player returned by GetPlayersWantingToLeaveTeam()
+// might already have left their team because of the input
+// of their teammate that the server received first.
+declare PlayersWantingToLeaveTeam = TeamSelectionUI::GetPlayersWantingToLeaveTeam();
+foreach (Player in PlayersWantingToLeaveTeam) {
+	declare Clan = Clans::GetPlayerClan(Player.Id);
+	Clans::Leave(Player.Id);
+	declare Stats = Integer[Integer];
+	if (Clan != Const::C_NoClan) {
+		Stats = Clans::GetStats(Clan);
+	}
+	RemovePlayersFromClan(Clan, [Player.Id], Stats);
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Not enough players in the clan
+declare ClansPlayerIds = Clans::GetClans();
+foreach (Clan => ClanPlayerIds in ClansPlayerIds) {
+	foreach (PlayerId in ClanPlayerIds) {
+		if (!Players.existskey(PlayerId)) {
+			Clans::Leave(PlayerId);
+			RemovePlayersFromClan(Clan, [PlayerId], Clans::GetStats(Clan));
+		}
+	}
+	declare NewClanPlayerIds = Clans::GetClan(Clan);
+	if (NewClanPlayerIds.count < Map_ClanPlayersNb) {
+		declare ClanStats = Clans::GetStats(Clan);
+		Clans::Destroy(Clan);
+		RemovePlayersFromClan(Clan, NewClanPlayerIds, ClanStats);
 	}
 }
 
@@ -737,609 +597,550 @@ foreach (Event in PendingEvents) {
 	// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
 	// GiveUp
 	if (Event.Type == CTmModeEvent::EType::GiveUp) {
-		declare PlayerCurrentClan = CA_GetPlayerClan(Event.Player);
-		
-		if (PlayerCurrentClan >= 0) {
-			// The player is in the 3,2,1,GO countdown
-			if (Event.Player.RaceStartTime > Now) {
-				Events::Invalid(Event);
-			}
-			// If the player is watching the race outro, skip it
-			else if (TM::IsWatchingOutro(Event.Player)) {
-				if (ClansCutOffTimeLimit.existskey(PlayerCurrentClan)) {
+		if (Event.Player != Null) {
+			declare PlayerCurrentClan = Clans::GetPlayerClan(Event.Player.Id);
+			
+			if (PlayerCurrentClan != Const::C_NoClan) {
+				// The player is in the 3,2,1,GO countdown
+				if (Event.Player.RaceStartTime > Now) {
 					Events::Invalid(Event);
-				} else {
-					declare Teammate <=> TeamSelectionUI::GetValidatedTeammate(Event.Player);
-					if (Teammate != Null && !TM::IsRacing(Teammate)) {
-						TM::WaitRace(Event.Player);
-						Events::Valid(Event);
-					} else {
+				}
+				// If the player is watching the race outro, skip it
+				else if (TM::IsWatchingOutro(Event.Player)) {
+					if (Clans::GetRespawnTime(PlayerCurrentClan) != Const::C_NoRespawnTime) {
 						Events::Invalid(Event);
-					}
-				}
-			}
-			else if (C_UseCollegialRestart) {
-				declare ChaseAttack_WantToRestart for Event.Player = False;
-				ChaseAttack_WantToRestart = True;
-				declare Restart = True;
-				declare ClanPlayers = CA_GetClanPlayers(MapPlayers, PlayerCurrentClan);
-				foreach (Player in ClanPlayers) {
-					declare ChaseAttack_WantToRestart as WantToRestart for Player = False;
-					if (!WantToRestart) Restart = False;
-				}
-				if (Restart) {
-					ClansCutOffTimeLimit[PlayerCurrentClan] = Now;
-					UpdateSpectatorAutoTarget(MapPlayers, PlayerCurrentClan);
-					foreach (Player in ClanPlayers) {
-						TM::WaitRace(Event.Player);
-					}
-				} else {
-					if (
-						!ClansCutOffTimeLimit.existskey(PlayerCurrentClan) ||
-						ClansCutOffTimeLimit[PlayerCurrentClan] > Now + C_RestartDelay
-					) {
-						ClansCutOffTimeLimit[PlayerCurrentClan] = Now + C_RestartDelay;
-						foreach (Player in ClanPlayers) {
-							RestartUI::SetRestart(ClansCutOffTimeLimit[PlayerCurrentClan], Event.Player, Player);
+					} else {
+						declare NoClanPlayersIsRacing = True;
+						declare ClanPlayerIds = Clans::GetClan(PlayerCurrentClan);
+						foreach (PlayerId in ClanPlayerIds) {
+							if (Players.existskey(PlayerId) && TM::IsRacing(Players[PlayerId])) {
+								NoClanPlayersIsRacing = False;
+								break;
+							}
+						}
+						if (NoClanPlayersIsRacing) {
+							TM::WaitRace(Event.Player);
+							Events::Valid(Event);
+						} else {
+							Events::Invalid(Event);
 						}
 					}
 				}
-				Events::Invalid(Event);
-			} else {
-				if (!ClansCutOffTimeLimit.existskey(PlayerCurrentClan)) {
-					ClansCutOffTimeLimit[PlayerCurrentClan] = Now;
+				else if (C_UseCollegialRestart) {
+					SetPlayerWantsToRestart(True, Event.Player);
+					declare Restart = True;
+					declare ClanPlayerIds = Clans::GetClan(PlayerCurrentClan);
+					foreach (PlayerId in ClanPlayerIds) {
+						if (Players.existskey(PlayerId)) {
+							if (!PlayerWantsToRestart(Players[PlayerId])) {
+								Restart = False;
+								break;
+							}
+						}
+					}
+					if (Restart) {
+						Clans::SetRespawnTime(PlayerCurrentClan, Now);
+					} else {
+						declare CurrentRespawnTime = Clans::GetRespawnTime(PlayerCurrentClan);
+						declare NewRespawnTime = Now + C_RestartDelay;
+						if (
+							CurrentRespawnTime == Const::C_NoRespawnTime ||
+							CurrentRespawnTime > NewRespawnTime
+						) {
+							Clans::SetRespawnTime(PlayerCurrentClan, NewRespawnTime);
+							foreach (PlayerId in ClanPlayerIds) {
+								if (Players.existskey(PlayerId)) {
+									RestartUI::SetRestart(NewRespawnTime, Event.Player, Players[PlayerId]);
+								}
+							}
+						}
+					}
+					Events::Invalid(Event);
+				} else {
+					if (Clans::GetRespawnTime(PlayerCurrentClan) == Const::C_NoRespawnTime) {
+						Clans::SetRespawnTime(PlayerCurrentClan, Now);
+					}
+					
+					Events::Valid(Event);
 				}
-				UpdateSpectatorAutoTarget(MapPlayers, PlayerCurrentClan);
+			}
+			// Player is in lobby
+			else {
 				TM::WaitRace(Event.Player);
-				
-				if (TM::IsRacing(Event.Player) && S_RespawnPenalty > 0) {
-					CA_GiveRespawnPenalty(S_RespawnPenalty, Event.Player);
-				}
-				
 				Events::Valid(Event);
 			}
-		} else {
-			TM::WaitRace(Event.Player);
-			Events::Valid(Event);
 		}
 	} else {
 		declare Processed = Events::Valid(Event);
-		if (!Processed) continue;
-		
-		// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
-		// Waypoint
-		if (Event.Type == CTmModeEvent::EType::WayPoint) {
-			// Player is in Chase
-			declare PlayerCurrentClan = CA_GetPlayerClan(Event.Player);
-			if (PlayerCurrentClan >= 0) {
-				declare IsEndRace = Event.IsEndRace;
-				declare BlockId = Event.BlockId;
-				if (IsEndRace) {
-					TM::EndRace(Event.Player);
-					UpdateSpectatorAutoTarget(MapPlayers, PlayerCurrentClan);
-					// Reset the penalty counter when the player finish a race
-					CA_ResetRespawnPenalty(Event.Player);
-					// Override multiple finishes block id by a main one
-					// to avoid failed relay when two players choose a
-					// different finish.
-					if (MapFinishBlockId == NullId) {
-						MapFinishBlockId = Event.BlockId;
-					}
-					BlockId = MapFinishBlockId;
-				}
-				
-				// Delay event for chase players
-				declare EventId = Chase::GetUniqueEventId();
-				WaypointEvents_Now[PlayerCurrentClan][EventId] = Now;
-				WaypointEvents_RaceTime[PlayerCurrentClan][EventId] = Event.RaceTime;
-				WaypointEvents_PlayerId[PlayerCurrentClan][EventId] = Event.Player.Id;
-				WaypointEvents_BlockId[PlayerCurrentClan][EventId] = BlockId;
-				WaypointEvents_IsEndRace[PlayerCurrentClan][EventId] = IsEndRace;
-				WaypointEvents_CheckpointInRace[PlayerCurrentClan][EventId] = Event.CheckpointInRace;
-				WaypointEvents_Speed[PlayerCurrentClan][EventId] = Event.Speed;
-			}
-			// Player is in waiting list
-			else {
-				if (Event.IsEndRace) {
-					TM::EndRace(Event.Player);
-				}
-			}
-		}
-	}
-}
-
-foreach (Clan => ClanPlayersIds in MapPlayers) {
-	if (!WaypointEvents_Now.existskey(Clan)) continue;
-	
-	// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
-	// Get delayed event
-	declare EventsToRemove = Text[];
-	declare RaceTimes = WaypointEvents_RaceTime[Clan].sort();
-	WaypointEvents_RaceTime[Clan] = RaceTimes;
-	foreach (EventId => RaceTime in RaceTimes) {
-		declare EventNow = WaypointEvents_Now[Clan][EventId];
-		
-		if (EventNow + S_WaypointEventDelay <= Now) {
-			EventsToRemove.add(EventId);
-		} else {
-			break;
-		}
-	}
-	
-	// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
-	// Update progress
-	foreach (EventId in EventsToRemove) {
-		declare PlayerId = WaypointEvents_PlayerId[Clan][EventId];
-		declare RaceTime = WaypointEvents_RaceTime[Clan][EventId];
-		declare BlockId = WaypointEvents_BlockId[Clan][EventId];
-		declare IsEndRace = WaypointEvents_IsEndRace[Clan][EventId];
-		declare CheckpointInRace = WaypointEvents_CheckpointInRace[Clan][EventId];
-		declare Speed = WaypointEvents_Speed[Clan][EventId];
-		
-		declare Removed = False;
-		Removed = WaypointEvents_Now[Clan].removekey(EventId);
-		Removed = WaypointEvents_RaceTime[Clan].removekey(EventId);
-		Removed = WaypointEvents_PlayerId[Clan].removekey(EventId);
-		Removed = WaypointEvents_BlockId[Clan].removekey(EventId);
-		Removed = WaypointEvents_IsEndRace[Clan].removekey(EventId);
-		Removed = WaypointEvents_CheckpointInRace[Clan].removekey(EventId);
-		Removed = WaypointEvents_Speed[Clan].removekey(EventId);
-		
-		if (AllPlayers.existskey(PlayerId)) {
-			declare Player <=> AllPlayers[PlayerId];
-			declare PlayerCurrentClan = Clan;
-			
-			// Check that the player is authorized to play
-			if (PlayerCurrentClan >= 0 && MapPlayers.existskey(PlayerCurrentClan) && MapPlayers[PlayerCurrentClan].exists(Player.Id)) {	
-				declare NewCheckpoint = False;
-				if (!Progress.existskey(PlayerCurrentClan)) {
-					Progress[PlayerCurrentClan] = Ident[][Ident][Integer];
-				}
-				if (!Progress[PlayerCurrentClan].existskey(Player.CurrentNbLaps)) {
-					Progress[PlayerCurrentClan][Player.CurrentNbLaps] = Ident[][Ident];
-				}
-				if (!Progress[PlayerCurrentClan][Player.CurrentNbLaps].existskey(BlockId)) {
-					Progress[PlayerCurrentClan][Player.CurrentNbLaps][BlockId] = Ident[];
-					NewCheckpoint = True;
-				}
-				Progress[PlayerCurrentClan][Player.CurrentNbLaps][BlockId].add(Player.Id);
-				
-				if (!Penalties.existskey(PlayerCurrentClan)) {
-					Penalties[PlayerCurrentClan] = 0;
-				}
-				
-				declare MinPlayersNb = Chase::GetMinPlayersNb(S_TeamPlayersNb);
-				
-				// New checkpoint
-				if (NewCheckpoint) {
-					// Get the players that already crossed the previous checkpoint
-					declare PlayersIds = Chase::GetCurrentCheckpointPlayers(CurrentCheckpoint, PlayerCurrentClan);
-					
-					declare RelaySuccess = False;
-					
-					// If it's not the first checkpoint
-					if (PlayersIds.count > 0) {
-						// Relay successful
-						if (
-							PlayersIds.count >= MinPlayersNb && 
-							NextCheckpointPlayerId.existskey(PlayerCurrentClan) &&
-							NextCheckpointPlayerId[PlayerCurrentClan] == Player.Id
-						) {
-							RelaySuccess = True;
-							/*
-							SendMessage(
-								TL::Compose("$0c0%1", _("|Chase mode|Relay successful")), 
-								"", 
-								PlayerCurrentClan, 
-								NullId
-							);
-							*/
-						}
-						// Relay failed 
-						else {
-							RelaySuccess = False;
-							
-							// Update penalties
-							Penalties[PlayerCurrentClan] += 1;
-							declare Penalty = Penalties[PlayerCurrentClan];
-							
-							// Start train mode
-							if (!IsInTrainMode.exists(PlayerCurrentClan)) {
-								IsInTrainMode.add(PlayerCurrentClan);
-							}
-							
-							foreach (PlayerId in ClanPlayersIds) {
-								if (Players.existskey(PlayerId)) {
-									declare ClanPlayer <=> Players[PlayerId];
-									ChaseUI::SetPenalties(Penalty, ClanPlayer);
-									
-									declare UI <=> UIManager.GetUI(ClanPlayer);
-									if (UI != Null) {
-										UI.UIStatus = CUIConfig::EUIStatus::Warning;
-									}
-									
-									declare DisplayWaitForTeammates = (S_DisplayWarning && Player.Id == ClanPlayer.Id);
-									RelayUI::PopFailWarning(C_RelayFailWarningDuration, DisplayWaitForTeammates, ClanPlayer);
+		if (Processed) {
+			// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+			// Waypoint
+			if (Event.Type == CTmModeEvent::EType::WayPoint) {
+				// Player is in Chase
+				if (Event.Player != Null) {
+					declare PlayerCurrentClan = Clans::GetPlayerClan(Event.Player.Id);
+					if (PlayerCurrentClan != Const::C_NoClan) {
+						// The event we just receive for this player
+						// can come from its previous race.
+						// eg : the mode decide to respawn the players
+						// of a clan because of a collegial restart
+						// or a relay failed. But before the player
+						// receive the order from the server (ping) they
+						// manage to cross a checkpoint.
+						// The server has already respawned both players
+						// but will then receive the checkpoint event.
+						// If it is the case we must ignore this event.
+						if (!C_WaypointEventLagProtection || IsValidRaceStartTime(Event.Player)) {
+							declare IsEndRace = Event.IsEndRace;
+							declare BlockId = Event.BlockId;
+							if (IsEndRace) {
+								TM::EndRace(Event.Player);
+								// Override multiple finishes block id by a main one
+								// to avoid failed relay when two players choose a
+								// different finish.
+								if (Map_FinishBlockId == NullId) {
+									Map_FinishBlockId = Event.BlockId;
 								}
+								BlockId = Map_FinishBlockId;
 							}
 							
-							if (C_RespawnAfterFailedRelay) {
-								ClansCutOffTimeLimit[PlayerCurrentClan] = Now;
-							}
-							
-							/*
-							declare WarningMessage = "";
-							if (S_DisplayWarning) WarningMessage = _("|Chase mode|Wait for your teammates");
-							SendMessage(
-								TL::Compose("$f00%1", _("|Chase mode|Relay failed")),
-								TL::Compose("$f00%1", WarningMessage), 
-								PlayerCurrentClan, 
-								Player.Id
+							// Delay event for chase players
+							Clans::AddWaypointEvent(
+								PlayerCurrentClan, Event.RaceTime, Event.Player.Id, BlockId, IsEndRace, Event.CheckpointInRace, Event.Player.CurrentNbLaps, Event.Speed
 							);
-							*/
+						} else {
+							declare CurRaceTime = -1;
+							if (Event.Player.CurRace != Null) CurRaceTime = Event.Player.CurRace.Time;
+							Log::Log("""[ChaseAttack] We received an event from a previous race, ignore it > {{{Event.Player.User.Login}}} {{{Event.Player.Id}}} | CurRaceTime : {{{CurRaceTime}}} | Event.RaceTime : {{{Event.RaceTime}}}""");
 						}
 					}
-					
-					// Update order
-					CurrentCheckpoint[PlayerCurrentClan] = Ident[][Ident][Integer];
-					CurrentCheckpoint[PlayerCurrentClan][Player.CurrentNbLaps] = Ident[][Ident];
-					CurrentCheckpoint[PlayerCurrentClan][Player.CurrentNbLaps][BlockId] = Ident[];
-					CurrentCheckpoint[PlayerCurrentClan][Player.CurrentNbLaps][BlockId].add(Player.Id);
-					
-					ValidRelay[PlayerCurrentClan] = Boolean[Ident][Integer];
-					ValidRelay[PlayerCurrentClan][Player.CurrentNbLaps] = Boolean[Ident];
-					ValidRelay[PlayerCurrentClan][Player.CurrentNbLaps][BlockId] = Boolean;
-					ValidRelay[PlayerCurrentClan][Player.CurrentNbLaps][BlockId] = RelaySuccess;
-					
-					// Save the leader time and speed
-					LeaderTime[PlayerCurrentClan] = Integer[Ident][Integer];
-					LeaderTime[PlayerCurrentClan][Player.CurrentNbLaps] = Integer[Ident];
-					LeaderTime[PlayerCurrentClan][Player.CurrentNbLaps][BlockId] = RaceTime;
-					LeaderSpeed[PlayerCurrentClan] = Real[Ident][Integer];
-					LeaderSpeed[PlayerCurrentClan][Player.CurrentNbLaps] = Real[Ident];
-					LeaderSpeed[PlayerCurrentClan][Player.CurrentNbLaps][BlockId] = Speed;
-					
-					// Set checkpoint score
-					CheckpointsScores[PlayerCurrentClan] = Integer[Ident][Ident][Integer];
-					CheckpointsScores[PlayerCurrentClan][Player.CurrentNbLaps] = Integer[Ident][Ident];
-					CheckpointsScores[PlayerCurrentClan][Player.CurrentNbLaps][BlockId] = Integer[Ident];
-					CheckpointsScores[PlayerCurrentClan][Player.CurrentNbLaps][BlockId][Player.Score.Id] = 0;
-					// The first checkpoint does not count
-					if (PlayersIds.count > 0) {
-						ComputeCheckpointGrade(Player, RelaySuccess, RelaySuccess, 0);
-					}
-					
-					RelayStartTime = SetNextCheckpointPlayer(Null, PlayerCurrentClan, C_NoNameCheckpoint, CheckpointInRace + 1, RaceTime, RelayStartTime);
-					NextCheckpointPlayerId[PlayerCurrentClan] = NullId;
-					UpdateMarker(NextCheckpointPlayerId);
-					
-					// Save the checkpoint time
-					if (!ClansCheckpointTimes.existskey(PlayerCurrentClan)) {
-						ClansCheckpointTimes[PlayerCurrentClan] = Integer[Ident][Integer];
-					}
-					if (!ClansCheckpointTimes[PlayerCurrentClan].existskey(Player.CurrentNbLaps)) {
-						ClansCheckpointTimes[PlayerCurrentClan][Player.CurrentNbLaps] = Integer[Ident];
-					}
-					ClansCheckpointTimes[PlayerCurrentClan][Player.CurrentNbLaps][BlockId] = RaceTime;
-					
-					// This is the finish
-					if (IsEndRace) {
-						// Start finish countdown
-						declare Timeout = GetFinishTimeout(S_FinishTimeout);
-						if (!IsInTrainMode.exists(PlayerCurrentClan)) {
-							ClansCutOffTimeLimit[PlayerCurrentClan] = Timeout;
+					// Player is in lobby
+					else {
+						if (Event.IsEndRace) {
+							TM::EndRace(Event.Player);
 						}
-						declare ClanPlayers = CA_GetClanPlayers(MapPlayers, PlayerCurrentClan);
-						foreach (Player in ClanPlayers) {
-							FinishTimeoutUI::SetTimeout(Timeout, Player);
-							RestartUI::ResetRestart(Player);
-						}
-						
-						// Compute new time
-						declare TimePenalty = 0;
-						if (S_FailedRelayPenalty > 0) {
-							TimePenalty = Penalties[PlayerCurrentClan] * S_FailedRelayPenalty * 1000;
-						}
-						if (!ClansFinishTime.existskey(PlayerCurrentClan)) {
-							ClansFinishTime[PlayerCurrentClan] = Integer[Ident];
-						}
-						ClansFinishTime[PlayerCurrentClan][Player.Id] = RaceTime + TimePenalty;
-						
-						Log::Log("""[ChaseAttack] Clan {{{PlayerCurrentClan}}} finish > NewTime : {{{ClansFinishTime[PlayerCurrentClan]}}} | RaceTime : {{{RaceTime}}} | Penalties : {{{Penalties[PlayerCurrentClan]}}} | S_FailedRelayPenalty : {{{S_FailedRelayPenalty}}}""");
 					}
 				}
-				// Existing checkpoint
-				else if (
-					CurrentCheckpoint.existskey(PlayerCurrentClan) &&
-					CurrentCheckpoint[PlayerCurrentClan].existskey(Player.CurrentNbLaps) &&
-					CurrentCheckpoint[PlayerCurrentClan][Player.CurrentNbLaps].existskey(BlockId)
-				) {
-					CurrentCheckpoint[PlayerCurrentClan][Player.CurrentNbLaps][BlockId].add(Player.Id);
-					
-					// Update checkpoint time with the time of the last player to cross it
-					ClansCheckpointTimes[PlayerCurrentClan][Player.CurrentNbLaps][BlockId] = RaceTime;
-					
-					declare ClanNextCheckpointPlayerId = NullId;
-					if (NextCheckpointPlayerId.existskey(PlayerCurrentClan)) ClanNextCheckpointPlayerId = NextCheckpointPlayerId[PlayerCurrentClan];
-					
-					// Set checkpoints score
-					declare RelaySuccess = ValidRelay[PlayerCurrentClan][Player.CurrentNbLaps][BlockId];
-					declare CheckpointScore = 0;
-					if (RelaySuccess) {
-						CheckpointScore = GetCheckpointScore(
-							LeaderTime[PlayerCurrentClan][Player.CurrentNbLaps][BlockId],
-							LeaderSpeed[PlayerCurrentClan][Player.CurrentNbLaps][BlockId],
-							RaceTime,
-							Speed
-						);
-					}
-					CheckpointsScores[PlayerCurrentClan][Player.CurrentNbLaps][BlockId][Player.Score.Id] = CheckpointScore;
-					ComputeCheckpointGrade(Player, RelaySuccess, False, CheckpointScore);
-					AddRacePoints(CheckpointScore, Player.Score);
-					
-					// We take the finish time of the last player of the team
-					if (IsEndRace) {
-						declare TimePenalty = 0;
-						if (S_FailedRelayPenalty > 0) {
-							TimePenalty = Penalties[PlayerCurrentClan] * S_FailedRelayPenalty * 1000;
-						}
-						ClansFinishTime[PlayerCurrentClan][Player.Id] = RaceTime + TimePenalty;
-					}
-					
-					if (CurrentCheckpoint[PlayerCurrentClan][Player.CurrentNbLaps][BlockId].count >= MinPlayersNb && ClanNextCheckpointPlayerId == NullId) {
-						//if (!IsEndRace) SendMessage(_("|Chase mode|Next checkpoint"), Player.User.Name, PlayerCurrentClan, NullId);
-						
-						RelayStartTime = SetNextCheckpointPlayer(Player.User, PlayerCurrentClan, Player.User.Name, CheckpointInRace + 1, RaceTime, RelayStartTime);
-						NextCheckpointPlayerId[PlayerCurrentClan] = Player.Id;
-						Chase::ComputeRelayScore(CheckpointsScores, ValidRelay, PlayerCurrentClan, Player.CurrentNbLaps, BlockId);
-						UpdateMarker(NextCheckpointPlayerId);
-						
-						// Display the checkpoint time diff when the last player crosses the checkpoint
-						declare ClanPlayers = CA_GetClanPlayers(MapPlayers, PlayerCurrentClan);
-						foreach (Player in ClanPlayers) {
-							declare BestCheckpointTime = -1;
-							declare BestCheckpointTimes = CA_GetPlayerBestCheckpointTimes(Player.Score);
-							if (BestCheckpointTimes.existskey(Player.CurrentNbLaps) && BestCheckpointTimes[Player.CurrentNbLaps].existskey(BlockId)) {
-								BestCheckpointTime = BestCheckpointTimes[Player.CurrentNbLaps][BlockId];
-							}
-							CheckpointTimeUI::PopCheckpointTime(C_CheckpointTimeDisplayDuration, BestCheckpointTime, RaceTime, Player);
-						}
-					} else {
-						ChaseUI::UpdateNextCheckpointPlayer();
-					}
+			}
+			// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+			// Start line
+			else if (Event.Type == CTmModeEvent::EType::StartLine) {
+				if (C_WaypointEventLagProtection) {
+					ValidRaceStartTime(Event.Player);
 				}
 			}
 		}
 	}
-}
-
-declare CTmPlayer[] PlayersToSpawn;
-foreach (Player in Players) {
-	declare PlayerCurrentClan = CA_GetPlayerClan(Player);
-		
-	// Spawn players
-	if (TM::IsWaiting(Player)) {
-		// A team can spawn only if all players are ready
-		declare TeamCanSpawn = False;
-		if (PlayerCurrentClan >= 0) {
-			declare Teammate <=> TeamSelectionUI::GetValidatedTeammate(Player);
-			if (Teammate != Null && !TM::IsWatchingOutro(Teammate)) {
-				TeamCanSpawn = True;
-				TM::WaitRace(Teammate);
-			}
-		}
-		if (
-			!ClansCutOffTimeLimit.existskey(PlayerCurrentClan) &&
-			(TeamCanSpawn || CA_IsInLobby(Player))
-		) {
-			PlayersToSpawn.add(Player);
-		}
-	} 
-	// Unspawn players
-	else if (TM::IsRacing(Player)) {
-		if (PlayerCurrentClan < 0 && !CA_IsInLobby(Player)) {
-			TM::WaitRace(Player);
-		}
-	}
-}
-declare Integer[] ClansSpawned;
-foreach (Player in PlayersToSpawn) {
-	declare PlayerCurrentClan = CA_GetPlayerClan(Player);
-	TM::StartRace(Player);
-	ChaseUI::UpdateNextCheckpointPlayer();
-	CheckpointTimeUI::ResetCheckpointTime(Player);
-	FinishTimeoutUI::SetTimeout(-1, Player);
-	if (PlayerCurrentClan >= 0) {
-		MedalUI::PopMedalCounter(2500, Const::C_Medal_None, CA_GetMedals(Player.Score), Player);
-	} else {
-		MedalUI::PopMedalCounter(CutOffTimeLimit - Now, Const::C_Medal_None, CA_GetMedals(Player.Score), Player);
-	}
-	MedalUI::CancelRaceMedal(Player);
-	UpdateMarker(NextCheckpointPlayerId);
-	ResetRacePoints(Player.Score);
-	declare UI <=> UIManager.GetUI(Player);
-	if (UI != Null) {
-		if (PlayerCurrentClan >= 0) {
-			UI.UIStatus = CUIConfig::EUIStatus::None;
-			UI.SpectatorForceCameraType = 2;
-		} else {
-			UI.UIStatus = CUIConfig::EUIStatus::Warning;
-			UI.SpectatorForceCameraType = -1;
-		}
-		
-	}
-	declare ChaseAttack_WantToRestart for Player = False;
-	ChaseAttack_WantToRestart = False;
-	
-	if (PlayerCurrentClan >= 0 && !ClansSpawned.exists(PlayerCurrentClan)) {
-		ClansSpawned.add(PlayerCurrentClan);
-	}
-}
-// Reset the teams progression when they spawn
-foreach (Clan in ClansSpawned) {
-	declare Removed = False;
-	Removed = IsInTrainMode.remove(Clan);
-	Removed = Progress.removekey(Clan);
-	Removed = CurrentCheckpoint.removekey(Clan);
-	Removed = NextCheckpointPlayerId.removekey(Clan);
-	
-	declare netwrite Integer Net_Chase_NextPlayerUpdate for Teams[0];
-	declare netwrite Text[Integer] Net_Chase_NextPlayer for Teams[0];
-	declare netwrite Integer[Integer] Net_Chase_NextCheckpoint for Teams[0];
-	declare netwrite Integer[Integer] Net_Chase_RelayTime for Teams[0];
-	Removed = Net_Chase_NextPlayer.removekey(Clan);
-	Removed = Net_Chase_NextCheckpoint.removekey(Clan);
-	Removed = Net_Chase_RelayTime.removekey(Clan);
-	Net_Chase_NextPlayerUpdate = Now;
-	
-	declare Tmp = SetNextCheckpointPlayer(Null, Clan, "", -1, -1, Integer[Integer]);
-	
-	WaypointEvents_Now[Clan] = Integer[Text];
-	WaypointEvents_RaceTime[Clan] = Integer[Text];
-	WaypointEvents_PlayerId[Clan] = Ident[Text];
-	WaypointEvents_BlockId[Clan] = Ident[Text];
-	WaypointEvents_IsEndRace[Clan] = Boolean[Text];
-	WaypointEvents_CheckpointInRace[Clan] = Integer[Text];
-	WaypointEvents_Speed[Clan] = Real[Text];
 }
 
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
-// Manage cutoff time limit
-declare ClansToDisband = Integer[];
-foreach (Clan => TimeLimit in ClansCutOffTimeLimit) {
-	// Time limit reached
-	if (Now >= TimeLimit) {
-		ClansToDisband.add(Clan);
-		declare ClanPlayers = CA_GetClanPlayers(MapPlayers, Clan);
-		foreach (Player in ClanPlayers) {
-			FinishTimeoutUI::SetTimeout(-1, Player);
-			if (ClansFinishTime.existskey(Clan)) FinishTimeoutUI::PopFinishFailed(3000, Player);
+// Process waypoint events
+ClansPlayerIds = Clans::GetClans();
+foreach (Clan => ClanPlayerIds in ClansPlayerIds) {
+	declare EventIdsToProcess = Clans::GetWaypointEventsToProcess(Clan, S_WaypointEventDelay);
+	foreach (EventId in EventIdsToProcess) {
+		declare EventRaceTime = Clans::GetWaypointEventRaceTime(Clan, EventId);
+		declare EventPlayerId = Clans::GetWaypointEventPlayerId(Clan, EventId);
+		declare EventBlockId = Clans::GetWaypointEventBlockId(Clan, EventId);
+		declare EventIsEndRace = Clans::GetWaypointEventIsEndRace(Clan, EventId);
+		declare EventCheckpointInRace = Clans::GetWaypointEventCheckpointInRace(Clan, EventId);
+		declare EventCurrentNbLaps = Clans::GetWaypointEventCurrentNbLaps(Clan, EventId);
+		declare EventSpeed = Clans::GetWaypointEventSpeed(Clan, EventId);
+		
+		Log::Log("""[ChaseAttack] Waypoint event > RaceTime : {{{EventRaceTime}}} | PlayerId : {{{EventPlayerId}}} | BlockId : {{{EventBlockId}}} | IsEndRace : {{{EventIsEndRace}}} | CheckpointInRace : {{{EventCheckpointInRace}}} | EventCurrentNbLaps : {{{EventCurrentNbLaps}}} | EventSpeed : {{{EventSpeed}}}""");
+		
+		if (ClanPlayerIds.exists(EventPlayerId) && AllPlayers.existskey(EventPlayerId)) {
+			declare EventPlayer <=> AllPlayers[EventPlayerId];
+			declare NewCheckpoint = Clans::UpdateCheckpointsProgress(Clan, EventCurrentNbLaps, EventBlockId, EventPlayerId);
+			
+			// New checkpoint
+			if (NewCheckpoint) {
+				
+				declare RelaySuccess = False;
+				
+				// If it's not the first checkpoint
+				declare ClanAlreadyCrossedFirstCheckpoint = Clans::HasCrossedFirstCheckpoint(Clan);
+				if (ClanAlreadyCrossedFirstCheckpoint) {
+					// Get the players that already crossed the previous checkpoint and the player that must cross the next checkpoint
+					declare PreviousCheckpointPlayerIds = Clans::GetCurrentCheckpointPlayerIds(Clan);
+					declare NextCheckpointPlayerId = Clans::GetNextCheckpointPlayerId(Clan);
+					
+					// Relay successful
+					if (
+						PreviousCheckpointPlayerIds.count >= Map_ClanPlayersNb &&
+						NextCheckpointPlayerId != NullId &&
+						NextCheckpointPlayerId == EventPlayerId
+					) {
+						RelaySuccess = True;
+					}
+					// Relay failed 
+					else {
+						RelaySuccess = False;
+						
+						Log::Log("""[ChaseAttack] Relay failed for clan {{{Clan}}} > PreviousCheckpointPlayerIds : {{{PreviousCheckpointPlayerIds}}} | Map_ClanPlayersNb : {{{Map_ClanPlayersNb}}} | NextCheckpointPlayerId : {{{NextCheckpointPlayerId}}} | EventPlayerId : {{{EventPlayerId}}} | event properties - RaceTime : {{{EventRaceTime}}} | PlayerId : {{{EventPlayerId}}} | BlockId : {{{EventBlockId}}} | IsEndRace : {{{EventIsEndRace}}} | CheckpointInRace : {{{EventCheckpointInRace}}} | EventCurrentNbLaps : {{{EventCurrentNbLaps}}} | EventSpeed : {{{EventSpeed}}}""");
+						
+						// Update penalties
+						Clans::IncrementPenalties(Clan);
+						declare PenaltiesNb = Clans::GetPenalties(Clan);
+						
+						// Invalid the race
+						Clans::SetValidRace(Clan, False);
+						foreach (ClanPlayerId in ClanPlayerIds) {
+							if (AllPlayers.existskey(ClanPlayerId)) {
+								declare ClanPlayer <=> AllPlayers[ClanPlayerId];
+								ChaseUI::SetPenalties(PenaltiesNb, ClanPlayer);
+								
+								declare UI <=> UIManager.GetUI(ClanPlayer);
+								if (UI != Null) {
+									UI.UIStatus = CUIConfig::EUIStatus::Warning;
+								}
+								
+								declare DisplayWaitForTeammates = (S_DisplayWarning && EventPlayerId == ClanPlayerId);
+								RelayUI::PopFailWarning(C_RelayFailWarningDuration, DisplayWaitForTeammates, ClanPlayer);
+							}
+						}
+						
+						if (C_RespawnAfterFailedRelay) {
+							Clans::SetRespawnTime(Clan, Now);
+						}
+					}
+					
+					ComputeCheckpointGrade(EventPlayer, RelaySuccess, RelaySuccess, 0);
+					Clans::UpdateRelays(Clan, RelaySuccess);
+				}
+				
+				Clans::SetCurrentCheckpoint(
+					Clan, EventCurrentNbLaps, EventBlockId, EventPlayerId, RelaySuccess, EventRaceTime, EventSpeed, EventPlayer.Score.Id, 0
+				);
+				
+				declare NewRelayStartTimes = SetNextCheckpointPlayer(
+					Null, Clan, C_NoNameCheckpoint, EventCheckpointInRace + 1, EventRaceTime, Clans::GetRelayStartTimes()
+				);
+				Clans::SetRelayStartTimes(NewRelayStartTimes);
+				Clans::ResetNextCheckpointPlayerId(Clan);
+				if (!MarkersClansToUpdate.exists(Clan)) {
+					MarkersClansToUpdate.add(Clan);
+				}
+				
+				// Save the checkpoint time and score
+				Clans::UpdateCheckpointTimes(Clan, EventCurrentNbLaps, EventBlockId, EventRaceTime);
+				AddCheckpointsPoints(EventCurrentNbLaps, EventBlockId, GetRacePoints(EventPlayer.Score), EventPlayer.Score);
+				
+				// This is the finish
+				if (EventIsEndRace) {
+					// Start finish countdown
+					declare Timeout = GetFinishTimeout(S_FinishTimeout);
+					if (Clans::RaceIsValid(Clan)) {
+						Clans::SetRespawnTime(Clan, Timeout);
+					}
+					foreach (ClanPlayerId in ClanPlayerIds) {
+						if (AllPlayers.existskey(ClanPlayerId)) {
+							declare ClanPlayer <=> AllPlayers[ClanPlayerId];
+							FinishTimeoutUI::SetTimeout(Timeout, ClanPlayer);
+							RestartUI::ResetRestart(ClanPlayer);
+						}
+					}
+					
+					// Compute new time
+					declare TimePenalty = 0;
+					if (S_FailedRelayPenalty > 0) {
+						TimePenalty = Clans::GetPenalties(Clan) * S_FailedRelayPenalty * 1000;
+					}
+					Clans::UpdateFinishTime(Clan, EventPlayerId, EventRaceTime + TimePenalty);
+					
+					Log::Log("""[ChaseAttack] Clan {{{Clan}}} finish > NewTime : {{{Clans::GetFinishTimes(Clan)}}} | RaceTime : {{{EventRaceTime}}} | Penalties : {{{Clans::GetPenalties(Clan)}}} | S_FailedRelayPenalty : {{{S_FailedRelayPenalty}}}""");
+				}
+			}
+			// Existing checkpoint
+			else if (Clans::IsCurrentCheckpoint(Clan, EventCurrentNbLaps, EventBlockId)) {
+				Clans::UpdateCurrentCheckpoint(Clan, EventPlayerId);
+				
+				// Update checkpoint time with the time of the last player to cross it
+				Clans::UpdateCheckpointTimes(Clan, EventCurrentNbLaps, EventBlockId, EventRaceTime);
+				
+				// Set checkpoints score
+				declare RelaySuccess = Clans::CurrentCheckpointRelayIsValid(Clan);
+				declare CheckpointScore = 0;
+				if (RelaySuccess) {
+					CheckpointScore = GetCheckpointScore(
+						Clans::GetCurrentCheckpointLeaderTime(Clan),
+						Clans::GetCurrentCheckpointLeaderSpeed(Clan),
+						EventRaceTime,
+						EventSpeed
+					);
+				}
+				Clans::UpdateCurrentCheckpointScores(Clan, EventPlayer.Score.Id, CheckpointScore);
+				ComputeCheckpointGrade(EventPlayer, RelaySuccess, False, CheckpointScore);
+				AddRacePoints(CheckpointScore, EventPlayer.Score);
+				AddCheckpointsPoints(EventCurrentNbLaps, EventBlockId, GetRacePoints(EventPlayer.Score), EventPlayer.Score);
+				
+				// We take the finish time of the last player of the team
+				if (EventIsEndRace) {
+					declare TimePenalty = 0;
+					if (S_FailedRelayPenalty > 0) {
+						TimePenalty = Clans::GetPenalties(Clan) * S_FailedRelayPenalty * 1000;
+					}
+					Clans::UpdateFinishTime(Clan, EventPlayerId, EventRaceTime + TimePenalty);
+				}
+				
+				// Find the relay player
+				declare NextCheckpointPlayerId = Clans::GetNextCheckpointPlayerId(Clan);
+				declare CurrentCheckpointPlayerIds = Clans::GetCurrentCheckpointPlayerIds(Clan);
+				if (CurrentCheckpointPlayerIds.count >= Map_ClanPlayersNb && NextCheckpointPlayerId == NullId) {
+					declare ClansRelayStartTimes = Clans::GetRelayStartTimes();
+					if (ClansRelayStartTimes.existskey(Clan)) {
+						declare RelayDuration = EventRaceTime - ClansRelayStartTimes[Clan];
+						Clans::UpdateRelayDuration(Clan, RelayDuration);
+					}
+					declare NewRelayStartTimes = SetNextCheckpointPlayer(
+						EventPlayer.User, Clan, EventPlayer.User.Name, EventCheckpointInRace + 1, EventRaceTime, ClansRelayStartTimes
+					);
+					Clans::SetRelayStartTimes(NewRelayStartTimes);
+					Clans::SetNextCheckpointPlayerId(Clan, EventPlayerId);
+					Chase::ComputeRelayScore(
+						Clans::GetCurrentCheckpointScores(), Clans::GetCurrentCheckpointValidRelays(), Clan, EventCurrentNbLaps, EventBlockId
+					);
+					if (!MarkersClansToUpdate.exists(Clan)) {
+						MarkersClansToUpdate.add(Clan);
+					}
+					
+					// Display the checkpoint time diff when the last player crosses the checkpoint
+					foreach (ClanPlayerId in ClanPlayerIds) {
+						if (AllPlayers.existskey(ClanPlayerId)) {
+							declare ClanPlayer <=> AllPlayers[ClanPlayerId];
+							declare BestCheckpointTime = -1;
+							declare BestCheckpointTimes = GetPlayerBestCheckpointTimes(ClanPlayer.Score);
+							if (BestCheckpointTimes.existskey(EventCurrentNbLaps) && BestCheckpointTimes[EventCurrentNbLaps].existskey(EventBlockId)) {
+								BestCheckpointTime = BestCheckpointTimes[EventCurrentNbLaps][EventBlockId];
+							}
+							declare CurrentCheckpointPoints = 0;
+							declare CurrentCheckpointsPoints = GetCheckpointsPoints(ClanPlayer.Score);
+							if (CurrentCheckpointsPoints.existskey(EventCurrentNbLaps) && CurrentCheckpointsPoints[EventCurrentNbLaps].existskey(EventBlockId)) {
+								CurrentCheckpointPoints = CurrentCheckpointsPoints[EventCurrentNbLaps][EventBlockId];
+							}
+							declare CheckpointRank = UpdateCheckpointRanking(ClanPlayer, EventCurrentNbLaps, EventBlockId, EventRaceTime, CurrentCheckpointPoints);
+							CheckpointTimeUI::PopCheckpointTime(C_CheckpointTimeDisplayDuration, BestCheckpointTime, EventRaceTime, CheckpointRank, ClanPlayer);
+						}
+					}
+				} else {
+					ChaseUI::UpdateNextCheckpointPlayer();
+				}
+			}
 		}
 	}
-	// All players finished
-	else {
-		if (MapPlayers.existskey(Clan) && ClansFinishTime.existskey(Clan)) {
-			declare StillPlaying = False;
-			declare EveryoneFinished = True;
-			declare PlayersIds = MapPlayers[Clan];
-			declare ClanFinishTime = ClansFinishTime[Clan];
-			foreach (PlayerId in PlayersIds) {
-				if (Players.existskey(PlayerId)) {
-					declare Player <=> Players[PlayerId];
-					if (!StillPlaying && !TM::IsWaiting(Player)) {
-						StillPlaying = True;
-					}
-					if (EveryoneFinished && !ClanFinishTime.existskey(PlayerId)) {
-						EveryoneFinished = False;
+	Clans::RemoveWaypointEvents(Clan, EventIdsToProcess);
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Spawn players
+declare CTmPlayer[][Integer] PlayersToSpawn;
+foreach (Player in Players) {
+	if (TM::IsWaiting(Player)) {
+		declare PlayerCurrentClan = Clans::GetPlayerClan(Player.Id);
+		declare ClanIsReady = True;
+		
+		if (PlayerCurrentClan != Const::C_NoClan) {
+			// A clan is ready if there's no respawn scheduled
+			ClanIsReady = (Clans::GetRespawnTime(PlayerCurrentClan) == Const::C_NoRespawnTime);
+			
+			// A clan is ready if all players of the team are ready
+			if (ClanIsReady) {
+				declare ClanPlayerIds = Clans::GetClan(PlayerCurrentClan);
+				foreach (PlayerId in ClanPlayerIds) {
+					if (PlayerId != Player.Id) {
+						if (Players.existskey(PlayerId)) {
+							if (!TM::IsWaiting(Players[PlayerId])) {
+								ClanIsReady = False;
+								break;
+							}
+						} else {
+							ClanIsReady = False;
+							break;
+						}
 					}
 				}
 			}
-			/*if (!StillPlaying) {
-				ClansToDisband.add(Clan);
-			}*/
+		}
+		
+		if (
+			(PlayerCurrentClan != Const::C_NoClan && ClanIsReady) || 
+			(C_SpawnLobbyPlayers && PlayerCurrentClan == Const::C_NoClan && Map_LobbyPlayers.exists(Player.Id))
+		) {
+			if (!PlayersToSpawn.existskey(PlayerCurrentClan)) {
+				PlayersToSpawn[PlayerCurrentClan] = CTmPlayer[];
+			}
+			PlayersToSpawn[PlayerCurrentClan].add(Player);
+		}
+	}
+}
+foreach (Clan => ClanPlayers in PlayersToSpawn) {
+	if (Clan == Const::C_NoClan || ClanPlayers.count >= Map_ClanPlayersNb) {
+		foreach (Player in ClanPlayers) {
+			CheckpointTimeUI::ResetCheckpointTime(Player);
+			CheckpointRankingUI::ResetCheckpointRanking(Player);
+			FinishTimeoutUI::SetTimeout(-1, Player);
+			RestartUI::ResetRestart(Player);
+			MedalUI::CancelRaceMedal(Player);
+			// Race
+			if (Clan != Const::C_NoClan) {
+				MedalUI::PopMedalCounter(2500, Const::C_Medal_None, GetMedals(Player.Score), Player);
+				ChaseUI::SetVisibility(True, Player);
+				CheckpointRankingUI::Enable(True, Player);
+			} 
+			// Lobby
+			else {
+				MedalUI::PopMedalCounter(CutOffTimeLimit - Now, Const::C_Medal_None, GetMedals(Player.Score), Player);
+				ChaseUI::SetVisibility(False, Player);
+				CheckpointRankingUI::Enable(False, Player);
+			}
+			declare UI <=> UIManager.GetUI(Player);
+			if (UI != Null) {
+				if (Clan != Const::C_NoClan) {
+					UI.UIStatus = CUIConfig::EUIStatus::None;
+					UI.SpectatorForceCameraType = 2;
+				} else {
+					UI.UIStatus = CUIConfig::EUIStatus::Warning;
+					UI.SpectatorForceCameraType = -1;
+				}
+			}
+			ResetRacePoints(Player.Score);
+			ResetCheckpointsPoints(Player.Score);
+			SetPlayerWantsToRestart(False, Player);
+			TM::StartRace(Player);
+			// Make sure that the RaceTime is reset now and not at the end of the start countdown
+			Player.CurRace = Null;
+			if (C_WaypointEventLagProtection) {
+				InvalidRaceStartTime(Player);
+			}
+		}
+		if (Clan != Const::C_NoClan) {
+			InitializeRace(Clan);
+		}
+		if (!MarkersClansToUpdate.exists(Clan)) {
+			MarkersClansToUpdate.add(Clan);
+		}
+		ChaseUI::UpdateNextCheckpointPlayer();
+	}
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Manage clans respawn time
+declare ClansToRespawn = Integer[];
+declare ClansRespawnTime = Clans::GetRespawnTimes();
+foreach (Clan => TimeLimit in ClansRespawnTime) {
+	// Time limit reached
+	if (Now >= TimeLimit) {
+		ClansToRespawn.add(Clan);
+		declare ClanPlayerIds = Clans::GetClan(Clan);
+		foreach (ClanPlayerId in ClanPlayerIds) {
+			if (AllPlayers.existskey(ClanPlayerId)) {
+				declare ClanPlayer <=> AllPlayers[ClanPlayerId];
+				FinishTimeoutUI::SetTimeout(-1, ClanPlayer);
+				if (Clans::OnePlayerFinished(Clan)) FinishTimeoutUI::PopFinishFailed(3000, ClanPlayer);
+			}
+		}
+	} else {
+		// Check if all players finished
+		if (Clans::OnePlayerFinished(Clan)) {
+			declare EveryoneFinished = True;
+			declare ClanPlayerIds = Clans::GetClan(Clan);
+			declare ClanFinishTimes = Clans::GetFinishTimes(Clan);
+			foreach (ClanPlayerId in ClanPlayerIds) {
+				if (EveryoneFinished && !ClanFinishTimes.existskey(ClanPlayerId)) {
+					EveryoneFinished = False;
+					break;
+				}
+			}
 			if (EveryoneFinished) {
-				// Validate race time of the last finisher
-				declare FinishTime = -1;
-				foreach (Time in ClanFinishTime) {
-					if (Time > FinishTime) FinishTime = Time;
-				}
-				declare Medal = Const::C_Medal_None;
-				if (FinishTime >= 0) {
-					if (FinishTime <= Map.TMObjective_GoldTime) {
-						Medal = Const::C_Medal_Gold;
-					} else if (FinishTime <= Map.TMObjective_SilverTime) {
-						Medal = Const::C_Medal_Silver;
-					} else if (FinishTime <= Map.TMObjective_BronzeTime) {
-						Medal = Const::C_Medal_Bronze;
-					}
-				}
-				Log::Log("""[ChaseAttack] Every players of clan {{{Clan}}} finished. Time validated : {{{FinishTime}}} | Medal : {{{Medal}}}""");
-				
 				// Update clan best time
-				if (MapPlayers.existskey(Clan) && !IsInTrainMode.exists(Clan)) {
+				if (Clans::RaceIsValid(Clan)) {
+					// Validate race time of the last finisher
+					declare ClanFinishTime = -1;
+					foreach (Time in ClanFinishTimes) {
+						if (Time > ClanFinishTime) ClanFinishTime = Time;
+					}
+					declare Medal = Const::C_Medal_None;
+					if (ClanFinishTime >= 0) {
+						if (ClanFinishTime <= Map.TMObjective_GoldTime) {
+							Medal = Const::C_Medal_Gold;
+						} else if (ClanFinishTime <= Map.TMObjective_SilverTime) {
+							Medal = Const::C_Medal_Silver;
+						} else if (ClanFinishTime <= Map.TMObjective_BronzeTime) {
+							Medal = Const::C_Medal_Bronze;
+						}
+					}
+					Log::Log("""[ChaseAttack] Every players of clan {{{Clan}}} finished. Time validated : {{{ClanFinishTime}}} | Medal : {{{Medal}}}""");
 					
-					declare ClanPlayersIds = MapPlayers[Clan];
-					foreach (PlayerId in ClanPlayersIds) {
-						if (Players.existskey(PlayerId)) {
-							declare Player <=> Players[PlayerId];
+					declare ClanBestTime = Clans::GetBestTime(Clan);
+					if (ClanBestTime < 0 || (ClanFinishTime >= 0 && ClanFinishTime < ClanBestTime)) {
+						Clans::SetBestTime(Clan, ClanFinishTime);
+					}
+				
+					foreach (ClanPlayerId in ClanPlayerIds) {
+						if (AllPlayers.existskey(ClanPlayerId)) {
+							declare ClanPlayer <=> AllPlayers[ClanPlayerId];
 							
 							declare PrevBestRaceTime = -1;
-							if (Player.Score.BestRace != Null) PrevBestRaceTime = Player.Score.BestRace.Time;
+							if (ClanPlayer.Score.BestRace != Null) PrevBestRaceTime = ClanPlayer.Score.BestRace.Time;
 							
-							Player.Score.TempResult.Time = FinishTime;
-							Scores::SetPlayerPrevRace(Player.Score, Player.Score.TempResult);
-							declare Better = Scores::SetPlayerBestRaceIfBetter(Player.Score, Player.Score.TempResult, CTmResult::ETmRaceResultCriteria::Time);
+							ClanPlayer.Score.TempResult.Time = ClanFinishTime;
+							Scores::SetPlayerPrevRace(ClanPlayer.Score, ClanPlayer.Score.TempResult);
+							declare Better = Scores::SetPlayerBestRaceIfBetter(ClanPlayer.Score, ClanPlayer.Score.TempResult, CTmResult::ETmRaceResultCriteria::Time);
 							if (Better) {
-								SetBestRacePoints(GetRacePoints(Player.Score), Player.Score);
-								CA_SetPlayerBestCheckpointTimes(ClansCheckpointTimes[Clan], Player.Score);
+								SetBestRacePoints(GetRacePoints(ClanPlayer.Score), ClanPlayer.Score);
+								SetPlayerBestCheckpointTimes(Clans::GetCheckpointTimes(Clan), ClanPlayer.Score);
+								SetPlayerBestCheckpointPoints(GetCheckpointsPoints(ClanPlayer.Score), ClanPlayer.Score);
+								SetStats(Clan, Clans::GetClanScoreIds(Clan), ClanPlayer.Score);
 							}
 							if (S_FailedRelayPenalty > 0) {
-								ChaseUI::SetFinishTime(FinishTime, Player);
+								ChaseUI::SetFinishTime(ClanFinishTime, ClanPlayer);
 							}
 							
 							declare TimeDiff = 0;
-							if (PrevBestRaceTime >= 0 && FinishTime >= 0) TimeDiff = FinishTime - PrevBestRaceTime;
-							CA_GiveMedal(Medal, Player.Score);
-							MedalUI::PopRaceMedal(CutOffTimeLimit - Now, Medal, FinishTime, TimeDiff, Player);
-							MedalUI::PopMedalCounter(CutOffTimeLimit - Now, Medal, CA_GetMedals(Player.Score), Player);
-							FinishTimeoutUI::SetTimeout(-1, Player);
-							CheckpointTimeUI::ResetCheckpointTime(Player);
+							if (PrevBestRaceTime >= 0 && ClanFinishTime >= 0) TimeDiff = ClanFinishTime - PrevBestRaceTime;
+							GiveMedal(Medal, ClanPlayer.Score);
+							MedalUI::PopRaceMedal(CutOffTimeLimit - Now, Medal, ClanFinishTime, TimeDiff, ClanPlayer);
+							MedalUI::PopMedalCounter(CutOffTimeLimit - Now, Medal, GetMedals(ClanPlayer.Score), ClanPlayer);
+							FinishTimeoutUI::SetTimeout(-1, ClanPlayer);
+							CheckpointTimeUI::ResetCheckpointTime(ClanPlayer);
+							CheckpointRankingUI::ResetCheckpointRanking(ClanPlayer);
 						}
 					}
 				}
 				// Update ranking
 				UpdateRanking();
 				
-				declare Removed = ClansFinishTime.removekey(Clan);
-				ClansToDisband.add(Clan);
+				ClansToRespawn.add(Clan);
 			}
 		}
 	}
 }
-// Disband clans
-foreach (Clan in ClansToDisband) {
-	declare Removed = ClansCutOffTimeLimit.removekey(Clan);
-	Removed = ClansFinishTime.removekey(Clan);
-	if (MapPlayers.existskey(Clan)) {
-		declare PlayersIds = MapPlayers[Clan];
-		foreach (PlayerId in PlayersIds) {
-			// Remove player from clan
-			MapPlayers = CA_LeaveClan(MapPlayers, PlayerId);
+// Respawn clans
+foreach (Clan in ClansToRespawn) {
+	Clans::ResetRespawnTime(Clan);
+	declare ClanPlayerIds = Clans::GetClan(Clan);
+	foreach (ClanPlayerId in ClanPlayerIds) {
+		if (AllPlayers.existskey(ClanPlayerId)) {
 			// Unspawn player
-			if (Players.existskey(PlayerId)) {
-				declare Player <=> Players[PlayerId];
-				if (TM::IsRacing(Player)) {
-					TM::WaitRace(Player);
-				}
+			declare Player <=> AllPlayers[ClanPlayerId];
+			if (TM::IsRacing(Player)) {
+				TM::WaitRace(Player);
 			}
-		}
-		
-		// Create a new clan for the players
-		declare NewClan = CA_GetNewClanId(MapPlayers);
-		if (!MapPlayers.existskey(NewClan)) {
-			MapPlayers[NewClan] = Ident[];
-			WaypointEvents_Now[NewClan] = Integer[Text];
-			WaypointEvents_RaceTime[NewClan] = Integer[Text];
-			WaypointEvents_PlayerId[NewClan] = Ident[Text];
-			WaypointEvents_BlockId[NewClan] = Ident[Text];
-			WaypointEvents_IsEndRace[NewClan] = Boolean[Text];
-			WaypointEvents_CheckpointInRace[NewClan] = Integer[Text];
-			WaypointEvents_Speed[NewClan] = Real[Text];
-			foreach (PlayerId in PlayersIds) {
-				MapPlayers = CA_JoinClan(MapPlayers, Penalties, NewClan, PlayerId);
-			}
-			Log::Log("""[ChaseAttack] Create clan {{{NewClan}}} with {{{PlayersIds}}}""");
-		} else {
-			Log::Log("""[ChaseAttack] ERROR : trying to create a clan that already exists > NewClan : {{{NewClan}}} | MapPlayers : {{{MapPlayers}}}""");
 		}
 	}
 }
 
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Update markers
+foreach (Clan in MarkersClansToUpdate) {
+	UpdateMarkers(Map_CheckpointMarkersXML, Clans::GetNextCheckpointPlayerIds(), Clan);
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
 // Update the map duration setting
-if (PrevTimeLimit != S_TimeLimit) {
-	PrevTimeLimit = S_TimeLimit;
-	SetTimeLimit(StartTime, S_TimeLimit);
+if (Map_PrevTimeLimit != S_TimeLimit) {
+	Map_PrevTimeLimit = S_TimeLimit;
+	SetTimeLimit(Map_StartTime, S_TimeLimit);
 }
 
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
@@ -1358,33 +1159,30 @@ MB_StopMatch();
 // Update UI
 UIManager.UIAll.UISequence = CUIConfig::EUISequence::EndRound;
 Message::CleanAllMessages();
-UpdateMarker(Ident[Integer]);
 foreach (Player in AllPlayers) {
-	ChaseUI::DisplayWaitingRespawnPenalty(False, Player);
 	declare UI <=> UIManager.GetUI(Player);
 	if (UI != Null) {
 		UI.UIStatus = CUIConfig::EUIStatus::None;
 		UI.SpectatorForceCameraType = -1;
 	}
-	MapPlayers = CA_LeaveClan(MapPlayers, Player.Id);
-	LobbyPlayers = CA_LeaveLobby(LobbyPlayers, Player);
 	TeamSelectionUI::Enable(False, Player);
-	TeamSelectionUI::SetLobbyPlayers(LobbyPlayers);
+	TeamSelectionUI::SetLobbyPlayers(Map_LobbyPlayers);
 	ChaseTuto::IsInLobby(False, Player);
 	MedalUI::CancelMedalCounter(Player);
 	MedalUI::CancelRaceMedal(Player);
 	RelayUI::CancelFailWarning(Player);
+	CheckpointTimeUI::ResetCheckpointTime(Player);
+	CheckpointRankingUI::ResetCheckpointRanking(Player);
+	FinishTimeoutUI::SetTimeout(-1, Player);
+	RestartUI::ResetRestart(Player);
+	ResetMarkers(Player);
 }
 ChaseTuto::Enable(False);
 TeamUI::Enable(False);
 RestartUI::Enable(False);
-UpdateMarker(Ident[Integer]);
 
 CutOffTimeLimit = -1;
-MB_SortScores(CTmMode::ETmScoreSortOrder::TotalPoints);
-
-// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
-// Find winner
+UpdateRanking();
 Scores::SetDefaultLadderSort(Scores::C_Sort_MapPoints);
 Scores::SetPlayerWinner(Scores::GetBestPlayer(Scores::C_Sort_MapPoints, Scores::C_Order_Ascending));
 
@@ -1406,172 +1204,231 @@ TM::WaitRaceAll();
 ***
 // Setup the ladder specific to Chase
 Ladder::SetResultsVersion(3);
-
-if (ChannelProgression::IsEnabled()) {
-	declare Laps = NbLaps;
-	if (Laps < 0) Laps = Map.TMObjective_NbLaps;
-	declare ReferenceTime = (Map.MapInfo.TMObjective_AuthorTime / Map.TMObjective_NbLaps) * Laps;
-	declare BestRaceTime = ReferenceTime;
-	foreach (Score in Scores) {
-		declare RaceTime = Scores::GetPlayerBestRaceTime(Score);
-		if (RaceTime > 0 && RaceTime < BestRaceTime) BestRaceTime = RaceTime;
-	}
-	if (BestRaceTime < ReferenceTime) ReferenceTime = BestRaceTime;
-	
-	declare PlayersPerformances = 0.;
-	declare PlayersEchelons = 0;
-	foreach (Score in Scores) {
-		declare PlayerBestRaceTime = Scores::GetPlayerBestRaceTime(Score);
-		declare ChaseAttack_Performance for Score = 0.;
-		
-		if (
-			PlayerBestRaceTime > 0 &&
-			ReferenceTime > 0 &&
-			PlayerBestRaceTime < Map.MapInfo.TMObjective_BronzeTime &&
-			ReferenceTime < Map.MapInfo.TMObjective_BronzeTime
-		) {
-			declare A = (Map.MapInfo.TMObjective_BronzeTime - PlayerBestRaceTime) * 1.;
-			declare B = Map.MapInfo.TMObjective_BronzeTime - ReferenceTime;
-			ChaseAttack_Performance = ((A / B) * 0.9) + 0.1;
-		} else {
-			ChaseAttack_Performance = 0.;
-		}
-		
-		PlayersPerformances += ChaseAttack_Performance;
-		PlayersEchelons += 10 - Utils::EchelonToInteger(Score.User.Echelon);
-		
-		Log::Log("""[ChaseAttack] ChaseAttack_Performance > {{{Score.User.Login}}} > BronzeTime : {{{Map.MapInfo.TMObjective_BronzeTime}}} | AuthorTime : {{{Map.MapInfo.TMObjective_AuthorTime}}} | BestRaceTime : {{{BestRaceTime}}} | ReferenceTime : {{{ReferenceTime}}} | PlayerBestRaceTime : {{{PlayerBestRaceTime}}} | ChaseAttack_Performance: {{{ChaseAttack_Performance}}}""");
-	}
-	
-	declare PP = 0.;
-	if (Scores.count != 0) {
-		PP = (((PlayersPerformances * 10.) + PlayersEchelons) / (Scores.count * 20.)) * 0.1;
-		Log::Log("""[ChaseAttack] PP : ((({{{PlayersPerformances}}} * 10.) + {{{PlayersEchelons}}}) / ({{{Scores.count}}} * 20.)) * 0.1 = {{{PP}}}""");
-	}
-		
-	foreach (Score in Scores) {
-		declare ChaseAttack_Performance for Score = 0.;
-		
-		declare P = PP * ChaseAttack_Performance;
-		declare Performance = ChaseAttack_Performance - P;
-		if (Performance < 0.) Performance = 0.;
-		
-		Log::Log("""[ChaseAttack] Performance > {{{Score.User.Login}}} > PP : {{{PP}}} | ChaseAttack_Performance : {{{ChaseAttack_Performance}}} | P : {{{P}}} | Performance: {{{Performance}}}""");
-		
-		ChannelProgression::SetPlayerPerformance(Score, Performance);
-	}
-}
 ***
 
 ***Match_BeforePodiumSequence***
 ***
-declare Winners = CTmScore[];
-declare BestTime = -1;
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Find winners
+declare BestPoints = -1;
+declare CTmScore BestScore;
 foreach (Score in Scores) {
-	if (Score.BestRace != Null && Score.BestRace.Time >= 0) {
-		if (BestTime < 0 || Score.BestRace.Time < BestTime) {
-			Winners.clear();
-			BestTime = Score.BestRace.Time;
-			Winners.add(Score);
-		} else if (Score.BestRace.Time == BestTime) {
-			Winners.add(Score);
-		}
+	declare Points = Scores::GetPlayerMapPoints(Score);
+	if (Points > 0 && Points > BestPoints) {
+		BestScore <=> Score;
+		BestPoints = Points;
 	}
 }
-if (Winners.count > 0) {
-	WinnersUI::SetWinners(Winners);
+declare WinnerIds = Ident[Ident];
+declare WinnersSorting = Integer[CTmScore];
+declare Winners = CTmScore[];
+declare Stats = Integer[Integer];
+if (BestScore != Null) {
+	declare ValidClan = GetStats_ValidClan(BestScore);
+	if (ValidClan != Const::C_NoClan) {
+		WinnerIds = GetStats_SavedTeammateScoreIds(BestScore);
+		Stats = Clans::GetStats(ValidClan);
+	} else {
+		WinnerIds = GetStats_SavedTeammateScoreIds(BestScore);
+		Stats = GetStats_SavedStats(BestScore);
+	}
+	foreach (ScoreId in WinnerIds) {
+		if (Scores.existskey(ScoreId)) {
+			declare Score <=> Scores[ScoreId];
+			WinnersSorting[Score] = -Scores::GetPlayerMapPoints(Score);
+		}
+	}
+	if (!WinnersSorting.existskey(BestScore)) {
+		WinnersSorting[BestScore] = -Scores::GetPlayerMapPoints(BestScore);
+	}
+}
+if (WinnersSorting.count > 0) {
+	WinnersSorting = WinnersSorting.sort();
+	foreach (Score => Points in WinnersSorting) {
+		Winners.add(Score);
+	}
+	WinnersUI::SetWinners(Winners, Stats);
 	WinnersUI::Enable(True);
 } else {
 	UIManager.UIAll.BigMessage = _("|Match|Draw");
 }
 
-PodiumDuration = (S_ChatTime*1000)/2;
-ScoresTableDuration = (S_ChatTime*1000)/2;
-
-TeamConfirmUI::PopConfirmation(ML::Max(3000, PodiumDuration));
+Map_ScreenWinnersDuration = ML::NearestInteger((S_ChatTime * 1000) / 3.);
+Map_ScreenScoresTableDuration = ML::NearestInteger((S_ChatTime * 1000) / 3.);
+Map_ScreenStayAsTeamDuration = ML::NearestInteger((S_ChatTime * 1000) / 3.);
 ***
 
 ***Match_PodiumSequence***
 ***
 declare PrevUISequence = UIManager.UIAll.UISequence;
 UIManager.UIAll.UISequence = CUIConfig::EUISequence::Podium;
-MB_Sleep(PodiumDuration);
+UIManager.UIAll.ScoreTableVisibility = CUIConfig::EVisibility::ForcedHidden;
+MB_Sleep(Map_ScreenWinnersDuration);
 WinnersUI::Enable(False);
 UIManager.UIAll.BigMessage = "";
 LadderUI::Enable(True);
 foreach (Player in Players) {
 	LadderUI::PlayLadderProgression(Player);
-	MedalUI::PopMedalCounter(ScoresTableDuration-500, CA_GetMedals(Player.Score), Player);
+	MedalUI::PopMedalCounter(Map_ScreenScoresTableDuration, GetMedals(Player.Score), Player);
 }
 UIManager.UIAll.ScoreTableVisibility = CUIConfig::EVisibility::ForcedVisible;
-MB_Sleep(ScoresTableDuration);
+MB_Sleep(Map_ScreenScoresTableDuration);
+LadderUI::Enable(False);
+UIManager.UIAll.ScoreTableVisibility = CUIConfig::EVisibility::Normal;
+foreach (Player in AllPlayers) {
+	declare UI <=> UIManager.GetUI(Player);
+	if (UI != Null) {
+		if (Clans::GetPlayerClan(Player.Id) == Const::C_NoClan) {
+			UI.ScoreTableVisibility = CUIConfig::EVisibility::ForcedVisible;
+		} else {
+			UI.ScoreTableVisibility = CUIConfig::EVisibility::ForcedHidden;
+		}
+	}
+}
+TeamConfirmUI::PopConfirmation(Map_ScreenStayAsTeamDuration);
+MB_Sleep(Map_ScreenStayAsTeamDuration);
+foreach (Player in AllPlayers) {
+	declare UI <=> UIManager.GetUI(Player);
+	if (UI != Null) {
+		UI.ScoreTableVisibility = CUIConfig::EVisibility::None;
+	}
+}
 UIManager.UIAll.ScoreTableVisibility = CUIConfig::EVisibility::Normal;
 UIManager.UIAll.UISequence = PrevUISequence;
 ***
 
 ***Match_AfterPodiumSequence***
 ***
-LadderUI::Enable(False);
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Special behavior for the current teammate system
+// Disband clans where players do not have a teammate anymore
+MB_Sleep(500);
+declare ClansPlayerIds = Clans::GetClans();
+foreach (Clan => ClanPlayerIds in ClansPlayerIds) {
+	foreach (PlayerId in ClanPlayerIds) {
+		if (AllPlayers.existskey(PlayerId)) {
+			declare Player <=> AllPlayers[PlayerId];
+			declare Teammate <=> TeamSelectionUI::GetValidatedTeammate(Player);
+			if (Teammate == Null || !ClanPlayerIds.exists(Teammate.Id)) {
+				Clans::Leave(PlayerId);
+				RemovePlayersFromClan(Clan, [PlayerId], Clans::GetStats(Clan));
+			}
+		}
+	}
+	declare NewClanPlayerIds = Clans::GetClan(Clan);
+	if (NewClanPlayerIds.count < Map_ClanPlayersNb) {
+		declare ClanStats = Clans::GetStats(Clan);
+		Clans::Destroy(Clan);
+		RemovePlayersFromClan(Clan, NewClanPlayerIds, ClanStats);
+	}
+}
+TeamConfirmUI::UnpopConfirmation();
 ***
 
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
 // Functions
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
-// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
-/** Update the spectator auto target
- *	of a clan
- *
- *	@param	_ClansPlayers							The players
- *	@param	_Clan											The clan to update
- */
-Void UpdateSpectatorAutoTarget(Ident[][Integer] _ClansPlayers, Integer _Clan) {
-	if (!_ClansPlayers.existskey(_Clan)) return;
+
+Void ValidRaceStartTime(CTmPlayer _Player) {
+	if (_Player == Null) return;
+	declare CA_ValidRaceStartTime for _Player = -1;
+	CA_ValidRaceStartTime = _Player.RaceStartTime;
+}
+
+Void InvalidRaceStartTime(CTmPlayer _Player) {
+	if (_Player == Null) return;
+	declare CA_ValidRaceStartTime for _Player = -1;
+	CA_ValidRaceStartTime = -1;
+}
+
+Boolean IsValidRaceStartTime(CTmPlayer _Player) {
+	if (_Player == Null) return False;
+	declare CA_ValidRaceStartTime for _Player = -1;
+	return CA_ValidRaceStartTime == _Player.RaceStartTime;
+}
+
+Void SetPlayerWantsToRestart(Boolean _WantToRestart, CTmPlayer _Player) {
+	if (_Player == Null) return;
+	declare ChaseAttack_WantToRestart for _Player = False;
+	ChaseAttack_WantToRestart = _WantToRestart;
+}
+
+Boolean PlayerWantsToRestart(CTmPlayer _Player) {
+	if (_Player == Null) return False;
+	declare ChaseAttack_WantToRestart for _Player = False;
+	return ChaseAttack_WantToRestart;
+}
+
+Void SetStats(Integer _Clan, Integer[Integer] _Stats, Ident[Ident] _TeammateScoreIds, CTmScore _Score) {
+	if (_Score == Null) return;
 	
-	declare PlayersIds = _ClansPlayers[_Clan];
-	declare ClanPlayers = CTmPlayer[];
-	declare TargetId = NullId;
-	foreach (PlayerId in PlayersIds) {
-		if (Players.existskey(PlayerId)) {
-			declare Player <=> Players[PlayerId];
-			ClanPlayers.add(Player);
-			if (TM::IsRacing(Player)) {
-				TargetId = Player.Id;
+	declare CA_ValidClan for _Score = Const::C_NoClan;
+	declare CA_SavedStats for _Score = Integer[Integer];
+	declare CA_SaveTeammateScoreIds for _Score = Ident[Ident];
+	
+	if (_Clan != Const::C_NoClan) { //< Finish time improved with the clan
+		CA_SavedStats.clear();
+		declare TeammateScoreIds = _TeammateScoreIds;
+		declare Removed = TeammateScoreIds.remove(_Score.Id);
+		CA_SaveTeammateScoreIds = TeammateScoreIds;
+	} else { //< Clan destroyed
+		if (CA_ValidClan != Const::C_NoClan) { //< But finish time was improved previously with this clan
+			CA_SavedStats = _Stats;
+			// Update teammate stats in case they left the server
+			foreach (TeammateScoreId in CA_SaveTeammateScoreIds) {
+				if (Scores.existskey(TeammateScoreId)) {
+					declare TeammateScore = Scores[TeammateScoreId];
+					declare CA_ValidClan as TeammateValidClan for TeammateScore = Const::C_NoClan;
+					if (CA_ValidClan == TeammateValidClan) {
+						declare CA_SavedStats as TeammateSavedStats for TeammateScore = Integer[Integer];
+						TeammateValidClan = _Clan;
+						TeammateSavedStats = _Stats;
+					}
+				}
 			}
 		}
 	}
-	foreach (Player in ClanPlayers) {
-		declare UI <=> UIManager.GetUI(Player);
-		if (UI != Null) {
-			UI.SpectatorAutoTarget = TargetId;
+	CA_ValidClan = _Clan;
+		
+	if (Hud != Null && Hud.ScoresTable != Null) {
+		declare TeammateNames = "";
+		foreach (ScoreId in CA_SaveTeammateScoreIds) {
+			if (Scores.existskey(ScoreId)) {
+				if (TeammateNames != "") TeammateNames ^= " + ";
+				TeammateNames ^= "$<"^Scores[ScoreId].User.Name^"$>";
+			}
 		}
+		if (TeammateNames == "") TeammateNames = "-";
+		Hud.ScoresTable.SetColumnValue(_Score, "BestTeammate", TeammateNames);
 	}
 }
-
-// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
-/** Set the best checkpoint times of a
- *	player
- *
- *	@param	_CheckpointTimes					The time at each checkpoint of the race
- *	@param	_Score										The player's score
- */
-Void CA_SetPlayerBestCheckpointTimes(Integer[Ident][Integer] _CheckpointTimes, CTmScore _Score) {
-	if (_Score == Null) return;
-	declare ChaseAttack_BestCheckpointTimes for _Score = Integer[Ident][Integer];
-	ChaseAttack_BestCheckpointTimes = _CheckpointTimes;
+Void SetStats(Integer _Clan, Ident[Ident] _TeammateScoreIds, CTmScore _Score) {
+	SetStats(_Clan, Integer[Integer], _TeammateScoreIds, _Score);
+}
+Void SetStats(Integer[Integer] _Stats, CTmScore _Score) {
+	SetStats(Const::C_NoClan, _Stats, Ident[Ident], _Score);
 }
 
-// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
-/** Get the best checkpoint times of a
- *	player
- *
- *	@param	_Score										The score of the player to check
- *
- *	@return														The time at each checkpoint
- */
-Integer[Ident][Integer] CA_GetPlayerBestCheckpointTimes(CTmScore _Score) {
-	if (_Score == Null) return Integer[Ident][Integer];
-	declare ChaseAttack_BestCheckpointTimes for _Score = Integer[Ident][Integer];
-	return ChaseAttack_BestCheckpointTimes;
+Void ResetStats(CTmScore _Score) {
+	declare CA_ValidClan for _Score = Const::C_NoClan;
+	declare CA_SavedStats for _Score = Integer[Integer];
+	declare CA_SaveTeammateScoreIds for _Score = Ident[Ident];
+	CA_ValidClan = Const::C_NoClan;
+	CA_SavedStats.clear();
+	CA_SaveTeammateScoreIds.clear();
+}
+
+Integer GetStats_ValidClan(CTmScore _Score) {
+	declare CA_ValidClan for _Score = Const::C_NoClan;
+	return CA_ValidClan;
+}
+Integer[Integer] GetStats_SavedStats(CTmScore _Score) {
+	declare CA_SavedStats for _Score = Integer[Integer];
+	return CA_SavedStats;
+}
+Ident[Ident] GetStats_SavedTeammateScoreIds(CTmScore _Score) {
+	declare CA_SaveTeammateScoreIds for _Score = Ident[Ident];
+	return CA_SaveTeammateScoreIds;
 }
 
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
@@ -1581,7 +1438,7 @@ Integer[Ident][Integer] CA_GetPlayerBestCheckpointTimes(CTmScore _Score) {
  *
  *	@param	_ClanPlayerIds						The ids of the players of the team
  */
-Void CA_UpdateTeamUI(Ident[] _ClanPlayerIds) {
+Void UpdateTeamUI(Ident[] _ClanPlayerIds) {
 	declare ClanPlayers = CTmPlayer[];
 	foreach (PlayerId in _ClanPlayerIds) {
 		if (AllPlayers.existskey(PlayerId)) {
@@ -1593,286 +1450,161 @@ Void CA_UpdateTeamUI(Ident[] _ClanPlayerIds) {
 	}
 }
 
-// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
-/** Generate a new clan id
- *
- *	@param	_ClanPlayerIds						All clan players
- *
- *	@return														The id for the new clan
- */
-Integer CA_GetNewClanId(Ident[][Integer] _Clans) {
-	declare Clans = _Clans.sortkey();
-	declare Count = 0;
-	foreach (Clan => PlayersIds in Clans) {
-		if (Clan != Count && !Clans.existskey(Count)) {
-			return Count;
+Void AddPlayerToClan(Integer _Clan, CTmPlayer _Player) {
+	if (_Player == Null) return;
+	
+	TeamSelectionUI::UseRandomTeammate(False, _Player);
+	ChaseUI::SetChaseAttackClan(_Clan, _Player);
+	CheckpointRankingUI::Enable(True, _Player);
+	
+	declare ClanPlayerIds = Clans::GetClan(_Clan);
+	UpdateTeamUI(ClanPlayerIds);
+	
+	// Special behavior for the current teammate system
+	if (ClanPlayerIds.count == 2) {
+		if (
+			AllPlayers.existskey(ClanPlayerIds[0]) &&
+			AllPlayers.existskey(ClanPlayerIds[1])
+		) {
+			declare Player1 <=> AllPlayers[ClanPlayerIds[0]];
+			declare Player2 <=> AllPlayers[ClanPlayerIds[1]];
+			TeamSelectionUI::SetTeammate(Player1, Player2);
+			TeamSelectionUI::SetTeammate(Player2, Player1);
 		}
-		Count += 1;
 	}
-	return Count;
+		
+	Log::Log("""[ChaseAttack] {{{_Player.Id}}} joins clan {{{_Clan}}}""");
 }
 
-// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
-/** Get the players of a clan
- *
- *	@param	_Clans										All clan players
- *	@param	_Clan											The clan to get
- *
- *	@return														The clan's players
- */
-CTmPlayer[] CA_GetClanPlayers(Ident[][Integer] _Clans, Integer _Clan) {
-	declare ClanPlayers = CTmPlayer[];
-	
-	if (_Clans.existskey(_Clan)) {
-		declare ClanPlayerIds = _Clans[_Clan];
-		foreach (PlayerId in ClanPlayerIds) {
-			if (AllPlayers.existskey(PlayerId)) {
-				ClanPlayers.add(AllPlayers[PlayerId]);
+Void RemovePlayersFromClan(Integer _Clan, Ident[] _PlayerIdsToRemove, Integer[Integer] _Stats) {
+	declare Integer[] ClansLosingPlayers;
+	foreach (PlayerId in _PlayerIdsToRemove) {
+		if (AllPlayers.existskey(PlayerId)) {
+			declare Player <=> AllPlayers[PlayerId];
+			TeamSelectionUI::SetTeammate(Null, Player);
+			ChaseUI::SetChaseAttackClan(Const::C_NoClan, Player);
+			CheckpointRankingUI::Enable(False, Player);
+			TeamUI::SetTeam(CTmPlayer[], Player);
+			CheckpointTimeUI::ResetCheckpointTime(Player);
+			CheckpointRankingUI::ResetCheckpointRanking(Player);
+			FinishTimeoutUI::SetTimeout(-1, Player);
+			RestartUI::ResetRestart(Player);
+			MedalUI::CancelRaceMedal(Player);
+			MedalUI::CancelMedalCounter(Player);
+			ChaseUI::SetVisibility(False, Player);
+			
+			declare UI <=> UIManager.GetUI(Player);
+			if (UI != Null) {
+				UI.UIStatus = CUIConfig::EUIStatus::None;
+			}
+			
+			SetStats(_Stats, Player.Score);
+			
+			if (TM::IsRacing(Player)) {
+				TM::WaitRace(Player);
 			}
 		}
+		Log::Log("""[ChaseAttack] {{{PlayerId}}} leaves clan {{{_Clan}}}""");
 	}
-	
-	return ClanPlayers;
+	UpdateTeamUI(Clans::GetClan(_Clan));
 }
 
-// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
-/** Set the clan of a player
- *
- *	@param	_Clan											The clan of the player
- *	@param	_Player										The player to check
- */
-Void CA_SetPlayerClan(Integer _Clan, CTmPlayer _Player) {
-	if (_Player == Null) return;
-	
-	declare ChaseAttack_Clan for _Player = -1;
-	ChaseAttack_Clan = _Clan;
-}
-
-// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
-/** Get the clan of a player
- *
- *	@param	_Player										The player to check
- *
- *	@return														The clan of the player if found
- *																		-1 otherwise
- */
-Integer CA_GetPlayerClan(CTmPlayer _Player) {
-	if (_Player == Null) return -1;
-	
-	declare ChaseAttack_Clan for _Player = -1;
-	return ChaseAttack_Clan;
-}
-
-// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
-/** Make a player join a clan
- *
- *	@param	_Clans										The current clans
- *	@param	_Penalties								The penalties of each clan
- *	@param	_Clan											The clan to join
- *	@param	_Player										Id of the player joining
- *
- *	@return														The new clans
- */
-Ident[][Integer] CA_JoinClan(Ident[][Integer] _Clans, Integer[Integer] _Penalties, Integer _Clan, Ident _PlayerId) {
-	if (_PlayerId == NullId || !_Clans.existskey(_Clan)) return _Clans;
-	
-	declare UpdatedClans = _Clans;
-	UpdatedClans[_Clan].add(_PlayerId);
-	
-	if (AllPlayers.existskey(_PlayerId)) {
-		declare Player <=> AllPlayers[_PlayerId];
-		CA_SetPlayerClan(_Clan, Player);
-		ChaseUI::SetChaseAttackClan(_Clan, Player);
-		ChaseUI::SetVisibility(True, Player);
-		if (_Penalties.existskey(_Clan)) {
-			ChaseUI::SetPenalties(_Penalties[_Clan], Player);
-		} else {
-			ChaseUI::SetPenalties(0, Player);
-		}
-		Log::Log("""[ChaseAttack] {{{Player.User.Login}}} joins clan {{{_Clan}}}""");
-	}
-	
-	CA_UpdateTeamUI(UpdatedClans[_Clan]);
-	
-	return UpdatedClans;
-}
-
-// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
-/** Make a player leave a clan
- *
- *	@param	_Clans										The current clans
- *	@param	_Player										Id of the player leaving
- *
- *	@return														The new clans
- */
-Ident[][Integer] CA_LeaveClan(Ident[][Integer] _Clans, Ident _PlayerId) {
-	if (_PlayerId == NullId) return _Clans;
-	
-	declare UpdatedClans = _Clans;
-	declare ClansToLeave = Integer[];
-	declare Player = CTmPlayer;
-	if (AllPlayers.existskey(_PlayerId)) {
-		Player <=> AllPlayers[_PlayerId];
-	}
-	foreach (Clan => PlayersIds in _Clans) {
-		declare Removed = UpdatedClans[Clan].remove(_PlayerId);
-		if (Removed) {
-			if (Player != Null) Log::Log("""[ChaseAttack] {{{Player.User.Login}}} leaves clan {{{Clan}}}""");
-		}
-		CA_UpdateTeamUI(UpdatedClans[Clan]);
-	}
-	CA_SetPlayerClan(-1, Player);
-	ChaseUI::SetChaseAttackClan(-1, Player);
-	ChaseUI::SetVisibility(False, Player);
-	TeamUI::ResetTeam(Player);
-	RestartUI::ResetRestart(Player);
-	
-	return UpdatedClans;
-}
-
-// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
-/** Make a player joins the lobby
- *
- *	@param	_LobbyPlayers							Id of the players currently in the lobby
- *	@param	_Player										The player to insert in the lobby
- *
- *	@return														The updated lobby players ids
- */
-Ident[] CA_JoinLobby(Ident[] _LobbyPlayers, CTmPlayer _Player) {
-	if (_Player == Null) return _LobbyPlayers;
+Ident[] AddPlayerToLobby(Ident[] _LobbyPlayers, CTmPlayer _Player) {
+	if (_Player == Null || _LobbyPlayers.exists(_Player.Id)) return _LobbyPlayers;
 	
 	declare LobbyPlayers = _LobbyPlayers;
-	if (!LobbyPlayers.exists(_Player.Id)) {
-		LobbyPlayers.add(_Player.Id);
-		Log::Log("""[ChaseAttack] CA_JoinLobby() > {{{_Player.User.Login}}} joins the lobby""");
-	} else {
-		Log::Log("""[ChaseAttack] CA_JoinLobby() > {{{_Player.User.Login}}} is already in the lobby""");
+	LobbyPlayers.add(_Player.Id);
+	TeamSelectionUI::Enable(True, _Player);
+	ChaseTuto::IsInLobby(True, _Player);
+	TeamSelectionUI::SetLobbyPlayers(LobbyPlayers);
+	declare UI <=> UIManager.GetUI(_Player);
+	if (UI != Null) {
+		UI.SpectatorForceCameraType = 2;
+	}
+	Log::Log("""[ChaseAttack] {{{_Player.Id}}} joins the lobby""");
+	
+	return LobbyPlayers;
+}
+
+Ident[] RemovePlayersFromLobby(Ident[] _LobbyPlayers, Ident[] _PlayerIdsToRemove) {
+	declare LobbyPlayers = _LobbyPlayers;
+	
+	foreach (PlayerId in _PlayerIdsToRemove) {
+		declare Removed = LobbyPlayers.remove(PlayerId);
+		if (AllPlayers.existskey(PlayerId)) {
+			declare Player <=> AllPlayers[PlayerId];
+			TeamSelectionUI::Enable(False, Player);
+			ChaseTuto::IsInLobby(False, Player);
+			declare UI <=> UIManager.GetUI(Player);
+			if (UI != Null) {
+				UI.SpectatorForceCameraType = -1;
+			}
+			
+			if (TM::IsRacing(Player)) {
+				TM::WaitRace(Player);
+			}
+		}
+		Log::Log("""[ChaseAttack] {{{PlayerId}}} leaves the lobby""");
 	}
 	
-	declare ChaseAttack_IsInLobby for _Player = False;
-	ChaseAttack_IsInLobby = True;
+	TeamSelectionUI::SetLobbyPlayers(LobbyPlayers);
 	
 	return LobbyPlayers;
 }
 
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
-/** Make a player leaves the lobby
+/** Set the best checkpoint times of a
+ *	player
  *
- *	@param	_LobbyPlayers							Id of the players currently in the lobby
- *	@param	_Player										The player to remove from the lobby
- *
- *	@return														The updated lobby players ids
+ *	@param	_CheckpointTimes					The time at each checkpoint of the race
+ *	@param	_Score										The player's score
  */
-Ident[] CA_LeaveLobby(Ident[] _LobbyPlayers, CTmPlayer _Player) {
-	if (_Player == Null) return _LobbyPlayers;
-	
-	declare LobbyPlayers = _LobbyPlayers;
-	declare Removed = LobbyPlayers.remove(_Player.Id);
-	if (Removed) {
-		Log::Log("""[ChaseAttack] CA_LeaveLobby() > {{{_Player.User.Login}}} left the lobby""");
-	} else {
-		Log::Log("""[ChaseAttack] CA_LeaveLobby() > {{{_Player.User.Login}}} was not in the lobby""");
-	}
-	
-	declare ChaseAttack_IsInLobby for _Player = False;
-	ChaseAttack_IsInLobby = False;
-	
-	return LobbyPlayers;
+Void SetPlayerBestCheckpointTimes(Integer[Ident][Integer] _CheckpointTimes, CTmScore _Score) {
+	if (_Score == Null) return;
+	declare ChaseAttack_BestCheckpointTimes for _Score = Integer[Ident][Integer];
+	ChaseAttack_BestCheckpointTimes = _CheckpointTimes;
 }
 
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
-/** Check if the given player is in the lobby
+/** Get the best checkpoint times of a
+ *	player
  *
- *	@param	_Player										The player to check
+ *	@param	_Score										The score of the player to check
  *
- *	@return														True if the player is in the lobby,
- *																		False otherwise
+ *	@return														The time at each checkpoint [LapNb => [BlockId => Time]]
  */
-Boolean CA_IsInLobby(CTmPlayer _Player) {
-	if (_Player == Null) return False;
-	declare ChaseAttack_IsInLobby for _Player = False;
-	return ChaseAttack_IsInLobby;
+Integer[Ident][Integer] GetPlayerBestCheckpointTimes(CTmScore _Score) {
+	if (_Score == Null) return Integer[Ident][Integer];
+	declare ChaseAttack_BestCheckpointTimes for _Score = Integer[Ident][Integer];
+	return ChaseAttack_BestCheckpointTimes;
 }
 
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
-/** Update the lobby presence variable
- *	on the player based on the given
- *	list of player ids currently
- *	in the lobby
+/** Set the best checkpoint cumulated
+ *	points of a player
  *
- *	@param	_LobbyPlayers							Id of the players currently in the lobby
+ *	@param	_CheckpointPoints					The points cumulated by the player since the start 
+ *																		of the race at each checkpoint
+ *	@param	_Score										The player's score
  */
-Void CA_ForceUpdateLobbyPresence(Ident[] _LobbyPlayers) {
-	foreach (Player in AllPlayers) {
-		declare ChaseAttack_IsInLobby for Player = False;
-		ChaseAttack_IsInLobby = _LobbyPlayers.exists(Player.Id);
-	}
+Void SetPlayerBestCheckpointPoints(Integer[Ident][Integer] _CheckpointPoints, CTmScore _Score) {
+	if (_Score == Null) return;
+	declare ChaseAttack_BestCheckpointPoints for _Score = Integer[Ident][Integer];
+	ChaseAttack_BestCheckpointPoints = _CheckpointPoints;
 }
 
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
-/** Give a respawn penalty to a player
+/** Get the best checkpoint points of a
+ *	player
  *
- *	@param	_Duration									The duration of a single respawn penalty
- *	@param	_Player										The player receiving the penalty
+ *	@param	_Score										The score of the player to check
+ *
+ *	@return														The points cumulated at each checkpoint [LapNb => [BlockId => Points]]
  */
-Void CA_GiveRespawnPenalty(Integer _Duration, CTmPlayer _Player) {
-	if (_Player == Null) return;
-	
-	declare CA_RespawnPenaltyNb for _Player = 0;
-	declare CA_RespawnPenaltyEndTime for _Player = -1;
-	CA_RespawnPenaltyNb += 1;
-	if (CA_RespawnPenaltyNb > C_RespawnPenaltyNbMax) CA_RespawnPenaltyNb = C_RespawnPenaltyNbMax;
-	CA_RespawnPenaltyEndTime = Now + (CA_RespawnPenaltyNb * _Duration * 1000);
-	
-	ChaseUI::SetRespawnPenaltyEndTime(CA_RespawnPenaltyEndTime, _Player);
-	
-	Log::Log("""[ChaseAttack] {{{_Player.User.Login}}} receives a respawn penalty. Number : {{{CA_RespawnPenaltyNb}}} | End time : {{{CA_RespawnPenaltyEndTime}}}""");
-}
-
-// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
-/** Reset the respawn penalty of a player
- *
- *	@param	_Player										The player to reset
- */
-Void CA_ResetRespawnPenalty(CTmPlayer _Player) {
-	if (_Player == Null) return;
-	
-	declare CA_RespawnPenaltyNb for _Player = 0;
-	declare CA_RespawnPenaltyEndTime for _Player = -1;
-	CA_RespawnPenaltyNb = 0;
-	CA_RespawnPenaltyEndTime = -1;
-	
-	ChaseUI::SetRespawnPenaltyEndTime(CA_RespawnPenaltyEndTime, _Player);
-}
-
-// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
-/** Get the time at which the respawn
- *	penalty of a player will end
- *
- *	@param	_Player										The player to check
- *
- *	@return														The penalty end time if the player had one
- *																		-1 otherwise
- */
-Integer CA_GetRespawnPenaltyEndTime(CTmPlayer _Player) {
-	if (_Player == Null) return -1;
-	
-	declare CA_RespawnPenaltyEndTime for _Player = -1;
-	return CA_RespawnPenaltyEndTime;
-}
-
-// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
-/** Check if a player is currently
- *	under a respawn penalty
- *
- *	@param	_Player										The player to check
- *
- *	@return														True if the player is under a respawn penalty
- *																		False otherwise
- */
-Boolean CA_HasRespawnPenalty(CTmPlayer _Player) {
-	declare RespawnPenaltyEndTime = CA_GetRespawnPenaltyEndTime(_Player);
-	return (RespawnPenaltyEndTime >= 0 && Now < RespawnPenaltyEndTime);
+Integer[Ident][Integer] GetPlayerBestCheckpointPoints(CTmScore _Score) {
+	if (_Score == Null) return Integer[Ident][Integer];
+	declare ChaseAttack_BestCheckpointPoints for _Score = Integer[Ident][Integer];
+	return ChaseAttack_BestCheckpointPoints;
 }
 
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
@@ -1881,7 +1613,7 @@ Boolean CA_HasRespawnPenalty(CTmPlayer _Player) {
  *	@param	_Medal										The medal to give
  *	@param	_Score										The score of the player receiving the medal
  */
-Void CA_GiveMedal(Integer _Medal, CTmScore _Score) {
+Void GiveMedal(Integer _Medal, CTmScore _Score) {
 	if (_Score == Null) return;
 	
 	declare CA_Medals for _Score = Integer[Integer];
@@ -1912,7 +1644,7 @@ Void CA_GiveMedal(Integer _Medal, CTmScore _Score) {
  *	@return														The players' medal
  *																		[Const::C_Medal_XXX => Number of medals]
  */
-Integer[Integer] CA_GetMedals(CTmScore _Score) {
+Integer[Integer] GetMedals(CTmScore _Score) {
 	if (_Score == Null) return Integer[Integer];
 	
 	declare CA_Medals for _Score = Integer[Integer];
@@ -1924,7 +1656,7 @@ Integer[Integer] CA_GetMedals(CTmScore _Score) {
  *
  *	@param	_Score										The score of the player to reset
  */
-Void CA_ResetMedals(CTmScore _Score) {
+Void ResetMedals(CTmScore _Score) {
 	if (_Score == Null) return;
 	
 	declare CA_Medals for _Score = Integer[Integer];
@@ -1956,6 +1688,23 @@ Void AddRacePoints(Integer _Points, CTmScore _Score) {
 }
 
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/** Give checkpoint points to a player
+ *
+ *	@param	_LapNb										The lap number
+ *	@param	_BlockId									The block id of the checkpoint
+ *	@param	_Points										The number of points to add
+ *	@param	_Score										The score to update
+ */
+Void AddCheckpointsPoints(Integer _LapNb, Ident _BlockId, Integer _Points, CTmScore _Score) {
+	if (_Score == Null) return;
+	declare ChaseAttack_CheckpointsPoints for _Score = Integer[Ident][Integer];
+	if (!ChaseAttack_CheckpointsPoints.existskey(_LapNb)) {
+		ChaseAttack_CheckpointsPoints[_LapNb] = Integer[Ident];
+	}
+	ChaseAttack_CheckpointsPoints[_LapNb][_BlockId] = _Points;
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
 /** Update the best race points of a player
  *
  *	@param	_Points										The number of points
@@ -1976,6 +1725,17 @@ Void ResetRacePoints(CTmScore _Score) {
 	if (_Score == Null) return;
 	declare ChaseAttack_RacePoints for _Score = 0;
 	ChaseAttack_RacePoints = 0;
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/** Reset the checkpoints points of a player
+ *
+ *	@param	_Score										The score of the player to reset
+ */
+Void ResetCheckpointsPoints(CTmScore _Score) {
+	if (_Score == Null) return;
+	declare ChaseAttack_CheckpointsPoints for _Score = Integer[Ident][Integer];
+	ChaseAttack_CheckpointsPoints.clear();
 }
 
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
@@ -2001,6 +1761,20 @@ Integer GetRacePoints(CTmScore _Score) {
 	if (_Score == Null) return 0;
 	declare ChaseAttack_RacePoints for _Score = 0;
 	return ChaseAttack_RacePoints;
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/** Get the points cumulated by a player
+ *	at each checkpoint
+ *
+ *	@param	_Score										The score of the player to check
+ *
+ *	@return														The checkpoints points
+ */
+Integer[Ident][Integer] GetCheckpointsPoints(CTmScore _Score) {
+	if (_Score == Null) return Integer[Ident][Integer];
+	declare ChaseAttack_CheckpointsPoints for _Score = Integer[Ident][Integer];
+	return ChaseAttack_CheckpointsPoints;
 }
 
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
@@ -2045,6 +1819,7 @@ Void InitScore(CTmScore _Score) {
 	Chase_BestCombo = 0;
 	
 	ResetRacePoints(_Score);
+	ResetCheckpointsPoints(_Score);
 	ResetBestRacePoints(_Score);
 }
 
@@ -2083,6 +1858,120 @@ Void UpdateRanking() {
 	}
 	
 	MB_SortScores(CTmMode::ETmScoreSortOrder::TotalPoints);
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Send checkpoint ranking to the UI
+Void UpdateCheckpointRankingUI(Integer[CTmScore] _RankedScores, Integer[CTmScore] _ScoreTimes, Integer _Rank, CTmPlayer _Player) {
+	declare Integer[] Times;
+	declare Text[] Names;
+	declare Integer[] Ranks;
+	declare PlayerKey = 1;
+	declare Count = 1;
+	declare Min = _Rank - Const::C_CheckpointRanking_PlayersNb + 2;
+	if (Min < 1) Min = 1;
+	declare Max = _Rank;
+	if (Max < Const::C_CheckpointRanking_PlayersNb) Max = Const::C_CheckpointRanking_PlayersNb;
+	
+	foreach (Score => Points in _RankedScores) {
+		if (Count == 1 || (Count >= Min && Count <= Max)) {
+			Times.add(_ScoreTimes[Score]);
+			Names.add(Score.User.Name);
+			Ranks.add(Count);
+			if (Score == _Player.Score) PlayerKey = Times.count - 1;
+		}
+		if (Times.count >= Const::C_CheckpointRanking_PlayersNb) break;
+		Count += 1;
+	}
+	
+	CheckpointRankingUI::UpdateCheckpointRanking(Ranks, Names, Times, PlayerKey, _Player);
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/**	Update the rank of a player at a given
+ *	checkpoint
+ *
+ *	@param	_Player										The player whose you want to know the rank
+ *
+ *	@return														The rank of the player
+ */
+Integer UpdateCheckpointRanking(CTmPlayer _Player, Integer _LapNb, Ident _BlockId, Integer _Time, Integer _Points) {
+	if (_Player == Null) return 0;
+	
+	// Determine the worst rank the player can get
+	MB_SortScores(CTmMode::ETmScoreSortOrder::TotalPoints);
+	declare WorstRank = 1;
+	declare CurrentRank = 1;
+	declare NobodyFinished = True;
+	foreach (Rank => Score in Scores) {
+		if (Score != _Player.Score && Score.BestRace.Time >= 0) WorstRank += 1;
+		if (Score == _Player.Score) CurrentRank = Rank + 1;
+		if (Score.BestRace.Time >= 0) NobodyFinished = False;
+	}
+	if (CurrentRank > WorstRank) WorstRank = CurrentRank;
+	
+	// If nobody finished yet the player can only be ranked first
+	// If the worst rank the player can get is first, then just return it now
+	if (NobodyFinished || WorstRank <= 1) {
+		CheckpointRankingUI::UpdateCheckpointRanking([1], [_Player.User.Name], [_Time], 0, _Player);
+		return 1;
+	}
+	
+	// If the player do not have a time, return the worst rank
+	if (_Time < 0) return WorstRank;
+	
+	declare Integer[CTmScore][Integer] SortingTime;
+	
+	// Insert the time and points of the player to rank
+	SortingTime[_Time] = Integer[CTmScore];
+	SortingTime[_Time][_Player.Score] = -_Points;
+	
+	// Get all players (except the player to rank) best time and points
+	foreach (Score in Scores) {
+		if (Score.Id != _Player.Score.Id) {
+			declare BestCheckpointTimes = GetPlayerBestCheckpointTimes(Score);
+			declare BestCheckpointPoints = GetPlayerBestCheckpointPoints(Score);
+			if (
+				BestCheckpointTimes.existskey(_LapNb) &&
+				BestCheckpointTimes[_LapNb].existskey(_BlockId) &&
+				BestCheckpointPoints.existskey(_LapNb) &&
+				BestCheckpointPoints[_LapNb].existskey(_BlockId)
+			) {
+				declare Time = BestCheckpointTimes[_LapNb][_BlockId];
+				declare Points = BestCheckpointPoints[_LapNb][_BlockId];
+				if (!SortingTime.existskey(Time)) {
+					SortingTime[Time] = Integer[CTmScore];
+				}
+				SortingTime[Time][Score] = -Points;
+			}
+		}
+	}
+	
+	// Sort the players time and points
+	declare Integer[CTmScore] RankedScores;
+	declare Integer[CTmScore] ScoreTimes;
+	declare Points = Scores.count + 1;
+	SortingTime = SortingTime.sortkey();
+	foreach (Time => SortingScores in SortingTime) {
+		declare SortedScores = SortingScores.sort();
+		foreach (Score => SortedPoints in SortedScores) {
+			RankedScores[Score] = -Points;
+			ScoreTimes[Score] = Time;
+			Points -= 1;
+		}
+	}
+	
+	// Find the player rank
+	RankedScores = RankedScores.sort();
+	declare Rank = 1;
+	foreach (Score => Points in RankedScores) {
+		if (Score == _Player.Score) break;
+		Rank += 1;
+	}
+	
+	UpdateCheckpointRankingUI(RankedScores, ScoreTimes, Rank, _Player);
+	
+	return Rank;
 }
 
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
@@ -2166,105 +2055,101 @@ Integer GetCheckpointScore(Integer _LeaderTime, Real _LeaderSpeed, Integer _Play
 	return Chase::GetCheckpointScore(C_CheckpointScoreMax, _LeaderTime, _LeaderSpeed, _PlayerTime, _PlayerSpeed);
 }
 
-// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
-/** Send a message to a clan
- *
- *	@param	_StatusMessage						The status message
- *	@param	_BigMessage								The big message
- *	@param	_StartTime								The clan that will receive the message
- *	@param	_PlayerId									The id of the player that will see the big message
- */
-Void SendMessage(Text _StatusMessage, Text _BigMessage, Integer _Clan, Ident _PlayerId) {
-	if (_BigMessage == "" && _StatusMessage == "") return;
+Void InitializeRace(Integer _Clan) {
+	Clans::ResetRespawnTime(_Clan);
+	Clans::ResetNextCheckpointPlayerId(_Clan);
+	Clans::ResetCheckpointsProgress(_Clan);
+	Clans::ResetCurrentCheckpoint(_Clan);
+	Clans::ResetPenalties(_Clan);
+	Clans::ClearWaypointEvents(_Clan);
+	Clans::ResetRelayStartTime(_Clan);
+	Clans::ResetCheckpointTimes(_Clan);
+	Clans::ResetFinishTimes(_Clan);
+	Clans::SetValidRace(_Clan, True);
 	
-	foreach (Player in AllPlayers) {
-		declare Clan = -1;
-		// Spectators
-		if (Player.RequestsSpectate) {
-			Clan = ChaseUI::GetSpectatingClan(Player);
-		} 
-		// Players
-		else {
-			Clan = CA_GetPlayerClan(Player);
-		}
-		
-		if (Clan == _Clan) {
-			if (_StatusMessage != "") Message::SendStatusMessage(Player, _StatusMessage, 3000, 1);
-			if (_BigMessage != "") {
-				if (_PlayerId == NullId || _PlayerId == Player.Id) Message::SendBigMessage(Player, _BigMessage, 3000, 1);
-			}
-		}
+	declare netwrite Integer Net_Chase_NextPlayerUpdate for Teams[0];
+	declare netwrite Text[Integer] Net_Chase_NextPlayer for Teams[0];
+	declare netwrite Integer[Integer] Net_Chase_NextCheckpoint for Teams[0];
+	declare netwrite Integer[Integer] Net_Chase_RelayTime for Teams[0];
+	declare Removed = False;
+	Removed = Net_Chase_NextPlayer.removekey(_Clan);
+	Removed = Net_Chase_NextCheckpoint.removekey(_Clan);
+	Removed = Net_Chase_RelayTime.removekey(_Clan);
+	Net_Chase_NextPlayerUpdate = Now;
+	
+	declare Tmp = SetNextCheckpointPlayer(Null, _Clan, "", -1, -1, Integer[Integer]);
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/** Reset the markers of a player
+ *
+ *	@param	_Player										The player to reset
+ */
+Void ResetMarkers(CTmPlayer _Player) {
+	if (_Player == Null) return;
+	ChaseUI::SendRelayInfo(Ident[Integer], Integer[CTmPlayer], _Player);
+	ChaseUI::SetCheckpointMarkersVisibility(False, _Player);
+	
+	declare UI <=> UIManager.GetUI(_Player);
+	if (UI != Null) {
+		UI.MarkersXML = "";
 	}
 }
 
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
-/** Update the relay marker
+/** Update the clan's marker
  *
+ *	@param	_CheckpointMarkers				The xml for the markers attached to the
+ *																		Checkpoints and finishes
  *	@param	_NextCheckpointPlayerId	Id of the player that must cross
  *																		the next checkpoint for each clan
  *																		[Clan => PlayerId]
+ *	@param	_Clan											The clan to update
+ *	@param	_TargetPlayer							Apply the update only to the given player
+ *																		If null apply the update to all members and spectators of the clan
  */
-Void UpdateMarker(Ident[Integer] _NextCheckpointPlayerId) {
-	declare I = 0;
-	declare CheckpointMarkers = "";
-	foreach (Pos in MapCheckpointPos) {
-		CheckpointMarkers ^= """<marker pos="{{{Pos.X}}} {{{Pos.Y+3}}} {{{Pos.Z}}}" visibility="WhenVisible" distmax="{{{C_CheckpointMarkerDistance}}}" manialinkframeid="marker-checkpoint-{{{I}}}" />""";
-		I += 1;
+Void UpdateMarkers(Text _CheckpointMarkers, Ident[Integer] _NextCheckpointPlayerId, Integer _Clan, CTmPlayer _TargetPlayer) {
+	declare NextCheckpointPlayerId = NullId;
+	if (_NextCheckpointPlayerId.existskey(_Clan)) NextCheckpointPlayerId = _NextCheckpointPlayerId[_Clan];
+	
+	declare TeammateKey = 0;
+	declare NextCheckpointPlayerMarker = "";
+	declare TeammatesMarkers = "";
+	declare Integer[CTmPlayer] TeammatesClan;
+	declare CTmPlayer[] PlayersToUpdate;
+	
+	foreach (Player in Players) {
+		if (Clans::GetPlayerClan(Player.Id) == _Clan) {
+			if (_TargetPlayer == Null || _TargetPlayer == Player) PlayersToUpdate.add(Player);
+			if (Player.Id == NextCheckpointPlayerId) {
+				NextCheckpointPlayerMarker ^= """<marker box="0 2 0" playerlogin="{{{Player.User.Login}}}" manialinkframeid="marker-relay-clan1" />""";
+			} else {
+				TeammatesMarkers ^= """<marker box="0 2 0" playerlogin="{{{Player.User.Login}}}" visibility="WhenInFrustum" manialinkframeid="marker-player-{{{TeammateKey}}}" />""";
+				TeammatesClan[Player] = _Clan;
+				TeammateKey += 1;
+				
+			}
+		}
 	}
-	foreach (Pos in MapFinishLinePos) {
-		CheckpointMarkers ^= """<marker pos="{{{Pos.X}}} {{{Pos.Y+3}}} {{{Pos.Z}}}" visibility="WhenVisible" distmax="{{{C_CheckpointMarkerDistance}}}" manialinkframeid="marker-checkpoint-{{{I}}}" />""";
-		I += 1;
+	foreach (Spectator in Spectators) {
+		if (ChaseUI::GetSpectatingClan(Spectator) == _Clan) {
+			if (_TargetPlayer == Null || _TargetPlayer == Spectator) PlayersToUpdate.add(Spectator);
+		}
 	}
 	
-	declare MarkersClan = Text[Integer];
-	declare MarkersPlayer = Text[Ident];
-	declare PlayersToUpdate = CTmPlayer[][Integer];
-	foreach (Player in Players) {
-		declare Clan = CA_GetPlayerClan(Player);
-		if (Clan >= 0) {
-			if (TM::IsRacing(Player)) {
-				if (!MarkersClan.existskey(Clan)) {
-					MarkersClan[Clan] = "";
-				}
-				if (!PlayersToUpdate.existskey(Clan)) {
-					PlayersToUpdate[Clan] = CTmPlayer[];
-				}
-				declare MarkerImg = "";
-				if (_NextCheckpointPlayerId.existskey(Clan) && _NextCheckpointPlayerId[Clan] == Player.Id) {
-					MarkersClan[Clan] ^= """<marker box="0 2 0" playerlogin="{{{Player.User.Login}}}" manialinkframeid="marker-relay-clan1" />""";
-				} else {
-					MarkersClan[Clan] ^= """<marker box="0 2 0" playerlogin="{{{Player.User.Login}}}" visibility="WhenInFrustum" manialinkframeid="marker-player-{{{PlayersToUpdate[Clan].count}}}" />""";
-					PlayersToUpdate[Clan].add(Player);
-				}
+	foreach (Player in PlayersToUpdate) {
+		ResetMarkers(Player);
+		if (_Clan >= 0) {
+			declare UI <=> UIManager.GetUI(Player);
+			if (UI != Null) {
+				UI.MarkersXML ^= _CheckpointMarkers^NextCheckpointPlayerMarker^TeammatesMarkers;
 				
-				if (!MarkersPlayer.existskey(Player.Id)) {
-					MarkersPlayer[Player.Id] = "";
-				}
-				MarkersPlayer[Player.Id] ^= CheckpointMarkers;
-			}
-		}
-	}
-	foreach (Player in AllPlayers) {
-		declare UI <=> UIManager.GetUI(Player);
-		if (UI != Null) {
-			UI.MarkersXML = "";
-			declare Clan = CA_GetPlayerClan(Player);
-			if (MarkersClan.existskey(Clan) && PlayersToUpdate.existskey(Clan)) {
-				UI.MarkersXML ^= MarkersClan[Clan];
-				declare PlayersClans = Integer[CTmPlayer];
-				foreach (Player in PlayersToUpdate[Clan]) {
-					PlayersClans[Player] = Clan;
-				}
-				ChaseUI::SendRelayInfo(_NextCheckpointPlayerId, PlayersClans, Player);
-			} else {
-				ChaseUI::SendRelayInfo(_NextCheckpointPlayerId, Integer[CTmPlayer], Player);
-			}
-			if (Clan >= 0 && MarkersPlayer.existskey(Player.Id)) {
-				UI.MarkersXML ^= MarkersPlayer[Player.Id];
+				ChaseUI::SendRelayInfo(_NextCheckpointPlayerId, TeammatesClan, Player);
 				ChaseUI::SetCheckpointMarkersVisibility(True, Player);
-			} else {
-				ChaseUI::SetCheckpointMarkersVisibility(False, Player);
 			}
 		}
 	}
+}
+Void UpdateMarkers(Text _CheckpointMarkers, Ident[Integer] _NextCheckpointPlayerId, Integer _Clan) {
+	UpdateMarkers(_CheckpointMarkers, _NextCheckpointPlayerId, _Clan, Null);
 }

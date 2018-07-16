@@ -1,12 +1,13 @@
 /**
  * Chase team confirm UI
  */
-#Const Version    "2018-06-27"
+#Const Version    "2018-07-11"
 #Const ScriptName "ManiaApps/Nadeo/TrackMania/TeamConfirm_Client.Script.txt"
 
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
 // Libraries
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+#Include "TextLib" as TL
 #Include "ManiaApps/Nadeo/Layers.Script.txt" as Layers
 #Include "Libs/Nadeo/TrackMania/Chase/Constants2.Script.txt" as Const
 
@@ -29,7 +30,7 @@
  */
 Text Private_GetTeamConfirmML() {
 	//L16N [Chase Attack] Message displayed at the end of the map. The player can choose to stay with its current teammate or leave them.
-	declare Text_StayTogether = _("Stay as team?");
+	declare Text_StayTogether = TL::ToUpperCase(_("Stay as team?"));
 	declare Text_Yes = _("Yes");
 	declare Text_No = _("No");
 	//L16N [Chase Attack] Message displayed if all players of the team confirm that they want to stay in the team.
@@ -46,10 +47,11 @@ Text Private_GetTeamConfirmML() {
   <style class="text-default" textfont="Oswald" textcolor="ffffff" textsize="3" textemboss="1" />
   <style class="text-button" textfont="BiryaniDemiBold" textcolor="ffffff" textsize="3" textemboss="1" />
 </stylesheet>
-<frame id="frame-global">
-	<frame pos="-158 25" id="frame-team-confirm">
-		<frame size="70 27" id="frame-vote">
-			<frame pos="-71 0" id="frame-vote-slide">
+<frame id="frame-global" z-index="1" >
+		<quad z-index="-1" size="360 180" bgcolor="000" opacity="0" halign="center" valign="center" id="quad-dimmer" />
+		<frame pos="-35 20" id="frame-team-confirm">
+		<frame size="70 35" id="frame-vote">
+			<frame pos="71 0" id="frame-vote-slide">
 				<frame pos="0 -2" z-index="0">
 			    <quad pos="0 -3" z-index="0" size="70 1" valign="center" opacity="0.3" image="{{{Img_FootLine}}}" />
 			    <label z-index="1" size="70 5" valign="center2" text="{{{Text_StayTogether}}}" class="text-default" />
@@ -71,15 +73,19 @@ Text Private_GetTeamConfirmML() {
 					<label pos="1 -7" z-index="4" size="70 6" valign="center2" text="{{{Text_No}}}" class="text-button" />
 			    <quad pos="0 -11.5" z-index="0" size="70 1" valign="center" opacity="0.3" image="{{{Img_FootLine}}}" />
 				</frame>
+				<frame pos="0 -28" z-index="0" id="frame-teammate" >
+					<quad z-index="1" size="70 6" style="Bgs1" substyle="BgDialogBlur" opacity="0.1" bluramount="0.1" />
+					<quad z-index="2" size="70 6" bgcolor="111111" opacity="0.5" />
+					<label pos="1 -3" z-index="3" size="57 6" valign="center2" class="text-default" id="label-teammate-name" />
+					<label pos="69 -3" z-index="3" size="10 6" halign="right" valign="center2" class="text-default" id="label-teammate-selection" />
+				</frame>
 			</frame>
 		</frame>
-		<frame pos="0 -28" z-index="0" size="70 12" id="frame-result" >
-			<frame pos="-71 0" id="frame-result-slide">
-				<quad z-index="1" size="70 12" style="Bgs1" substyle="BgDialogBlur" opacity="0.1" bluramount="0.1" />
-				<quad z-index="2" size="70 12" bgcolor="111111" opacity="0.5" />
-				<label pos="1 -3" z-index="3" size="57 6" valign="center2" class="text-default" id="label-teammate-name" />
-				<label pos="69 -3" z-index="3" size="10 6" halign="right" valign="center2" class="text-default" id="label-teammate-selection" />
-				<label pos="1 -9" z-index="3" size="57 6" valign="center2" class="text-default" id="label-result" />
+		<frame pos="0 -34" z-index="0" size="70 6" id="frame-result" >
+			<frame pos="71 0" id="frame-result-slide">
+				<quad z-index="1" size="70 6" style="Bgs1" substyle="BgDialogBlur" opacity="0.1" bluramount="0.1" />
+				<quad z-index="2" size="70 6" bgcolor="111111" opacity="0.5" />
+				<label pos="1 -3" z-index="3" size="57 6" valign="center2" class="text-default" id="label-result" />
  			</frame>
 	  </frame>
 	</frame>
@@ -132,20 +138,30 @@ Void EnableButtons(CMlFrame _Frame_Buttons, Boolean _Enabled) {
 	}
 }
 
-Void SetResult(CMlFrame _Frame_Result, Integer _MySelection, Integer _TeammateSelection, Text _TeammateName) {
-	assert(_Frame_Result != Null, "You need to send the frame containing the result");
+Void SetTeammate(CMlFrame _Frame_Teammate, Integer _TeammateSelection, Text _TeammateName) {
+	assert(_Frame_Teammate != Null, "You need to send the frame containing the teammate");
 
-	declare Frame_ResultSlide <=> (_Frame_Result.GetFirstChild("frame-result-slide") as CMlFrame);
-	declare Label_TeammateName <=> (_Frame_Result.GetFirstChild("label-teammate-name") as CMlLabel);
-	declare Label_TeammateSelection <=> (_Frame_Result.GetFirstChild("label-teammate-selection") as CMlLabel);
-	declare Label_Result <=> (_Frame_Result.GetFirstChild("label-result") as CMlLabel);
+	declare Label_TeammateName <=> (_Frame_Teammate.GetFirstChild("label-teammate-name") as CMlLabel);
+	declare Label_TeammateSelection <=> (_Frame_Teammate.GetFirstChild("label-teammate-selection") as CMlLabel);
 
 	Label_TeammateName.Value = _TeammateName;
 	if (_TeammateSelection == {{{Const::C_StayAsTeam_No}}}) {
 		Label_TeammateSelection.Value = "{{{Text_No}}}";
-	} else {
+	} else if (_TeammateSelection == {{{Const::C_StayAsTeam_Yes}}}) {
 		Label_TeammateSelection.Value = "{{{Text_Yes}}}";
+	} else {
+		Label_TeammateSelection.Value = "-";
 	}
+}
+
+Void SetResult(CMlFrame _Frame_Result, CMlFrame _Frame_Teammate, Integer _MySelection, Integer _TeammateSelection, Text _TeammateName) {
+	assert(_Frame_Result != Null, "You need to send the frame containing the result");
+
+	declare Frame_ResultSlide <=> (_Frame_Result.GetFirstChild("frame-result-slide") as CMlFrame);
+	declare Label_Result <=> (_Frame_Result.GetFirstChild("label-result") as CMlLabel);
+
+	SetTeammate(_Frame_Teammate, _TeammateSelection, _TeammateName);
+
 	if (_TeammateSelection == {{{Const::C_StayAsTeam_No}}} || _MySelection == {{{Const::C_StayAsTeam_No}}}) {
 		Label_Result.Value = "{{{Text_TeamDisdanded}}}";
 	} else {
@@ -155,12 +171,13 @@ Void SetResult(CMlFrame _Frame_Result, Integer _MySelection, Integer _TeammateSe
 	if (_TeammateSelection == {{{Const::C_StayAsTeam_No}}} || _TeammateSelection == {{{Const::C_StayAsTeam_Yes}}}) {
 		AnimMgr.Add(Frame_ResultSlide, "<frame pos=\"0 0\" hidden=\"0\" />", 250, CAnimManager::EAnimManagerEasing::QuadOut);
 	} else {
-		AnimMgr.Add(Frame_ResultSlide, "<frame pos=\"-71 0\" hidden=\"1\" />", 250, CAnimManager::EAnimManagerEasing::QuadOut);
+		AnimMgr.Add(Frame_ResultSlide, "<frame pos=\"71 0\" hidden=\"1\" />", 250, CAnimManager::EAnimManagerEasing::QuadOut);
 	}
 }
 
 main() {
 	declare Frame_Global <=> (Page.GetFirstChild("frame-global") as CMlFrame);
+	declare Quad_Dimmer <=> (Frame_Global.GetFirstChild("quad-dimmer") as CMlQuad);
 	declare Frame_TeamConfirm <=> (Frame_Global.GetFirstChild("frame-team-confirm") as CMlFrame);
 	declare Frame_Vote <=> (Frame_Global.GetFirstChild("frame-vote") as CMlFrame);
 	declare Frame_VoteSlide <=> (Frame_Vote.GetFirstChild("frame-vote-slide") as CMlFrame);
@@ -168,6 +185,8 @@ main() {
 	declare Frame_Buttons <=> (Frame_Vote.GetFirstChild("frame-buttons") as CMlFrame);
 	declare Quad_BlinkYes <=> (Frame_Buttons.GetFirstChild("quad-yes-blink") as CMlQuad);
 	declare Quad_BlinkNo <=> (Frame_Buttons.GetFirstChild("quad-no-blink") as CMlQuad);
+	declare Frame_Teammate <=> (Frame_Vote.GetFirstChild("frame-teammate") as CMlFrame);
+
 	declare Frame_Result <=> (Frame_TeamConfirm.GetFirstChild("frame-result") as CMlFrame);
 	declare Frame_ResultSlide <=> (Frame_Result.GetFirstChild("frame-result-slide") as CMlFrame);
 
@@ -205,21 +224,32 @@ main() {
 				VoteEndTime = PrevHideTime - PrevDuration + VoteDuration;
 				Selection = Select(Frame_Buttons, {{{Const::C_StayAsTeam_Yes}}}); //< Select "Yes" by default
 				EnableButtons(Frame_Buttons, True);
+
+				declare TeammateName = "";
+				if (Owner != Null) {
+					declare netread Net_ChaseTeamConfirm_TeammateName for Owner = "";
+					TeammateName = Net_ChaseTeamConfirm_TeammateName;
+				}
+				SetTeammate(Frame_Teammate, {{{Const::C_StayAsTeam_None}}}, TeammateName);
+
 				IsVisible = True;
-				Frame_ResultSlide.RelativePosition_V3.X = -71.;
+				Frame_ResultSlide.RelativePosition_V3.X = 71.;
 				Frame_ResultSlide.Visible = False;
 				AnimMgr.Add(Frame_VoteSlide, "<frame pos=\"0 0\" hidden=\"0\" />", 250, CAnimManager::EAnimManagerEasing::QuadOut);
+				AnimMgr.Add(Quad_Dimmer, "<quad opacity=\"0.5\" hidden=\"0\" />", 250, CAnimManager::EAnimManagerEasing::QuadOut);
 			} else {
 				IsVisible = False;
-				AnimMgr.Add(Frame_ResultSlide, "<frame pos=\"-71 0\" hidden=\"1\" />", 250, CAnimManager::EAnimManagerEasing::QuadOut);
-				AnimMgr.Add(Frame_VoteSlide, "<frame pos=\"-71 0\" hidden=\"1\" />", Now + 125, 250, CAnimManager::EAnimManagerEasing::QuadOut);
+				AnimMgr.Add(Frame_ResultSlide, "<frame pos=\"71 0\" hidden=\"1\" />", 250, CAnimManager::EAnimManagerEasing::QuadOut);
+				AnimMgr.Add(Frame_VoteSlide, "<frame pos=\"71 0\" hidden=\"1\" />", Now + 125, 250, CAnimManager::EAnimManagerEasing::QuadOut);
+				AnimMgr.Add(Quad_Dimmer, "<quad opacity=\"0\" hidden=\"1\" />", 250, CAnimManager::EAnimManagerEasing::QuadOut);
 			}
 		}
 
 		if (IsVisible && GameTime >= PrevHideTime) {
 			IsVisible = False;
-			AnimMgr.Add(Frame_ResultSlide, "<frame pos=\"-71 0\" hidden=\"1\" />", 250, CAnimManager::EAnimManagerEasing::QuadOut);
-			AnimMgr.Add(Frame_VoteSlide, "<frame pos=\"-71 0\" hidden=\"1\" />", Now + 125, 250, CAnimManager::EAnimManagerEasing::QuadOut);
+			AnimMgr.Add(Frame_ResultSlide, "<frame pos=\"71 0\" hidden=\"1\" />", 250, CAnimManager::EAnimManagerEasing::QuadOut);
+			AnimMgr.Add(Frame_VoteSlide, "<frame pos=\"71 0\" hidden=\"1\" />", Now + 125, 250, CAnimManager::EAnimManagerEasing::QuadOut);
+			AnimMgr.Add(Quad_Dimmer, "<quad opacity=\"0\" hidden=\"1\" />", 250, CAnimManager::EAnimManagerEasing::QuadOut);
 		}
 
 		if (IsVisible) {
@@ -249,7 +279,7 @@ main() {
 					if (PrevTeammateSelection != Net_ChaseTeamConfirm_TeammateSelection) {
 						PrevTeammateSelection = Net_ChaseTeamConfirm_TeammateSelection;
 						declare netread Net_ChaseTeamConfirm_TeammateName for Owner = "";
-						SetResult(Frame_Result, Selection, PrevTeammateSelection, Net_ChaseTeamConfirm_TeammateName);
+						SetResult(Frame_Result, Frame_Teammate, Selection, PrevTeammateSelection, Net_ChaseTeamConfirm_TeammateName);
 					}
 				}
 			}

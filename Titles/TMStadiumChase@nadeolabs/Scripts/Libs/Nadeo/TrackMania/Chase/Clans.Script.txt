@@ -1,0 +1,856 @@
+/** 
+ *	Chasse Attack clans
+ */
+#Const Version		"2018-07-12"
+#Const ScriptName	"Libs/Nadeo/TrackMania/Chase/Clans.Script.txt"
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Libraries
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+#Include "Libs/Nadeo/Env.Script.txt" as Env
+#Include "Libs/Nadeo/Log.Script.txt" as Log
+#Include "Libs/Nadeo/TrackMania/Chase/Constants2.Script.txt" as Const
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Constants
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+#Const C_AverageRelayDurationsNb 25 //< Maximum number of relay durations to save to compute the average
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Globales
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+declare Ident[][Integer] G_Clans;
+declare Ident[Ident][Integer] G_ClansScoreIds;
+declare Integer[Ident] G_ClanPlayers;
+declare Integer[Integer] G_ClanRespawnTimes;
+declare Integer G_WaypointEvents_Id;
+declare Integer[Integer][Integer] G_WaypointEvents_Now;
+declare Integer[Integer][Integer] G_WaypointEvents_RaceTime;
+declare Ident[Integer][Integer] G_WaypointEvents_PlayerId;
+declare Ident[Integer][Integer] G_WaypointEvents_BlockId;
+declare Boolean[Integer][Integer] G_WaypointEvents_IsEndRace;
+declare Integer[Integer][Integer] G_WaypointEvents_CheckpointInRace;
+declare Integer[Integer][Integer] G_WaypointEvents_CurrentNbLaps;
+declare Real[Integer][Integer] G_WaypointEvents_Speed;
+declare Ident[Integer] G_NextCheckpointPlayerId;
+declare Ident[][Ident][Integer][Integer] G_CheckpointsProgress;
+declare Ident[][Ident][Integer][Integer] G_CurrentCheckpoint;
+declare Boolean[Ident][Integer][Integer] G_ValidRelays;
+declare Integer[Ident][Integer][Integer] G_CheckpointLeaderTime;
+declare Real[Ident][Integer][Integer] G_CheckpointLeaderSpeed;
+declare Integer[Ident][Ident][Integer][Integer] G_CheckpointScores;
+declare Integer[Ident][Integer][Integer] G_CheckpointTimes;
+declare Integer[Ident][Integer] G_FinishTimes;
+declare Integer[Integer] G_Penalties;
+declare Integer[Integer] G_RelayStartTimes;
+declare Boolean[Integer] G_RaceIsValid;
+declare Integer[Integer] G_BestTime;
+declare Integer[Integer] G_RelaysNb;
+declare Integer[Integer] G_FailedNb;
+declare Integer[Integer] G_CreationTime;
+declare Integer[][Integer] G_RelayDurations;
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Functions
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Public
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Impure
+Void Private_CreateClan(Integer _Clan) {
+	G_WaypointEvents_Now[_Clan] = Integer[Integer];
+	G_WaypointEvents_RaceTime[_Clan] = Integer[Integer];
+	G_WaypointEvents_PlayerId[_Clan] = Ident[Integer];
+	G_WaypointEvents_BlockId[_Clan] = Ident[Integer];
+	G_WaypointEvents_IsEndRace[_Clan] = Boolean[Integer];
+	G_WaypointEvents_CheckpointInRace[_Clan] = Integer[Integer];
+	G_WaypointEvents_CurrentNbLaps[_Clan] = Integer[Integer];
+	G_WaypointEvents_Speed[_Clan] = Real[Integer];
+	
+	G_CreationTime[_Clan] = Now;
+	
+	Log::Log("""[ChaseAttackClans] Created clan {{{_Clan}}}""");
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Impure
+Void Private_DestroyClan(Integer _Clan) {
+	declare Removed = False;
+	Removed = G_ClanRespawnTimes.removekey(_Clan);
+	Removed = G_WaypointEvents_Now.removekey(_Clan);
+	Removed = G_WaypointEvents_RaceTime.removekey(_Clan);
+	Removed = G_WaypointEvents_PlayerId.removekey(_Clan);
+	Removed = G_WaypointEvents_BlockId.removekey(_Clan);
+	Removed = G_WaypointEvents_IsEndRace.removekey(_Clan);
+	Removed = G_WaypointEvents_CheckpointInRace.removekey(_Clan);
+	Removed = G_WaypointEvents_CurrentNbLaps.removekey(_Clan);
+	Removed = G_WaypointEvents_Speed.removekey(_Clan);
+	Removed = G_NextCheckpointPlayerId.removekey(_Clan);
+	Removed = G_CheckpointsProgress.removekey(_Clan);
+	Removed = G_CurrentCheckpoint.removekey(_Clan);
+	Removed = G_ValidRelays.removekey(_Clan);
+	Removed = G_CheckpointLeaderTime.removekey(_Clan);
+	Removed = G_CheckpointLeaderSpeed.removekey(_Clan);
+	Removed = G_CheckpointScores.removekey(_Clan);
+	Removed = G_CheckpointTimes.removekey(_Clan);
+	Removed = G_FinishTimes.removekey(_Clan);
+	Removed = G_Penalties.removekey(_Clan);
+	Removed = G_RelayStartTimes.removekey(_Clan);
+	Removed = G_RaceIsValid.removekey(_Clan);
+	Removed = G_BestTime.removekey(_Clan);
+	Removed = G_RelaysNb.removekey(_Clan);
+	Removed = G_FailedNb.removekey(_Clan);
+	Removed = G_CreationTime.removekey(_Clan);
+	Removed = G_RelayDurations.removekey(_Clan);
+	Log::Log("""[ChaseAttackClans] Destroyed clan {{{_Clan}}}""");
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Pure
+Integer[Ident] Private_UpdateClanPlayers(Ident[][Integer] _Clans) {
+	declare Integer[Ident] ClanPlayers;
+	foreach (Clan => PlayerIds in _Clans) {
+		foreach (PlayerId in PlayerIds) {
+			ClanPlayers[PlayerId] = Clan;
+		}
+	}
+	return ClanPlayers;
+}
+
+// Pure
+Ident[Ident][Integer] Private_UpdateClanScores(Ident[][Integer] _ClansPlayerIds, Ident[Ident][Integer] _ClansScoreIds) {
+	declare Ident[Ident][Integer] ClansScoreIds;
+	
+	foreach (Clan => PlayerIds in _ClansPlayerIds) {
+		ClansScoreIds[Clan] = Ident[Ident];
+		foreach (PlayerId in PlayerIds) {
+			declare PlayerScoreId = NullId;
+			if (AllPlayers.existskey(PlayerId)) {
+				PlayerScoreId = AllPlayers[PlayerId].Score.Id;
+			} else if (_ClansScoreIds.existskey(Clan) && _ClansScoreIds[Clan].existskey(PlayerId)) {
+				PlayerScoreId = _ClansScoreIds[Clan][PlayerId];
+			}
+			ClansScoreIds[Clan][PlayerId] = PlayerScoreId;
+		}
+	}
+	
+	return ClansScoreIds;
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Impure
+Void Private_UpdateClans(Ident[][Integer] _Clans) {
+	// Created clans
+	foreach (Clan => PlayerIds in _Clans) {
+		if (!G_Clans.existskey(Clan)) {
+			Private_CreateClan(Clan);
+		}
+	}
+	
+	// Destroyed clans
+	declare Integer[] DestroyedClans;
+	foreach (Clan => PlayerIds in G_Clans) {
+		if (!_Clans.existskey(Clan)) {
+			Private_DestroyClan(Clan);
+		}
+	}
+	
+	G_Clans = _Clans;
+	G_ClansScoreIds = Private_UpdateClanScores(_Clans, G_ClansScoreIds);
+	G_ClanPlayers = Private_UpdateClanPlayers(_Clans);
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Pure
+Ident[][Integer] Leave(Ident[][Integer] _Clans, Ident _PlayerId) {
+	if (_PlayerId == NullId) return _Clans;
+
+	declare Clans = _Clans;
+	foreach (Clan => PlayerIds in _Clans) {
+		if (PlayerIds.exists(_PlayerId)) {
+			declare Removed = Clans[Clan].remove(_PlayerId);
+			Log::Log("""[ChaseAttackClans] {{{_PlayerId}}} leaves clan {{{Clan}}} > Clans : {{{dump(Clans)}}}""");
+		}
+	}
+
+	return Clans;
+}
+// Impure
+Void Leave(Ident _PlayerId) {
+	Private_UpdateClans(Leave(G_Clans, _PlayerId));
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Pure
+Ident[][Integer] Join(Ident[][Integer] _Clans, Integer _Clan, Ident _PlayerId) {
+	if (_PlayerId == NullId || !_Clans.existskey(_Clan)) return _Clans;
+
+	declare Clans = _Clans;
+	
+	// Leave previous clan
+	Clans = Leave(Clans, _PlayerId);
+
+	if (!Clans[_Clan].exists(_PlayerId)) {
+		Clans[_Clan].add(_PlayerId);
+		Log::Log("""[ChaseAttackClans] {{{_PlayerId}}} joins clan {{{_Clan}}} > Clans : {{{dump(Clans)}}}""");
+	}
+
+	return Clans;
+}
+// Impure
+Void Join(Integer _Clan, Ident _PlayerId) {
+	Private_UpdateClans(Join(G_Clans, _Clan, _PlayerId));
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Pure
+Integer FindNewClanId(Ident[][Integer] _Clans) {
+	declare Clans = _Clans.sortkey();
+	declare Count = 0;
+	foreach (Clan => PlayersIds in Clans) {
+		if (Clan != Count && !Clans.existskey(Count)) {
+			return Count;
+		}
+		Count += 1;
+	}
+	return Count;
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Pure
+Ident[][Integer] Create(Ident[][Integer] _Clans, Integer _Clan) {
+	if (_Clan == Const::C_NoClan || _Clans.existskey(_Clan)) return _Clans;
+	
+	declare Clans = _Clans;
+	Clans[_Clan] = Ident[];
+	
+	Log::Log("""[ChaseAttackClans] Create clan {{{_Clan}}} > Clans : {{{dump(Clans)}}}""");
+	
+	return Clans;
+}
+// Impure
+Integer Create() {
+	declare NewClan = FindNewClanId(G_Clans);
+	Private_UpdateClans(Create(G_Clans, NewClan));
+	return NewClan;
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Pure
+Ident[][Integer] Destroy(Ident[][Integer] _Clans, Integer _Clan) {
+	if (!_Clans.existskey(_Clan)) return _Clans;
+	
+	declare Clans = _Clans;
+	declare PlayerIds = Clans[_Clan];
+	foreach (PlayerId in PlayerIds) {
+		Clans = Leave(Clans, PlayerId);
+	}
+	
+	declare Removed = Clans.removekey(_Clan);
+	
+	Log::Log("""[ChaseAttackClans] Destroy clan {{{_Clan}}} > Clans : {{{dump(Clans)}}}""");
+	
+	return Clans;
+}
+// Impure
+Void Destroy(Integer _Clan) {
+	Private_UpdateClans(Destroy(G_Clans, _Clan));
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Impure fast get
+Integer GetPlayerClan(Ident _PlayerId) {
+	if (!G_ClanPlayers.existskey(_PlayerId)) return Const::C_NoClan;
+	return G_ClanPlayers[_PlayerId];
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Impure fast get
+Ident[] GetClan(Integer _Clan) {
+	if (!G_Clans.existskey(_Clan)) return Ident[];
+	return G_Clans[_Clan];
+}
+Ident[] GetClanPlayerIds(Integer _Clan) {
+	return GetClan(_Clan);
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Impure fast get
+Ident[][Integer] GetClans() {
+	return G_Clans;
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Impure fast get
+Boolean Exists(Integer _Clan) {
+	if (G_Clans.existskey(_Clan)) return True;
+	Log::Error("""[ChaseAttackClans] Trying to access a clan that does not exist > _Clan : {{{_Clan}}}""");
+	return False;
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+Ident[Ident] GetClanScoreIds(Integer _Clan) {
+	if (!Exists(_Clan) || !G_ClansScoreIds.existskey(_Clan)) return Ident[Ident];
+	return G_ClansScoreIds[_Clan];
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+Void SetRespawnTime(Integer _Clan, Integer _RespawnTime) {
+	if (!Exists(_Clan)) return;
+	
+	if (_RespawnTime == Const::C_NoRespawnTime) {
+		declare Removed = G_ClanRespawnTimes.removekey(_Clan);
+	} else {
+		G_ClanRespawnTimes[_Clan] = _RespawnTime;
+	}
+}
+
+Void ResetRespawnTime(Integer _Clan) {
+	SetRespawnTime(_Clan, Const::C_NoRespawnTime);
+}
+
+Integer GetRespawnTime(Integer _Clan) {
+	if (!Exists(_Clan)) return Const::C_NoRespawnTime;
+	if (!G_ClanRespawnTimes.existskey(_Clan)) return Const::C_NoRespawnTime;
+	return G_ClanRespawnTimes[_Clan];
+}
+
+Integer[Integer] GetRespawnTimes() {
+	return G_ClanRespawnTimes;
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+Void SetNextCheckpointPlayerId(Integer _Clan, Ident _PlayerId) {
+	if (!Exists(_Clan)) return;
+	
+	if (_PlayerId == NullId) {
+		declare Removed = G_NextCheckpointPlayerId.removekey(_Clan);
+	} else {
+		G_NextCheckpointPlayerId[_Clan] = _PlayerId;
+	}
+}
+
+Void ResetNextCheckpointPlayerId(Integer _Clan) {
+	SetNextCheckpointPlayerId(_Clan, NullId);
+}
+
+Ident GetNextCheckpointPlayerId(Integer _Clan) {
+	if (!Exists(_Clan)) return NullId;
+	if (!G_NextCheckpointPlayerId.existskey(_Clan)) return NullId;
+	return G_NextCheckpointPlayerId[_Clan];
+}
+
+Ident[Integer] GetNextCheckpointPlayerIds() {
+	return G_NextCheckpointPlayerId;
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+Boolean UpdateCheckpointsProgress(Integer _Clan, Integer _NbLaps, Ident _BlockId, Ident _PlayerId) {
+	if (!Exists(_Clan)) return False;
+	
+	declare NewCheckpoint = False;
+	if (!G_CheckpointsProgress.existskey(_Clan)) {
+		G_CheckpointsProgress[_Clan] = Ident[][Ident][Integer];
+	}
+	if (!G_CheckpointsProgress[_Clan].existskey(_NbLaps)) {
+		G_CheckpointsProgress[_Clan][_NbLaps] = Ident[][Ident];
+	}
+	if (!G_CheckpointsProgress[_Clan][_NbLaps].existskey(_BlockId)) {
+		G_CheckpointsProgress[_Clan][_NbLaps][_BlockId] = Ident[];
+		NewCheckpoint = True;
+	}
+	G_CheckpointsProgress[_Clan][_NbLaps][_BlockId].add(_PlayerId);
+	
+	return NewCheckpoint;
+}
+
+Void ResetCheckpointsProgress(Integer _Clan) {
+	if (!Exists(_Clan)) return;
+	declare Removed = G_CheckpointsProgress.removekey(_Clan);
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+Void SetCurrentCheckpoint(
+	Integer _Clan,
+	Integer _NbLaps,
+	Ident _BlockId,
+	Ident _PlayerId,
+	Boolean _RelaySuccess,
+	Integer _LeaderTime,
+	Real _LeaderSpeed,
+	Ident _ScoreId,
+	Integer _Score
+) {
+	if (!Exists(_Clan)) return;
+	
+	G_CurrentCheckpoint[_Clan] = Ident[][Ident][Integer];
+	G_CurrentCheckpoint[_Clan][_NbLaps] = Ident[][Ident];
+	G_CurrentCheckpoint[_Clan][_NbLaps][_BlockId] = Ident[];
+	G_CurrentCheckpoint[_Clan][_NbLaps][_BlockId] = [_PlayerId];
+	
+	G_ValidRelays[_Clan] = Boolean[Ident][Integer];
+	G_ValidRelays[_Clan][_NbLaps] = Boolean[Ident];
+	G_ValidRelays[_Clan][_NbLaps][_BlockId] = _RelaySuccess;
+	
+	G_CheckpointLeaderTime[_Clan] = Integer[Ident][Integer];
+	G_CheckpointLeaderTime[_Clan][_NbLaps] = Integer[Ident];
+	G_CheckpointLeaderTime[_Clan][_NbLaps][_BlockId] = _LeaderTime;
+
+	G_CheckpointLeaderSpeed[_Clan] = Real[Ident][Integer];
+	G_CheckpointLeaderSpeed[_Clan][_NbLaps] = Real[Ident];
+	G_CheckpointLeaderSpeed[_Clan][_NbLaps][_BlockId] = _LeaderSpeed;
+	
+	G_CheckpointScores[_Clan] = Integer[Ident][Ident][Integer];
+	G_CheckpointScores[_Clan][_NbLaps] = Integer[Ident][Ident];
+	G_CheckpointScores[_Clan][_NbLaps][_BlockId] = Integer[Ident];
+	G_CheckpointScores[_Clan][_NbLaps][_BlockId][_ScoreId] = _Score;
+	
+	Log::Log("""[ChaseAttackClan] SetCurrentCheckpoint() clan {{{_Clan}}} > G_CurrentCheckpoint : {{{G_CurrentCheckpoint}}} | G_ValidRelays : {{{G_ValidRelays}}} | G_CheckpointLeaderTime : {{{G_CheckpointLeaderTime}}} | G_CheckpointLeaderSpeed : {{{G_CheckpointLeaderSpeed}}} | G_CheckpointScores : {{{G_CheckpointScores}}}""");
+}
+
+Void ResetCurrentCheckpoint(Integer _Clan) {
+	if (!Exists(_Clan)) return;
+	declare Removed = False;
+	Removed = G_CurrentCheckpoint.removekey(_Clan);
+	Removed = G_ValidRelays.removekey(_Clan);
+	Removed = G_CheckpointLeaderTime.removekey(_Clan);
+	Removed = G_CheckpointLeaderSpeed.removekey(_Clan);
+	Removed = G_CheckpointScores.removekey(_Clan);
+	
+	Log::Log("""[ChaseAttackClan] ResetCurrentCheckpoint() clan {{{_Clan}}} > G_CurrentCheckpoint : {{{G_CurrentCheckpoint}}} | G_ValidRelays : {{{G_ValidRelays}}} | G_CheckpointLeaderTime : {{{G_CheckpointLeaderTime}}} | G_CheckpointLeaderSpeed : {{{G_CheckpointLeaderSpeed}}} | G_CheckpointScores : {{{G_CheckpointScores}}}""");
+}
+
+Boolean HasCrossedFirstCheckpoint(Integer _Clan) {
+	if (!Exists(_Clan)) return False;
+	return G_CurrentCheckpoint.existskey(_Clan) && G_CurrentCheckpoint[_Clan].count > 0;
+}
+
+Boolean IsCurrentCheckpoint(Integer _Clan, Integer _NbLaps, Ident _BlockId) {
+	if (!Exists(_Clan)) return False;
+	return (
+		G_CurrentCheckpoint.existskey(_Clan) &&
+		G_CurrentCheckpoint[_Clan].existskey(_NbLaps) &&
+		G_CurrentCheckpoint[_Clan][_NbLaps].existskey(_BlockId)
+	);
+}
+
+Void UpdateCurrentCheckpoint(Integer _Clan, Ident _PlayerId) {
+	if (!Exists(_Clan) || !HasCrossedFirstCheckpoint(_Clan)) return;
+	
+	declare KeyNbLaps = 0;
+	declare KeyBlockId = NullId;
+	declare ValuePlayerIds = Ident[];
+	declare ClanCurrentCheckpoint = G_CurrentCheckpoint[_Clan];
+	
+	foreach (NbLaps => BlockIds in ClanCurrentCheckpoint) {
+		foreach (BlockId => PlayerIds in BlockIds) {
+			KeyNbLaps = NbLaps;
+			KeyBlockId = BlockId;
+			ValuePlayerIds = PlayerIds;
+			break;
+		}
+		break;
+	}
+	
+	if (!ValuePlayerIds.exists(_PlayerId)) {
+		ValuePlayerIds.add(_PlayerId);
+	}
+	
+	G_CurrentCheckpoint[_Clan][KeyNbLaps][KeyBlockId] = ValuePlayerIds;
+	
+	Log::Log("""[ChaseAttackClan] UpdateCurrentCheckpoint() clan {{{_Clan}}} player id {{{_PlayerId}}} > G_CurrentCheckpoint : {{{G_CurrentCheckpoint}}}""");
+}
+
+Void UpdateCurrentCheckpointScores(Integer _Clan, Ident _ScoreId, Integer _CheckpointScore) {
+	if (!Exists(_Clan) || !HasCrossedFirstCheckpoint(_Clan)) return;
+	
+	declare KeyNbLaps = 0;
+	declare KeyBlockId = NullId;
+	declare ClanCheckpointScores = G_CheckpointScores[_Clan];
+	
+	foreach (NbLaps => BlockIds in ClanCheckpointScores) {
+		foreach (BlockId => PlayerIds in BlockIds) {
+			KeyNbLaps = NbLaps;
+			KeyBlockId = BlockId;
+			break;
+		}
+		break;
+	}
+	
+	G_CheckpointScores[_Clan][KeyNbLaps][KeyBlockId][_ScoreId] = _CheckpointScore;
+}
+
+Integer[Ident][Ident][Integer][Integer] GetCurrentCheckpointScores() {
+	return G_CheckpointScores;
+}
+
+Ident[] GetCurrentCheckpointPlayerIds(Integer _Clan) {
+	if (!Exists(_Clan) || !HasCrossedFirstCheckpoint(_Clan)) return Ident[];
+	
+	foreach (NbLaps => BlockIds in G_CurrentCheckpoint[_Clan]) {
+		foreach (BlockId => PlayerIds in BlockIds) {
+			return PlayerIds;
+		}
+	}
+	
+	return Ident[];
+}
+
+Boolean CurrentCheckpointRelayIsValid(Integer _Clan) {
+	if (!Exists(_Clan) || !HasCrossedFirstCheckpoint(_Clan)) return False;
+	
+	foreach (NbLaps => BlockIds in G_ValidRelays[_Clan]) {
+		foreach (BlockId => IsValid in BlockIds) {
+			return IsValid;
+		}
+	}
+	
+	return False;
+}
+
+Boolean[Ident][Integer][Integer] GetCurrentCheckpointValidRelays() {
+	return G_ValidRelays;
+}
+
+Integer GetCurrentCheckpointLeaderTime(Integer _Clan) {
+	if (!Exists(_Clan) || !HasCrossedFirstCheckpoint(_Clan)) return -1;
+	
+	foreach (NbLaps => BlockIds in G_CheckpointLeaderTime[_Clan]) {
+		foreach (BlockId => LeaderTime in BlockIds) {
+			return LeaderTime;
+		}
+	}
+	
+	return -1;
+}
+
+Real GetCurrentCheckpointLeaderSpeed(Integer _Clan) {
+	if (!Exists(_Clan) || !HasCrossedFirstCheckpoint(_Clan)) return 0.;
+	
+	foreach (NbLaps => BlockIds in G_CheckpointLeaderSpeed[_Clan]) {
+		foreach (BlockId => LeaderSpeed in BlockIds) {
+			return LeaderSpeed;
+		}
+	}
+	
+	return 0.;
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+Void UpdateCheckpointTimes(Integer _Clan, Integer _NbLaps, Ident _BlockId, Integer _Time) {
+	if (!Exists(_Clan)) return;
+	
+	if (!G_CheckpointTimes.existskey(_Clan)) {
+		G_CheckpointTimes[_Clan] = Integer[Ident][Integer];
+	}
+	if (!G_CheckpointTimes[_Clan].existskey(_NbLaps)) {
+		G_CheckpointTimes[_Clan][_NbLaps] = Integer[Ident];
+	}
+	G_CheckpointTimes[_Clan][_NbLaps][_BlockId] = _Time;
+}
+
+Void ResetCheckpointTimes(Integer _Clan) {
+	if (!Exists(_Clan)) return;
+	declare Removed = G_CheckpointTimes.removekey(_Clan);
+}
+
+Integer[Ident][Integer] GetCheckpointTimes(Integer _Clan) {
+	if (!Exists(_Clan) || !G_CheckpointTimes.existskey(_Clan)) return Integer[Ident][Integer];
+	return G_CheckpointTimes[_Clan];
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+Void UpdateFinishTime(Integer _Clan, Ident _PlayerId, Integer _FinishTime) {
+	if (!Exists(_Clan)) return;
+	
+	if (!G_FinishTimes.existskey(_Clan)) {
+		G_FinishTimes[_Clan] = Integer[Ident];
+	}
+	G_FinishTimes[_Clan][_PlayerId] = _FinishTime;
+}
+
+Void ResetFinishTimes(Integer _Clan) {
+	if (!Exists(_Clan)) return;
+	declare Removed = G_FinishTimes.removekey(_Clan);
+}
+
+Integer[Ident] GetFinishTimes(Integer _Clan) {
+	if (!Exists(_Clan) || !G_FinishTimes.existskey(_Clan)) return Integer[Ident];
+	return G_FinishTimes[_Clan];
+}
+
+Boolean OnePlayerFinished(Integer _Clan) {
+	if (!Exists(_Clan) || !G_FinishTimes.existskey(_Clan)) return False;
+	return G_FinishTimes[_Clan].count > 0;
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+Void IncrementPenalties(Integer _Clan) {
+	if (!Exists(_Clan)) return;
+	
+	if (!G_Penalties.existskey(_Clan)) {
+		G_Penalties[_Clan] = 0;
+	}
+	G_Penalties[_Clan] += 1;
+}
+
+Void ResetPenalties(Integer _Clan) {
+	if (!Exists(_Clan)) return;
+	declare Removed = G_Penalties.removekey(_Clan);
+}
+
+Integer GetPenalties(Integer _Clan) {
+	if (!Exists(_Clan)) return 0;
+	if (!G_Penalties.existskey(_Clan)) return 0;
+	return G_Penalties[_Clan];
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+Void SetRelayStartTimes(Integer[Integer] _RelayStartTimes) {
+	G_RelayStartTimes = _RelayStartTimes;
+}
+
+Integer[Integer] GetRelayStartTimes() {
+	return G_RelayStartTimes;
+}
+
+Void ResetRelayStartTime(Integer _Clan) {
+	if (!Exists(_Clan)) return;
+	declare Removed = G_RelayStartTimes.removekey(_Clan);
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+Void SetValidRace(Integer _Clan, Boolean _IsValid) {
+	if (!Exists(_Clan)) return;
+	G_RaceIsValid[_Clan] = _IsValid;
+}
+
+Boolean RaceIsValid(Integer _Clan) {
+	if (!Exists(_Clan) || !G_RaceIsValid.existskey(_Clan)) return False;
+	return G_RaceIsValid[_Clan];
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+Void AddWaypointEvent(Integer _Clan, Integer _RaceTime, Ident _PlayerId, Ident _BlockId, Boolean _IsEndRace, Integer _CheckpointInRace, Integer _CurrentNbLaps, Real _Speed) {
+	if (!Exists(_Clan)) return;
+	
+	G_WaypointEvents_Id += 1;
+	G_WaypointEvents_Now[_Clan][G_WaypointEvents_Id] = Now;
+	G_WaypointEvents_RaceTime[_Clan][G_WaypointEvents_Id] = _RaceTime;
+	G_WaypointEvents_PlayerId[_Clan][G_WaypointEvents_Id] = _PlayerId;
+	G_WaypointEvents_BlockId[_Clan][G_WaypointEvents_Id] = _BlockId;
+	G_WaypointEvents_IsEndRace[_Clan][G_WaypointEvents_Id] = _IsEndRace;
+	G_WaypointEvents_CheckpointInRace[_Clan][G_WaypointEvents_Id] = _CheckpointInRace;
+	G_WaypointEvents_CurrentNbLaps[_Clan][G_WaypointEvents_Id] = _CurrentNbLaps;
+	G_WaypointEvents_Speed[_Clan][G_WaypointEvents_Id] = _Speed;
+}
+
+Integer[] GetWaypointEventsToProcess(Integer _Clan, Integer _Delay) {
+	if (!Exists(_Clan)) return Integer[];
+	
+	declare EventsToProcess = Integer[];
+	declare RaceTimes = G_WaypointEvents_RaceTime[_Clan].sort();
+	G_WaypointEvents_RaceTime[_Clan] = RaceTimes;
+	foreach (EventId => RaceTime in RaceTimes) {
+		declare EventNow = G_WaypointEvents_Now[_Clan][EventId];
+		
+		if (EventNow + _Delay <= Now) {
+			EventsToProcess.add(EventId);
+		} else {
+			break;
+		}
+	}
+	
+	return EventsToProcess;
+}
+
+Void RemoveWaypointEvents(Integer _Clan, Integer[] _EventIds) {
+	if (!Exists(_Clan)) return;
+	
+	declare Removed = False;
+	foreach (EventId in _EventIds) {
+		Removed = G_WaypointEvents_Now[_Clan].removekey(EventId);
+		Removed = G_WaypointEvents_RaceTime[_Clan].removekey(EventId);
+		Removed = G_WaypointEvents_PlayerId[_Clan].removekey(EventId);
+		Removed = G_WaypointEvents_BlockId[_Clan].removekey(EventId);
+		Removed = G_WaypointEvents_IsEndRace[_Clan].removekey(EventId);
+		Removed = G_WaypointEvents_CheckpointInRace[_Clan].removekey(EventId);
+		Removed = G_WaypointEvents_CurrentNbLaps[_Clan].removekey(EventId);
+		Removed = G_WaypointEvents_Speed[_Clan].removekey(EventId);
+	}
+}
+
+Void ClearWaypointEvents(Integer _Clan) {
+	if (!Exists(_Clan)) return;
+	
+	G_WaypointEvents_Now[_Clan].clear();
+	G_WaypointEvents_RaceTime[_Clan].clear();
+	G_WaypointEvents_PlayerId[_Clan].clear();
+	G_WaypointEvents_BlockId[_Clan].clear();
+	G_WaypointEvents_IsEndRace[_Clan].clear();
+	G_WaypointEvents_CheckpointInRace[_Clan].clear();
+	G_WaypointEvents_CurrentNbLaps[_Clan].clear();
+	G_WaypointEvents_Speed[_Clan].clear();
+}
+
+Integer GetWaypointEventRaceTime(Integer _Clan, Integer _EventId) {
+	if (!Exists(_Clan)) return -1;
+	if (!G_WaypointEvents_RaceTime[_Clan].existskey(_EventId)) return -1;
+	return G_WaypointEvents_RaceTime[_Clan][_EventId];
+}
+
+Ident GetWaypointEventPlayerId(Integer _Clan, Integer _EventId) {
+	if (!Exists(_Clan)) return NullId;
+	if (!G_WaypointEvents_PlayerId[_Clan].existskey(_EventId)) return NullId;
+	return G_WaypointEvents_PlayerId[_Clan][_EventId];
+}
+
+Ident GetWaypointEventBlockId(Integer _Clan, Integer _EventId) {
+	if (!Exists(_Clan)) return NullId;
+	if (!G_WaypointEvents_BlockId[_Clan].existskey(_EventId)) return NullId;
+	return G_WaypointEvents_BlockId[_Clan][_EventId];
+}
+
+Boolean GetWaypointEventIsEndRace(Integer _Clan, Integer _EventId) {
+	if (!Exists(_Clan)) return False;
+	if (!G_WaypointEvents_IsEndRace[_Clan].existskey(_EventId)) return False;
+	return G_WaypointEvents_IsEndRace[_Clan][_EventId];
+}
+
+Integer GetWaypointEventCheckpointInRace(Integer _Clan, Integer _EventId) {
+	if (!Exists(_Clan)) return 0;
+	if (!G_WaypointEvents_CheckpointInRace[_Clan].existskey(_EventId)) return 0;
+	return G_WaypointEvents_CheckpointInRace[_Clan][_EventId];
+}
+
+Integer GetWaypointEventCurrentNbLaps(Integer _Clan, Integer _EventId) {
+	if (!Exists(_Clan)) return 0;
+	if (!G_WaypointEvents_CurrentNbLaps[_Clan].existskey(_EventId)) return 0;
+	return G_WaypointEvents_CurrentNbLaps[_Clan][_EventId];
+}
+
+Real GetWaypointEventSpeed(Integer _Clan, Integer _EventId) {
+	if (!Exists(_Clan)) return 0.;
+	if (!G_WaypointEvents_Speed[_Clan].existskey(_EventId)) return 0.;
+	return G_WaypointEvents_Speed[_Clan][_EventId];
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+Void SetBestTime(Integer _Clan, Integer _Time) {
+	if (!Exists(_Clan)) return;
+	G_BestTime[_Clan] = _Time;
+}
+Void ResetBestTime(Integer _Clan) {
+	if (!Exists(_Clan)) return;
+	declare Removed = G_BestTime.removekey(_Clan);
+}
+Integer GetBestTime(Integer _Clan) {
+	if (!Exists(_Clan) || !G_BestTime.existskey(_Clan)) return -1;
+	return G_BestTime[_Clan];
+}
+
+Void UpdateRelays(Integer _Clan, Boolean _Success) {
+	if (!Exists(_Clan)) return;
+	
+	if (_Success) {
+		if (!G_RelaysNb.existskey(_Clan)) {
+			G_RelaysNb[_Clan] = 0;
+		}
+		G_RelaysNb[_Clan] += 1;
+	} else {
+		if (!G_FailedNb.existskey(_Clan)) {
+			G_FailedNb[_Clan] = 0;
+		}
+		G_FailedNb[_Clan] += 1;
+	}
+}
+Void ResetRelays(Integer _Clan) {
+	if (!Exists(_Clan)) return;
+	declare Removed = G_RelaysNb.removekey(_Clan);
+	Removed = G_FailedNb.removekey(_Clan);
+}
+Integer GetRelaysNb(Integer _Clan) {
+	if (!Exists(_Clan) || !G_RelaysNb.existskey(_Clan)) return 0;
+	return G_RelaysNb[_Clan];
+}
+Integer GetFailedNb(Integer _Clan) {
+	if (!Exists(_Clan) || !G_FailedNb.existskey(_Clan)) return 0;
+	return G_FailedNb[_Clan];
+}
+
+Integer GetLifetime(Integer _Clan) {
+	if (!Exists(_Clan) || !G_CreationTime.existskey(_Clan)) return -1;
+	return Now - G_CreationTime[_Clan];
+}
+
+Void UpdateRelayDuration(Integer _Clan, Integer _RelayDuration) {
+	if (!Exists(_Clan)) return;
+	if (!G_RelayDurations.existskey(_Clan)) {
+		G_RelayDurations[_Clan] = Integer[];
+	}
+	G_RelayDurations[_Clan].add(_RelayDuration);
+	while (G_RelayDurations[_Clan].count > C_AverageRelayDurationsNb) {
+		declare Removed = G_RelayDurations[_Clan].removekey(0);
+		if (!Removed) break;
+	}
+}
+Integer GetAverageRelayDuration(Integer _Clan) {
+	if (!Exists(_Clan) || !G_RelayDurations.existskey(_Clan) || G_RelayDurations[_Clan].count <= 0) return -1;
+	declare Sum = 0;
+	declare ClanRelayDurations = G_RelayDurations[_Clan];
+	foreach (RelayDuration in ClanRelayDurations) {
+		Sum += RelayDuration;
+	}
+	return Sum / ClanRelayDurations.count;
+}
+
+Integer[Integer] GetStats(Integer _Clan) {
+	if (!Exists(_Clan)) return Integer[Integer];
+	return [
+		Const::C_Stats_BestTime => GetBestTime(_Clan),
+		Const::C_Stats_RelaysNb => GetRelaysNb(_Clan),
+		Const::C_Stats_FailedNb => GetFailedNb(_Clan),
+		Const::C_Stats_TeamLifetime => GetLifetime(_Clan),
+		Const::C_Stats_AverageRelayTime => GetAverageRelayDuration(_Clan)
+	];
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+Void Unload() {
+	G_Clans.clear();
+	G_ClanPlayers.clear();
+	G_ClanRespawnTimes.clear();
+	G_WaypointEvents_Id = 0;
+	G_WaypointEvents_Now.clear();
+	G_WaypointEvents_RaceTime.clear();
+	G_WaypointEvents_PlayerId.clear();
+	G_WaypointEvents_BlockId.clear();
+	G_WaypointEvents_IsEndRace.clear();
+	G_WaypointEvents_CheckpointInRace.clear();
+	G_WaypointEvents_CurrentNbLaps.clear();
+	G_WaypointEvents_Speed.clear();
+	G_NextCheckpointPlayerId.clear();
+	G_CheckpointsProgress.clear();
+	G_CurrentCheckpoint.clear();
+	G_ValidRelays.clear();
+	G_CheckpointLeaderTime.clear();
+	G_CheckpointLeaderSpeed.clear();
+	G_CheckpointScores.clear();
+	G_CheckpointTimes.clear();
+	G_FinishTimes.clear();
+	G_Penalties.clear();
+	G_RelayStartTimes.clear();
+	G_RaceIsValid.clear();
+	G_BestTime.clear();
+	G_RelaysNb.clear();
+	G_FailedNb.clear();
+	G_CreationTime.clear();
+	G_RelayDurations.clear();
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+Void Load() {
+	Unload();
+}

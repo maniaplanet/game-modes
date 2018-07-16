@@ -1,7 +1,7 @@
 /**
  * Chase winners UI
  */
-#Const Version    "2018-06-05"
+#Const Version    "2018-07-09"
 #Const ScriptName "ManiaApps/Nadeo/TrackMania/Chase/Winners_Client.Script.txt"
 
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
@@ -9,11 +9,14 @@
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
 #Include "TextLib" as TL
 #Include "ManiaApps/Nadeo/Layers.Script.txt" as Layers
+#Include "Libs/Nadeo/TrackMania/Chase/Constants2.Script.txt" as Const
 
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
 // Constants
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
 #Const C_Layer_Winners "ChaseAttack_Winners"
+#Const C_Offset_Animation 300
+#Const C_AnimationSpeed 750
 
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
 // Functions
@@ -28,65 +31,238 @@
  */
 Text Private_GetWinnersML() {
 	//L16N [Chase Attack] Text displayed above the name of the players who won the match.
-	declare Text_Winners = _("|Chase|Winners");
+	declare Text_BestTeam = TL::ToUpperCase(_("Winners"));
+	//L16N [Chase Attack] Legend displayed next to the best race time the player did in chase mode
+	declare Text_BestTime = TL::ToUpperCase(_("Best Time"));
+	//L16N [Chase Attack] Legend displayed next to the number of relays that the player did in chase mode
+	declare Text_Relays = TL::ToUpperCase(_("Relays"));
+	//L16N [Chase Attack] Legend displayed next to the number of failed relays that the players did in chase mode
+	declare Text_Miss = TL::ToUpperCase(_("Miss"));
+	//L16N [Chase Attack] Legend displayed next to the time since the team was created
+	declare Text_LifeTime = TL::ToUpperCase(_("Team lifetime"));
+	//L16N [Chase Attack] Legend displayed next to the number of the average relay time between the members of the team
+	declare Text_Average = TL::ToUpperCase(_("Average relay gap"));
+
+	declare Text StatsColor = "FFC000";
+
 	declare NamesML = "";
-	for (I, 0, 9) {
-		declare PosY = I * -10;
-		NamesML ^= """<label pos="0 {{{PosY}}}" valign="center2" textsize="8" class="text-default" />""";
+	for (I, 0, 11) {
+		declare PosX = (I / 4) * 74;
+		declare PosY = (I % 4) * -20;
+		NamesML ^= """
+		<frame pos="{{{PosX}}} {{{PosY}}}" id="frame-winner-info{{{I}}}">
+			<quad id="Avatar" pos="3.5 0" size="15 15" bgcolor="000" halign="center" valign="center"/>
+			<label id="Name" pos="15 -0.5" size="56 7" valign="center2" class="text-default" />
+		</frame>
+		""";
 	}
 
 	return """
 <manialink version="3" name="{{{C_Layer_Winners}}}">
 <stylesheet>
-  <style class="text-default" textfont="Oswald" textcolor="ffffff" textsize="3" textemboss="1" />
+  <style class="text-default" textfont="Oswald" textcolor="ffffff" textsize="12" textemboss="1" />
+	<style class="stats-default" textfont="OswaldMono" textsize="12" textcolor={{{StatsColor}}}  textprefix="$s"/>
 </stylesheet>
-<frame hidden="1" id="frame-global">
-	<frame pos="0 60" id="frame-winners">
-		<label pos="-39 0" textfont="Oswald" textsize="12" textemboss="1" text="{{{Text_Winners}}}" />
-		<frame pos="0 -8">
-			<quad pos="0 -4.5" z-index="1" size="80 0.666" bgcolor="FFFFFF" halign="center" valign="center"/>
-			<quad pos="35 -5" z-index="1" size="10 1" bgcolor="FFFFFF" halign="center" valign="center"/>
+<frame hidden="1" id="frame-global" pos="0 0">
+	<quad pos="0 0" z-index="-1" size="360 180" bgcolor="000" opacity="0.5" halign="center" valign="center"/>
+	<frame id="animate-frame" pos="0 0">	
+		<frame pos="0 48" id="frame-winners">
+			<frame id="winners-title">	
+				<label pos="-20 0" textfont="Oswald" textsize="10" textemboss="1" text="{{{Text_BestTeam}}}" />
+				<frame pos="0 -8">
+					<quad pos="0 -4.5" z-index="1" size="80 0.666" bgcolor="FFFFFF" halign="center" valign="center"/>
+					<quad pos="35 -5" z-index="1" size="10 1" bgcolor="FFFFFF" halign="center" valign="center"/>
+				</frame>
+			</frame>
+			<frame id="frame-names" pos="-39 -25" >
+				{{{NamesML}}}
+			</frame>
 		</frame>
-		<frame pos="-39 -20" id="frame-names">
-			{{{NamesML}}}
+		<frame id="frame-userdata" pos="0 -25">	
+			<frame id="frame-besttime" pos="-75 0">
+				<label id="label-titlebesttime" pos="0 0" size="60 10" valign="bottom" textfont="Oswald" textsize="5" textemboss="1" text="{{{Text_BestTime}}}" />
+				<label id="label-besttime" pos="0 -1" size="60 10" class="stats-default"/>
+			</frame>
+			<frame id="frame-average" pos="-20 0">
+				<label id="label-titleaverage" pos="0 0" size="40 10" valign="bottom" textfont="Oswald" textsize="5" textemboss="1" text="{{{Text_Average}}}" />
+				<label id="label-average" pos="0 -1" size="40 10" class="stats-default"/>
+			</frame>
+			<frame id="frame-lifetime" pos="40 0">
+				<label id="label-titlelifetime" pos="0 0" size="40 10" valign="bottom" textfont="Oswald" textsize="5" textemboss="1" text="{{{Text_LifeTime}}}" />
+				<label id="label-lifetime" pos="0 -1" size="40 10" class="stats-default"/>
+			</frame>
 		</frame>
 	</frame>
 </frame>
 <script><!--
-main() {
-	declare Frame_Global <=> (Page.GetFirstChild("frame-global") as CMlFrame);
-	declare Frame_Winners <=> (Frame_Global.GetFirstChild("frame-winners") as CMlFrame);
-	declare Frame_Names <=> (Frame_Global.GetFirstChild("frame-names") as CMlFrame);
 
+#Include "TextLib" as TL
+#Include "MathLib" as ML
+
+declare CMlFrame G_Frame_Global;
+declare CMlFrame G_Frame_Winners;
+declare CMlFrame G_Frame_Names;
+declare Text[] G_Animate_Id_List;
+
+
+declare Integer G_PrevWinnerUpdate;
+declare Boolean G_PrevVisible;
+declare Text G_PrevData;
+
+declare Integer G_TimeStartAnim;
+declare Boolean G_LaunchAnim;
+declare Integer G_TimeOffset;
+declare Integer G_AnimatedCount;
+
+
+Text TimeToText(Integer _Time) {
+  declare Time = TL::TimeToText(_Time, True);
+  declare Milliseconds = ML::Abs(_Time % 10);
+  if (Milliseconds >= 0) Time ^= TL::ToText(Milliseconds);
+  return Time;
+}
+
+Void Init(){
+  G_Frame_Global <=> (Page.GetFirstChild("frame-global") as CMlFrame);
+	G_Frame_Names <=> (G_Frame_Global.GetFirstChild("frame-names") as CMlFrame);
+
+	G_Animate_Id_List =
+	[
+		"winners-title",
+		"frame-winner-info0",
+		"frame-winner-info1",
+		"label-titlelifetime",
+		"label-lifetime",
+		"label-titleaverage",
+		"label-average",
+		"label-titlebesttime",
+		"label-besttime"
+		
+	];
+
+	G_TimeOffset = 150;
+	G_PrevWinnerUpdate = -123;
+	G_PrevVisible = G_Frame_Global.Visible;
+}
+
+Void ShowResult(){
 	declare netread Net_ChaseWinners_IsEnabled for Teams[0] = True;
-	declare netread Net_ChaseWinners_WinnerNames for Teams[0] = Text[];
-	declare netread Net_ChaseWinners_WinnerNamesUpdate for Teams[0] = -1;
 
-	declare PrevPlayerNamesUpdate = -123;
-	declare PrevVisible = Frame_Global.Visible;
+	if (G_PrevVisible != Net_ChaseWinners_IsEnabled) {
+		G_PrevVisible = Net_ChaseWinners_IsEnabled;
+		G_Frame_Global.Visible = G_PrevVisible;
+	}
+}
+
+Void InitWinnerScreen(){
+	foreach(FrameId in G_Animate_Id_List) {
+		declare CMlFrame Animated_Frame <=> (G_Frame_Global.GetFirstChild(FrameId) as CMlFrame);
+		Animated_Frame.RelativePosition_V3.X =- {{{C_Offset_Animation}}}*1.0;
+		G_AnimatedCount += 1;
+	}
+	G_AnimatedCount = 0;
+}
+
+Void AnimateWinnerScreen(){
+	if(G_AnimatedCount < G_Animate_Id_List.count){
+		if(Now >  G_TimeStartAnim + G_AnimatedCount * G_TimeOffset){
+			declare FrameId = G_Animate_Id_List[G_AnimatedCount];
+			declare CMlFrame Animated_Frame <=> (G_Frame_Global.GetFirstChild(FrameId) as CMlFrame);
+			declare newX = Animated_Frame.RelativePosition_V3.X + {{{C_Offset_Animation}}};
+			declare newY = Animated_Frame.RelativePosition_V3.Y;
+			AnimMgr.Add(Animated_Frame, "<frame pos=\"" ^ newX ^ " " ^ newY ^ " \"/>", {{{C_AnimationSpeed}}}, CAnimManager::EAnimManagerEasing::QuadOut);
+			G_AnimatedCount += 1;
+		}
+	}
+}
+
+
+Void SetStats(Integer[Integer] _Stats){
+	declare BestTime = -1;
+	if (_Stats.existskey({{{Const::C_Stats_BestTime}}})) {
+		BestTime = _Stats[{{{Const::C_Stats_BestTime}}}];
+	}
+	declare TeamLifetime = -1;
+	if (_Stats.existskey({{{Const::C_Stats_TeamLifetime}}})) {
+		TeamLifetime = _Stats[{{{Const::C_Stats_TeamLifetime}}}];
+	}
+	declare AverageRelayTime = -1;
+	if (_Stats.existskey({{{Const::C_Stats_AverageRelayTime}}})) {
+		AverageRelayTime = _Stats[{{{Const::C_Stats_AverageRelayTime}}}];
+	}
+	
+	declare CMlLabel Label_BestTimes <=> (Page.GetFirstChild("label-besttime") as CMlLabel);
+	declare CMlLabel Label_Relays <=> (Page.GetFirstChild("label-relays") as CMlLabel);
+	declare CMlLabel Label_Miss <=> (Page.GetFirstChild("label-miss") as CMlLabel);
+	declare CMlLabel Label_LifeTime <=> (Page.GetFirstChild("label-lifetime") as CMlLabel);
+	declare CMlLabel Label_Average <=> (Page.GetFirstChild("label-average") as CMlLabel);
+
+	if (BestTime >= 0) {
+		Label_BestTimes.Value = TimeToText(BestTime);
+	} else {
+		Label_BestTimes.Value = "-";
+	}
+	if (AverageRelayTime >= 0) {
+		Label_Average.Value = AverageRelayTime^"ms";
+	} else {
+		Label_Average.Value = "-";
+	}
+	if (TeamLifetime >= 0) {
+		Label_LifeTime.Value = TL::TimeToText(TeamLifetime, False);
+	}	else {
+		Label_LifeTime.Value = "-";
+	}
+
+	G_LaunchAnim = True;
+	G_TimeStartAnim = Now;
+	InitWinnerScreen();
+}
+
+Void SetWinners(){
+	if (G_Frame_Global.Visible) {
+		declare netread Net_ChaseWinners_WinnerUpdate for Teams[0] = -1;
+
+		if (G_PrevWinnerUpdate != Net_ChaseWinners_WinnerUpdate) {
+			G_PrevWinnerUpdate = Net_ChaseWinners_WinnerUpdate;
+
+			declare netread Net_ChaseWinners_WinnerNames for Teams[0] = Text[];
+			declare netread Net_ChaseWinners_WinnerAvatar for Teams[0] = Text[];
+			declare netread Net_ChaseWinners_WinnerStats for Teams[0] = Integer[Integer];
+
+			foreach (Key => Control in G_Frame_Names.Controls) {
+				declare CMlFrame FramePlayerInfo <=> (Control as CMlFrame);
+				declare CMlLabel Label_Name <=> (FramePlayerInfo.GetFirstChild("Name") as CMlLabel);
+				declare CMlQuad Quad_Avatar <=> (FramePlayerInfo.GetFirstChild("Avatar") as CMlQuad);
+				if (Net_ChaseWinners_WinnerNames.existskey(Key)) {
+					Label_Name.Value = Net_ChaseWinners_WinnerNames[Key];
+					FramePlayerInfo.Visible = True;
+					if(Net_ChaseWinners_WinnerAvatar.existskey(Key)){
+						Quad_Avatar.ImageUrl = Net_ChaseWinners_WinnerAvatar[Key];
+					}	
+				} 
+				else {
+					FramePlayerInfo.Visible = False;
+				}
+			}
+
+			SetStats(Net_ChaseWinners_WinnerStats);
+		}
+	}
+}
+
+main() {
+
+	
+	Init();
 
 	while (True) {
 		yield;
 
-		if (PrevVisible != Net_ChaseWinners_IsEnabled) {
-			PrevVisible = Net_ChaseWinners_IsEnabled;
-			Frame_Global.Visible = PrevVisible;
-		}
+		ShowResult();
+		SetWinners();
 
-		if (Frame_Global.Visible) {
-			if (PrevPlayerNamesUpdate != Net_ChaseWinners_WinnerNamesUpdate) {
-				PrevPlayerNamesUpdate = Net_ChaseWinners_WinnerNamesUpdate;
-
-				foreach (Key => Control in Frame_Names.Controls) {
-					declare Label_Name <=> (Control as CMlLabel);
-					if (Net_ChaseWinners_WinnerNames.existskey(Key)) {
-						Label_Name.Value = Net_ChaseWinners_WinnerNames[Key];
-						Label_Name.Visible = True;
-					} else {
-						Label_Name.Visible = False;
-					}
-				}
-			}
+		if(G_LaunchAnim){
+			AnimateWinnerScreen();
 		}
 	}
 }
