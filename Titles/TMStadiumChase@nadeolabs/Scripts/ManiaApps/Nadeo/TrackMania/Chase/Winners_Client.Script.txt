@@ -42,6 +42,8 @@ Text Private_GetWinnersML() {
 	declare Text_LifeTime = TL::ToUpperCase(_("Team lifetime"));
 	//L16N [Chase Attack] Legend displayed next to the number of the average relay time between the members of the team
 	declare Text_Average = TL::ToUpperCase(_("Average relay gap"));
+	//L16N [Chase Attack] Title written just before the name of the map creator
+	declare Text_By = _("By");
 
 	declare Text StatsColor = "FFC000";
 
@@ -63,12 +65,19 @@ Text Private_GetWinnersML() {
   <style class="text-default" textfont="Oswald" textcolor="ffffff" textsize="12" textemboss="1" />
 	<style class="stats-default" textfont="OswaldMono" textsize="12" textcolor={{{StatsColor}}}  textprefix="$s"/>
 </stylesheet>
+
 <frame hidden="1" id="frame-global" pos="0 0">
 	<quad pos="0 0" z-index="-1" size="360 180" bgcolor="000" opacity="0.5" halign="center" valign="center"/>
-	<frame id="animate-frame" pos="0 0">	
-		<frame pos="0 48" id="frame-winners">
+	<frame id="animate-frame" pos="0 0">
+
+		<frame pos="0 70" id="frame-mapcreator">
+			<label id="label-mapname" pos="0 -5" textfont="Oswald" textsize="10" textemboss="1" text="" halign="center" valign="center2"/>
+			<label id="label-mapcreator" pos="0 -20" textfont="Oswald" textsize="10" textemboss="1" text="" halign="center" valign="center2"/>
+		</frame>
+
+		<frame pos="0 25" id="frame-winners">
 			<frame id="winners-title">	
-				<label pos="-20 0" textfont="Oswald" textsize="10" textemboss="1" text="{{{Text_BestTeam}}}" />
+				<label pos="0 -2.5" textfont="Oswald" textsize="10" textemboss="1" text="{{{Text_BestTeam}}}" halign="center" valign="center2"/>
 				<frame pos="0 -8">
 					<quad pos="0 -4.5" z-index="1" size="80 0.666" bgcolor="FFFFFF" halign="center" valign="center"/>
 					<quad pos="35 -5" z-index="1" size="10 1" bgcolor="FFFFFF" halign="center" valign="center"/>
@@ -78,7 +87,8 @@ Text Private_GetWinnersML() {
 				{{{NamesML}}}
 			</frame>
 		</frame>
-		<frame id="frame-userdata" pos="0 -25">	
+
+		<frame id="frame-userdata" pos="0 -60">	
 			<frame id="frame-besttime" pos="-75 0">
 				<label id="label-titlebesttime" pos="0 0" size="60 10" valign="bottom" textfont="Oswald" textsize="5" textemboss="1" text="{{{Text_BestTime}}}" />
 				<label id="label-besttime" pos="0 -1" size="60 10" class="stats-default"/>
@@ -92,6 +102,7 @@ Text Private_GetWinnersML() {
 				<label id="label-lifetime" pos="0 -1" size="40 10" class="stats-default"/>
 			</frame>
 		</frame>
+
 	</frame>
 </frame>
 <script><!--
@@ -118,16 +129,39 @@ declare Integer G_AnimatedCount;
 Text TimeToText(Integer _Time) {
   declare Time = TL::TimeToText(_Time, True);
   declare Milliseconds = ML::Abs(_Time % 10);
-  if (Milliseconds >= 0) Time ^= TL::ToText(Milliseconds);
+  if (Milliseconds >= 0) 
+		Time ^= TL::ToText(Milliseconds);
   return Time;
+}
+
+Void SetCreator(){
+	declare CMlLabel LabelMapCreator <=> (G_Frame_Global.GetFirstChild("label-mapcreator") as CMlLabel);
+	declare CMlLabel LabelMapName <=> (G_Frame_Global.GetFirstChild("label-mapname") as CMlLabel);
+	declare CMlFrame FrameWinners <=> (G_Frame_Global.GetFirstChild("frame-winners") as CMlFrame);
+	declare CMlFrame FrameuserData <=> (G_Frame_Global.GetFirstChild("frame-userdata") as CMlFrame);	
+	
+	if(Map != Null && Map.AuthorLogin != "nadeo" && Map.AuthorLogin != "nadeolabs"){
+		LabelMapName.Value = Map.MapName;
+		LabelMapCreator.Value = "{{{Text_By}}} " ^ Map.AuthorNickName;
+		FrameWinners.RelativePosition_V3.Y = 25.0;
+		FrameuserData.RelativePosition_V3.Y = -60.0;
+	}
+	else{
+		FrameWinners.RelativePosition_V3.Y = 48.0;
+		FrameuserData.RelativePosition_V3.Y = -25.0;
+		LabelMapCreator.Value = "";
+		LabelMapName.Value = "";
+	}
 }
 
 Void Init(){
   G_Frame_Global <=> (Page.GetFirstChild("frame-global") as CMlFrame);
 	G_Frame_Names <=> (G_Frame_Global.GetFirstChild("frame-names") as CMlFrame);
-
+	
 	G_Animate_Id_List =
 	[
+		"label-mapname",
+		"label-mapcreator",
 		"winners-title",
 		"frame-winner-info0",
 		"frame-winner-info1",
@@ -137,7 +171,6 @@ Void Init(){
 		"label-average",
 		"label-titlebesttime",
 		"label-besttime"
-		
 	];
 
 	G_TimeOffset = 150;
@@ -157,10 +190,11 @@ Void ShowResult(){
 Void InitWinnerScreen(){
 	foreach(FrameId in G_Animate_Id_List) {
 		declare CMlFrame Animated_Frame <=> (G_Frame_Global.GetFirstChild(FrameId) as CMlFrame);
-		Animated_Frame.RelativePosition_V3.X =- {{{C_Offset_Animation}}}*1.0;
+		Animated_Frame.RelativePosition_V3.X = Animated_Frame.RelativePosition_V3.X - {{{C_Offset_Animation}}};
 		G_AnimatedCount += 1;
 	}
 	G_AnimatedCount = 0;
+	
 }
 
 Void AnimateWinnerScreen(){
@@ -216,6 +250,7 @@ Void SetStats(Integer[Integer] _Stats){
 	G_LaunchAnim = True;
 	G_TimeStartAnim = Now;
 	InitWinnerScreen();
+	SetCreator();
 }
 
 Void SetWinners(){
