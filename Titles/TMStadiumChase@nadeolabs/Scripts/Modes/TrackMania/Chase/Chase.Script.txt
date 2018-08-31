@@ -4,7 +4,7 @@
 #Extends "Modes/TrackMania/Base/ModeTrackmania.Script.txt"
 
 #Const	CompatibleMapTypes	"Race"
-#Const	Version							"2018-07-13"
+#Const	Version							"2018-08-31"
 #Const	ScriptName					"Modes/TrackMania/Chase/Chase.Script.txt"
 
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
@@ -291,6 +291,7 @@ declare Text Map_CheckpointMarkersXML; ///< The xml of the markers attached to t
 declare Ident[] Map_LobbyPlayers; ///< Id of the Players currently in the lobby
 declare Integer Map_ClanPlayersNb; ///< Number of players in a clan
 declare Ident Map_FinishBlockId; ///< Id of the finish block to use as default finish
+declare Integer Map_LadderClanGenerator; ///< The clan to assign to Score.LadderClan when improving a time
 ***
 
 ***Match_BeforeIntroSequence***
@@ -344,6 +345,7 @@ foreach (Player in AllPlayers) {
 
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
 // Initialize scores
+Map_LadderClanGenerator = 1;
 foreach (Score in Scores) {
 	declare Chase_RoundsPerformance for Score = Real[];
 	Chase_RoundsPerformance = Real[];
@@ -351,6 +353,7 @@ foreach (Score in Scores) {
 	SetPlayerBestCheckpointTimes(Integer[Ident][Integer], Score);
 	SetPlayerBestCheckpointPoints(Integer[Ident][Integer], Score);
 	ResetStats(Score);
+	Scores::SetLadderClan(Score, 0);
 }
 declare Clans = Clans::GetClans();
 foreach (Clan => PlayerIds in Clans) {
@@ -1075,7 +1078,9 @@ foreach (Clan => TimeLimit in ClansRespawnTime) {
 					if (ClanBestTime < 0 || (ClanFinishTime >= 0 && ClanFinishTime < ClanBestTime)) {
 						Clans::SetBestTime(Clan, ClanFinishTime);
 					}
-				
+					
+					declare MustIncrementLadderClan = False;
+					
 					foreach (ClanPlayerId in ClanPlayerIds) {
 						if (AllPlayers.existskey(ClanPlayerId)) {
 							declare ClanPlayer <=> AllPlayers[ClanPlayerId];
@@ -1091,6 +1096,9 @@ foreach (Clan => TimeLimit in ClansRespawnTime) {
 								SetPlayerBestCheckpointTimes(Clans::GetCheckpointTimes(Clan), ClanPlayer.Score);
 								SetPlayerBestCheckpointPoints(GetCheckpointsPoints(ClanPlayer.Score), ClanPlayer.Score);
 								SetStats(Clan, Clans::GetClanScoreIds(Clan), ClanPlayer.Score);
+								
+								MustIncrementLadderClan = True;
+								Scores::SetLadderClan(ClanPlayer.Score, Map_LadderClanGenerator);
 							}
 							if (S_FailedRelayPenalty > 0) {
 								ChaseUI::SetFinishTime(ClanFinishTime, ClanPlayer);
@@ -1105,6 +1113,10 @@ foreach (Clan => TimeLimit in ClansRespawnTime) {
 							CheckpointTimeUI::ResetCheckpointTime(ClanPlayer);
 							CheckpointRankingUI::ResetCheckpointRanking(ClanPlayer);
 						}
+					}
+					
+					if (MustIncrementLadderClan) {
+						Map_LadderClanGenerator += 1;
 					}
 				}
 				// Update ranking
