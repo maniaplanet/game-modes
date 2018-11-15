@@ -4,7 +4,7 @@
 #Extends "Modes/TrackMania/Base/ModeTrackmania.Script.txt"
 
 #Const	CompatibleMapTypes	"Race"
-#Const	Version							"2017-07-12"
+#Const	Version							"2018-11-14"
 #Const	ScriptName					"Modes/TrackMania/Laps/Laps.Script.txt"
 
 // ---------------------------------- //
@@ -21,6 +21,7 @@
 #Setting S_FinishTimeout		-1	as _("Finish timeout :")
 #Setting S_WarmUpNb				0	as _("Number of warm up :")
 #Setting S_WarmUpDuration	0	as _("Duration of one warm up :")
+#Setting S_DisableGiveUp		False as _("Disable give up :")
 
 #Setting S_ScriptEnvironment "production"/*/"development"*/
 
@@ -177,43 +178,47 @@ foreach (Player in Players) {
 }
 
 foreach (Event in PendingEvents) {
-	declare Processed = Events::Valid(Event);
-	if (!Processed) continue;
-	
-	// ---------------------------------- //
-	// Waypoint
-	if (Event.Type == CTmModeEvent::EType::WayPoint) {
+	if (S_DisableGiveUp && Event.Type == CTmModeEvent::EType::GiveUp) {
+		Events::Invalid(Event);
+	} else {
+		declare Processed = Events::Valid(Event);
+		if (!Processed) continue;
 		
-		if (Event.IsEndRace) {
-			if (Event.Player.Score !=  Null) Event.Player.Score.PrevRace = Event.Player.CurRace;
-			TM::EndRace(Event.Player);
+		// ---------------------------------- //
+		// Waypoint
+		if (Event.Type == CTmModeEvent::EType::WayPoint) {
 			
-			// ---------------------------------- //
-			// Start the countdown if it's the first player to finish
-			if (FirstFinish) {
-				FirstFinish = False;
-				CutOffTimeLimit = GetFinishTimeout();
-				CheckpointsNb = Event.Player.CurRace.Checkpoints.count;
-			}
-		}
-		
-		if (Event.Player.Score !=  Null) {
-			Event.Player.Score.BestRace = Event.Player.CurRace;
-			
-			// ---------------------------------- //
-			// Save the best lap time
-			if (Event.IsEndLap) {
-				if (Event.Player.Score.BestLap.Compare(Event.Player.CurLap, CTmResult::ETmRaceResultCriteria::Time) <= 0) {
-						Event.Player.Score.BestLap = Event.Player.CurLap;
+			if (Event.IsEndRace) {
+				if (Event.Player.Score !=  Null) Event.Player.Score.PrevRace = Event.Player.CurRace;
+				TM::EndRace(Event.Player);
+				
+				// ---------------------------------- //
+				// Start the countdown if it's the first player to finish
+				if (FirstFinish) {
+					FirstFinish = False;
+					CutOffTimeLimit = GetFinishTimeout();
+					CheckpointsNb = Event.Player.CurRace.Checkpoints.count;
 				}
 			}
+			
+			if (Event.Player.Score !=  Null) {
+				Event.Player.Score.BestRace = Event.Player.CurRace;
+				
+				// ---------------------------------- //
+				// Save the best lap time
+				if (Event.IsEndLap) {
+					if (Event.Player.Score.BestLap.Compare(Event.Player.CurLap, CTmResult::ETmRaceResultCriteria::Time) <= 0) {
+							Event.Player.Score.BestLap = Event.Player.CurLap;
+					}
+				}
+			}
+			MB_SortScores(CTmMode::ETmScoreSortOrder::BestRace_CheckpointsProgress);
 		}
-		MB_SortScores(CTmMode::ETmScoreSortOrder::BestRace_CheckpointsProgress);
-	}
-	// ---------------------------------- //
-	// GiveUp
-	else if (Event.Type == CTmModeEvent::EType::GiveUp) {
-		TM::WaitRace(Event.Player);
+		// ---------------------------------- //
+		// GiveUp
+		else if (Event.Type == CTmModeEvent::EType::GiveUp) {
+			TM::WaitRace(Event.Player);
+		}
 	}
 }
 
@@ -335,6 +340,32 @@ Integer GetFinishTimeout() {
 }
 
 // ---------------------------------- //
+/// Update the scores table footer text
+Void UpdateScoresTableFooter(Integer _StartTime) {
+	if (Hud != Null && Hud.ScoresTable != Null) {
+		declare Text[] Parts;
+		declare Message = "";
+		if (NbLaps > 0) {
+			if (Parts.count > 0) Message ^= " | ";
+			Message ^= """%{{{Parts.count + 1}}}{{{NbLaps}}}""";
+			Parts.add(_("Number of Laps : "));
+		}
+		if (CutOffTimeLimit > _StartTime) {
+			if (Parts.count > 0) Message ^= " | ";
+			Message ^= """%{{{Parts.count + 1}}} {{{TL::TimeToText(CutOffTimeLimit-_StartTime)}}}""";
+			//L16N [Rounds] Number of rounds played during the map.
+			Parts.add(_("Time Limit :"));
+		}
+		
+		switch (Parts.count) {
+			case 0: Hud.ScoresTable.SetFooterText(Message);
+			case 1: Hud.ScoresTable.SetFooterText(TL::Compose(Message, Parts[0]));
+			case 2: Hud.ScoresTable.SetFooterText(TL::Compose(Message, Parts[0], Parts[1]));
+		}
+	}
+}
+
+// ---------------------------------- //
 /** Set the time limit
  *
  *	@param	_StartTime	The time at which the race started
@@ -349,12 +380,16 @@ Void SetTimeLimit(Integer _StartTime) {
 		CutOffTimeLimit = -1;
 	} 
 	// Time limit auto adjusted
-	else {
+	else if (Map != Null) {
 		declare ObjectiveNbLaps = Map.TMObjective_NbLaps;
 		if (ObjectiveNbLaps <= 0) ObjectiveNbLaps = 1;
 		declare TimePerLap = ML::NearestInteger((Map.TMObjective_BronzeTime + (Map.TMObjective_BronzeTime * 0.1)) / ObjectiveNbLaps);
 		CutOffTimeLimit = _StartTime + (TimePerLap * NbLaps);
+	} else {
+		CutOffTimeLimit = -1;
 	}
+	
+	UpdateScoresTableFooter(_StartTime);
 }
 
 // ---------------------------------- //
@@ -364,9 +399,8 @@ Void SetTimeLimit(Integer _StartTime) {
  *	@param _StartTime	The time at which the race started
  */
 Void SetLapsNb(Integer _LapsNb, Integer _StartTime) {
-	if (_LapsNb > 0) NbLaps = _LapsNb;
+	if (_LapsNb >= 0) NbLaps = _LapsNb;
 	else NbLaps = -1;
 	SetTimeLimit(_StartTime);
-	
-	if (Hud != Null) Hud.ScoresTable.SetFooterText(TL::Compose("%1 "^NbLaps, _("Number of Laps :")));
+	//UpdateScoresTableFooter(_StartTime);
 }
