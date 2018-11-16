@@ -1,19 +1,19 @@
 /**
  *	Events library
  */
-#Const	Version			"2017-10-20"
+#Const	Version			"2018-05-31"
 #Const	ScriptName	"Libs/Nadeo/ShootMania/Events.Script.txt"
 
-// ---------------------------------- //
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
 // Libraries
-// ---------------------------------- //
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
 #Include "MathLib" as ML
 #Include "Libs/Nadeo/XmlRpc2.Script.txt" as XmlRpc
 #Include "Libs/Nadeo/ShootMania/Objects.Script.txt" as Objects
 
-// ---------------------------------- //
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
 // Constants
-// ---------------------------------- //
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
 // Callbacks
 #Const C_Callback_Event_Default											"Shootmania.Event.Default"
 #Const C_Callback_Event_OnShoot											"Shootmania.Event.OnShoot"
@@ -34,19 +34,19 @@
 #Const C_Callback_Event_OnPlayerThrowsObject					"Shootmania.Event.OnPlayerThrowsObject"
 #Const C_Callback_Event_OnPlayerRequestActionChange	"Shootmania.Event.OnPlayerRequestActionChange"
 
-// ---------------------------------- //
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
 // Globales
-// ---------------------------------- //
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
 declare Integer[] G_PassedOnEvents; ///< Array of passed on events
 declare Integer[] G_DiscardedEvents; ///< Array of discarded events
 
-// ---------------------------------- //
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
 // Functions
-// ---------------------------------- //
-// ---------------------------------- //
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
 // Private
-// ---------------------------------- //
-// ---------------------------------- //
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
 /** Get the login of a player if it exists
  *	or an empty Text otherwise
  *
@@ -59,7 +59,26 @@ Text Private_GetLogin(CSmPlayer _Player) {
 	return _Player.User.Login;
 }
 
-// ---------------------------------- //
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/** Get the login of an entity if it exists
+ *	or an empty Text otherwise
+ *
+ *	@param	_Entity										The entity to check
+ *
+ *	@return														The entity's login if it exists, an empty Text otherwise
+ */
+Text Private_GetLogin(CEntity _Entity) {
+	if (_Entity == Null) return "";
+	switchtype (_Entity) {
+		case CSmObject: return (_Entity as CSmObject).Id^"";
+		case CModeVehicle: return (_Entity as CModeVehicle).Id^"";
+		case CModeTurret: return (_Entity as CModeTurret).Id^"";
+		case CSmPlayer: return (_Entity as CSmPlayer).User.Login;
+	}
+	return "";
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
 /** Get a player position in JSON format
  *
  *	@param	_Player										The player to check
@@ -72,7 +91,44 @@ Text Private_GetPosition(CSmPlayer _Player) {
 	return XmlRpc::JsonGetVec3(Position);
 }
 
-// ---------------------------------- //
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/** Get an entity position
+ *
+ *	@param	_Entity										The entity to check
+ *
+ *	@return														The entity's position
+ */
+Vec3 Private_GetPositionVec3(CEntity _Entity) {
+	declare Vec3 Position;
+	if (_Entity != Null) {
+		switchtype (_Entity) {
+			case CSmObject: Position = (_Entity as CSmObject).Position;
+			case CModeVehicle: Position = (_Entity as CModeVehicle).Position;
+			case CModeTurret: {
+				if (TurretsManager != Null) {
+					Position = TurretsManager.Turret_GetPosition((_Entity as CModeTurret));
+				} else {
+					Position = <0., 0., 0.>;
+				}
+			}
+			case CSmPlayer: Position = (_Entity as CSmPlayer).Position;
+		}
+	}
+	return Position;
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/** Get an entity position in JSON format
+ *
+ *	@param	_Entity										The entity to check
+ *
+ *	@return														The entity's position in JSON format
+ */
+Text Private_GetPosition(CEntity _Entity) {
+	return XmlRpc::JsonGetVec3(Private_GetPositionVec3(_Entity));
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
 /** Get a landmark in JSON format
  *
  *	@param	_Landmark									The landmark to check
@@ -90,7 +146,7 @@ Text Private_GetLandmark(CSmMapLandmark _Landmark) {
 	}""";
 }
 
-// ---------------------------------- //
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
 /** Get the logins of the players that 
  *	captured a landmark in JSON format
  *
@@ -101,7 +157,7 @@ Text Private_GetLandmark(CSmMapLandmark _Landmark) {
 Text Private_GetLandmarkCapturers(CSmMapLandmark _Landmark) {
 	if (_Landmark == Null || _Landmark.Sector == Null) return "[]";
 	
-	declare Capturers = Text[];
+	declare Text[] Capturers;
 	foreach (PlayerId in _Landmark.Sector.PlayersIds) {
 		if (AllPlayers.existskey(PlayerId)) Capturers.add(AllPlayers[PlayerId].User.Login);
 	}
@@ -109,7 +165,7 @@ Text Private_GetLandmarkCapturers(CSmMapLandmark _Landmark) {
 	return dump(Capturers);
 }
 
-// ---------------------------------- //
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
 /** Send events callbacks
  *
  *	@param	_Event										The event to send
@@ -128,7 +184,7 @@ Void Private_XmlRpc_Event_OnShoot(CSmModeEvent _Event) {
 	
 	declare JSON = """{
 	"time": {{{dump(Now)}}},
-	"shooter": {{{XmlRpc::JsonGetText(Private_GetLogin(_Event.Shooter))}}},
+	"shooter": {{{XmlRpc::JsonGetText(Private_GetLogin(_Event.ShooterEntity))}}},
 	"weapon": {{{dump(_Event.WeaponNum)}}}
 }""";
 	XmlRpc::SendCallback(C_Callback_Event_OnShoot, [JSON]);
@@ -137,20 +193,20 @@ Void Private_XmlRpc_Event_OnHit(CSmModeEvent _Event) {
 	if (_Event == Null) return;
 	
 	declare Distance = 0.;
-	if (_Event.Shooter != Null && _Event.Victim != Null) {
-		Distance = ML::Distance(_Event.Shooter.Position, _Event.Victim.Position);
+	if (_Event.ShooterEntity != Null && _Event.VictimEntity != Null) {
+		Distance = ML::Distance(Private_GetPositionVec3(_Event.ShooterEntity), Private_GetPositionVec3(_Event.VictimEntity));
 	}
 	
 	declare JSON = """{
 	"time": {{{dump(Now)}}},
-	"shooter": {{{XmlRpc::JsonGetText(Private_GetLogin(_Event.Shooter))}}},
-	"victim": {{{XmlRpc::JsonGetText(Private_GetLogin(_Event.Victim))}}},
+	"shooter": {{{XmlRpc::JsonGetText(Private_GetLogin(_Event.ShooterEntity))}}},
+	"victim": {{{XmlRpc::JsonGetText(Private_GetLogin(_Event.VictimEntity))}}},
 	"weapon": {{{dump(_Event.WeaponNum)}}},
 	"damage": {{{dump(_Event.Damage)}}},
 	"points": {{{dump(_Event.ShooterPoints)}}},
 	"distance": {{{XmlRpc::JsonGetReal(Distance)}}},
-	"shooterposition": {{{Private_GetPosition(_Event.Shooter)}}},
-	"victimposition": {{{Private_GetPosition(_Event.Victim)}}}
+	"shooterposition": {{{Private_GetPosition(_Event.ShooterEntity)}}},
+	"victimposition": {{{Private_GetPosition(_Event.VictimEntity)}}}
 }""";
 	XmlRpc::SendCallback(C_Callback_Event_OnHit, [JSON]);
 }
@@ -159,12 +215,12 @@ Void Private_XmlRpc_Event_OnNearMiss(CSmModeEvent _Event) {
 	
 	declare JSON = """{
 	"time": {{{dump(Now)}}},
-	"shooter": {{{XmlRpc::JsonGetText(Private_GetLogin(_Event.Shooter))}}},
-	"victim": {{{XmlRpc::JsonGetText(Private_GetLogin(_Event.Victim))}}},
+	"shooter": {{{XmlRpc::JsonGetText(Private_GetLogin(_Event.ShooterEntity))}}},
+	"victim": {{{XmlRpc::JsonGetText(Private_GetLogin(_Event.VictimEntity))}}},
 	"weapon": {{{dump(_Event.WeaponNum)}}},
 	"distance": {{{dump(XmlRpc::JsonGetReal(_Event.MissDist))}}},
-	"shooterposition": {{{Private_GetPosition(_Event.Shooter)}}},
-	"victimposition": {{{Private_GetPosition(_Event.Victim)}}}
+	"shooterposition": {{{Private_GetPosition(_Event.ShooterEntity)}}},
+	"victimposition": {{{Private_GetPosition(_Event.VictimEntity)}}}
 }""";
 	XmlRpc::SendCallback(C_Callback_Event_OnNearMiss, [JSON]);
 }
@@ -172,18 +228,18 @@ Void Private_XmlRpc_Event_OnArmorEmpty(CSmModeEvent _Event) {
 	if (_Event == Null) return;
 	
 	declare Distance = 0.;
-	if (_Event.Shooter != Null && _Event.Victim != Null) {
-		Distance = ML::Distance(_Event.Shooter.Position, _Event.Victim.Position);
+	if (_Event.ShooterEntity != Null && _Event.VictimEntity != Null) {
+		Distance = ML::Distance(Private_GetPositionVec3(_Event.ShooterEntity), Private_GetPositionVec3(_Event.VictimEntity));
 	}
 	
 	declare JSON = """{
 	"time": {{{dump(Now)}}},
-	"shooter": {{{XmlRpc::JsonGetText(Private_GetLogin(_Event.Shooter))}}},
-	"victim": {{{XmlRpc::JsonGetText(Private_GetLogin(_Event.Victim))}}},
+	"shooter": {{{XmlRpc::JsonGetText(Private_GetLogin(_Event.ShooterEntity))}}},
+	"victim": {{{XmlRpc::JsonGetText(Private_GetLogin(_Event.VictimEntity))}}},
 	"weapon": {{{dump(_Event.WeaponNum)}}},
 	"distance": {{{XmlRpc::JsonGetReal(Distance)}}},
-	"shooterposition": {{{Private_GetPosition(_Event.Shooter)}}},
-	"victimposition": {{{Private_GetPosition(_Event.Victim)}}}
+	"shooterposition": {{{Private_GetPosition(_Event.ShooterEntity)}}},
+	"victimposition": {{{Private_GetPosition(_Event.VictimEntity)}}}
 }""";
 	XmlRpc::SendCallback(C_Callback_Event_OnArmorEmpty, [JSON]);
 }
@@ -202,8 +258,8 @@ Void Private_XmlRpc_Event_OnShotDeny(CSmModeEvent _Event) {
 	
 	declare JSON = """{
 	"time": {{{dump(Now)}}},
-	"shooter": {{{XmlRpc::JsonGetText(Private_GetLogin(_Event.Shooter))}}},
-	"victim": {{{XmlRpc::JsonGetText(Private_GetLogin(_Event.Victim))}}},
+	"shooter": {{{XmlRpc::JsonGetText(Private_GetLogin(_Event.ShooterEntity))}}},
+	"victim": {{{XmlRpc::JsonGetText(Private_GetLogin(_Event.VictimEntity))}}},
 	"shooterweapon": {{{dump(_Event.ShooterWeaponNum)}}},
 	"victimweapon": {{{dump(_Event.VictimWeaponNum)}}}
 }""";
@@ -297,8 +353,8 @@ Void Private_XmlRpc_Event_OnActionCustomEvent(CSmModeEvent _Event) {
 	
 	declare JSON = """{
 	"time": {{{dump(Now)}}},
-	"shooter": {{{XmlRpc::JsonGetText(Private_GetLogin(_Event.Shooter))}}},
-	"victim": {{{XmlRpc::JsonGetText(Private_GetLogin(_Event.Victim))}}},
+	"shooter": {{{XmlRpc::JsonGetText(Private_GetLogin(_Event.ShooterEntity))}}},
+	"victim": {{{XmlRpc::JsonGetText(Private_GetLogin(_Event.VictimEntity))}}},
 	"actionid": {{{XmlRpc::JsonGetText(_Event.ActionId)}}},
 	"param1": {{{XmlRpc::JsonGetText(_Event.Param1)}}},
 	"param2": {{{Param2}}}
@@ -340,8 +396,8 @@ Void Private_XmlRpc_Event_OnPlayerTriggersSector(CSmModeEvent _Event) {
 	if (_Event == Null) return;
 	
 	declare SectorId = NullId;
-	if (_Event.Sector != Null) {
-		SectorId = _Event.Sector.Id;
+	if (_Event.Landmark.Sector != Null) {
+		SectorId = _Event.Landmark.Sector.Id;
 	}
 	
 	declare JSON = """{
@@ -383,7 +439,7 @@ Void Private_XmlRpc_Event_OnPlayerRequestActionChange(CSmModeEvent _Event) {
 	XmlRpc::SendCallback(C_Callback_Event_OnPlayerRequestActionChange, [JSON]);
 }
 
-// ---------------------------------- //
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
 /** Pass on an event
  *
  *	@param	_Event										The event to pass on
@@ -419,7 +475,7 @@ Void Private_PassOn(CSmModeEvent _Event) {
 	}
 }
 
-// ---------------------------------- //
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
 /** Discard an event
  *
  *	@param	_Event										The event to discard
@@ -434,10 +490,10 @@ Void Private_Discard(CSmModeEvent _Event) {
 	}
 }
 
-// ---------------------------------- //
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
 // Public
-// ---------------------------------- //
-// ---------------------------------- //
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
 /**	Return the version number of the script
  *
  *	@return														The version number of the script
@@ -446,7 +502,7 @@ Text GetScriptVersion() {
 	return Version;
 }
 
-// ---------------------------------- //
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
 /**	Return the name of the script
  *
  *	@return														The name of the script
@@ -455,7 +511,7 @@ Text GetScriptName() {
 	return ScriptName;
 }
 
-// ---------------------------------- //
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
 /** Pass on an event
  *
  *	@param	_Event										The event to pass on
@@ -466,7 +522,7 @@ Void Valid(CSmModeEvent _Event) {
 	Private_PassOn(_Event);
 }
 
-// ---------------------------------- //
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
 /** Discard an event
  *
  *	@param	_Event										The event to discard
@@ -477,7 +533,7 @@ Void Invalid(CSmModeEvent _Event) {
 	Private_Discard(_Event);
 }
 
-// ---------------------------------- //
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
 /** Check if the PassOn() function was
  *	called on the given event
  *
@@ -491,7 +547,7 @@ Boolean Validated(CSmModeEvent _Event) {
 	return G_PassedOnEvents.exists(PendingEvents.keyof(_Event));
 }
 
-// ---------------------------------- //
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
 /** Check if the Discard() function was
  *	called on the given event
  *
@@ -505,7 +561,7 @@ Boolean Invalidated(CSmModeEvent _Event) {
 	return G_DiscardedEvents.exists(PendingEvents.keyof(_Event));
 }
 
-// ---------------------------------- //
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
 /** Check if an event was processed
  *
  *	@param	_Event										The event to check
@@ -518,14 +574,14 @@ Boolean Processed(CSmModeEvent _Event) {
 	return G_PassedOnEvents.exists(EventKey) || G_DiscardedEvents.exists(EventKey);
 }
 
-// ---------------------------------- //
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
 /// Function to call at each yield
 Void Yield() {
 	G_PassedOnEvents.clear();
 	G_DiscardedEvents.clear();
 }
 
-// ---------------------------------- //
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
 /// Unload the library
 Void Unload() {
 	G_PassedOnEvents.clear();
@@ -552,7 +608,7 @@ Void Unload() {
 	XmlRpc::UnregisterCallback(C_Callback_Event_OnPlayerRequestActionChange);
 }
 
-// ---------------------------------- //
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
 /// Load the library
 Void Load() {
 	Unload();
