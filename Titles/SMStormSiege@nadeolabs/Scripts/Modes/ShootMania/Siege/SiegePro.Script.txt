@@ -4,7 +4,7 @@
 #Extends "Modes/ShootMania/Siege/SiegeBase.Script.txt"
 
 #Const CompatibleMapTypes	"SiegeV2Arena,LobbyArena"
-#Const Version							"2017-07-10"
+#Const Version							"2017-11-21"
 #Const ScriptName						"Modes/ShootMania/Siege/SiegePro.Script.txt"
 
 // ---------------------------------- //
@@ -416,17 +416,18 @@ UpdateScoresTableFooter(G_ClanRoundScores);
 
 // ---------------------------------- //
 // Init players clan and spawnability
-foreach (Player in AllPlayers) {
-	SetPlayerClan(Player, MM_GetRequestedClan(Player));
-}
 if (SpawnIsLimited()) {
-	// Init players
+	// Empty groups
 	foreach (Player in AllPlayers) {
-		if (Player.CurrentClan == 1) WarmUp::SetPlayerGroup(Player, "Clan1");
-		else if (Player.CurrentClan == 2) WarmUp::SetPlayerGroup(Player, "Clan2");
+		WarmUp::UnsetPlayerSlot(Player);
+		WarmUp::UnsetPlayerGroup(Player);
 	}
+	WarmUp::SetGroup("Clan1", Ident[Integer]);
+	WarmUp::SetGroup("Clan2", Ident[Integer]);
 	WarmUp::Clean();
-	WarmUp::Fill();
+}
+foreach (Player in AllPlayers) {
+	Siege_SetPlayerClan(Player, MM_GetRequestedClan(Player));
 }
 
 // ---------------------------------- //
@@ -456,7 +457,7 @@ foreach (Player in AllPlayers) {
 	
 	declare SpawnTicket for Player = 0;
 	declare SpawnType for Player = C_SpawnType_BeginTurn;
-	if (IsSpawnable(Player)) SpawnTicket = 1;
+	if (IsSpawnable(Player, True)) SpawnTicket = 1;
 	SpawnType = C_SpawnType_BeginTurn;
 	
 	declare ArmorsLost for Player = 0;
@@ -546,10 +547,11 @@ foreach (Player in Players) {
 	if (Player.SpawnStatus == CSmPlayer::ESpawnStatus::NotSpawned) {
 		if (MM_IsMatchServer() && !MM_PlayerIsAllowedToPlay(Player)) continue;
 		declare SpawnTicket for Player = 0;
+		
 		if (SpawnTicket <= 0) continue;
 		
 		if (Player.CurrentClan != 3 - CapturingClan && Player.CurrentClan != CapturingClan) {
-			SetPlayerClan(Player, MM_GetRequestedClan(Player));
+			Siege_SetPlayerClan(Player, MM_GetRequestedClan(Player));
 		}
 		
 		SetupSkills(Player, CapturingClan);
@@ -1473,6 +1475,40 @@ Boolean SpawnIsLimited() {
  *
  *	@return		True if the player is spawnable, false otherwise
  */
+Boolean IsSpawnable(CSmPlayer _Player, Boolean _Log) {
+	if (_Log && _Player != Null) Log::Log("""[SiegePro] IsSpawnable > _Player: {{{_Player.User.Login}}}""");
+	if (_Log && _Player == Null) Log::Log("""[SiegePro] IsSpawnable > _Player: {{{_Player}}}""");
+	
+	if (_Player == Null) {
+		if (_Log && _Player != Null) Log::Log("""[SiegePro] IsSpawnable > _Player: {{{_Player}}} is Null | return False""");
+		return False;
+	}
+	if (_Player.RequestsSpectate) {
+		if (_Log) Log::Log("""[SiegePro] IsSpawnable > RequestsSpectate: {{{_Player.RequestsSpectate}}} is True | return False""");
+		return False;
+	}
+	if (!SpawnIsLimited()) {
+		if (_Log) Log::Log("""[SiegePro] IsSpawnable > SpawnIsLimited: {{{SpawnIsLimited()}}} is False | return True""");
+		return True;
+	}
+	
+	if (WarmUp::GetPlayerSlot(_Player) <= 0) {
+		if (_Log) Log::Log("""[SiegePro] IsSpawnable > PlayerSlot: {{{WarmUp::GetPlayerSlot(_Player)}}} <= 0 | return False""");
+		return False;
+	}
+	if (_Player.CurrentClan == 1 && WarmUp::GetPlayerGroup(_Player) == "Clan1") {
+		if (_Log) Log::Log("""[SiegePro] IsSpawnable > PlayerGroup: {{{WarmUp::GetPlayerGroup(_Player)}}} == "Clan1" && CurrentClan: {{{_Player.CurrentClan}}} == 1 | return True""");
+		return True;
+	}
+	if (_Player.CurrentClan == 2 && WarmUp::GetPlayerGroup(_Player) == "Clan2") {
+		if (_Log) Log::Log("""[SiegePro] IsSpawnable > PlayerGroup: {{{WarmUp::GetPlayerGroup(_Player)}}} == "Clan2" && CurrentClan: {{{_Player.CurrentClan}}} == 2 | return True""");
+		return True;
+	}
+	
+	if (_Log) Log::Log("""[SiegePro] IsSpawnable > Nothing matched | return False""");
+	return False;
+}
+/*
 Boolean IsSpawnable(CSmPlayer _Player) {
 	if (_Player == Null) return False;
 	if (_Player.RequestsSpectate) return False;
@@ -1483,6 +1519,52 @@ Boolean IsSpawnable(CSmPlayer _Player) {
 	if (_Player.CurrentClan == 2 && WarmUp::GetPlayerGroup(_Player) == "Clan2") return True;
 	
 	return False;
+}
+*/
+
+// ---------------------------------- //
+/** Set a player clan
+ *
+ *	@param	_Player										The player to update
+ *	@param	_Clan											The clan to join
+ */
+Void Siege_SetPlayerClan(CSmPlayer _Player, Integer _Clan) {
+	if (_Player == Null) return;
+	
+	declare RequestedClan = _Clan;
+	
+	if (SpawnIsLimited()) {
+		WarmUp::UnsetPlayerSlot(_Player);
+		WarmUp::UnsetPlayerGroup(_Player);
+		WarmUp::Clean();
+		WarmUp::Fill();
+		
+		declare RequestedGroup = "";
+		declare OtherGroup = "";
+		declare OtherClan = 0;
+		if (RequestedClan == 1) {
+			RequestedGroup = "Clan1";
+			OtherGroup = "Clan2";
+			OtherClan = 2;
+		} else if (RequestedClan == 2) {
+			RequestedGroup = "Clan2";
+			OtherGroup = "Clan1";
+			OtherClan = 1;
+		}
+		
+		if (RequestedGroup != "") {
+			if (WarmUp::GetPlayersNb(RequestedGroup) < WarmUp::GetSlotsNb(RequestedGroup)) {
+				WarmUp::SetPlayerGroup(_Player, RequestedGroup);
+			} else if (WarmUp::GetPlayersNb(OtherGroup) < WarmUp::GetSlotsNb(OtherGroup)) {
+				WarmUp::SetPlayerGroup(_Player, OtherGroup);
+				RequestedClan = OtherClan;
+			}
+		}
+		
+		WarmUp::Fill();
+	}
+	
+	SetPlayerClan(_Player, RequestedClan);
 }
 
 // ---------------------------------- //
@@ -2088,10 +2170,10 @@ Void SelectWeapons(Integer _CapturingClan) {
 		MB_Yield();
 		
 		foreach (Player in Players) {
-			if (!IsSpawnable(Player)) {
+			if (!IsSpawnable(Player, False)) {
 				if (WeaponSelection::GetPlayerGroup(Player) != "") WeaponSelection::UnsetPlayerGroup(Player);
 			} else {
-				if (Player.CurrentClan != 1 && Player.CurrentClan != 2) SetPlayerClan(Player, MM_GetRequestedClan(Player));
+				if (Player.CurrentClan != 1 && Player.CurrentClan != 2) Siege_SetPlayerClan(Player, MM_GetRequestedClan(Player));
 				
 				if (Player.CurrentClan == _CapturingClan && WeaponSelection::GetPlayerGroup(Player) != "Attack") {
 					WeaponSelection::SetPlayerGroup(Player, "Attack");
@@ -2134,9 +2216,7 @@ Void DoWarmUp() {
 	MB_Synchro();
 	SM::UnspawnAllPlayers();
 	foreach (Player in AllPlayers) {
-		SetPlayerClan(Player, MM_GetRequestedClan(Player));
-		if (Player.CurrentClan == 1) WarmUp::SetPlayerGroup(Player, "Clan1");
-		else if (Player.CurrentClan == 2) WarmUp::SetPlayerGroup(Player, "Clan2");
+		Siege_SetPlayerClan(Player, MM_GetRequestedClan(Player));
 	}
 	
 	WarmUp::Clean();
@@ -2155,9 +2235,7 @@ Void DoWarmUp() {
 			declare RequestedClan = MM_GetRequestedClan(Player);
 			if (Player.CurrentClan != RequestedClan) {
 				UnspawnPlayer(Player);
-				SetPlayerClan(Player, RequestedClan);
-				if (Player.CurrentClan == 1) WarmUp::SetPlayerGroup(Player, "Clan1");
-				else if (Player.CurrentClan == 2) WarmUp::SetPlayerGroup(Player, "Clan2");
+				Siege_SetPlayerClan(Player, RequestedClan);
 			}
 		}
 		
@@ -3370,7 +3448,7 @@ Void ActivateCheckpoint(
 			if (Player.CurrentClan != 3 - _CapturingClan) continue;
 			
 			declare SpawnTicket for Player = 0;
-			if (IsSpawnable(Player)) {
+			if (IsSpawnable(Player, True)) {
 				SpawnTicket = 1;
 				declare SpawnType for Player = C_SpawnType_BeginTurn;
 				SpawnType = C_SpawnType_Capture;
