@@ -1,0 +1,1984 @@
+/**
+ *  team selection UI
+ */
+#Const Version    "2018-06-21"
+#Const ScriptName "ManiaApps/Nadeo/TeamSelection_Server.Script.txt"
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Libraries
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+#Include "Libs/Nadeo/ShootMania/Royal/Constants2.Script.txt" as Const
+#Include "MathLib" as ML
+#Include "Libs/Nadeo/Color.Script.txt" as Color
+
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Constants
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+#Const C_CanInvitePlayerFromAnotherTeam False //< Can a player select as teammate a player that is already in a team
+
+#Struct KTeam {
+	Text Leader;
+	Text[] AllTeamMembers;
+	Vec3 TeamColor;
+	Boolean VipInTeam;
+	Integer TeamScore;
+	Text	TeamEventName;
+	Integer PointsScored;
+	Integer BonusStreakValue;
+	Integer TeamHitCombo;
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Globales
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+
+declare Boolean G_InvitationSent;
+declare Text[] G_PlayerInTeams;
+declare Text[] G_AllPlayersInAnyTeam;
+declare KTeam[Text] G_AllTeams;
+declare Vec3[] G_TeamColor;
+declare Integer G_TeamCreated;
+declare Text[] G_PlayersWithNoTeam;
+
+
+declare Text[] G_LeadersToDisplay;
+declare Text[] G_PlayersWaiting;
+declare Text[] G_LeadersInFullTeam;
+declare Text[] G_InviterLeaveTeamCreation;
+declare Text[] G_PlayersWaitingForAnAutoFillTeam;
+declare Text[] G_PlayersJoiningAnAutoFillTeamAndCanGoesLeader;
+
+declare Integer G_PlayersInAutoJoinTimer;
+declare Integer G_PrevPlayersInAutoJoinTimer;
+declare Integer G_PrevTeamRefresh;
+
+declare Ident[] G_PlayerList;
+declare Text[] G_PlayerLoginToRemove;
+declare Ident[Text] G_IdsOfPlayerInTeam;
+
+declare Text[] G_PlayerLoginList;
+declare Text[] G_PlayerSpectating;
+declare Text[] G_InvitersToDelete;
+
+declare Integer G_Count;
+declare Integer G_PrevCall;
+
+declare Text[] G_PlayersNeedHelp;
+declare Integer PlayersNeedingHelpTimer;
+declare Integer PrevPlayersNeedingHelpTimer;
+declare Integer PrevTeamRefresh;
+declare Integer PrevAllPlayersCount;
+declare Integer PrevPlayersCount;
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Functions
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Public
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/** Allow the display of team selection UI
+ *	for the given player
+ *
+ *	@param	_Enabled									True to display the team selection UI,
+ *																		False otherwise
+ *	@param	_Player										The player to update
+ */
+Void Enable(Boolean _Enabled, CPlayer _Player) {
+	if (_Player == Null) return;
+	declare netwrite Net_TeamSelection_IsEnabled for _Player = False;
+	Net_TeamSelection_IsEnabled = _Enabled;
+}
+
+/** Called once the server is started
+ *
+ *	@Action														Initialize every value in the server
+ */
+Void OnStartServer(){
+	
+	declare netwrite Integer	ServerRestartTime							for Teams[0];
+	ServerRestartTime = Now;
+	declare netwrite Text			Net_LoginOfLeader					for Teams[0];
+	Net_LoginOfLeader = "";
+	declare netwrite Text[]		Net_Array_LoginOfLeader		for Teams[0];
+	Net_Array_LoginOfLeader.clear();
+	declare netwrite Integer	TeamRefresh								for Teams[0];
+	TeamRefresh = 0;
+	declare netwrite Integer	Net_TS2_PlayersPerTeam		for Teams[0];
+	Net_TS2_PlayersPerTeam = 0;
+	declare netwrite Text[]		Client_PlayersInTeamList	for Teams[0];
+	Client_PlayersInTeamList.clear();
+	declare netwrite Text[]		Net_LeadersToDisplay			for Teams[0];
+	Net_LeadersToDisplay = [];
+	declare netwrite Text[]		PlayersInTeamList					for Teams[0];
+	PlayersInTeamList = [];
+	declare netwrite Text[]   Net_InvitersToDelete			for Teams[0];
+	Net_InvitersToDelete = [];
+	declare netwrite Text[]		Net_AllPlayersInTeam			for Teams[0];
+	Net_AllPlayersInTeam = [];
+	declare netwrite Text[]		LeadersListForClient			for Teams[0];
+	LeadersListForClient = [];
+	declare netwrite Text[] Net_LeaderSpawnedList 			for Teams[0];
+	Net_LeaderSpawnedList = [];
+	declare netwrite Text[] Net_LeaderReadyToSpawn			for Teams[0];
+	G_AllPlayersInAnyTeam = [];
+ 	declare netwrite Text[][Text] Net_AllTeamsMembersInServer for Teams[0];
+	Net_AllTeamsMembersInServer.clear();
+	G_PlayersWithNoTeam = [];
+	declare netwrite Text[] Net_PlayersWithNoTeam for Teams[0];
+	Net_PlayersWithNoTeam = [];
+	declare netwrite Text[] Net_PlayersInAutoJoin for Teams[0];
+	Net_PlayersInAutoJoin = [];
+	declare netwrite Text[] Net_PlayersInATeam for Teams[0];
+	Net_PlayersInATeam = [];
+	G_AllTeams = [];
+	G_PlayersWithNoTeam = [];
+	G_PlayersWaitingForAnAutoFillTeam = [];
+	G_PlayersJoiningAnAutoFillTeamAndCanGoesLeader = [];
+	
+	foreach(Player in Players){
+		declare UI <=> UIManager.GetUI(Player);
+		declare netwrite Boolean	IsPlayerSpawned							for UI;
+		declare netwrite Text[]		SquadForClient							for UI;
+		declare netwrite Integer UpdateClientSquad 						for UI;
+		declare netwrite Text[]		Client_PlayersInTeamList		for UI;
+		declare netwrite Boolean	InATeamForMode							for UI;
+		declare netwrite Text[] PlayerMembers 								for Player;
+		declare netwrite Boolean IsPlayersUpdated 						for UI;
+		declare netwrite Net_SelectedPlayer 									for UI = "";
+		declare netwrite Text	LoginOfInviter 									for UI;
+		declare netwrite Integer HasBeenInvitedTime 					for UI;
+		declare netwrite Text	LoginOfRequester 								for UI;
+		declare netwrite Boolean IsInTeam 										for UI;
+		declare netwrite Integer IsInTeamTimer 								for UI;
+		declare netwrite Text[] Net_PlayerDisplayedForMakers  for UI;
+		declare netwrite Text[] Net_PlayersNeedHelp 					for UI;
+		declare netwrite Text[] MatesHealed 									for UI;
+		declare netwrite Boolean PutInAutoJoin 								for UI;
+		
+		PutInAutoJoin = False;
+		Net_PlayersNeedHelp = [];
+		PlayersNeedingHelpTimer = Now;
+		IsPlayerSpawned = False;
+		Net_PlayerDisplayedForMakers = [];
+		SquadForClient = [];
+		UpdateClientSquad = Now;
+		MatesHealed = [];
+		Client_PlayersInTeamList = [];
+		InATeamForMode = False;
+		PlayerMembers = [];
+		IsPlayersUpdated = False;
+		Net_SelectedPlayer = "";
+		IsInTeam = False;
+		IsInTeamTimer = Now;
+		LoginOfInviter = "";
+	}
+
+	G_PlayerInTeams.clear();
+	
+}
+
+Void ShowTeamSelectionUI(){
+	declare netwrite Boolean HideMenu for Teams[0];
+	HideMenu = False;
+}
+
+Void HideTeamSelectionUI(){
+	declare netwrite Boolean HideMenu for Teams[0];
+	HideMenu = True;	
+}
+
+
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/** Get the validated teammate of a player
+ *	A teammate is validated if both side
+ *	agreed to play together
+ *
+ *	@param	_Player										The player to check
+ *
+ *	@return														The validated teammate if found,
+ *																		Null otherwise
+ */
+CPlayer GetValidatedTeammate(CPlayer _Player) {
+	if (_Player == Null) return Null;
+	
+	declare TeamSelection_Teammate for _Player = NullId;
+	if (TeamSelection_Teammate != NullId && Players.existskey(TeamSelection_Teammate)) {
+		declare Teammate <=> Players[TeamSelection_Teammate];
+		declare TeamSelection_Teammate as ReverseTeammate for Teammate = NullId;
+		if (ReverseTeammate != NullId && Players.existskey(ReverseTeammate) && Players[ReverseTeammate] == _Player) {
+			return Teammate;
+		}
+	}
+	
+	return Null;
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/** Get the requested teammate of a player
+ *	A teammate is requested if at least one side
+ *	agreed to play together
+ *
+ *	@param	_Player										The player to check
+ *
+ *	@return														The requested teammate if found,
+ *																		Null otherwise
+ */
+CPlayer GetRequestedTeammate(CPlayer _Player) {
+	if (_Player == Null) return Null;
+	
+	declare TeamSelection_Teammate for _Player = NullId;
+	if (TeamSelection_Teammate != NullId && Players.existskey(TeamSelection_Teammate)) {
+		return Players[TeamSelection_Teammate];
+	}
+	
+	return Null;
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/// Send the current player selection to the UI
+Void UpdatePlayerSelection() {
+	declare PlayerSelection = Text[Text];
+	
+	foreach (Player in Players) {
+		declare TeamSelection_Teammate for Player = NullId;
+		if (TeamSelection_Teammate != NullId && Players.existskey(TeamSelection_Teammate)) {
+			PlayerSelection[Player.User.Login] = Players[TeamSelection_Teammate].User.Login;
+		}
+	}
+	
+	declare netwrite Net_TeamSelection_PlayerSelection for Teams[0] = Text[Text];
+	declare netwrite Net_TeamSelection_PlayerSelectionUpdate for Teams[0] = -1;
+	Net_TeamSelection_PlayerSelection = PlayerSelection;
+	Net_TeamSelection_PlayerSelectionUpdate = Now;
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/** Select if the given player use a
+ *	random teammate or not
+ *
+ *	@param	_IsRandom									True to use a random teammate,
+ *																		False otherwise
+ *	@param	_Player										The player to update
+ */
+Void UseRandomTeammate(Boolean _IsRandom, CPlayer _Player) {
+	if (_Player == Null) return;
+	
+	declare TeamSelection_UseRandomTeammate for _Player = False;
+	TeamSelection_UseRandomTeammate = _IsRandom;
+	
+	declare netwrite Net_TeamSelection_UseRandomTeammate for _Player = False;
+	Net_TeamSelection_UseRandomTeammate = TeamSelection_UseRandomTeammate;
+	
+	if (_IsRandom) {
+		declare TeamSelection_Teammate for _Player = NullId;
+		TeamSelection_Teammate = NullId;
+	}
+	
+	UpdatePlayerSelection();
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/** Check if the given player has a
+ *	a random teammate
+ *
+ *	@param	_Player										The player to check
+ *
+ *	@return														True if the player has a random teammate,
+ *																		False otherwise
+ */
+Boolean HasRandomTeammate(CPlayer _Player) {
+	if (_Player == Null) return False;
+	
+	declare TeamSelection_UseRandomTeammate for _Player = False;
+	return TeamSelection_UseRandomTeammate;
+}
+
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/** Set the teammate of a player
+ *
+ *	@param	_Teammate									The teammate to associate
+ *	@param	_Player										The player to update
+ */
+Void SetTeammate(CPlayer _Teammate, CPlayer _Player) {
+	if (_Player == Null) return;
+	
+	declare TeamSelection_Teammate for _Player = NullId;
+	if (_Teammate != Null && _Player != _Teammate) {
+		if (
+			C_CanInvitePlayerFromAnotherTeam ||
+			GetValidatedTeammate(_Teammate) == Null
+		) {
+			TeamSelection_Teammate = _Teammate.Id;
+			UseRandomTeammate(False, _Player);
+			
+			// If both players now form a team
+			// Cancel any teammate requests they previously received
+			if (
+				!C_CanInvitePlayerFromAnotherTeam &&
+				GetValidatedTeammate(_Teammate) != Null
+			) {
+				foreach (Player in AllPlayers) {
+					if (Player != _Teammate && Player != _Player) {
+						declare TeamSelection_Teammate as RequestedTeammate for Player = NullId;
+						if (RequestedTeammate == _Teammate.Id || RequestedTeammate == _Player.Id) {
+							RequestedTeammate = NullId;
+						}
+					}
+				}
+			}
+		}
+	} else {
+		TeamSelection_Teammate = NullId;
+	}
+	
+	UpdatePlayerSelection();
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/** Send the list of players currently
+ *	in the lobby to the UI
+ *
+ *	@param	_PlayerIds								The id of the players currently in the lobby
+ */
+Void SetLobbyPlayers(Ident[] _PlayerIds) {
+	declare Logins = Text[];
+	foreach (PlayerId in _PlayerIds) {
+		if (AllPlayers.existskey(PlayerId)) {
+			Logins.add(AllPlayers[PlayerId].User.Login);
+		}
+	}
+	
+	declare netwrite Net_TeamSelection_PlayersInLobby for Teams[0] = Text[];
+	declare netwrite Net_TeamSelection_PlayersInLobbyUpdate for Teams[0] = -1;
+	Net_TeamSelection_PlayersInLobby = Logins;
+	Net_TeamSelection_PlayersInLobbyUpdate = Now;
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/** Find the player owning the given UI
+ *
+ *	@param	_UI												The UI to check
+ *
+ *	@return														The owning player if found,
+ *																		Null otherwise
+ */
+CPlayer FindPlayerFromUI(CUIConfig _UI) {
+	if (_UI == Null) return Null;
+	
+	foreach (Player in Players) {
+		if (_UI == UIManager.GetUI(Player)) {
+			return Player;
+		}
+	}
+	
+	return Null;
+}
+
+/** Get the Requested CPlayer
+ *
+ *	@param	_LoginOfInvited										The login of the player invited
+ *
+ * @return PotentialInvited										The CPlayer corresponding to the login
+ */
+CPlayer GetRequestedFromLogin(Text _LoginOfInvited) {
+	foreach (PotentialInvited in Players) {
+		if (PotentialInvited.User.Login == _LoginOfInvited) {
+			return PotentialInvited;
+		}
+	}
+	return Null;
+}
+
+/** Get the Chief from Login
+ *
+ *	@param	_LoginOfChief										The login of the Chief
+ *
+ *	@return	PotentialChief									The CPlayer corresponding to the login
+ */
+CPlayer GetChiefFromLogin(Text _LoginOfChief){
+	foreach (PotentialChief in Players) {
+		if (PotentialChief.User.Login == _LoginOfChief) {
+		return PotentialChief;
+		}
+	}
+	return Null;
+}
+
+/** Get the Requester corresponding to the Event.UI
+ *
+ *	@param	_Event										The Event send, containing the UI of the player who activate it
+ *	@return	PotentialRequester				The Player correponding to the UI of the Event
+ */
+CPlayer GetRequesterFromEvent(CUIConfigEvent _Event) {
+	foreach (PotentialRequester in Players) {
+		declare UIOfPotentialRequester <=> UIManager.GetUI(PotentialRequester);
+		if (UIOfPotentialRequester == _Event.UI) {	
+			return PotentialRequester;
+		}
+	}
+	return Null;
+}
+
+/** Play a sound and notice if someone is close to win
+ *
+ *	@param	_Event										The Event send, containing the UI of the player who activate it
+ *	@return	PotentialInvited					The potential invited CPlayer 
+ */
+CPlayer GetInvitedFromEvent(CUIConfigEvent _Event){
+	foreach (PotentialInvited in Players){
+		declare UI <=> UIManager.GetUI(PotentialInvited);
+		if (UI == _Event.UI) {
+			return PotentialInvited;
+		}
+	}
+	return Null;
+}
+
+/** Ensure that both Requester and Requested are not Null
+ *
+ *	@param	_Requested										The player who scored a point
+ *	@param	_Requester										The points limit to reach to win
+ */
+Boolean AreRequestedAndRequesterNotNull(CPlayer _Requested, CPlayer _Requester) {
+	if (_Requested != Null && _Requester != Null) {
+		return True;
+	} else {
+		return False;
+	}
+	return False;
+}
+
+
+/** Send the invited to the Requested Player
+ *
+ *	@param	_Requester										The Requester
+ *	@param	_Requested										The Requested who receive the invite
+ */
+Void GiveInviteFromRequesterToRequested(CPlayer _Requester, CPlayer _Requested) {
+	declare UIOfRequested <=> UIManager.GetUI(_Requested);
+	declare netwrite Text	LoginOfInviter for UIOfRequested;
+	LoginOfInviter = _Requester.User.Login;
+	if(_Requester != Null && LoginOfInviter != ""){
+		declare netwrite Integer HasBeenInvitedTime for UIOfRequested;
+		HasBeenInvitedTime = Now;
+	}
+}
+
+/** Play a sound and notice if someone is close to win
+ *
+ *	@param	_Player										The player who scored a point
+ *	@param	_PointsLimit							The points limit to reach to win
+ */
+Void SendInviteFromRequesterMemberToLeader(CPlayer _Requester, CPlayer _Requested) {
+	declare UIOfRequested <=> UIManager.GetUI(_Requested);
+	declare netwrite Text	LoginOfRequester for UIOfRequested;
+	LoginOfRequester = _Requester.User.Login;
+	declare netwrite Integer HasBeenRequestedTime for UIOfRequested;
+	HasBeenRequestedTime = Now;
+}
+
+/** Get the User.Login of a Given CPlayer
+ *
+ *	@param	_Player										The player who scored a point
+ */
+Text GetNameFromPlayer (CPlayer _Player) {
+	foreach(Player in Players){
+		if (Player == _Player) {
+			return Player.User.Login;
+		}
+	}
+	return "";
+}
+
+/** Get the User.Name of a Given CPlayer
+ *
+ *	@param	_Player										The player who scored a point
+ */
+Text GetRealNameFromPlayer (CPlayer _Player){
+	foreach(Player in Players){
+		if (Player == _Player) {
+			return Player.User.Name;
+		}
+	}
+	return "";
+}
+
+/** Get Player from a Given Login
+ *
+ *	@param	_Player										The player who scored a point
+ *	@param	_PointsLimit							The points limit to reach to win
+ */
+CPlayer GetPlayerFromLogin (Text _PlayerName) {
+	foreach(Player in Players){
+		if (Player.User.Login == _PlayerName) {
+			
+			return Player;
+		}
+	}
+	return Null;
+}
+
+/** Get Player from a Given Login
+ *
+ *	@param	_Player										The player who scored a point
+ *	@param	_PointsLimit							The points limit to reach to win
+ */
+CSmPlayer GetCSmPlayerFromLogin (Text _PlayerName) {
+	foreach(Player in Players){
+		if (Player.User.Login == _PlayerName) {
+			
+			return Player;
+		}
+	}
+	return Null;
+}
+
+CPlayer GetPlayerinAllPlayersFromLogin(Text _Login){
+	foreach(Player in AllPlayers){
+		if(Player.User.Login == _Login){
+			return Player;
+		}
+	}
+	return Null;
+}
+
+Void HidePlayerTeamCreationUI(Text _PlayerLogin){
+	declare PlayerToHideUI <=> GetPlayerFromLogin(_PlayerLogin);
+	if(PlayerToHideUI != Null){
+		declare UI <=> UIManager.GetUI(PlayerToHideUI);
+		declare netwrite Boolean HidePlayerUI for UI;
+		HidePlayerUI = True;
+	}
+}
+
+Void ShowPlayerTeamCreationUI(Text _PlayerLogin){
+	declare PlayerToHideUI <=> GetPlayerFromLogin(_PlayerLogin);
+	if(PlayerToHideUI != Null){
+		declare UI <=> UIManager.GetUI(PlayerToHideUI);
+		declare netwrite Boolean HidePlayerUI for UI;
+		HidePlayerUI = False;
+	}
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Manage Clan //
+
+//When a team is created/modified, add the Team in the TeamsList if the team exists update the values
+/** Play a sound and notice if someone is close to win
+ *
+ *	@param	_Player										The player who scored a point
+ *	@param	_PointsLimit							The points limit to reach to win
+ */
+KTeam[Text] AddTeamInTeamsList(KTeam _Team) {
+	
+	if (!G_AllTeams.existskey(_Team.Leader)) {
+		G_AllTeams[_Team.Leader] = _Team;
+	}
+	return G_AllTeams;
+}
+
+/** Get all The teams existing in the server
+ *
+ *	@param	_GetAllTeam										The player who scored a point
+ */
+KTeam[Text] GetAllTeams(Boolean _GetAllTeam){
+	declare Text[][Text] AllTeamsMembers_Array;
+	declare netwrite Text[][Text] Net_AllTeamsMembersInServer for Teams[0];
+	foreach(TeamKey => Team in G_AllTeams){
+		AllTeamsMembers_Array[G_AllTeams[TeamKey].AllTeamMembers[0]] = G_AllTeams[TeamKey].AllTeamMembers;
+		//Remove the key if the leader isn't a Leader in G_AllTeams
+	}
+	foreach(TeamsMembersIndex => TeamMember in AllTeamsMembers_Array){
+		if(!G_AllTeams.existskey(TeamsMembersIndex)){
+			AllTeamsMembers_Array.removekey(TeamsMembersIndex);
+		}
+	}
+	Net_AllTeamsMembersInServer = AllTeamsMembers_Array;
+	return G_AllTeams;
+}
+
+//Function called if it's a leader that doesn't exist in G_AllTeams, then add the leader in this team
+/** Play a sound and notice if someone is close to win
+ *
+ *	@param	_Leader										The Leader who own the future team
+ */
+KTeam CreateNewTeam(CPlayer _Leader) {
+declare KTeam NewTeam;
+	if(_Leader != Null){
+		
+		NewTeam.Leader = _Leader.User.Login;
+		declare Text LoginOfLeader = _Leader.User.Login;
+		declare Real ColorValue;
+		NewTeam.TeamScore = 0;
+		declare UI <=> UIManager.GetUI(_Leader);
+		declare netwrite Text[] SquadForClient for UI;
+		declare netwrite Boolean IsInTeam  for UI;
+		declare netwrite Integer IsInTeamTimer for UI;
+		IsInTeamTimer = Now;
+		IsInTeam = True;
+		if(!G_AllPlayersInAnyTeam.exists(_Leader.User.Login)){
+			G_AllPlayersInAnyTeam.add(_Leader.User.Login);
+		}
+		declare netwrite Text[] Net_AllPlayersInTeam for Teams[0];
+		Net_AllPlayersInTeam = G_AllPlayersInAnyTeam;
+		declare netwrite Integer Net_AllPlayersInTeamTimer for Teams[0];
+		Net_AllPlayersInTeamTimer = Now;
+		declare netwrite Integer	TeamRefresh				 for Teams[0];
+		TeamRefresh = Now;
+		NewTeam.TeamColor = Color::GetNewColor();
+		NewTeam.AllTeamMembers.add(LoginOfLeader);
+		SquadForClient = NewTeam.AllTeamMembers;
+		AddTeamInTeamsList(NewTeam);
+	}
+
+
+	return NewTeam;
+}
+
+// Function called if the team already exist (Leader exist), then add the member in the Leader Team
+/** Play a sound and notice if someone is close to win
+ *
+ *	@param	_Team										The Team to modify
+ *	@param	_Member									The Member to add to the team
+ */
+KTeam AddMembersInExistingTeam(KTeam _Team, CPlayer _Member) {
+
+	declare Text _LoginOfMember;
+	declare KTeam _ExistingTeam = _Team;
+	declare netwrite Integer TeamRefresh for Teams[0];
+	declare UIOfMember <=> UIManager.GetUI(_Member);
+	declare PlayerInTeamLogin = GetNameFromPlayer(_Member);
+	
+	declare netwrite Integer Net_TS2_PlayersPerTeam for Teams[0];
+	if (_ExistingTeam.AllTeamMembers.count < Net_TS2_PlayersPerTeam) {
+		_LoginOfMember = _Member.User.Login;
+		if(!_ExistingTeam.AllTeamMembers.exists(_LoginOfMember)){
+			_ExistingTeam.AllTeamMembers.add(_LoginOfMember);
+			declare netwrite Boolean IsInTeam for UIOfMember;
+			declare netwrite Integer IsInTeamTimer for UIOfMember;
+			IsInTeam = True;
+			IsInTeamTimer = Now;
+			if(!G_AllPlayersInAnyTeam.exists(_LoginOfMember)){
+				G_AllPlayersInAnyTeam.add(_LoginOfMember);
+			}
+			declare netwrite Text[] Net_AllPlayersInTeam for Teams[0];
+			Net_AllPlayersInTeam = G_AllPlayersInAnyTeam;
+			declare netwrite Integer Net_AllPlayersInTeamTimer for Teams[0];
+			Net_AllPlayersInTeamTimer = Now;
+			TeamRefresh = Now;
+		}
+	}
+	
+	foreach (Index => Members in _ExistingTeam.AllTeamMembers) {
+		declare CPlayer PlayerMember;
+		PlayerMember <=> GetPlayerFromLogin(Members);
+		if(PlayerMember != Null){
+			declare UIOfMates <=> UIManager.GetUI(PlayerMember);
+			declare netwrite Text[] SquadForClient for UIOfMates;
+			declare netwrite Integer UpdateClientSquad for UIOfMates;
+			if (Members == _ExistingTeam.AllTeamMembers[Index]) {
+				SquadForClient = _ExistingTeam.AllTeamMembers;
+				UpdateClientSquad = Now;
+			}
+		}
+		
+	}
+	
+	return _ExistingTeam;
+}
+
+/** Play a sound and notice if someone is close to win
+ *
+ *	@param	_Team										The Team to Modify
+ *	@param	_LoginOfLeaver					The Login of the player who leaves the team
+ */
+KTeam DeleteMembersFromHisTeam(KTeam _Team, Text _LoginOfLeaver){
+	declare KTeam _ModifiedTeam = _Team;
+	declare netwrite Integer TeamRefresh for Teams[0];
+	foreach (Player in Players){
+		//Les mates doivent recevoir leur equipe modifié
+		//Le leaver doit voir sa squad vidée
+		declare LastMatePlayer = Player;
+		declare UI <=> UIManager.GetUI(Player);
+		declare PlayerLeaver = FindPlayerFromUI(UI);
+		declare PlayerLeaverLogin = GetNameFromPlayer(PlayerLeaver);
+		declare netwrite Text[] SquadForClient for UI;
+		declare netwrite Integer UpdateClientSquad for UI;
+		declare netwrite Boolean PutInAutoJoin for UI;
+		declare netwrite Text[] Net_PlayersNeedHelp for UI;
+		if(Net_PlayersNeedHelp.exists(PlayerLeaverLogin)){
+			Net_PlayersNeedHelp.remove(PlayerLeaverLogin);
+		}
+		PutInAutoJoin = False;
+		if(_ModifiedTeam.AllTeamMembers.exists(_LoginOfLeaver)){
+			_ModifiedTeam.AllTeamMembers.remove(_LoginOfLeaver);
+			TeamRefresh = Now;
+		}
+		//UI with the Squad empty for the leaver
+		if (_LoginOfLeaver == Player.User.Login || G_PlayerLoginToRemove.exists(_LoginOfLeaver)){
+			SquadForClient = [];
+			UpdateClientSquad = Now;
+		}
+		//UI with the new squad for older mates
+		foreach (Members in _ModifiedTeam.AllTeamMembers) {
+			if (LastMatePlayer.User.Login == Members) {
+				SquadForClient = _ModifiedTeam.AllTeamMembers;
+				UpdateClientSquad = Now;
+			}
+		}	
+	}
+	return _ModifiedTeam;
+}
+
+/** Delete from team a Player who disconnect from the server
+ *
+ *	@param	_Team											The team to modify
+ *	@param	_LoginOfDisconnected			The Login of the player who disconnect from the server
+ */
+KTeam DeleteDisconnectedFromTeam(KTeam _Team, Text _LoginOfDisconnected){
+	declare KTeam _ModifiedTeam = _Team;
+	declare netwrite Integer TeamRefresh for Teams[0];
+
+	if(_ModifiedTeam.AllTeamMembers.exists(_LoginOfDisconnected)){
+		_ModifiedTeam.AllTeamMembers.remove(_LoginOfDisconnected);
+		TeamRefresh = Now;
+	}
+
+	declare netwrite Text[] Net_LeaderSpawnedList for Teams[0];
+	if(Net_LeaderSpawnedList.exists(_LoginOfDisconnected)){
+		Net_LeaderSpawnedList.remove(_LoginOfDisconnected);
+	}
+
+	foreach (Member in _Team.AllTeamMembers){
+		declare PlayerOfMember <=> GetPlayerFromLogin(Member);
+		if(PlayerOfMember != Null){
+			declare UIOfPlayerStaying <=> UIManager.GetUI(PlayerOfMember);
+			declare netwrite Text[] SquadForClient for UIOfPlayerStaying;
+			declare netwrite Integer UpdateClientSquad for UIOfPlayerStaying;
+			declare netwrite Text[] Net_PlayersNeedHelp for UIOfPlayerStaying;
+			if(Net_PlayersNeedHelp.exists(_LoginOfDisconnected)){
+				Net_PlayersNeedHelp.remove(_LoginOfDisconnected);
+			}
+			SquadForClient = _ModifiedTeam.AllTeamMembers;
+			UpdateClientSquad = Now;
+
+		}
+		
+	}
+
+	return _ModifiedTeam;
+}
+
+/** Simple algrythm to Fill Team of Leader who press "Start Playing" / The First entry of the array of waiting player is added to the first entry of Waiting Team and then removed
+ *
+ *	@param	_PlayersInAutoJoin				Array of Players waiting for a team
+ *	@param	_LeadersInAutoFill				Team waiting to be filled
+ */
+Void UseMatchMakingToFillTeam(Integer _Net_S_MatchMakingAlgorythm){
+	//Random matchmaking
+	if(_Net_S_MatchMakingAlgorythm == 0){
+		if(G_PlayersWaitingForAnAutoFillTeam.existskey(0) && G_LeadersToDisplay.existskey(0)){
+			declare NewMemberPlayer = CPlayer;
+			declare LeaderToJoin = CPlayer;
+			LeaderToJoin <=> GetPlayerFromLogin(G_LeadersToDisplay[0]);
+			NewMemberPlayer <=> GetPlayerFromLogin(G_PlayersWaitingForAnAutoFillTeam[0]);
+			
+			if(LeaderToJoin == NewMemberPlayer && G_LeadersToDisplay.existskey(1)){
+				LeaderToJoin <=> GetPlayerFromLogin(G_LeadersToDisplay[1]);
+			}
+			if(LeaderToJoin == NewMemberPlayer && G_PlayersWaitingForAnAutoFillTeam.existskey(1)){
+				NewMemberPlayer <=> GetPlayerFromLogin(G_PlayersWaitingForAnAutoFillTeam[1]);
+			}
+			if(NewMemberPlayer != Null && LeaderToJoin != Null){
+				declare UIOfMember <=> UIManager.GetUI(NewMemberPlayer);
+				declare netwrite Boolean IsPlayerSpawned for UIOfMember;
+				if(NewMemberPlayer != LeaderToJoin && !IsPlayerSpawned){//Check if a leader is waiting in the autofilllist and if a players is waiting for a team
+					foreach (LeaderLogin => Team in G_AllTeams) {//On Check toutes les teams
+						if(G_AllTeams[LeaderLogin].Leader == LeaderToJoin.User.Login){//On cherche la team du premier leader en liste d'attente
+							G_AllTeams[LeaderLogin] = AddMembersInExistingTeam(G_AllTeams[LeaderLogin], NewMemberPlayer); // On ajoute dans la team le member concerné
+							declare netwrite Integer TeamRefresh for Teams[0];
+							TeamRefresh = Now;
+							declare UIOfLeader <=> UIManager.GetUI(LeaderToJoin);
+							declare netwrite Boolean IsInTeam for UIOfLeader;
+							IsInTeam = True;
+							declare netwrite Integer IsInTeamTimer for UIOfLeader;
+							IsInTeamTimer = Now;
+							G_PlayersWaitingForAnAutoFillTeam.remove(NewMemberPlayer.User.Login);//On remove le joueur en attente de la liste des joueurs en attente
+							G_PlayersWaitingForAnAutoFillTeam.remove(LeaderToJoin.User.Login);
+							G_PlayersInAutoJoinTimer = Now;
+							G_PlayersJoiningAnAutoFillTeamAndCanGoesLeader.add(NewMemberPlayer.User.Login);
+							G_LeadersToDisplay.remove(NewMemberPlayer.User.Login);
+							G_PlayersInAutoJoinTimer = Now;
+							if(G_LeadersToDisplay.exists(LeaderToJoin.User.Login)){
+								G_LeadersToDisplay.remove(LeaderToJoin.User.Login);
+							}
+							if(!G_LeadersToDisplay.exists(LeaderToJoin.User.Login)){
+								G_LeadersToDisplay.add(LeaderToJoin.User.Login);
+							}
+						}
+						if(G_AllTeams[LeaderLogin].Leader == NewMemberPlayer.User.Login){//On trouve la team du player en liste d'attente, on delete sa team
+							G_AllTeams.removekey(LeaderLogin);
+						}
+					}
+				}
+			}
+			
+		}	
+	}
+	//Ranked-based matchmaking
+	if(_Net_S_MatchMakingAlgorythm == 1){
+		foreach(PlayerInAutoJoinWaiting in G_PlayersWaitingForAnAutoFillTeam){
+			declare UI <=> UIManager.GetUI(GetPlayerFromLogin(PlayerInAutoJoinWaiting));
+			declare netread Integer Net_FakeRank for UI;
+		}
+	}
+}
+
+Void UseMatchMakingForPlayersJoining(Integer _Net_S_MatchMakingAlgorythm){
+	declare netwrite Integer Net_TS2_PlayersPerTeam for Teams[0];
+	//Random Algorythm
+	if(_Net_S_MatchMakingAlgorythm == 0){
+		declare CPlayer NewMemberPlayer;
+		//A Player is Waiting and a Leader is waiting to fill his team too
+		if(G_LeadersToDisplay.existskey(0) && G_PlayersWaitingForAnAutoFillTeam.existskey(0)){
+			//Add the player in the team of the first leader waiting
+			declare CPlayer LeaderToJoin;
+			declare Text LoginOfNewMemberPlayer = G_PlayersWaitingForAnAutoFillTeam[0];
+			NewMemberPlayer <=> GetPlayerFromLogin(LoginOfNewMemberPlayer);
+			LeaderToJoin <=> GetPlayerFromLogin(G_LeadersToDisplay[0]);
+			foreach (LeaderLogin => Team in G_AllTeams) {
+				//Si une team présente dans allteam à sa variable leader = au leader de la requete, alors on peut ajouter le membre dans cette team
+				if(NewMemberPlayer != Null){
+					if(G_AllTeams[LeaderLogin].Leader == LeaderToJoin.User.Login && NewMemberPlayer != LeaderToJoin){
+						G_AllTeams[LeaderLogin] = AddMembersInExistingTeam(G_AllTeams[LeaderLogin], NewMemberPlayer); // On ajoute dans la team le member concerné
+						declare netwrite Integer TeamRefresh for Teams[0];
+						TeamRefresh = Now;
+						G_PlayersWaitingForAnAutoFillTeam.remove(NewMemberPlayer.User.Login);
+						G_PlayersInAutoJoinTimer = Now;
+						if(G_AllTeams[LeaderLogin].AllTeamMembers.count >= Net_TS2_PlayersPerTeam){
+							if(G_LeadersToDisplay.exists(LeaderLogin)){
+								G_LeadersToDisplay.remove(LeaderLogin);
+								G_PlayersInAutoJoinTimer = Now;
+							}
+						}
+						declare UIOfLeaderToJoin <=> UIManager.GetUI(LeaderToJoin);
+						declare netwrite Boolean IsInTeam for UIOfLeaderToJoin; 
+						IsInTeam = True;
+						declare netwrite Integer IsInTeamTimer for UIOfLeaderToJoin;
+						IsInTeamTimer = Now;
+					}
+				}
+				
+			}
+		}
+		else if (!G_LeadersToDisplay.existskey(0) && G_PlayersWaitingForAnAutoFillTeam.existskey(0)){
+			//No teams are waiting to fill, then create a team with the player and put him in the Autofill list
+			NewMemberPlayer = GetPlayerFromLogin(G_PlayersWaitingForAnAutoFillTeam[0]);
+			if(NewMemberPlayer != Null){
+				declare NewMemberLogin = G_PlayersWaitingForAnAutoFillTeam[0];
+				declare KTeam NewTeam;
+				NewTeam.Leader = NewMemberPlayer.User.Login;
+				declare KTeam	TeamCreated;
+				TeamCreated = CreateNewTeam(NewMemberPlayer);
+				if(!G_LeadersToDisplay.exists(NewMemberLogin)){
+					G_LeadersToDisplay.add(NewMemberLogin);
+					G_PlayersInAutoJoinTimer = Now;
+					foreach (LeaderLogin => Team in G_AllTeams) {
+						if (!G_AllTeams.existskey(LeaderLogin)){
+							AddTeamInTeamsList(TeamCreated);
+						}
+					}	
+				}
+			}
+		}
+	}
+}
+
+Ident GetIdFromLogin(Text _Login){
+	foreach(Player in Players){
+		if (Player.User.Login == _Login){
+			return Player.Id;
+		}
+	}
+	return NullId;
+}
+
+/** List All Players in the server
+ *
+ */
+Void ListAllCurrentPlayers(){
+	declare netwrite Text[] Net_PlayersSpectating for Teams[0];
+	foreach (Player in AllPlayers){
+		declare PlayerToList <=> GetPlayerinAllPlayersFromLogin(Player.User.Login);
+		if(PlayerToList != Null){
+			declare UI <=> UIManager.GetUI(PlayerToList);
+			if ( !Player.RequestsSpectate && !G_PlayerLoginList.exists(Player.User.Login)) {
+				G_PlayerLoginList.add(Player.User.Login);
+			}
+			if(!Players.exists(Player)){
+				if(!G_PlayerSpectating.exists(Player.User.Login)){
+					G_PlayerSpectating.add(Player.User.Login);
+				}
+			} else G_PlayerSpectating.remove(Player.User.Login);
+		}
+	}
+	Net_PlayersSpectating = G_PlayerSpectating;
+}
+
+/** Get the login of a player who leave the server
+ *
+ *	@param	_PlayerLogin							The player who scored a point
+ */
+Boolean PlayerHasLeft(Text _PlayerLogin) {
+	declare PlayerOfLogin <=> GetPlayerFromLogin(_PlayerLogin);
+	return (PlayerOfLogin == Null || PlayerOfLogin.RequestsSpectate);
+}
+
+/** List of all the playes who leave the server
+ *
+ */
+Void ListAllLeavingPlayers(){
+	foreach (PlayerLogin in G_PlayerLoginList) {
+		if (PlayerHasLeft(PlayerLogin)) {
+			G_PlayerLoginToRemove.add(PlayerLogin);
+		}
+	}
+}
+
+Void SendInvitersToDeleteToClient(Text[] _InvitersToDelete){
+	declare netwrite Text[] Net_InvitersToDelete for Teams[0];
+	Net_InvitersToDelete = _InvitersToDelete;
+}
+
+/** Manage all players in the server
+ *
+ *	@param	_Player										The player who scored a point
+ *	@param	_PointsLimit							The points limit to reach to win
+ */
+Void ManagePlayers(Boolean _Net_NewMap){
+	declare netwrite Text[] Net_PlayersSpectating for Teams[0];
+	if(Players.count != PrevPlayersCount && !_Net_NewMap){
+		ListAllCurrentPlayers();
+		ListAllLeavingPlayers();
+		PrevPlayersCount = Players.count;
+	}
+	foreach(Spectator in Spectators){
+		if(!G_PlayerSpectating.exists(Spectator.User.Login)){
+			G_PlayerSpectating.add(Spectator.User.Login);
+		}
+	}
+	
+	Net_PlayersSpectating = G_PlayerSpectating;
+	foreach (PlayerLogin in G_PlayerLoginToRemove) {
+		declare RemovedFromPlayerList = G_PlayerLoginList.remove(PlayerLogin);
+	}
+
+		foreach(PlayerLogin in G_PlayerLoginToRemove){
+			declare PlayerFromLogin <=> GetPlayerFromLogin(PlayerLogin);
+			G_PlayersWaitingForAnAutoFillTeam.remove(PlayerLogin);
+			G_PlayersInAutoJoinTimer = Now;
+			G_LeadersToDisplay.remove(PlayerLogin);
+			G_PlayersInAutoJoinTimer = Now;
+			G_PlayerSpectating.remove(PlayerLogin);
+			G_PlayersWithNoTeam.remove(PlayerLogin);
+			declare netwrite Text[] Net_PlayersSpectating for Teams[0];
+			Net_PlayersSpectating.remove(PlayerLogin);
+			if(!G_InvitersToDelete.exists(PlayerLogin)){
+				G_InvitersToDelete.add(PlayerLogin);
+				SendInvitersToDeleteToClient(G_InvitersToDelete);
+				declare netwrite Integer InvitersUpdatedTime for Teams[0];
+				InvitersUpdatedTime = Now;
+			}
+			foreach(TeamKey => Team in G_AllTeams){
+
+				if(G_AllTeams[TeamKey].AllTeamMembers.exists(PlayerLogin)){//Check in all teams if a player that disconnect exist in the members of a team
+					G_AllTeams[TeamKey] = DeleteDisconnectedFromTeam(G_AllTeams[TeamKey], PlayerLogin);
+					G_PlayerLoginToRemove.remove(PlayerLogin);
+					G_PlayersWaitingForAnAutoFillTeam.remove(PlayerLogin);
+					G_PlayersInAutoJoinTimer = Now;
+					G_LeadersToDisplay.remove(PlayerLogin);
+					G_PlayersInAutoJoinTimer = Now;
+					G_PlayersWaiting.remove(PlayerLogin);
+					G_LeadersInFullTeam.remove(PlayerLogin);
+					G_IdsOfPlayerInTeam.removekey(PlayerLogin);
+					G_PlayerInTeams.remove(PlayerLogin);
+					G_AllPlayersInAnyTeam.remove(PlayerLogin);
+					declare netwrite Text[] Net_AllPlayersInTeam for Teams[0];
+					Net_AllPlayersInTeam = G_AllPlayersInAnyTeam;
+					declare netwrite Integer Net_AllPlayersInTeamTimer for Teams[0];
+					Net_AllPlayersInTeamTimer = Now;
+					declare netwrite Text[] PlayersInTeamList for Teams[0];
+					PlayersInTeamList.remove(PlayerLogin);
+					declare netwrite Integer TeamRefresh for Teams[0];
+					TeamRefresh = Now;
+				}
+
+			if(G_AllTeams[TeamKey].Leader == PlayerLogin){	//Check if the login to remove correspond to the leader of his team
+				declare NewLeader = CPlayer;
+				//Check if the position 0 exist
+				if(G_AllTeams[TeamKey].AllTeamMembers.count > 0){
+					declare KTeam NewTeam;
+					declare Text NewLeaderLogin;
+					declare netwrite Text[] Net_LeaderSpawnedList for Teams[0];
+					NewLeaderLogin = G_AllTeams[TeamKey].AllTeamMembers[0];
+					NewLeader = GetPlayerFromLogin(NewLeaderLogin);
+					NewTeam = G_AllTeams[TeamKey];
+					NewTeam.Leader = NewLeaderLogin;
+					G_AllTeams[NewLeaderLogin] = NewTeam;
+					G_AllTeams.removekey(TeamKey);
+					if(Net_LeaderSpawnedList.exists(PlayerLogin)){
+						Net_LeaderSpawnedList.add(NewLeaderLogin);
+						Net_LeaderSpawnedList.remove(PlayerLogin);
+					}
+					if(G_PlayersWaitingForAnAutoFillTeam.exists(NewLeaderLogin)){
+						if(!G_LeadersToDisplay.exists(NewLeaderLogin)){
+							G_LeadersToDisplay.add(NewLeaderLogin);
+							G_PlayersInAutoJoinTimer = Now;
+						}
+					}
+				}
+				//Position 0 doesn't exist, the team is empty, destroy it
+				else if (G_AllTeams[TeamKey].AllTeamMembers.count <= 0){
+					G_AllTeams.removekey(TeamKey);
+				}
+			}
+			else G_PlayerLoginToRemove.remove(PlayerLogin);
+		}
+		G_PlayerLoginToRemove.remove(PlayerLogin);
+	}
+
+	foreach (Spectator in	G_PlayerSpectating){
+		if(GetPlayerinAllPlayersFromLogin(Spectator) != Null){
+			declare UI <=> UIManager.GetUI(GetPlayerinAllPlayersFromLogin(Spectator));
+			declare netwrite Text[] SquadForClient for UI;
+			declare netwrite Boolean IsInTeam for UI;
+			declare netwrite Integer IsInTeamTimer for UI;
+			declare netwrite Boolean IsPlayerSpawned for UI;
+			declare netwrite Integer IsPlayerSpawnedTimer for UI;
+			declare netwrite Integer UpdateClientSquad for UI;
+			IsInTeam = False;
+			IsInTeamTimer = Now;
+			IsPlayerSpawned = False;
+			IsPlayerSpawnedTimer = Now;
+			UpdateClientSquad = Now;
+			if(!G_InvitersToDelete.exists(Spectator)){
+				G_InvitersToDelete.add(Spectator);
+				SendInvitersToDeleteToClient(G_InvitersToDelete);
+				declare netwrite Integer InvitersUpdatedTime for Teams[0];
+				InvitersUpdatedTime = Now;
+			}
+			if(SquadForClient.exists(Spectator)){
+				SquadForClient = [];
+			}
+			if(G_PlayerLoginToRemove.exists(Spectator)){
+				G_PlayerLoginToRemove.remove(Spectator);
+			}
+			if(G_PlayersWaitingForAnAutoFillTeam.exists(Spectator)){
+				G_PlayersWaitingForAnAutoFillTeam.remove(Spectator);
+				G_PlayersInAutoJoinTimer = Now;
+			}
+			if(G_LeadersToDisplay.exists(Spectator)){
+				G_LeadersToDisplay.remove(Spectator);
+				G_PlayersInAutoJoinTimer = Now;
+			}
+			if(G_PlayersWaiting.exists(Spectator)){
+				G_PlayersWaiting.remove(Spectator);
+			}
+			if(G_LeadersInFullTeam.exists(Spectator)){
+				G_LeadersInFullTeam.remove(Spectator);
+			}
+			if(G_IdsOfPlayerInTeam.existskey(Spectator)){
+				G_IdsOfPlayerInTeam.removekey(Spectator);
+			}
+			if(G_PlayerInTeams.exists(Spectator)){
+				G_PlayerInTeams.remove(Spectator);
+			}
+			if(G_AllPlayersInAnyTeam.exists(Spectator)){
+				G_AllPlayersInAnyTeam.remove(Spectator);
+			}
+			declare netwrite Text[] PlayersInTeamList for Teams[0];
+			if(PlayersInTeamList.exists(Spectator)){
+				PlayersInTeamList.remove(Spectator);
+			}
+			G_PlayersWithNoTeam.remove(Spectator);
+			
+			foreach(TeamKey => Team in G_AllTeams){
+
+				if(G_AllTeams[TeamKey].AllTeamMembers.exists(Spectator)){//Check in all teams if a player that disconnect exist in the members of a team
+				
+					G_AllTeams[TeamKey] = DeleteDisconnectedFromTeam(G_AllTeams[TeamKey], Spectator);
+					G_PlayerLoginToRemove.remove(Spectator);
+					G_PlayersWaitingForAnAutoFillTeam.remove(Spectator);
+					G_PlayersInAutoJoinTimer = Now;
+					G_LeadersToDisplay.remove(Spectator);
+					G_PlayersInAutoJoinTimer = Now;
+					G_PlayersWaiting.remove(Spectator);
+					G_LeadersInFullTeam.remove(Spectator);
+					G_IdsOfPlayerInTeam.removekey(Spectator);
+					G_PlayerInTeams.remove(Spectator);
+					G_AllPlayersInAnyTeam.remove(Spectator);
+					declare netwrite Text[] Net_AllPlayersInTeam for Teams[0];
+					Net_AllPlayersInTeam = G_AllPlayersInAnyTeam;
+					declare netwrite Integer Net_AllPlayersInTeamTimer for Teams[0];
+					Net_AllPlayersInTeamTimer = Now;
+					declare netwrite Text[] PlayersInTeamList for Teams[0];
+					PlayersInTeamList.remove(Spectator);
+					declare netwrite Integer TeamRefresh for Teams[0];
+					TeamRefresh = Now;
+				}
+
+				if(G_AllTeams[TeamKey].Leader == Spectator){	//Check if the login to remove correspond to the leader of his team
+					declare NewLeader = CPlayer;
+					//Check if the position 0 exist
+					if(G_AllTeams[TeamKey].AllTeamMembers.count > 0){
+						declare KTeam NewTeam;
+						declare Text NewLeaderLogin;
+						declare netwrite Text[] Net_LeaderSpawnedList for Teams[0];
+						NewLeaderLogin = G_AllTeams[TeamKey].AllTeamMembers[0];
+						NewLeader = GetPlayerFromLogin(NewLeaderLogin);
+						NewTeam = G_AllTeams[TeamKey];
+						NewTeam.Leader = NewLeaderLogin;
+						G_AllTeams[NewLeaderLogin] = NewTeam;
+						G_AllTeams.removekey(TeamKey);
+						if(Net_LeaderSpawnedList.exists(Spectator)){
+							Net_LeaderSpawnedList.add(NewLeaderLogin);
+							Net_LeaderSpawnedList.remove(Spectator);
+						}
+						if(G_PlayersWaitingForAnAutoFillTeam.exists(NewLeaderLogin)){
+							if(!G_LeadersToDisplay.exists(NewLeaderLogin)){
+								G_LeadersToDisplay.add(NewLeaderLogin);
+								G_PlayersInAutoJoinTimer = Now;
+							}
+						}
+					}
+					//Position 0 doesn't exist, the team is empty, destroy it
+					else if (G_AllTeams[TeamKey].AllTeamMembers.count <= 0){
+						G_AllTeams.removekey(TeamKey);
+					}
+				}
+			}
+			declare netwrite Integer TeamRefresh for Teams[0];
+			TeamRefresh = Now;
+			declare netwrite Text[] Net_AllPlayersInTeam for Teams[0];
+			Net_AllPlayersInTeam = G_AllPlayersInAnyTeam;
+			declare netwrite Integer Net_AllPlayersInTeamTimer for Teams[0];
+			Net_AllPlayersInTeamTimer = Now;
+		}
+		G_InvitersToDelete = [];
+	}
+
+
+}
+
+/** Put Player in the list of autofill leader that already spawned
+ *
+ */
+Void FillSpawnedTeam(){
+	foreach(TeamKey => Team in G_AllTeams){
+		declare LeaderLogin = G_AllTeams[TeamKey].AllTeamMembers[0];
+		declare PlayerFromLogin <=> GetPlayerFromLogin(LeaderLogin);
+		if(PlayerFromLogin != Null){
+			declare UIOfPotentialLeaderToFillTeam <=> UIManager.GetUI(PlayerFromLogin);
+			declare netwrite Boolean IsPlayerSpawned for UIOfPotentialLeaderToFillTeam;
+			declare netwrite Integer Net_TS2_PlayersPerTeam for Teams[0];
+			if(G_AllTeams[TeamKey].AllTeamMembers.count < Net_TS2_PlayersPerTeam && IsPlayerSpawned == True){
+				if(!G_LeadersToDisplay.exists(LeaderLogin)){
+					G_LeadersToDisplay.add(LeaderLogin);
+					G_PlayersInAutoJoinTimer = Now;
+				}
+			}
+			else if(G_AllTeams[TeamKey].AllTeamMembers.count >= Net_TS2_PlayersPerTeam){
+				G_LeadersToDisplay.remove(LeaderLogin);
+				G_PlayersInAutoJoinTimer = Now;
+			}
+		}
+	}
+}
+
+/** Get the mates of a CPlayer
+ *
+ *	@param	_Player												The CPlayer
+ *	@return	MyTeamMembers									Return an array of Text with all the Members's Login of the _Player
+ */
+Text[] GetPlayerTeamMembers(CPlayer _Player){
+	declare Text[] MyTeamMembers;
+	if(_Player != Null){
+		foreach (Team in G_AllTeams){
+			foreach(PotentialMember in Team.AllTeamMembers){
+				if (PotentialMember == _Player.User.Login){
+					MyTeamMembers = Team.AllTeamMembers;
+					return MyTeamMembers;
+				}
+			}
+		}
+	}
+		
+	return MyTeamMembers;
+}
+
+Text[] GetCPlayerTeamMembers(CPlayer _Player){
+	declare Text[] MyTeamMembers;
+	if(_Player != Null){
+		foreach (Team in G_AllTeams){
+			foreach(PotentialMember in Team.AllTeamMembers){
+				if (PotentialMember == _Player.User.Login){
+					MyTeamMembers = Team.AllTeamMembers;
+					return MyTeamMembers;
+				}
+			}
+		}
+	} else return [];
+		
+	return MyTeamMembers;
+}
+
+Text[] GetCSmPlayerTeamMembers(CSmPlayer _Player){
+	declare Text[] MyTeamMembers;
+	if(_Player != Null){
+		foreach (Team in G_AllTeams){
+			foreach(PotentialMember in Team.AllTeamMembers){
+				if (PotentialMember == _Player.User.Login){
+					MyTeamMembers = Team.AllTeamMembers;
+					return MyTeamMembers;
+				}
+			}
+		}
+	} else return [];
+		
+	return MyTeamMembers;
+}
+
+Text[] GetCTmPlayerTeamMembers(CTmPlayer _Player){
+	declare Text[] MyTeamMembers;
+		foreach (Team in G_AllTeams){
+			foreach(PotentialMember in Team.AllTeamMembers){
+				if (PotentialMember == _Player.User.Login){
+					MyTeamMembers = Team.AllTeamMembers;
+					return MyTeamMembers;
+				}
+			}
+		}
+	return MyTeamMembers;
+}
+
+
+
+Boolean GetAllPlayersInTeam(CPlayer _Player){
+	declare netwrite Text[] Net_AllPlayersInTeam for Teams[0];
+	if(_Player != Null){
+		foreach(TeamKey => Team in G_AllTeams){
+			if(G_AllTeams[TeamKey].AllTeamMembers.exists(_Player.User.Login)){
+				if(!G_AllPlayersInAnyTeam.exists(_Player.User.Login)) G_AllPlayersInAnyTeam.add(_Player.User.Login);
+				Net_AllPlayersInTeam = G_AllPlayersInAnyTeam;
+				declare netwrite Integer Net_AllPlayersInTeamTimer for Teams[0];
+				Net_AllPlayersInTeamTimer = Now;
+				if(!G_AllTeams.existskey(_Player.User.Login)){
+					return True;
+				} 
+			}
+		}
+	}
+
+	return False;
+}
+
+Integer GetMaxPlayerNumber(Integer _S_PlayerNumber){
+	declare MaxPlayer = 9;
+	if(_S_PlayerNumber > MaxPlayer){
+		return MaxPlayer;
+	}
+	return _S_PlayerNumber;
+}
+
+Boolean IsPlayerInTeam(CPlayer _Player){
+	if(_Player != Null){
+		foreach(TeamKey => Team in G_AllTeams){
+			if(Team.AllTeamMembers.exists(_Player.User.Login)){
+				return True;
+			}
+		}
+		return False;
+	}
+	return False;
+}
+
+Void GetPlayersWithNoTeam(){
+	foreach(Player in Players){
+		declare Boolean IsThePlayerInTeam;
+		IsThePlayerInTeam = IsPlayerInTeam(Player);
+		if(!IsThePlayerInTeam){
+			if(!G_PlayersWithNoTeam.exists(Player.User.Login)){
+				G_PlayersWithNoTeam.add(Player.User.Login);
+			}
+		} else G_PlayersWithNoTeam.remove(Player.User.Login);
+	}
+}
+
+Void PutPlayerWithNoTeamInAutoJoin(Text _PlayerLogin) {
+	declare netwrite Text[] Net_PlayersInAutoJoin for Teams[0];
+	if(!G_PlayersWaitingForAnAutoFillTeam.exists(_PlayerLogin)){
+		G_PlayersWaitingForAnAutoFillTeam.add(_PlayerLogin);
+		G_PlayersInAutoJoinTimer = Now;
+		declare PlayerOfPlayerInAutoJoin <=> GetPlayerFromLogin(_PlayerLogin);
+		if(PlayerOfPlayerInAutoJoin != Null){
+			declare UI <=> UIManager.GetUI(PlayerOfPlayerInAutoJoin);
+			declare netwrite Boolean PutInAutoJoin for UI;
+			PutInAutoJoin = True;
+		}
+	} 
+	Net_PlayersInAutoJoin = G_PlayersWaitingForAnAutoFillTeam;
+}
+
+Void RemoveAutoFillLeaderInFullTeam(){
+	declare netwrite Integer Net_TS2_PlayersPerTeam for Teams[0];
+	foreach(TeamKey => Team in G_AllTeams){
+		if(Team.AllTeamMembers.count >= Net_TS2_PlayersPerTeam){
+			if(G_LeadersToDisplay.exists(TeamKey)){
+				G_LeadersToDisplay.remove(TeamKey);
+			}
+		}
+	}
+}
+
+Void GetAllPlayersInATeam(){
+	declare netwrite Text[] Net_AllPlayersInTeam for Teams[0];
+	declare netwrite Integer Net_AllPlayersInTeamTimer for Teams[0];
+	foreach(Player in Players){
+		foreach(TeamKey => Team in G_AllTeams){
+			if(Team.AllTeamMembers.exists(Player.User.Login)){
+				if(!Net_AllPlayersInTeam.exists(Player.User.Login)){
+					Net_AllPlayersInTeam.add(Player.User.Login);
+					Net_AllPlayersInTeamTimer = Now;
+				}
+			}
+		}
+	}
+	
+}
+
+Void ResetJoiningPlayersAndWaitingLeaders(){
+	G_PlayersWaitingForAnAutoFillTeam.clear();
+	G_LeadersToDisplay.clear();
+}
+
+Void DestroyTeamWithOnePlayer(){
+	declare netwrite Integer TeamRefresh for Teams[0];
+	foreach(TeamIndex => Team in G_AllTeams){
+		if(Team.AllTeamMembers.count <= 1){
+			G_AllTeams.removekey(TeamIndex);
+			declare PlayerWithNoMates <=> GetPlayerFromLogin(TeamIndex);
+			if(PlayerWithNoMates != Null){
+				declare UI <=> UIManager.GetUI(PlayerWithNoMates);
+				declare netwrite Boolean IsInTeam for UI;
+				declare netwrite Integer IsInTeamTimer for UI;
+				declare netwrite Text[] SquadForClient for UI;
+				SquadForClient.clear();
+				IsInTeam = False;
+				IsInTeamTimer = Now;
+				TeamRefresh = Now;
+			}
+		
+		}
+	}
+}
+
+Void ResetAutoJoinStateIfNotInAutoJoin(){
+	foreach(Player in Players){
+		declare UI <=> UIManager.GetUI(Player);
+		declare netwrite Boolean PutInAutoJoin for UI;
+		if(!G_PlayersWaitingForAnAutoFillTeam.exists(Player.User.Login)){
+			PutInAutoJoin = False;
+		} else PutInAutoJoin = True;
+		
+	}
+}
+
+Void UpdatePlayersPerTeam(Integer _PlayersPerTeam){
+	declare netwrite Integer Net_TS2_PlayersPerTeam for Teams[0];
+	Net_TS2_PlayersPerTeam = _PlayersPerTeam;
+	foreach(Player in Players){
+		declare UI <=> UIManager.GetUI(Player);
+		if(UI != Null){
+			declare netwrite Integer Net_S_PlayersPerTeam for UI;
+			Net_S_PlayersPerTeam = _PlayersPerTeam;
+		}
+	}
+}
+
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/// Update the library
+Void Yield() {
+	declare netwrite Text[] Net_PlayersWithNoTeam for Teams[0];
+	declare netwrite Text[] Net_PlayersInAutoJoin for Teams[0];
+	declare netwrite Text[] Net_PlayersInATeam for Teams[0];
+	declare netwrite Integer TeamRefresh for Teams[0];
+	declare netwrite Boolean Net_NewMap for Teams[0];
+	ManagePlayers(Net_NewMap);
+	
+	if(TeamRefresh > G_PrevTeamRefresh && Net_NewMap == False){
+		GetAllPlayersInATeam();
+		RemoveAutoFillLeaderInFullTeam();
+		GetPlayersWithNoTeam();
+		G_PrevTeamRefresh = TeamRefresh;
+	}
+	if(TeamRefresh > PrevTeamRefresh){
+		PrevTeamRefresh = TeamRefresh;
+		foreach(Player in Players){
+			declare IsPlayerInATeam = False;
+			IsPlayerInATeam = GetAllPlayersInTeam(Player);
+			if(IsPlayerInATeam){
+				if(!Net_PlayersInATeam.exists(Player.User.Login)){
+					Net_PlayersInATeam.add(Player.User.Login);
+				}
+			} else Net_PlayersInATeam.remove(Player.User.Login);		
+		}
+	}
+	
+	Net_PlayersInAutoJoin = G_PlayersWaitingForAnAutoFillTeam;
+	Net_PlayersWithNoTeam = G_PlayersWithNoTeam;
+
+	foreach (Event in UIManager.PendingEvents) {
+		
+		if (Event.Type == CUIConfigEvent::EType::OnLayerCustomEvent) {
+			switch (Event.CustomEventType) {
+				case Const::C_UIEvent_TeamSelection_PlayersNeedHelpReceived: {
+					if(Event.UI != Null && Event.CustomEventData.existskey(0)){
+						declare LoginOfPlayerRestored = Event.CustomEventData[0];
+						declare PlayerOfRestored <=> GetPlayerFromLogin(LoginOfPlayerRestored);
+						if(PlayerOfRestored != Null){
+							declare PlayerRestoredMembers = GetCPlayerTeamMembers(PlayerOfRestored);
+							foreach(MemberOfRestored in PlayerRestoredMembers){
+								declare PlayerMemberOfRestored <=> GetPlayerFromLogin(MemberOfRestored);
+								if(PlayerMemberOfRestored != Null){
+									declare UI <=> UIManager.GetUI(PlayerMemberOfRestored);
+									declare netwrite Text[] Net_PlayersNeedHelp for UI;
+									Net_PlayersNeedHelp.remove(LoginOfPlayerRestored);
+								}
+							}
+						}
+					}
+				}	
+
+				case Const::C_UI_Event_TeamSelection_NeedHelp: {
+					if(Event.UI != Null && Event.CustomEventData.existskey(0)){
+						declare LoginOfPlayerNeedHelp = Event.CustomEventData[0];
+						declare PlayerNeedHelp <=> GetPlayerFromLogin(LoginOfPlayerNeedHelp);
+						if(PlayerNeedHelp != Null){
+							declare PlayerNeedHelpMembers = GetCPlayerTeamMembers(PlayerNeedHelp);
+							//Send Notification to all mates of player that need help
+							foreach(MemberOfNeeder in PlayerNeedHelpMembers){
+								declare PlayerMemberOfNeeder <=> GetPlayerFromLogin(MemberOfNeeder);
+								if(PlayerMemberOfNeeder != Null){
+									declare UI <=> UIManager.GetUI(PlayerMemberOfNeeder);
+									declare netwrite Text[] Net_PlayersNeedHelp for UI;
+									if(!Net_PlayersNeedHelp.exists(LoginOfPlayerNeedHelp)){
+										Net_PlayersNeedHelp.add(LoginOfPlayerNeedHelp);
+									}
+								}
+							}
+						}
+					
+					}
+				}
+				case Const::C_UI_Event_TeamSelection_PlayerInAutoJoin: {
+					if(Event.UI != Null && Event.CustomEventData.existskey(0)){
+						declare NewMemberLogin = Event.CustomEventData[0];
+						if(!G_PlayersWaitingForAnAutoFillTeam.exists(NewMemberLogin)){
+							G_PlayersWaitingForAnAutoFillTeam.add(NewMemberLogin);
+							G_PlayersInAutoJoinTimer = Now;
+						}
+						declare netwrite Integer InvitersUpdatedTime for Teams[0];
+						if(!G_InvitersToDelete.exists(NewMemberLogin)){
+							G_InvitersToDelete.add(NewMemberLogin);
+							SendInvitersToDeleteToClient(G_InvitersToDelete);
+							InvitersUpdatedTime = Now;
+						}
+					}
+				}
+
+				case Const::C_UI_Event_TeamSelection_PlayerCancelAutoJoin: {
+					if(Event.UI != Null && Event.CustomEventData.existskey(0)){
+						declare LoginOfCanceler = Event.CustomEventData[0];
+						declare CancelerPlayer = CPlayer;
+						CancelerPlayer = GetPlayerFromLogin(LoginOfCanceler);
+						G_PlayersWaitingForAnAutoFillTeam.remove(LoginOfCanceler);
+						G_PlayersInAutoJoinTimer = Now;
+						//Savoir si le joueur est leader de sa team (Impossible d'annuler si le joueur trouve une team directement)
+						//Dans ce cas, le supprimer de la team, si un autre joueur existe dans cette team, le mettre leader de cette team et l'ajouter dans la liste des leaders en attente
+						if(G_LeadersToDisplay.exists(LoginOfCanceler)){
+							G_LeadersToDisplay.remove(LoginOfCanceler);
+							G_PlayersInAutoJoinTimer = Now;
+						}
+						declare netwrite Text[] Net_LeaderSpawnedList for Teams[0];
+						if(Net_LeaderSpawnedList.exists(LoginOfCanceler)){
+							Net_LeaderSpawnedList.remove(LoginOfCanceler);
+						}
+						if(G_PlayerInTeams.exists(LoginOfCanceler)){
+							G_PlayerInTeams.remove(LoginOfCanceler);
+						}
+						declare netwrite Text[] PlayersInTeamList for Teams[0];
+						PlayersInTeamList = G_PlayerInTeams;
+						
+						if(CancelerPlayer != Null){
+							foreach(TeamKey => Team in G_AllTeams){
+								if(G_AllTeams[TeamKey].AllTeamMembers.exists(LoginOfCanceler)){
+									//His name exist so we delete him from the members of the team
+									G_AllTeams[TeamKey] = DeleteMembersFromHisTeam(Team, LoginOfCanceler);
+									G_AllPlayersInAnyTeam.remove(LoginOfCanceler);
+									declare netwrite Text[] Net_AllPlayersInTeam for Teams[0];
+									declare netwrite Integer Net_AllPlayersInTeamTimer for Teams[0];
+									declare UIOfCanceler <=> UIManager.GetUI(CancelerPlayer);
+									declare netwrite Boolean IsInTeam for UIOfCanceler;
+									IsInTeam = False;
+									declare netwrite Integer IsInTeamTimer for UIOfCanceler;
+									IsInTeamTimer = Now;
+									Net_AllPlayersInTeam = G_AllPlayersInAnyTeam;
+									Net_AllPlayersInTeamTimer = Now;
+								}
+								if(G_AllTeams[TeamKey].Leader == CancelerPlayer.User.Login){
+									declare NewLeader = CPlayer;
+									//Check if the position 0 exist
+									if(G_AllTeams[TeamKey].AllTeamMembers.count > 0){
+										declare KTeam NewTeam;
+										declare Text NewLeaderLogin;
+										NewLeaderLogin = G_AllTeams[TeamKey].AllTeamMembers[0];
+										NewLeader = GetPlayerFromLogin(NewLeaderLogin);
+										NewTeam = G_AllTeams[TeamKey];
+										NewTeam.Leader = NewLeader.User.Login;
+										G_AllTeams[NewLeaderLogin] = NewTeam;
+										G_AllTeams.removekey(TeamKey);
+										if(!G_LeadersToDisplay.exists(NewLeaderLogin)){
+											G_LeadersToDisplay.add(NewLeaderLogin);
+											G_PlayersInAutoJoinTimer = Now;
+										}
+									}
+									//Position 0 doesn't exist, the team is empty, destroy it
+									else if (G_AllTeams[TeamKey].AllTeamMembers.count <= 0){
+										G_AllTeams.removekey(TeamKey);
+									}
+								}
+							}
+						}	
+					}
+				}
+
+				case Const::C_UI_Event_TeamSelection_LeaveTeam: {
+					if(Event.UI != Null && Event.CustomEventData.existskey(0)){
+						declare Leaver = Event.CustomEventData[0];
+						declare LeaverPlayer = CPlayer;
+						LeaverPlayer = GetPlayerFromLogin(Leaver);
+						declare netwrite Integer InvitersUpdatedTime for Teams[0];
+						declare netwrite Text[] Net_LeaderSpawnedList for Teams[0];
+						XmlRpc.SendCallbackArray("stats", ["Leave Team", ""^Leaver, "1"]);
+						XmlRpc.SendCallbackArray("stats", ["Leave Team", "Total leave", "1"]);
+						if(G_LeadersToDisplay.exists(Leaver)){
+							G_LeadersToDisplay.remove(Leaver);
+							G_PlayersInAutoJoinTimer = Now;
+						}
+						if(G_PlayersWaitingForAnAutoFillTeam.exists(Leaver)){
+							G_PlayersWaitingForAnAutoFillTeam.remove(Leaver);
+						}
+						if(!G_InvitersToDelete.exists(Leaver)){
+							G_InvitersToDelete.add(Leaver);
+							SendInvitersToDeleteToClient(G_InvitersToDelete);
+							InvitersUpdatedTime = Now;
+						}
+						if(G_PlayerInTeams.exists(Leaver)){
+							G_PlayerInTeams.remove(Leaver);
+						}
+						
+						declare netwrite Text[] PlayersInTeamList for Teams[0];
+						PlayersInTeamList = G_PlayerInTeams;
+						//Check all teams saved in G_AllTeams
+						foreach (TeamIndex => Team in G_AllTeams) {
+
+							//Check if in a team, we can see the login of the leaver in the player members
+							if(G_AllTeams[TeamIndex].AllTeamMembers.exists(Leaver)){
+								//His name exist so we delete him from the members of the team
+								G_AllTeams[TeamIndex] = DeleteMembersFromHisTeam(Team, Leaver);
+								G_AllPlayersInAnyTeam.remove(Leaver);
+								declare netwrite Text[] Net_AllPlayersInTeam for Teams[0];
+								
+								if(LeaverPlayer != Null){
+									declare UIOfLeaver <=> UIManager.GetUI(LeaverPlayer);
+									declare netwrite Boolean IsPlayerSpawned for UIOfLeaver;
+									declare netwrite Integer IsPlayerSpawnedTimer for UIOfLeaver;
+									declare netwrite Boolean IsInTeam for UIOfLeaver;
+									declare netwrite Integer Net_AllPlayersInTeamTimer for Teams[0];
+									Net_AllPlayersInTeamTimer = Now;
+									IsInTeam = False;
+									declare netwrite Integer IsInTeamTimer for UIOfLeaver;
+									IsInTeamTimer = Now;
+									IsPlayerSpawnedTimer = Now;
+									Net_AllPlayersInTeam = G_AllPlayersInAnyTeam;
+									IsPlayerSpawned = False;
+								}
+							}
+							if(LeaverPlayer != Null){
+								if(G_AllTeams[TeamIndex].Leader == LeaverPlayer.User.Login){
+									declare NewLeader = CPlayer;
+									//Check if the position 0 exist
+									if(G_AllTeams[TeamIndex].AllTeamMembers.count > 0){
+										declare KTeam NewTeam;
+										declare Text NewLeaderLogin;
+										NewLeaderLogin = G_AllTeams[TeamIndex].AllTeamMembers[0];
+										NewLeader = GetPlayerFromLogin(NewLeaderLogin);
+										if(G_PlayersJoiningAnAutoFillTeamAndCanGoesLeader.exists(NewLeaderLogin)){
+											if(!G_LeadersToDisplay.exists(NewLeaderLogin)){
+												G_LeadersToDisplay.add(NewLeaderLogin);
+												G_PlayersInAutoJoinTimer = Now;
+												G_PlayersJoiningAnAutoFillTeamAndCanGoesLeader.remove(NewLeaderLogin);
+											}
+										}
+										if(Net_LeaderSpawnedList.exists(Leaver)){
+											Net_LeaderSpawnedList.add(NewLeaderLogin);
+											Net_LeaderSpawnedList.remove(Leaver);
+										}
+										NewTeam = G_AllTeams[TeamIndex];
+										NewTeam.Leader = NewLeader.User.Login;
+										G_AllTeams[NewLeaderLogin] = NewTeam;
+										G_AllTeams.removekey(TeamIndex);
+									}
+									//Position 0 doesn't exist, the team is empty, destroy it
+									else if (G_AllTeams[TeamIndex].AllTeamMembers.count <= 0){
+										G_AllTeams.removekey(TeamIndex);
+									}
+								}	
+							}
+						}
+
+						if(Net_LeaderSpawnedList.exists(Leaver)){
+							Net_LeaderSpawnedList.remove(Leaver);
+						}
+					}
+				}
+				case Const::C_UIEvent_TeamSelection_InvitersToDestroyUpdated: {
+					if(Event.UI != Null && Event.CustomEventData.existskey(0)){
+						declare InviterDeleted = Event.CustomEventData[0];
+						
+						if(G_InvitersToDelete.exists(InviterDeleted)){
+							G_InvitersToDelete.remove(InviterDeleted);
+							SendInvitersToDeleteToClient(G_InvitersToDelete);
+						}
+					}
+
+				}
+				case Const::C_UIEvent_TeamSelection_LeaveTeamCreation: {
+					//Can be send if a player was in the team creation menu but not in team
+					if(Event.UI != Null && Event.CustomEventData.existskey(0)){
+						declare InviterToDelete = Event.CustomEventData[0];
+						declare netwrite Text[] Client_PlayersInTeamList for Teams[0];
+						declare netwrite Integer InvitersUpdatedTime for Teams[0];
+						InvitersUpdatedTime = Now;
+						
+						if(!G_InvitersToDelete.exists(InviterToDelete)){
+							G_InvitersToDelete.add(InviterToDelete);
+							SendInvitersToDeleteToClient(G_InvitersToDelete);
+						}
+					}
+				}
+
+				case Const::C_UIEvent_TeamSelection_OpenTeamCreation: {
+					if(Event.UI != Null && Event.CustomEventData.existskey(0)){
+						declare InviterToDeleteFromInvitersToDelete = Event.CustomEventData[0];
+						declare CPlayer Chief;
+						declare KTeam	TeamCreated;
+						
+						Chief <=> GetPlayerFromLogin(InviterToDeleteFromInvitersToDelete);
+						if(G_InvitersToDelete.exists(InviterToDeleteFromInvitersToDelete)){
+							G_InvitersToDelete.remove(InviterToDeleteFromInvitersToDelete);
+							SendInvitersToDeleteToClient(G_InvitersToDelete);
+						}
+						if(!G_AllTeams.existskey(InviterToDeleteFromInvitersToDelete)){
+							TeamCreated = CreateNewTeam(Chief);
+						}	
+					}
+				}
+
+				case Const::C_UIEvent_TeamSelection_LeaderInFullTeam: {
+					if(Event.UI != Null && Event.CustomEventData.existskey(0)){
+						declare LeaderToRemove = Event.CustomEventData[0];
+						declare Leader = CPlayer;
+						declare netwrite Integer InvitersUpdatedTime for Teams[0];
+						Leader <=> GetPlayerFromLogin(LeaderToRemove);
+						XmlRpc.SendCallbackArray("stats", ["Event Team Full", "Full Team", "1"]);
+
+						if(!G_InvitersToDelete.exists(LeaderToRemove)){
+							G_InvitersToDelete.add(LeaderToRemove);
+							SendInvitersToDeleteToClient(G_InvitersToDelete);
+							InvitersUpdatedTime = Now;
+						}
+
+						if(G_LeadersToDisplay.exists(LeaderToRemove)){
+							G_LeadersToDisplay.remove(LeaderToRemove);
+							G_PlayersInAutoJoinTimer = Now;
+						}
+						declare netwrite Text[] Net_LeaderSpawnedList for Teams[0];
+						if(!Net_LeaderSpawnedList.exists(LeaderToRemove)){
+							Net_LeaderSpawnedList.add(LeaderToRemove);
+						}
+						if(Leader != Null){
+							foreach (LeaderLogin => Team in G_AllTeams) {
+								if(G_AllTeams[LeaderLogin].Leader == Leader.User.Login){
+									foreach(Member in G_AllTeams[LeaderLogin].AllTeamMembers){
+										if(G_PlayersWaitingForAnAutoFillTeam.exists(Member)){
+											G_PlayersWaitingForAnAutoFillTeam.remove(Member);
+										}
+									}
+								}
+							}
+						}
+						
+					}
+				}
+
+				case Const::C_UIEvent_TeamSelection_AllPlayersInTeam: {
+					if(Event.UI != Null && Event.CustomEventData.existskey(0)){
+						declare PlayerNameInTeam = Event.CustomEventData[0];
+
+						if(!G_AllPlayersInAnyTeam.exists(PlayerNameInTeam)){
+							G_AllPlayersInAnyTeam.add(PlayerNameInTeam);
+						}
+						declare netwrite Text[] Net_AllPlayersInTeam for Teams[0];
+						Net_AllPlayersInTeam = G_AllPlayersInAnyTeam;
+						declare netwrite Integer Net_AllPlayersInTeamTimer for Teams[0];
+						Net_AllPlayersInTeamTimer = Now;
+					}
+				}
+				//Each time a player is in a team -> Send the player in a PlayerInTeam array
+				case Const::C_UIEvent_TeamSelection_MemberInTeam: {
+					if(Event.UI != Null && Event.CustomEventData.existskey(0)){
+						declare PlayerInTeam = Event.CustomEventData[0];
+						declare netwrite Text[] Client_PlayersInTeamList for Teams[0];
+						if(!G_PlayerInTeams.exists(PlayerInTeam)){
+							G_PlayerInTeams.add(PlayerInTeam);
+						}
+						declare netwrite Text[] PlayersInTeamList for Teams[0];
+						PlayersInTeamList = G_PlayerInTeams;
+						G_PlayerInTeams = Client_PlayersInTeamList;
+					
+					}
+				}
+				//Each time a player is selected by a player -> Send invitation
+				case Const::C_UIEvent_TeamSelection_SelectPlayer: {
+					if (Event.UI != Null && Event.CustomEventData.existskey(0)) {
+						declare LoginOfInvited = Event.CustomEventData[0]; 
+						declare Requested = CPlayer;
+						declare FakePlayerRequested = CPlayer;
+						declare Chief = CPlayer;
+						declare Requester = CPlayer;
+						declare KTeam	TeamCreated;
+
+						Requested <=> GetRequestedFromLogin(LoginOfInvited);
+						FakePlayerRequested <=> GetPlayerFromLogin(LoginOfInvited);
+						Requester <=> GetRequesterFromEvent(Event);
+						Chief <=> GetRequesterFromEvent(Event);
+						if (!AreRequestedAndRequesterNotNull(Requested, Requester)) {
+							continue;
+						}
+					
+						if(G_PlayersWaitingForAnAutoFillTeam.exists(LoginOfInvited)){
+							if(!G_AllTeams.existskey(Requester.User.Login)){
+								TeamCreated = CreateNewTeam(Requester);
+							}	
+							if(G_AllTeams.existskey(Requester.User.Login)){
+								if(G_AllTeams[Requester.User.Login].Leader == Requester.User.Login){
+									G_AllTeams[Requester.User.Login] = AddMembersInExistingTeam(G_AllTeams[Requester.User.Login], Requested); // On ajoute dans la team le member concerné
+									if(G_PlayersWaitingForAnAutoFillTeam.exists(LoginOfInvited)){
+										G_PlayersWaitingForAnAutoFillTeam.remove(LoginOfInvited);
+									}
+									if(G_LeadersToDisplay.exists(LoginOfInvited)){
+										G_LeadersToDisplay.remove(LoginOfInvited);
+										G_PlayersInAutoJoinTimer = Now;
+									}
+									if(G_AllTeams.existskey(LoginOfInvited)){
+										G_AllTeams.removekey(LoginOfInvited);
+									}
+									if(!G_PlayersJoiningAnAutoFillTeamAndCanGoesLeader.exists(Requester.User.Login)){
+										G_PlayersJoiningAnAutoFillTeamAndCanGoesLeader.add(LoginOfInvited);
+									}
+									declare UIOfChief <=> UIManager.GetUI(Requester);
+									declare netwrite Boolean IsInTeam for UIOfChief; 
+									IsInTeam = True;
+									declare netwrite Integer IsInTeamTimer for UIOfChief;
+									IsInTeamTimer = Now;
+								}
+							}
+						} else	GiveInviteFromRequesterToRequested(Requester, Requested);
+
+						/*if(FakePlayerRequested.IsFakePlayer && FakePlayerRequested.User.Login != "*fakeplayer6*"){
+							declare KTeam	TeamCreated;
+							//Check if a team with the leader login exist
+							if(!G_AllTeams.existskey(Chief.User.Login)){
+								TeamCreated = CreateNewTeam(Chief);
+							}
+							// The leader now exist, so we have to add the member into the KTeam of the leader...
+							if(G_AllTeams.existskey(Chief.User.Login)){
+								foreach(LeaderLogin => Team in G_AllTeams){
+									if(G_AllTeams[LeaderLogin].Leader == Chief.User.Login){
+										G_AllTeams[LeaderLogin] = AddMembersInExistingTeam(G_AllTeams[LeaderLogin], Requested); // On ajoute dans la team le member concerné
+										declare UIOfChief <=> UIManager.GetUI(Chief);
+										declare netwrite Boolean IsInTeam for UIOfChief; 
+										IsInTeam = True;
+										declare netwrite Integer IsInTeamTimer for UIOfChief;
+										IsInTeamTimer = Now;
+									}
+								}
+							}
+						}*/
+					}
+				}
+				//When a leader is requested by a Player, send to his Request List
+				case Const::C_UIEvent_TeamSelection_RequestToLeader: {
+					if (Event.UI != Null && Event.CustomEventData.existskey(0)) {
+						declare LoginOfLeader = Event.CustomEventData[0];
+						declare RequestedLeader = CPlayer;
+						declare RequesterMember = CPlayer;
+
+						RequestedLeader <=> GetChiefFromLogin(LoginOfLeader);
+						RequesterMember <=> GetInvitedFromEvent(Event);
+
+						if (!AreRequestedAndRequesterNotNull(RequesterMember, RequestedLeader)){
+							continue;
+						}
+						SendInviteFromRequesterMemberToLeader(RequesterMember, RequestedLeader);
+					}
+				}
+				case Const::C_UIEvent_TeamSelection_LeaderAcceptRequest: {
+					if (Event.UI != Null && Event.CustomEventData.existskey(0)){
+					
+						declare LoginOfRequesterToLeader = Event.CustomEventData[0];
+						declare SquadMember = CPlayer;
+						declare Chief = CPlayer;
+						
+						Chief <=> GetInvitedFromEvent(Event);
+						SquadMember <=> GetChiefFromLogin(LoginOfRequesterToLeader);
+						
+						foreach (LeaderLogin => Team in G_AllTeams) {
+							//Si une team présente dans allteam à sa variable leader = au leader de la requete, alors on peut ajouter le membre dans cette team
+							if(G_AllTeams[LeaderLogin].Leader == Chief.User.Login){
+								G_AllTeams[LeaderLogin] = AddMembersInExistingTeam(G_AllTeams[LeaderLogin], SquadMember);// On ajoute dans la team le member concerné
+								declare UIOfChiefToJoin <=> UIManager.GetUI(Chief);
+								declare netwrite Boolean IsInTeam for UIOfChiefToJoin; 
+								IsInTeam = True;
+								declare netwrite Integer IsInTeamTimer for UIOfChiefToJoin;
+								IsInTeamTimer = Now;
+							}
+						}
+					}
+				}
+				case Const::C_UI_Event_TeamSelection_TeamInAutoFill: {
+				
+					if (Event.UI != Null && Event.CustomEventData.existskey(0)){
+						//Add the leader list in the list of leaders to display
+						//Then if a player click on the leader name, automatically join the leader team
+						declare LoginOfLeader = Event.CustomEventData[0];
+						if(!G_LeadersToDisplay.exists(LoginOfLeader)){
+							G_LeadersToDisplay.add(LoginOfLeader);
+							G_PlayersInAutoJoinTimer = Now;
+						}
+					}
+				}
+				case Const::C_UI_Event_TeamSelection_CancelTeamInAutoFill: {
+					if(Event.UI != Null && Event.CustomEventData.existskey(0)){
+						declare LoginOfLeader = Event.CustomEventData[0];
+						if(G_LeadersToDisplay.exists(LoginOfLeader)){
+							G_LeadersToDisplay.remove(LoginOfLeader);
+							G_PlayersInAutoJoinTimer = Now;
+						}
+					}
+				}
+				case Const::C_UIEvent_TeamSelection_AcceptRequest: {
+					if (Event.UI != Null && Event.CustomEventData.existskey(0)) {
+						declare LoginOfChief = Event.CustomEventData[0];
+						declare SquadMember = CPlayer;
+						declare Chief = CPlayer;
+								
+						Chief <=> GetChiefFromLogin(LoginOfChief);
+						SquadMember <=> GetInvitedFromEvent(Event);
+						declare KTeam	TeamCreated;
+						if(Chief != Null && SquadMember != Null){
+							//Check if a team with the leader login exist
+							if(!G_AllTeams.existskey(Chief.User.Login)){
+								TeamCreated = CreateNewTeam(Chief);
+							}
+
+							// The leader now exist, so we have to add the member into the KTeam of the leader...
+							if(G_AllTeams.existskey(Chief.User.Login)){
+								foreach(LeaderLogin => Team in G_AllTeams){
+									if(G_AllTeams[LeaderLogin].Leader == Chief.User.Login){
+										G_AllTeams[LeaderLogin] = AddMembersInExistingTeam(G_AllTeams[LeaderLogin], SquadMember); // On ajoute dans la team le member concerné
+										declare UIOfChief <=> UIManager.GetUI(Chief);
+										declare netwrite Boolean IsInTeam for UIOfChief; 
+										IsInTeam = True;
+										declare netwrite Integer IsInTeamTimer for UIOfChief;
+										IsInTeamTimer = Now;
+									}
+								}
+							}
+						}
+						
+					}
+				}
+
+				case Const::C_UIEvent_TeamSelection_FindTeammate: {
+					declare Player <=> FindPlayerFromUI(Event.UI);
+					if (Player != Null) {
+						UseRandomTeammate(True, Player);
+					}
+				}
+				case Const::C_UIEvent_TeamSelection_CancelSearch: {
+					declare Player <=> FindPlayerFromUI(Event.UI);
+					if (Player != Null) {
+						UseRandomTeammate(False, Player);
+					}
+				}
+				case Const::C_UIEvent_TeamSelection_CancelInvite: {
+					declare Player <=> FindPlayerFromUI(Event.UI);
+					if (Player != Null) {
+						SetTeammate(Null, Player);
+					}
+				}
+				case Const::C_UIEvent_TeamSelection_LeaveTeam: {
+					declare Player <=> FindPlayerFromUI(Event.UI);
+					if (Player != Null) {
+						declare ValidatedTeammate = GetValidatedTeammate(Player);
+						if (ValidatedTeammate != Null) SetTeammate(Null, ValidatedTeammate);
+						SetTeammate(Null, Player);
+					}
+				}
+			}
+		}
+	}
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/** Initialize a player state when
+ *	they join the server
+ *
+ *	@param	_Player										The player to initialize
+ */
+Void InitializePlayer(CPlayer _Player) {
+	Enable(False, _Player);
+	SetTeammate(Null, _Player);
+	UseRandomTeammate(False, _Player);
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/// Unload the library
+Void Unload() {
+	foreach (Player in AllPlayers) {
+		InitializePlayer(Player);
+	}
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+/// Load the library
+Void Load() {
+	Unload();
+}
