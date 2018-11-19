@@ -1,5 +1,4 @@
 #Include "TextLib"																as TextLib
-#Include "Libs/Nadeo/Common/ManiascriptTools/Sort.Script.txt"								as SortTools
 
 #Const C_ElemsMaxCountPerLine			9
 
@@ -10,9 +9,11 @@
 #Const C_ARRAY_DECREASINGORDER			2
 
 declare Text[][Integer]		G_Category;
+declare Text				G_OrderBy;
 declare Integer				G_Private_ListDisplayer_CurrentPage;
 declare Integer				G_Private_ListDisplayer_MaxPages;
 declare Text[Text][]		G_Private_ListDisplayer_ListData;
+declare Text[Text][]		G_Private_ListData;
 
 declare Text				G_TextFilter;
 declare Integer[Integer]	G_SortStatePerButton;
@@ -26,23 +27,41 @@ declare Text				G_ServerPassword;
 
 declare Boolean				G_ServerIsSpectate;
 declare Boolean				G_HasNewServerList;
+declare Boolean				G_HasJustFiltered;
 
 declare Boolean				G_ServerIsPrivate;
 declare Boolean				G_ServerIsPrivateForSpectator;
 
 declare Boolean				G_HasFailed;
 
+Boolean ServerList_SetTextFilter(Text _Value)
+{
+	G_Private_ListDisplayer_CurrentPage = 0;
+	G_TextFilter = _Value;
+	return True;
+}
+
 Void Private_ListDisplayer_SetTextFilter(Text _Filter, Text[] _Elem_Name)
 {
-	declare Integer[] SortedIds;
-	G_Private_ListDisplayer_CurrentPage = 1;
+	G_Private_ListDisplayer_CurrentPage = 0;
+	declare Text[] SortedCategory;
 	foreach (NameIndex => Name in _Elem_Name)
 	{
 		declare Boolean IsSymbol = TextLib::Find(_Filter, Name, False, False);
-		if(IsSymbol) SortedIds.add(NameIndex);
+		if(IsSymbol) SortedCategory.add(Name);
 	}
-	G_TextFilter = _Filter;
+	declare Integer[] SortedIds;
+	foreach(iElem=>Elem in SortedCategory) {
+		foreach (Index=>Server in G_Private_ListData) {
+			if (!SortedIds.exists(Index) && G_Private_ListData[Index]["Category0"] == Elem) {
+				SortedIds.add(Index);
+				break;
+			}
+		}
+	}
 	G_SortedIds = SortedIds;
+	G_HasNewServerList = True;
+	G_HasJustFiltered = True && _Filter != "";
 }
 
 Void Private_ListDisplayer_SetTextFilter(Text _Filter)
@@ -50,39 +69,40 @@ Void Private_ListDisplayer_SetTextFilter(Text _Filter)
 	Private_ListDisplayer_SetTextFilter(_Filter, G_Category[0]);
 }
 
-Void Private_ListDisplayer_SortFromSwapArray(Integer[] _SwapArray)
+Void ListDisplayer_SetTextFilter()
 {
-	declare Integer[] New_SortedIds;
-	foreach(Index in _SwapArray)
-	{
-		declare Integer NewId = Index;
-		if(G_SortedIds.exists(NewId))
-		{
-			New_SortedIds.add(NewId);
-		}
-	}
-	G_SortedIds = New_SortedIds;
-	G_Private_ListDisplayer_CurrentPage = 1;
+	Private_ListDisplayer_SetTextFilter(G_TextFilter, G_Category[0]);
 }
 
 Void Private_ListDisplayer_CheckSorts()
 {
 	//Sort
-	declare Integer[] SortSwapArray;
 	for(QuadId, 0, C_FilterTypes.count - 1)
 	{
 		declare Integer SortState = G_SortStatePerButton[QuadId];
-		if(SortState != C_ARRAY_NOORDER)
+		if (SortState != C_ARRAY_NOORDER)
 		{
-			declare Integer[] SortSwapArray = SortTools::SortTools_GetSortSwapArray(G_Category[QuadId], SortState);
-			Private_ListDisplayer_SortFromSwapArray(SortSwapArray);
+			declare Text[] SortedCategory = G_Category[QuadId].sort();
+			if (SortState == C_ARRAY_DECREASINGORDER) {
+				SortedCategory = G_Category[QuadId].sortreverse();
+			}
+			declare Integer[] TmpIds;
+			foreach(iElem=>Elem in SortedCategory) {
+				foreach (Index=>Server in G_Private_ListData) {
+					if (!TmpIds.exists(Index) && G_Private_ListData[Index]["Category"^QuadId] == Elem) {
+						TmpIds.add(Index);
+						break;
+					}
+				}
+			}
+			G_SortedIds = TmpIds;
 		}
 	}
 }
 
-Void Private_ListDisplayer_SortElements(Integer _QuadId)
+Void ListDisplayer_SortElements(Integer _QuadId)
 {
-	G_Private_ListDisplayer_CurrentPage = 1;
+	G_Private_ListDisplayer_CurrentPage = 0;
 	for(I, 0, C_FilterTypes.count - 1)
 	{
 		if(I == _QuadId)
@@ -90,6 +110,12 @@ Void Private_ListDisplayer_SortElements(Integer _QuadId)
 			switch(G_SortStatePerButton[I])
 			{
 				case C_ARRAY_NOORDER: {
+					G_SortStatePerButton[I] = C_ARRAY_DECREASINGORDER;
+				}
+				case C_ARRAY_INCREASINGORDER: {
+					G_SortStatePerButton[I] = C_ARRAY_DECREASINGORDER;
+				}
+				case C_ARRAY_DECREASINGORDER: {
 					G_SortStatePerButton[I] = C_ARRAY_INCREASINGORDER;
 				}
 			}
@@ -98,8 +124,9 @@ Void Private_ListDisplayer_SortElements(Integer _QuadId)
 		}
 	}
 	//Sort
-	Private_ListDisplayer_SetTextFilter(G_TextFilter);
 	Private_ListDisplayer_CheckSorts();
+	G_HasNewServerList = True;
+	G_HasJustFiltered = True;
 }
 
 Void Private_ListDisplayer_Input_PageUp()
@@ -148,21 +175,6 @@ Void SendServerInfos(Integer _CurrentPage)
 		declare AbsoluteIndex			= i + ((G_Private_ListDisplayer_CurrentPage - 1) * C_ElemsMaxCountPerLine);
 	}
 	G_Private_ListDisplayer_MaxPages	= ((G_SortedIds.count - 1) / C_ElemsMaxCountPerLine + 1);
-	
-	/*declare Integer			List_CurrentPage	for Page;
-	declare Integer			List_MaxPages		for Page;
-	declare Text[Text][]	RequestedListData	for Page;
-	G_Private_ListDisplayer_CurrentPage	= List_CurrentPage + 1;
-	G_Private_ListDisplayer_MaxPages	= List_MaxPages;
-	G_Private_ListDisplayer_ListData	= RequestedListData;
-	Private_ListDisplayer_FillCategoriesFromListData();
-	G_SortedIds.clear();
-	for(I, 0, G_Private_ListDisplayer_ListData.count)
-	{
-		G_SortedIds.add(I);
-	}
-	Private_ListDisplayer_SetTextFilter(G_TextFilter);
-	Private_ListDisplayer_CheckSorts();*/
 }
 
 Void SendServerInfos()
@@ -227,7 +239,6 @@ Text[Text][] GetServerList()
 	declare Text[]       ServerModeName;
 	declare Integer[]    ServerServerLevel;
 	declare Text[Text][] Result;
-
 	foreach(Index => Server in TitleFlow.LocalServers)
 	{
 		if(Server == Null) continue;
@@ -246,7 +257,29 @@ Text[Text][] GetServerList()
 			Result[Index]["Category3"]     = Server.ModeName;
 		}
 	}
-	return Result;
+
+	declare Text[Text][] NewResult = Result;
+	if (G_HasJustFiltered) {
+		G_HasJustFiltered = False;
+		NewResult = [];
+		foreach (Index=>NewIndex in G_SortedIds) {
+			if (Result.existskey(NewIndex)) {
+				NewResult.add(Result[NewIndex]);
+			}
+		}
+	}
+
+	for (iCat, 0, 3) {
+		G_Category[iCat] = [];
+	}
+	foreach(Index=>Server in NewResult) {
+		for (iCat, 0, 3) {
+			G_Category[iCat].add(NewResult[Index]["Category"^iCat]);
+		}
+	}
+
+	G_Private_ListData = Result;
+	return NewResult;
 }
 
 Integer GetCurrentPage()

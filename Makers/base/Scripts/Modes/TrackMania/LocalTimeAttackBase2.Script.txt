@@ -1,0 +1,1688 @@
+/**
+ *	Local TimeAttack Base
+ */
+
+#Extends "Modes/TrackMania/ModeBase.Script.txt"
+
+#Const	CompatibleMapTypes	["RaceCE", "Race"]
+#Const	Version				"2018-11-09"
+#Const	ScriptName			"LocalTimeAttackBase2.Script.txt"
+
+#Include "Libs/Trackmania/Ingame/Ghosts.Script.txt" 						as Ghosts
+#Include "Libs/Trackmania/Ingame/Medals.Script.txt" 						as Medals
+
+#Include "Libs/Nadeo/MP4/Common/Colors.Script.txt" 							as Colors
+#Include "Libs/Trackmania/Ingame/FlavourText.Script.txt" 					as FlavourText
+#Include "Libs/Trackmania/Ingame/RewardScreens.Script.txt" 					as RewardScreens
+#Include "Libs/Nadeo/MP4/Common/GlobalVariables.Script.txt"					as GlobalVariables
+#Include "Libs/Nadeo/Common/Components/ListDisplayer/ListDisplayerController_Ingame.Script.txt" as ListDisplayerController_Ingame
+#Include "Libs/Trackmania/Ingame/Game.Script.txt" 							as Game
+#Include "Libs/Trackmania/Ingame/UI/UISequences.Script.txt" 				as UISequence
+#Include "Libs/Trackmania/Ingame/UI/UICampaign.Script.txt" 					as UICampaign
+#Include "Libs/Nadeo/Common/APIs/PlayerGroups.Script.txt"					as PlayerGroups
+
+#Include "TextLib" as TL
+#Include "MathLib" as MathLib
+
+// ---------------------------------- //
+// Settings
+// ---------------------------------- //
+#Setting S_TimeLimit		10800	as _("Time limit :")
+#Setting S_IsOfficialMap	False
+
+// HACK settings -> const à nettoyer plus tard.
+#Const S_Enviro				        ""
+#Const S_Difficulty			        ""
+
+//#Const S_NextUnlock			        ""
+#Const S_Opponent				        ""
+#Const S_NumberOfBronze		        ""
+#Const S_NumberOfSilver		        ""
+#Const S_NumberOfGold			        ""
+#Const S_NumberOfAuthor		        ""
+#Const S_NbMedalsToUnlockPimp	        ""
+#Const S_MedalTypeNeededForNextUnlock	""
+#Const S_Musics	                    ""
+#Const S_MedalsByTypeByEnviroDiff	    "[0,0,0,0]"
+#Const S_MedalsByTypeByDiff	        "[0,0,0,0]"
+#Const S_Gameplay_Acceleration		1.0
+#Const S_Gameplay_Control				1.0
+#Const S_Gameplay_Gravity				1.0
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_BotsNb 					0
+#Const C_GAMEPHASE_CHALLENGE		3
+#Const C_GAMEPHASE_PREPARATION		0
+#Const C_GAMEPHASE_GAME				1
+#Const C_GAMEPHASE_POSTGAME			2
+
+#Const TMC_MEDAL_SUPERMEDALI		-5
+#Const TMC_MEDAL_SUPERMEDALII		-4
+#Const TMC_MEDAL_SUPERMEDALIII		-3
+#Const TMC_MEDAL_SUPERMEDALIV		-2
+#Const TMC_MEDAL_SUPERMEDALV		-1 
+
+#Const TMC_MEDAL_AUTHOR				0
+#Const TMC_MEDAL_GOLD				1
+#Const TMC_MEDAL_SILVER				2
+#Const TMC_MEDAL_BRONZE				3
+#Const TMC_MEDAL_PLAYER				4
+#Const TMC_MEDAL_NONE				5
+#Const TMC_MEDAL_ANOTHERPLAYER		6
+
+#Const TMC_INGAME_RECORDCENTER		11
+#Const TMC_MEDAL_RECORDCENTER		12
+#Const TMC_MEDAL_VERSUSREPLAY		13
+#Const TMC_MEDAL_WORLDRECORD		14
+
+#Const TMC_FRIENDSRECORDCHOICE_DEFY		0
+#Const TMC_FRIENDSRECORDCHOICE_RETURN	1
+
+#Const TMC_PLAYERCHOICE_CHOOSEGHOST 	1
+#Const TMC_PLAYERCHOICE_QUIT	 		2
+#Const TMC_PLAYERCHOICE_NEXTTRACK 		3
+#Const TMC_PLAYERCHOICE_IMPROVE			4
+#Const TMC_PLAYERCHOICE_REPLAY			6
+
+#Const TMC_RACEMODE_MEDAL			0
+#Const TMC_RACEMODE_ONLINE			1
+
+#Const C_GAMECONTEXT_LOCAL			1				
+#Const C_GAMECONTEXT_ONLINE			0
+
+#Const C_STORERESULT_PROCESSING		0
+#Const C_STORERESULT_SUCCEEDED		1
+#Const C_STORERESULT_FAILED			2
+
+#Const TMC_RACEMODE_SOLO				1
+#Const TMC_RACEMODE_DOUBLEDRIVER		2
+#Const TMC_RACEMODE_SUPERSOLO			3
+#Const TMC_RACEMODE_SOLOVR				4
+
+#Const C_RECORDCENTER_CAR			3
+
+#Const TMC_IDLESTEP_REPLAY			0
+#Const TMC_IDLESTEP_STANDBY			1
+#Const TMC_IDLESTEP_NONE			-1
+
+#Const C_IdleTimeMax 				10		
+
+#Const TMC_WINDOWFRAMESTEP_OPPONENT	0
+#Const TMC_WINDOWFRAMESTEP_FRIENDS	1
+#Const TMC_WINDOWFRAMESTEP_RESTARTRECORD	2
+#Const TMC_WINDOWFRAMESTEP_FINAL	3
+#Const TMC_WINDOWFRAMESTEP_WORLD	4
+
+#Const C_MedalsName		[0 => _("Author"), 1 => _("Gold"), 2 => _("Silver"), 3 => _("Bronze"), 4 => _("Personal Record")]
+
+// ---------------------------------- //
+// Global Variables
+// ---------------------------------- //
+declare Integer				G_GamePhase;
+declare Integer[Integer]	G_TimesOnMap;
+declare Integer				G_BestTimePlayer;
+declare Integer				G_BestMedal;
+declare Integer				G_OldMedal;
+declare Integer				G_NbMedalWon;
+declare CGhost				G_PlayerGhost;
+declare CGhost[]			G_OpponentPlayerGhost;
+declare Ident				G_ThePlayerId;
+declare Boolean				G_IsSaveGhost;
+declare Boolean				G_HasFinishRace;
+declare Boolean				G_HasNewScore;
+declare Boolean				G_HasNewMedal;
+declare Boolean				G_HasBeatenPlayerOpponent;
+declare Text				G_EnviroName;
+declare Integer				G_RaceMode;
+declare Integer				G_OpponentChosen;
+declare Boolean				G_AddGhostPlayer;
+declare Ident[] 			G_CarModels;
+declare Text[Integer]		G_OpponentsNames;
+declare Integer				G_StartTimerGhostReplay;
+declare CGhost[Ident]		G_ReplayGhosts;
+declare Boolean				G_HasEndSequencePlayed;
+declare Boolean				G_PlayerWantsToQuit;
+declare Boolean				G_WorldRecordMode;
+declare Integer[]			G_MedalsByTypeByEnviroDiff;
+declare Integer[]			G_MedalsByTypeByDiff;
+declare Boolean 			G_HasNewScoreAtLeastOnce;
+declare Boolean				G_HasPreviousScoreOnTrack;
+declare Integer				G_NbHighestMedalHad;
+declare Integer				G_LastMedalPlayer;
+declare Integer				G_LastTimePlayer;
+declare Integer[Integer]	G_MedalTypeToMedalChoice;
+declare Integer				G_Enviro;
+declare Integer				G_Difficulty;
+declare Text				G_FriendsOpponentUrl;
+declare Boolean				G_AskRecordCenterRestart;
+declare Integer				G_IdleStep;
+declare Integer				G_TimerStandBy;
+declare Integer				G_CurrentFrameDisplay;
+declare Boolean				G_FrameHasBeenRedisplayed;
+declare Integer				G_TimerBeforePadIdle;
+declare Boolean				G_FirstTime;
+declare CGhost				G_LastGhost;
+declare Integer				G_OpponentFinalTime;
+declare Integer				G_PlayerReplayGhostTime;
+declare Ident				G_ReplayGhostId;
+declare Integer				G_WorldRecordFocus;
+declare	Integer				G_UpdateSendWorldRecordInfos;
+declare	Boolean				G_WorldRecordPreparation;
+declare	Integer				G_Prev_IsSaveGhostUpdate;
+declare Integer				G_SkillPointBefore;
+declare Integer				G_TimeSetGamePhaseToPostGame;
+
+declare CTaskResult                            G_TaskNewRecord;
+declare CTaskResult                            G_TaskSaveReplay;
+declare CTaskResult_NaturalLeaderBoardInfoList G_TaskResultPlayerList;
+declare Integer                                G_PlayerRanking;
+declare Integer                                G_PlayerCount;
+declare Integer                                G_TimeMaxToWaitTask;
+
+
+// ---------------------------------- //
+
+Void WaitRaceAndRespawn(CTmPlayer _Player)
+{
+	assert(_Player != Null);
+	Game::WaitRace(_Player);
+	
+	// in order to avoid leaving the camera undefined, respawn now:
+	_Player.IsSpawned = True;
+	declare UI <=> UIManager.GetUI(_Player);
+	if (UI != Null) UI.UISequence = CUIConfig::EUISequence::Playing;
+}
+
+// ---------------------------------- //
+// Extend
+// ---------------------------------- //
+***LogVersion***
+***
+MB_LogVersion(ScriptName, Version);
+***
+
+***InitServer***
+***
+declare Integer PrevTimeLimit = S_TimeLimit;
+declare Integer StartTime;
+
+GlobalVariables::Init(GlobalVariables::LaunchContext_Title());
+***
+
+***StartServer***
+***
+//Init Global Variables
+G_GamePhase					= C_GAMEPHASE_PREPARATION;
+G_PlayerGhost				= Null;
+G_LastGhost					= Null;
+G_OpponentChosen			= -1;
+G_HasNewScoreAtLeastOnce	= False;
+G_OpponentFinalTime 		= -1;
+
+G_MedalTypeToMedalChoice[TMC_MEDAL_GOLD]	= 0;
+G_MedalTypeToMedalChoice[TMC_MEDAL_SILVER]	= 1;
+G_MedalTypeToMedalChoice[TMC_MEDAL_BRONZE]	= 2;
+G_MedalTypeToMedalChoice[TMC_MEDAL_PLAYER]	= 3;
+G_MedalTypeToMedalChoice[TMC_MEDAL_NONE]	= 3;
+
+G_OpponentsNames[TMC_MEDAL_AUTHOR] 		= Medals::GetMedalName(TMC_MEDAL_AUTHOR);
+G_OpponentsNames[TMC_MEDAL_GOLD] 		= Medals::GetMedalName(TMC_MEDAL_GOLD);
+G_OpponentsNames[TMC_MEDAL_SILVER] 		= Medals::GetMedalName(TMC_MEDAL_SILVER);
+G_OpponentsNames[TMC_MEDAL_BRONZE] 		= Medals::GetMedalName(TMC_MEDAL_BRONZE);
+G_OpponentsNames[TMC_MEDAL_PLAYER] 		= Medals::GetMedalName(TMC_MEDAL_PLAYER);
+
+// ---------------------------------- //
+// Initialize mode
+PrevTimeLimit = S_TimeLimit;
+StartTime = -1;
+G_TimeSetGamePhaseToPostGame = -1;
+IndependantLaps = False;
+MB_SetDefaultRespawnMode(CTmMode::ETMRespawnBehaviour::GiveUpBeforeFirstCheckPoint);
+***
+
+***BeforeLoadMap***
+***
+G_EnviroName 	= MapList[NextMapIndex].CollectionName;
+G_Enviro		= TL::ToInteger(S_Enviro);
+G_Difficulty	= TL::ToInteger(S_Difficulty);
++++LoadCarModel+++
+***
+
+***InitMap***
+***
+declare FakeVariable = 3;
+***
+
+***MapIntro***
+***
+
+declare FakeVariable = 3;
+***
+
+***StartMap***
+***
+G_RaceMode = TMC_RACEMODE_MEDAL;
+
+while(Players.count == 0) yield;
+G_IsSaveGhost 			= False;
+G_HasFinishRace 		= False;
+G_HasNewScore 			= False;
+G_HasNewMedal 			= False;
+G_BestTimePlayer 		= -1;
+G_BestMedal 			= TMC_MEDAL_PLAYER;
+G_ThePlayerId 			= Players[0].Id;
+G_NbHighestMedalHad		= 0;
+
+
+// CampaignSpawnPlayer();
+Game::SetPlayerId(G_ThePlayerId);
+
+foreach(Player in Players) {
+	declare UI <=> UIManager.GetUI(Player);
+	declare netwrite Text Net_ZonePath for UI;
+	declare netwrite Boolean Net_IsOfficialMap for UI;
+	Net_ZonePath = Player.User.ZonePath;
+	Net_IsOfficialMap = S_IsOfficialMap;
+}
+
+// ---------------------------------- //
+// Initialize race
+StartTime = Now + 3000;
+CutOffTimeLimit = -1;
+Ghosts::Load();
+
+sleep(500);
+declare Boolean NoGhostOnMap = False;
+if(IsSuperSolo()) {
+	G_TimesOnMap 	= GetSuperSoloTime();
+	if(G_TimesOnMap.count == 0) {
+		G_TimesOnMap 					= Medals::GetTimesOnMap();
+	}
+} else {
+	for(Medal, TMC_MEDAL_AUTHOR, TMC_MEDAL_BRONZE) {
+		declare Integer GhostRaceTime = Ghosts::GetMedalGhostTime(Medal);
+		if(GhostRaceTime == -1) {
+			NoGhostOnMap = True;
+			break;	
+		}
+		G_TimesOnMap[Medal] = GhostRaceTime;
+	}
+}
+/*
+declare CGhost PlayerGhost = Ghosts::GetGhostFromPlayer(Players[G_ThePlayerId], "");
+//declare Integer GhostRaceTime = Ghosts::GetMedalGhostTime(TMC_MEDAL_PLAYER);
+if(PlayerGhost != Null)
+{
+	G_TimesOnMap[TMC_MEDAL_PLAYER] = PlayerGhost.Result.Time;
+}
+*/
+
+
+G_MedalsByTypeByEnviroDiff 	= ParseIntArray(S_MedalsByTypeByEnviroDiff);
+G_MedalsByTypeByDiff 		= ParseIntArray(S_MedalsByTypeByDiff);
+
+// ---------------------------------- //
+// We check if we have a ghost from the record center
+if(S_Opponent != "") {
+	G_WorldRecordMode 		= True;
+	G_FriendsOpponentUrl 	= S_Opponent;
+}
+
+InitMedalsNb();
+
+
+if(NoGhostOnMap) {
+	G_TimesOnMap 					= Medals::GetTimesOnMap();
+} else {
+	G_TimesOnMap[TMC_MEDAL_AUTHOR]	= Medals::GetMedalTime(TMC_MEDAL_AUTHOR);
+}
+
+
+if(Map.TMObjective_IsLapRace) {
+	NbLaps = Map.TMObjective_NbLaps;
+	Game::SetNbLaps(NbLaps, Map.TMObjective_IsLapRace);
+}
+
+// ---------------------------------- //
+// Layers
++++LoadGameLib+++
+Game::WaitTime(100);
+// Game::SetNbPadsNeeded(1);
+Game::SetDespawnTimeOut(False);
+
++++GetPlayerBestGhost+++
+// G_TimesOnMap[TMC_MEDAL_PLAYER] 	= -1;
+// UISequence::ComposeVideoTransitionLayer();
+Medals::SetTimesOnMap(G_TimesOnMap);
+
+//if(!G_TimesOnMap.existskey(TMC_MEDAL_PLAYER)) G_TimesOnMap[TMC_MEDAL_PLAYER] = -1;
+G_TimesOnMap[TMC_MEDAL_PLAYER] = Medals::GetPlayerTimesOnMap(Players[G_ThePlayerId], "");
+
+G_BestTimePlayer             = G_TimesOnMap[TMC_MEDAL_PLAYER];
+
+declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+declare netwrite Text BestTimePlayer for UI;
+declare netwrite Integer[Integer] Net_TimesOnMap for UI;
+Net_TimesOnMap = G_TimesOnMap;
+if(G_BestTimePlayer != -1)
+{
+	BestTimePlayer = TL::TimeToText(G_BestTimePlayer, True);
+	BestTimePlayer ^= TL::SubText(G_BestTimePlayer  ^"", (TL::Length(G_BestTimePlayer^"")-1), 1);
+}
+
++++SetRaceMode+++
+
+G_BestMedal 				= GetMedalPlayer();
+declare netwrite Integer Net_BestMedal         for UI;
+declare netwrite Integer Net_CurMedal         for UI;
+declare netwrite Integer Net_NextMedalTime         for UI;
+Net_BestMedal = G_BestMedal;
+Net_CurMedal  = 4;
+if(G_BestMedal > TMC_MEDAL_AUTHOR) {
+	Net_NextMedalTime = G_TimesOnMap[Net_BestMedal-1];
+}
+G_OldMedal    = G_BestMedal;
++++InitCampaign+++
+
+UICampaign::Load(G_ThePlayerId, G_TimesOnMap);
+UICampaign::InitPlayer(G_BestMedal, G_BestTimePlayer);
+Game::WaitTime(250);
+
+// HACK
+declare Integer NewBestTime for Users[0];
+NewBestTime = 0;
+// ---
+
+if(G_TimesOnMap[TMC_MEDAL_PLAYER] == -1) {
+	declare Text AloneMedal = Medals::GetMedalName(TMC_MEDAL_NONE);
+	UICampaign::SetPersonalButtonContent(AloneMedal);
+} else {
+	declare Text AgainstHimself = Medals::GetMedalName(TMC_MEDAL_PLAYER);
+	UICampaign::SetPersonalButtonContent(AgainstHimself);
+	UICampaign::SetBestTime(G_BestTimePlayer);
+}
+
+UIManager.UIAll.UISequence = CUIConfig::EUISequence::Intro;
+Ghosts::RemoveAllGhosts();
+Game::WaitTime(250);
++++BeforeStart+++
+UIManager.HoldLoadingScreen = False;
+
+// UICampaign::SetMedalFocusButton(2);
+GetDefaultMedalChoice();
+G_NbMedalWon = 0;
+
+//For VR mode, we do not activate 
+G_IdleStep = TMC_IDLESTEP_NONE;
+// G_IdleStep = TMC_IDLESTEP_REPLAY;
+
+G_TimerStandBy = Now + 10000;
+Ghosts::RemoveAllGhosts();
+CampaignSpawnPlayer();
+// UISequence::SetStandByView();
+Game::SetStandbyMusic();
+
+G_FrameHasBeenRedisplayed 	= True;
+G_FirstTime 				= True;
+G_TimerBeforePadIdle 		= Now + 10000;
+
+// if it's a custom intro, wait before displaying the menu.
+if (UIManager.UIAll.UISequence == CUIConfig::EUISequence::Intro && Map.HasCustomIntro) {
+	wait(UIManager.UIAll.UISequenceIsCompleted);
+}
+
+***
+  
+***PlayLoop***
+***
+if(G_GamePhase != C_GAMEPHASE_PREPARATION && G_GamePhase != C_GAMEPHASE_GAME) {
+	SoloYield();
+} else {
+	Game::Loop();
+}
+Game::SetOpposingTeamLabelsVisibility(CUIConfig::ELabelsVisibility::Never);
+
+if(G_GamePhase == C_GAMEPHASE_CHALLENGE)
+{
+
+	//+++GamePhase_Challenge+++
+
+	declare Integer RecordCenterChoice = 0;
+	
+	if(!G_WorldRecordMode) {
+		UICampaign::SetStartMenuVisibility(True);
+
+		G_CurrentFrameDisplay = TMC_WINDOWFRAMESTEP_OPPONENT;
+		Game::WaitTime(1000);
+		WaitForChallengeChoice();
+		
+
+		
+		if(G_OpponentChosen == TMC_MEDAL_RECORDCENTER) {
+			G_WorldRecordMode 			= True;
+			G_AskRecordCenterRestart 	= False;
+			UICampaign::SetStartMenuVisibility(False);
+			Game::WaitTime(500);
+			UICampaign::SetFriendsRecordsVisibility(True);
+			G_CurrentFrameDisplay = TMC_WINDOWFRAMESTEP_FRIENDS;
+			Game::WaitTime(500);
+			G_FriendsOpponentUrl = "";
+		}
+	}
+	
+
+	if(G_WorldRecordMode) {
+		declare Boolean IsWorldRecord = True;
+		G_WorldRecordPreparation = True;
+		while(G_WorldRecordPreparation) {
+			if(IsWorldRecord) WorldRecordSequence();
+			else              RecordCenterSequence();
+			IsWorldRecord = !IsWorldRecord;
+		}
+	}
+
+	//Si on a un adversaire ou si c'est une médaille
+	if((G_OpponentChosen == TMC_MEDAL_RECORDCENTER && G_FriendsOpponentUrl != "") || G_OpponentChosen <= TMC_MEDAL_PLAYER) {
+		SetGamePhase(C_GAMEPHASE_PREPARATION);
+	}
+} else if(G_GamePhase == C_GAMEPHASE_PREPARATION)
+{
+	UIManager.UIAll.UISequence = CUIConfig::EUISequence::Playing;
+
+	//+++GamePhase_Preparation+++
+	//VR
+	G_IdleStep = TMC_IDLESTEP_NONE;
+	UISequence::LaunchPlayingSequence();
+	Game::SetStopMusic();
+	UICampaign::SetStartMenuVisibility(False);
+	+++StartSymbiose+++
+	// +++SetCarsModels+++
+	
+	Ghosts::RemoveAllGhosts();
+	ShowOpponents(False);
+	CampaignSpawnPlayer();
+	SetDefaultMedalChoice();
+	
+	G_HasEndSequencePlayed 	= False;
+	G_HasNewMedal 			= False;
+	G_HasNewScore 			= False;
+	G_HasFinishRace 		= False;
+	//Game::SetMultiPairing(True);
+	
+	SetGamePhase(C_GAMEPHASE_GAME);
+} 
+else 
+if(G_GamePhase == C_GAMEPHASE_GAME) 
+{
+	//+++GamePhase_Game+++
+
+	// ---------------------------------- //
+	// Start Race
+	if (Game::IsWaiting(Players[G_ThePlayerId])) 
+	{
+		Game::StartRace(Players[G_ThePlayerId]);
+	}
+	
+	if(UICampaign::PlayerHasGiveUp()) 
+	{
+		Game::HideUI();
+		if(G_WorldRecordMode) {
+			G_WorldRecordMode = False;
+		}
+		//Game::SetVisiblityCampaignHelper(True);
+		//Game::WaitTime(500);
+
+		SetGamePhase(C_GAMEPHASE_CHALLENGE);
+		Game::WaitTime(250);
+		RaceTransition();
+		Ghosts::RemoveAllGhosts();
+		CampaignSpawnPlayer();
+		Game::SetVisiblityCampaignHelper(False);
+		UISequence::SetStandByView();
+		Game::SetStandbyMusic();
+		G_TimerStandBy = Now + 10000;
+		
+		
+	}
+	
+	if(G_TimeSetGamePhaseToPostGame < Now && G_TimeSetGamePhaseToPostGame != -1)
+	{
+		SetGamePhase(C_GAMEPHASE_POSTGAME);
+		G_TimeSetGamePhaseToPostGame = -1;
+	}
+
+	// ---------------------------------- //
+	// Manage events
+	foreach (Event in PendingEvents) 
+	{
+		
+		// ---------------------------------- //
+		// Waypoint
+		if (Event.Type == CTmModeEvent::EType::WayPoint) 
+		{
+			PassOn(Event);
+			+++EventWayPoint+++
+			if (Event.IsEndRace) 
+			{
+				Event.Player.Score.PrevRace = Event.Player.CurRace;
+				G_HasFinishRace 			= True;
+				G_LastTimePlayer			= Event.Player.CurRace.Time;
+				G_LastMedalPlayer 			= Medals::GetMedalFromTime(Event.Player.CurRace.Time);
+				
+				if(G_LastGhost != Null) {
+					//HackDataMgr
+					//DataMgr.GhostDestroy(G_LastGhost);
+					G_LastGhost = Null;
+				}
+				
+				//Default name for Save Replay
+				declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+				declare netwrite Text Net_DefaultReplay for UI;
+
+				declare Text TimeToText = TL::TimeToText(G_LastTimePlayer, True);
+				declare Text[] SplitMinute = TL::Split(":", TimeToText);
+				declare Integer Minute = TL::ToInteger(SplitMinute[0]);
+				declare Text PrefixMinute = "";
+				if(Minute < 10) PrefixMinute = "0";
+				declare Text[] SplitSeconde  = TL::Split(".", SplitMinute[1]);
+				declare Text FinalTime = PrefixMinute^SplitMinute[0] ^ "'" ^ SplitSeconde[0] ^ "''" ^ SplitSeconde[1];
+				declare Text[] SplitMapName = TL::Split("/\\.", Map.MapInfo.FileName);
+				declare Text MapName = Map.MapInfo.FileName;
+				if (SplitMapName.count >= 3) {
+					MapName = SplitMapName[SplitMapName.count - 3];
+				}
+				Net_DefaultReplay = "Replays/" ^ MapName ^ "_" ^ Players[G_ThePlayerId].User.Login ^ "(" ^ FinalTime ^ ")";
+
+				//NEW RECORD
+				if(Event.Player.CurRace.Time < G_BestTimePlayer || G_BestTimePlayer == -1) 
+				{
+					G_HasNewScoreAtLeastOnce = True;
+					+++SetNewRecord+++
+					
+					UICampaign::UpdateEndRaceTime();
+					UICampaign::UpdateRace();
+					G_IsSaveGhost = True;
+					G_HasNewScore = True;
+				} else {
+					G_LastGhost <=> Ghosts::GetGhostFromPlayer(Players[G_ThePlayerId], "");
+				}
+				
+				SetMedalPlayer();
+				
+				Game::EndRace(Players[G_ThePlayerId]);
+				+++EventWayPointEndRace+++
+				//Game::SetMultiPairing(False);
+
+				G_TimeSetGamePhaseToPostGame = Now + 1000;
+			}
+		}
+		// ---------------------------------- //
+		// GiveUp
+		else if (Event.Type == CTmModeEvent::EType::GiveUp) 
+		{	
+			if(Game::IsRacing(Event.Player)) {
+				+++EventGiveUp+++
+				WaitRaceAndRespawn(Event.Player);
+				SetGamePhase(C_GAMEPHASE_PREPARATION);
+				PassOn(Event);
+			} else {
+				Discard(Event);
+			}
+		}
+		
+		else if (Event.Type == CTmModeEvent::EType::StartLine) 
+		{
+			+++EventStartLine+++
+			PassOn(Event);
+		}
+		else if(Event.Type == CTmModeEvent::EType::Respawn) {
+			log(Now^">EVENT RESPAWN");
+		}
+		else if(Event.Type == CTmModeEvent::EType::Unknown) {
+
+		}
+		else {
+			
+			PassOn(Event);
+		}
+		
+	}
+} 
+else 
+if(G_GamePhase == C_GAMEPHASE_POSTGAME) 
+{
+	//+++GamePhase_PostGame+++
+
+	if(!G_HasEndSequencePlayed) {
+		SetOpponentForUI(Null);
+		
+		+++SavePlayerBestGhost+++
+		
+		---MedalAndUnlockSequence---
+		
+		G_HasEndSequencePlayed = True;
+		Game::HideUI();
+		
+		if(!UICampaign::GetFinalMenuVisibility()) {
+			//UICampaign::SetFinalMenuVisibility(False);
+			G_IdleStep = TMC_IDLESTEP_REPLAY;
+			G_PlayerGhost = Ghosts::GetLastGhostFromPlayer(Players[G_ThePlayerId]);
+			StartReplay(True);
+			Game::WaitTime(1000);
+			UICampaign::SetFinalMenuVisibility(True);
+			G_CurrentFrameDisplay = TMC_WINDOWFRAMESTEP_FINAL;
+			Game::WaitTime(1000);
+		}
+	}
+
+	Game::ShowPressRestart(False);
+
+	if(UICampaign::GetFinalMenuVisibility()) {
+		if(G_RaceMode == TMC_RACEMODE_MEDAL) {
+			declare Integer PlayerChoiceEndRace = UICampaign::GetPlayerEndRaceChoice();
+
+			declare Integer SaveGhostUpdate = UICampaign::IsSaveGhostUpdate();
+			if(SaveGhostUpdate != G_Prev_IsSaveGhostUpdate && SaveGhostUpdate != 0)
+			{
+				G_TaskSaveReplay = DataFileMgr.Replay_Save(UICampaign::GetSaveGhostName(), Map, GetReplayGhost());
+				if (G_TaskSaveReplay == Null) {
+					log(Now ^ ") [WARNING] : DataFileMgr.Replay_Save vaut Null");
+				} else {
+					while(G_TaskSaveReplay != Null && G_TaskSaveReplay.IsProcessing)
+					{
+						SoloYield();
+					}
+
+					if(G_TaskSaveReplay != Null && G_TaskSaveReplay.HasSucceeded)
+					{
+						DataFileMgr.TaskResult_Release(G_TaskSaveReplay.Id);
+					}
+					else if (G_TaskSaveReplay != Null)
+					{
+						log("["^Now^"] Replay_Save.HasFailed:   " ^ G_TaskSaveReplay.ErrorDescription);
+					}
+
+					//Ghosts::SaveGhostRecord(Players[G_ThePlayerId], UICampaign::GetSaveGhostName());
+					G_Prev_IsSaveGhostUpdate = SaveGhostUpdate;
+				}
+			}
+
+			if(PlayerChoiceEndRace == TMC_PLAYERCHOICE_CHOOSEGHOST) {
+				G_WorldRecordMode = False;
+				SetGamePhase(C_GAMEPHASE_CHALLENGE);
+				RaceTransition();
+			}
+			else if(PlayerChoiceEndRace == TMC_PLAYERCHOICE_QUIT) {
+				G_PlayerWantsToQuit = True;
+			} else if(PlayerChoiceEndRace == TMC_PLAYERCHOICE_IMPROVE) {
+				
+				declare netwrite Text Net_ModeName for UI;
+				if(G_HasNewMedal && Net_ModeName == "Campaign_Solo") {
+					if(G_BestMedal > TMC_MEDAL_GOLD && G_BestMedal <= TMC_MEDAL_BRONZE) {
+						G_OpponentChosen = G_BestMedal-1;
+					} else if(G_BestMedal <= TMC_MEDAL_GOLD) {
+						G_OpponentChosen = TMC_MEDAL_PLAYER;
+					}
+					declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+					declare netwrite Integer Net_MedalOpponent for UI;
+					Net_MedalOpponent = G_OpponentChosen;
+				}
+				UICampaign::SetFinalMenuVisibility(False);
+				SetGamePhase(C_GAMEPHASE_PREPARATION);
+				RaceTransition();
+			} else if(PlayerChoiceEndRace == TMC_PLAYERCHOICE_NEXTTRACK) {
+				DoNextTrack(True);
+				Game::WaitTime(200);
+				G_PlayerWantsToQuit = True;
+			} else if(PlayerChoiceEndRace == TMC_PLAYERCHOICE_REPLAY) {
+				UICampaign::SetFinalMenuVisibility(False);
+				StartReplay(True);
+				wait(CheckGhostsReplayEnded());
+				
+				if(CheckGhostsReplayEnded()) {
+					Ghosts::RemoveAllGhosts();
+					CampaignSpawnPlayer();
+					UISequence::LaunchPlayingSequence();
+					UICampaign::SetFinalMenuVisibility(True);
+				}
+			}
+		}
+	}
+}
+
+if(UICampaign::PlayerWantsToQuit()) G_PlayerWantsToQuit = True;
+// if(UICampaign::PlayerWantsToNextTrack()) {
+	// DoNextTrack(True);
+	// Game::WaitTime(1000);
+	// G_PlayerWantsToQuit = True;
+// }
+
+
+if(G_PlayerWantsToQuit) {
+	UICampaign::SetStartMenuVisibility(False);
+	// Game::ShowTransition(Players[G_ThePlayerId]);
+	// Game::WaitTime(1000);
+	MB_StopServer = True;
+}
+
+***
+
+***EndMap***
+***
+Game::WaitRaceAll();
+if(!G_HasNewScoreAtLeastOnce && G_HasPreviousScoreOnTrack) {
+	ReleasePlayerGhost();
+}
+***
+
+***EndServer***
+***
+declare FakeVariable = 3;
+***
+
+Void DoNextTrack(Boolean _Do) {
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Boolean Net_DoNextTrack for UI;
+	Net_DoNextTrack = _Do;
+}
+
+Integer[Integer] GetSuperSoloTime() {
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netread Integer[Integer] 	Net_SuperSoloOpponentTime	for UI;
+	// declare Integer[Integer] SuperSoloTime;
+	// foreach(I => Time in Net_SuperSoloOpponentTime) {
+		// SuperSoloTime[I] = Time;
+	// }
+	// return SuperSoloTime;
+	return Net_SuperSoloOpponentTime;
+}
+
+Boolean IsSuperSolo() {
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netread Boolean Net_IsSuperSolo for UI;
+	return Net_IsSuperSolo;
+}
+
+Void SetFocusButtonMedal(Integer _Medal) {
+	if(G_MedalTypeToMedalChoice.existskey(_Medal)) {
+		declare Integer MedalFocus = G_MedalTypeToMedalChoice[_Medal];
+		UICampaign::SetMedalFocusButton(MedalFocus);
+	}
+}
+
+Void GetDefaultMedalChoice() {
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netread Integer	Net_LastDefaultMedalChoice				for UI;
+	SetFocusButtonMedal(Net_LastDefaultMedalChoice);
+}
+
+Void SetDefaultMedalChoice() {
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Integer 	Net_NewDefaultMedalChoiceUpdate 		for UI;
+	declare netwrite Integer 	Net_NewDefaultMedalChoice				for UI;
+	
+	if(G_OpponentChosen <= TMC_MEDAL_BRONZE && G_OpponentChosen > TMC_MEDAL_AUTHOR) {
+		Net_NewDefaultMedalChoice 				= G_OpponentChosen;
+		Net_NewDefaultMedalChoiceUpdate 		+= 1;
+		SetFocusButtonMedal(Net_NewDefaultMedalChoice);
+	}
+	
+	/*
+	if(G_HasNewMedal) {
+		if(G_BestMedal == G_OpponentChosen) {
+			Net_NewDefaultMedalChoice 				= G_BestMedal;
+			Net_NewDefaultMedalChoiceUpdate 		+= 1;
+			SetFocusButtonMedal(Net_NewDefaultMedalChoice);
+		} else {
+			if(G_BestMedal < G_OpponentChosen) {
+				Net_NewDefaultMedalChoice 				= G_OpponentChosen;
+				Net_NewDefaultMedalChoiceUpdate 		+= 1;
+				SetFocusButtonMedal(Net_NewDefaultMedalChoice);
+			} else if(G_BestMedal > G_OpponentChosen) {
+				//We keep the last choice
+				Net_NewDefaultMedalChoice 				= G_BestMedal;
+				Net_NewDefaultMedalChoiceUpdate 		+= 1;
+				SetFocusButtonMedal(Net_NewDefaultMedalChoice);
+			}
+		}
+	} else {
+		//We keep the last choice
+	}
+	*/
+}
+
+Void ReleasePlayerGhost() {
+	+++ReleasePlayerGhost+++
+}
+
+Integer[] ParseIntArray(Text _IntArrayAsText) {
+	// we assume the array is shown as "[x, y, z, t]"
+	declare Text[] TextArray = TL::Split("," , TL::SubText(_IntArrayAsText, 1, TL::Length(_IntArrayAsText) - 2));
+	declare Integer[] Result;
+	foreach(TextInt in TextArray) {
+		Result.add(TL::ToInteger(TextInt));
+	}
+	return Result;
+}
+
+/*
+Text GetBestPlayerGhostName() {
+	declare Text GhostName = "Solo_BestGhost";
+	---GetGhostName---
+	return GhostName;
+}
+*/
+
+Void LoadOpponentPlayerGhost() {
+	Game::ClearOpponentName();
+	switch(G_OpponentChosen) {
+		case TMC_MEDAL_RECORDCENTER : {
+			if(G_FriendsOpponentUrl != "") {
+				if(G_OpponentPlayerGhost.count > 0)
+				{
+					for(I, 0, G_OpponentPlayerGhost.count - 1)
+					{
+						DataFileMgr.Ghost_Release(G_OpponentPlayerGhost[I].Id);
+					}
+				}			
+				G_OpponentPlayerGhost.add(Ghosts::GetGhostFromUrl(G_FriendsOpponentUrl));
+				
+				if(Ghosts::IsGhostReady(G_OpponentPlayerGhost[0])) {
+					//L16N. %1 is the name of the friend who is challenged
+					declare Text RecordCenterMessage = TL::Compose(_("Race against %1's ghost?"), G_OpponentPlayerGhost[0].Nickname);
+					UICampaign::SetRecordCenterPopupMessage(RecordCenterMessage);
+				}
+			}
+		}
+		case TMC_MEDAL_VERSUSREPLAY : {
+			declare Text VersusReplayPath for Users[0];
+			G_FriendsOpponentUrl = VersusReplayPath;
+			declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+			declare netwrite Integer Net_MedalOpponent for UI;
+			Net_MedalOpponent = -1;
+			if(G_FriendsOpponentUrl != "") {
+				
+				G_OpponentPlayerGhost = Ghosts::GetGhostsFromUrl(G_FriendsOpponentUrl);
+				for(I, 0, G_OpponentPlayerGhost.count -1)
+				{
+
+					Game::SetOpponentName(G_OpponentPlayerGhost[I].Nickname);
+					if(Ghosts::IsGhostReady(G_OpponentPlayerGhost[I])) {
+						//L16N. %1 is the name of the friend who is challenged
+						declare Text RecordCenterMessage = TL::Compose(_("Race against %1's ghost?"), G_OpponentPlayerGhost[I].Nickname);
+						UICampaign::SetRecordCenterPopupMessage(RecordCenterMessage);
+					}
+				}
+
+			}
+		}
+		case TMC_MEDAL_WORLDRECORD : {
+			for(I, 0, G_OpponentPlayerGhost.count -1)
+			{
+				if(!G_OpponentPlayerGhost.existskey(I)) continue;
+				Game::AddOpponentName(G_OpponentPlayerGhost[I].Nickname);
+				if(Ghosts::IsGhostReady(G_OpponentPlayerGhost[I])) {
+					//L16N. %1 is the name of the friend who is challenged
+					declare Text RecordCenterMessage = TL::Compose(_("Race against %1's ghost?"), G_OpponentPlayerGhost[I].Nickname);
+					UICampaign::SetRecordCenterPopupMessage(RecordCenterMessage);
+				}
+			}
+		}
+	}
+}
+
+Boolean IsAnotherPlayerOpponentBeaten() {
+	/*
+	if(!Ghosts::IsGhostReady(G_OpponentPlayerGhost)) return False;
+	declare Integer OpponentTime = G_OpponentPlayerGhost.RaceResult.Time;
+	if(G_LastTimePlayer < OpponentTime) {
+		return True;
+	}
+	*/
+	return False;
+}
+
+Void InitMedalsNb() {
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Integer Net_BronzeMedalNb 	for UI;
+	declare netwrite Integer Net_SilverMedalNb 	for UI;
+	declare netwrite Integer Net_GoldMedalNb 	for UI;
+	declare netwrite Integer Net_AuthorMedalNb 	for UI;
+	Net_BronzeMedalNb 	= TL::ToInteger(S_NumberOfBronze);
+	Net_SilverMedalNb 	= TL::ToInteger(S_NumberOfSilver);
+	Net_GoldMedalNb 	= TL::ToInteger(S_NumberOfGold);
+	Net_AuthorMedalNb 	= TL::ToInteger(S_NumberOfAuthor);
+}
+
+
+
+
+
+Void SetModelCar(Boolean _Random) {
+	//+++SetCarsModels+++
+}
+
+
+Void RaceTransition() {
+	UICampaign::SetFinalMenuVisibility(False);
+	Game::WaitTime(250);
+	Game::WaitRace(Players[G_ThePlayerId]);
+}
+
+
+
+Void SetGamePhase(Integer _Phase) {
+	G_GamePhase = _Phase;
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Integer Net_GamePhase for UI;
+	Net_GamePhase = G_GamePhase;
+}
+
+Void CampaignSpawnPlayer() {
+	if(!Players[G_ThePlayerId].IsSpawned) {
+		Players[G_ThePlayerId].AccelCoef   = S_Gameplay_Acceleration;
+		Players[G_ThePlayerId].ControlCoef = S_Gameplay_Control;
+		Players[G_ThePlayerId].GravityCoef = S_Gameplay_Gravity;
+		Players[G_ThePlayerId].IsSpawned   = True;
+	}
+}
+
+Void InitGhost() {	
+	G_PlayerGhost = Null;
+}
+
+Void SetOpponentForUI(CGhost _Ghost) {
+	declare Integer[] GhostCpTime;
+	if(_Ghost != Null) {
+
+		foreach(Cp in _Ghost.Result.Checkpoints) GhostCpTime.add(Cp);
+		//Game::AddOpponent(G_OpponentChosen, GhostCpTime);
+		Game::SetOpponent(G_OpponentChosen, GhostCpTime);
+		G_OpponentFinalTime = _Ghost.Result.Time;
+		if((G_OpponentChosen >= TMC_MEDAL_SUPERMEDALI && G_OpponentChosen <= TMC_MEDAL_SUPERMEDALV) 
+		|| G_OpponentChosen == TMC_MEDAL_RECORDCENTER) {
+			Game::SetOpponentName(_Ghost.Nickname);
+		}
+	} else {
+		// G_OpponentFinalTime = -1;
+		Game::SetOpponent(TMC_MEDAL_NONE, Integer[]);
+	}
+}
+
+Void LoadGhostOnTrack(CGhost _Ghost, Integer _CarIndex, Boolean _IsTransparent) {
+	declare Ident CarModel;
+	declare Ident ReplayIdent;
+	if(G_CarModels.existskey(_CarIndex)) {
+		CarModel = G_CarModels[_CarIndex];
+		G_ReplayGhostId = Ghosts::LoadGhostOnMapWithSkin(_Ghost, _IsTransparent, CarModel);
+	} else {
+		G_ReplayGhostId = Ghosts::LoadGhostOnMap(_Ghost, _IsTransparent);
+	}
+	if(G_ReplayGhostId != NullId) {
+		G_ReplayGhosts[G_ReplayGhostId]	= _Ghost;
+	}
+	Ghosts::ReleaseGhost();
+}
+
+CGhost GetReplayGhost() {
+	if((G_GamePhase == C_GAMEPHASE_POSTGAME) || G_GamePhase == C_GAMEPHASE_CHALLENGE) 	return G_PlayerGhost;
+	else 																				return G_LastGhost;
+	return Null;
+}
+
+Integer GetReplayGhostIndex() {
+	if((G_GamePhase == C_GAMEPHASE_POSTGAME && G_HasNewScore) || G_GamePhase == C_GAMEPHASE_CHALLENGE) 	return 0;
+	else 																								return 1;
+	return -1;
+}
+
+Void LoadPlayerGhostOnTrack(Boolean _IsOpponent, Boolean _IsTransparent, Boolean _IsEndReplay) {
+	//Game::ClearOpponentName();
+	if(!_IsEndReplay) {
+		if(G_PlayerGhost != Null) {
+			LoadGhostOnTrack(G_PlayerGhost, -1, _IsTransparent);
+			if(_IsOpponent && Ghosts::IsGhostReady(G_PlayerGhost)) {
+				SetOpponentForUI(G_PlayerGhost);
+			}
+			
+		}
+	} else {
+		declare CGhost ReplayGhost <=> GetReplayGhost();
+		if(ReplayGhost != Null) {
+			LoadGhostOnTrack(ReplayGhost, -1, _IsTransparent);
+		}
+	}
+}
+
+Void ShowOpponents(Boolean _IsReplay) {
+	declare CGhost GhostToLoad = Null;
+	declare Boolean IsPlayerGhostOpponent = False;
+	Game::ClearOpponents();
+	if(G_OpponentChosen >= TMC_MEDAL_AUTHOR && G_OpponentChosen <= TMC_MEDAL_BRONZE) {
+		GhostToLoad = Ghosts::GetMedalGhosts(G_OpponentChosen);
+		if(GhostToLoad != Null)
+		{
+			/*
+			log(" GhostToLoad.Result.Checkpoints: "^  GhostToLoad.Result.Checkpoints);
+			declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+			declare netwrite Integer[] Net_CheckpointsTimeOpponent for UI;
+			Net_CheckpointsTimeOpponent.clear();
+
+			foreach(Time in GhostToLoad.Result.Checkpoints)
+			{
+				Net_CheckpointsTimeOpponent.add(Time);
+			}
+			*/
+		
+				
+			//Game::SetOpponentName(C_MedalsName[G_OpponentChosen]);
+			LoadGhostOnTrack(GhostToLoad, G_OpponentChosen, False);
+			if(Ghosts::IsGhostReady(GhostToLoad)) {
+				SetOpponentForUI(GhostToLoad);
+			}
+		}
+		IsPlayerGhostOpponent = False;
+	} else if(G_OpponentChosen == TMC_MEDAL_PLAYER || G_AddGhostPlayer) {
+		G_AddGhostPlayer = False;
+		GhostToLoad <=> Ghosts::GetGhostFromPlayer(Players[G_ThePlayerId], "");
+		if(GhostToLoad != Null)
+		{
+			//Game::SetOpponentName(C_MedalsName[G_OpponentChosen]);
+			LoadGhostOnTrack(GhostToLoad, TMC_MEDAL_PLAYER, False);
+			SetOpponentForUI(GhostToLoad);
+			IsPlayerGhostOpponent = True;
+		}
+		else
+		{
+			declare CGhost LastPlayerGhost = Ghosts::GetLastGhostFromPlayer(Players[G_ThePlayerId]);
+			if(LastPlayerGhost != Null)
+			{
+				SetOpponentForUI(LastPlayerGhost);
+				LoadGhostOnTrack(LastPlayerGhost, G_OpponentChosen, False);
+			}
+			//SetOpponentForUI(GhostToLoad);
+			
+		}
+
+	}
+	if ((G_OpponentChosen >= TMC_MEDAL_SUPERMEDALI && G_OpponentChosen <= TMC_MEDAL_SUPERMEDALV) || G_OpponentChosen == TMC_MEDAL_WORLDRECORD || G_OpponentChosen == TMC_MEDAL_VERSUSREPLAY) {
+		LoadOpponentPlayerGhost();
+		if(G_OpponentPlayerGhost.count > 0)
+		{
+			for(I, 0, G_OpponentPlayerGhost.count -1)
+			{
+				LoadGhostOnTrack(G_OpponentPlayerGhost[I], C_RECORDCENTER_CAR+I, False);
+				if(Ghosts::IsGhostReady(G_OpponentPlayerGhost[I])) {
+					SetOpponentForUI(G_OpponentPlayerGhost[I]);
+				}
+			}
+		}
+
+		IsPlayerGhostOpponent = False;
+	}
+	
+	if(!_IsReplay) {
+		LoadPlayerGhostOnTrack(IsPlayerGhostOpponent, True, False);
+	}
+}
+
+
+Integer GetMedalPlayer() {
+	declare Integer PlayerTimeOnMap = 999999999999999999;
+	if(G_TimesOnMap.existskey(TMC_MEDAL_PLAYER))
+	{
+		PlayerTimeOnMap = G_TimesOnMap[TMC_MEDAL_PLAYER];
+	}
+	if(PlayerTimeOnMap <= 0){
+		return  TMC_MEDAL_PLAYER;
+	} else if(PlayerTimeOnMap <= G_TimesOnMap[TMC_MEDAL_AUTHOR]) {
+		return  TMC_MEDAL_AUTHOR;
+	} else if(PlayerTimeOnMap <= G_TimesOnMap[TMC_MEDAL_GOLD]) {
+		return  TMC_MEDAL_GOLD;
+	} else if(PlayerTimeOnMap <= G_TimesOnMap[TMC_MEDAL_SILVER]) {
+		return TMC_MEDAL_SILVER;
+	} else if(PlayerTimeOnMap <= G_TimesOnMap[TMC_MEDAL_BRONZE]) {
+		return  TMC_MEDAL_BRONZE;
+	} else {
+		return  TMC_MEDAL_PLAYER;
+	}
+	return -1;
+}
+
+Void SetMedalPlayer() {
+	declare CTmPlayer MyPlayer = Players[G_ThePlayerId];
+	declare UI <=> UIManager.GetUI(MyPlayer);
+	declare netwrite Integer Net_PlayerRank        for UI;
+	declare netwrite Integer Net_BestMedal         for UI;
+	declare netwrite Integer Net_CurMedal          for UI;
+	declare netwrite Integer Net_CurTime           for UI;
+	declare netwrite Integer Net_BestTimePlayer    for UI;
+	declare netwrite Integer Net_TimeToNextMedal   for UI;
+	declare netwrite Integer Net_NextMedalTime     for UI;
+	declare netwrite Boolean Net_IsNewMedal        for UI;
+
+	declare Integer Prev_BestMedal = G_BestMedal;
+	// declare Integer PlayerTime = Game::RoundHundredthTime(MyPlayer.CurRace.Time);
+	Net_BestTimePlayer  = G_BestTimePlayer;
+	Net_TimeToNextMedal = 0;
+	Net_IsNewMedal      = False;
+	G_OldMedal          = G_BestMedal;
+
+
+	if(MyPlayer.CurRace.Time <= G_TimesOnMap[TMC_MEDAL_AUTHOR]) {
+		Net_CurMedal 	= TMC_MEDAL_AUTHOR;
+		if(G_BestMedal > TMC_MEDAL_AUTHOR) {
+			Net_BestMedal 	= TMC_MEDAL_AUTHOR;
+			Net_PlayerRank 	= TMC_MEDAL_AUTHOR;
+			
+			G_HasNewMedal 	= True;
+			G_BestMedal 	= TMC_MEDAL_AUTHOR;
+		} else {
+		
+			Net_PlayerRank = TMC_MEDAL_NONE;
+		}
+	} else if(MyPlayer.CurRace.Time <= G_TimesOnMap[TMC_MEDAL_GOLD]) {
+		Net_CurMedal 	= TMC_MEDAL_GOLD;
+		if(G_BestMedal > TMC_MEDAL_GOLD) {
+			Net_BestMedal 	= TMC_MEDAL_GOLD;
+			Net_PlayerRank 	= TMC_MEDAL_GOLD;
+			
+			G_HasNewMedal 	= True;
+			G_BestMedal 	= TMC_MEDAL_GOLD;
+		} else {
+			Net_PlayerRank = TMC_MEDAL_NONE;
+		}
+	} else if(MyPlayer.CurRace.Time <= G_TimesOnMap[TMC_MEDAL_SILVER]) {
+		Net_TimeToNextMedal = MyPlayer.CurRace.Time - G_TimesOnMap[TMC_MEDAL_GOLD];
+		Net_CurMedal 	= TMC_MEDAL_SILVER;
+		if(G_BestMedal > TMC_MEDAL_SILVER) {
+			Net_BestMedal 	= TMC_MEDAL_SILVER;
+			Net_NextMedalTime   = G_TimesOnMap[TMC_MEDAL_GOLD];
+			Net_PlayerRank 	= TMC_MEDAL_SILVER;
+			
+			G_HasNewMedal 			= True;
+			G_BestMedal 			= TMC_MEDAL_SILVER;
+			G_NbHighestMedalHad 	= 1;
+		} else {
+			if(G_BestMedal == TMC_MEDAL_SILVER) {
+				G_NbHighestMedalHad 	+= 1;
+			}
+			Net_PlayerRank = TMC_MEDAL_NONE;
+		}
+	} else if(MyPlayer.CurRace.Time <= G_TimesOnMap[TMC_MEDAL_BRONZE]) {
+		Net_TimeToNextMedal = MyPlayer.CurRace.Time - G_TimesOnMap[TMC_MEDAL_SILVER];
+		Net_CurMedal 	= TMC_MEDAL_BRONZE;
+		if(G_BestMedal > TMC_MEDAL_BRONZE) {
+			Net_BestMedal 	= TMC_MEDAL_BRONZE;
+			Net_NextMedalTime   = G_TimesOnMap[TMC_MEDAL_SILVER];
+			Net_PlayerRank 	= TMC_MEDAL_BRONZE;
+			
+			G_HasNewMedal 	= True;
+			G_BestMedal 	= TMC_MEDAL_BRONZE;
+			G_NbHighestMedalHad 	= 1;			
+		} else {
+			if(G_BestMedal == TMC_MEDAL_BRONZE) {
+				G_NbHighestMedalHad 	+= 1;
+			}
+			Net_PlayerRank = TMC_MEDAL_NONE;
+		}
+	} else {
+		Net_TimeToNextMedal = MyPlayer.CurRace.Time - G_TimesOnMap[TMC_MEDAL_BRONZE];
+		if(G_BestMedal == TMC_MEDAL_PLAYER) {
+			G_NbHighestMedalHad 	+= 1;
+			Net_NextMedalTime   = G_TimesOnMap[TMC_MEDAL_BRONZE];
+		}
+		Net_PlayerRank = TMC_MEDAL_NONE;
+	}
+
+	if(Prev_BestMedal > G_BestMedal)
+	{
+		Net_IsNewMedal = True;
+		Prev_BestMedal = G_BestMedal;
+	}
+
+
+	if(G_HasNewMedal) {
+		G_NbMedalWon	+= G_OldMedal - G_BestMedal;
+		Game::PlayerHasNewMedal(G_BestMedal);
+	}
+	
+	Net_CurTime = MyPlayer.CurRace.Time;
+}
+
+Void UnspawnSoloPlayer() {
+	Players[G_ThePlayerId].IsSpawned = False;
+}
+
+Void SequenceTransition() {
+	// Game::ShowTransition(Players[G_ThePlayerId]);
+	//Game::WaitTime(250);
+	if(!Game::IsWaiting(Players[G_ThePlayerId])) {
+		Game::WaitRace(Players[G_ThePlayerId]);
+	}
+	// Game::HideTransition(Players[G_ThePlayerId]);
+}
+
+Boolean CheckGhostsReplayEnded() {
+	if(Now < G_StartTimerGhostReplay) return False;
+	// if(G_PlayerReplayGhostTime ==-1) log("-1");
+	foreach(IdentIndex => Ghost in G_ReplayGhosts) {
+		if(RaceGhost_IsReplayOver(IdentIndex) && Ghost.Id == G_ReplayGhostId) return True;
+	}
+	return False;
+}
+
+Void StartReplay(Boolean _IsJustAfterRace) {
+	SequenceTransition();
+	G_StartTimerGhostReplay = Now + 2000;
+	
+	Ghosts::RemoveAllGhosts();
+	G_ReplayGhosts.clear();
+	RaceGhost_RemoveAll();
+
+	if(G_GamePhase == C_GAMEPHASE_POSTGAME) {
+		ShowOpponents(True);
+		LoadPlayerGhostOnTrack(False, False, True);
+	} else {
+		LoadPlayerGhostOnTrack(False, False, False);
+	}
+	
+	declare Ident ReplayIdent 		= NullId;
+	declare CGhost ReplayGhost 		<=> GetReplayGhost();
+	if(G_ReplayGhosts.exists(ReplayGhost)) {
+		ReplayIdent = G_ReplayGhosts.keyof(ReplayGhost);
+		if(ReplayIdent != NullId) {
+			UISequence::SetReplayGhostFocus(ReplayIdent);
+			//UI.UISequence_CustomMTClip = "";
+		}
+		//G_PlayerReplayGhostTime = ReplayGhost.RaceResult.Time;
+		G_ReplayGhostId = ReplayGhost.Id;
+	}
+	
+	Game::SetReplayMusic();
+	UISequence::LaunchReplaySequence();
+}
+
+Boolean IsOneGhostExist() {
+	return G_PlayerGhost != Null;
+}
+
+Void ReplayAndStandByLoop() {
+	if(G_IdleStep == TMC_IDLESTEP_REPLAY) {
+		if(CheckGhostsReplayEnded()) {
+			//Ghosts::RemoveAllGhosts();
+			//CampaignSpawnPlayer();
+			UISequence::SetStandByView();
+			//Game::SetStandbyMusic();
+			G_TimerStandBy = Now;
+			G_IdleStep = TMC_IDLESTEP_STANDBY;
+		}
+	} else if(G_IdleStep == TMC_IDLESTEP_STANDBY) {
+		if(Now > G_TimerStandBy) {
+			if(IsOneGhostExist()) {
+				G_IdleStep = TMC_IDLESTEP_REPLAY;
+				StartReplay(False);
+				Game::WaitTime(500);
+			} else {
+				G_IdleStep = TMC_IDLESTEP_STANDBY;
+			}
+		}
+	}
+}
+
+Void SetCurrentFrameVisibility(Boolean _Show) {
+	if(G_CurrentFrameDisplay == TMC_WINDOWFRAMESTEP_OPPONENT) {
+		UICampaign::SetStartMenuVisibility(_Show);
+	} else if(G_CurrentFrameDisplay == TMC_WINDOWFRAMESTEP_FRIENDS) {
+		UICampaign::SetFriendsRecordsVisibility(_Show);
+	} else if(G_CurrentFrameDisplay == TMC_WINDOWFRAMESTEP_FINAL) {
+		UICampaign::SetFinalMenuVisibility(_Show);
+	} else if(G_CurrentFrameDisplay == TMC_WINDOWFRAMESTEP_RESTARTRECORD) {
+		UICampaign::SetVisibilityRecordCenterPopup(_Show);
+	}
+}
+
+Void SendWorldRecordInfos(Integer _Zone) {
+	//declare CUILayer		LayerToSend = Layers::Get("Layer_WorldRecord");
+	
+	declare UI <=> UIManager.GetUI(Players[0]);
+	if(UI == Null) return;
+	declare netwrite Text		NewDataList_Title	   for UI;
+	declare netwrite Text[]		NewDataList_Name	   for UI;
+	declare netwrite Integer	NewDataList_GroupCount for UI;
+	declare netwrite Integer[]	NewDataList_Time	   for UI;
+	declare netwrite Integer[]	NewDataList_Rank	   for UI;
+	declare netwrite Integer 	UpdateListData		   for UI;
+	declare Integer MaxZone = _Zone;
+	declare Integer ZonesMax = PlayerGroups::GetZoneCount(Users[0].ZonePath);
+	if (MaxZone > ZonesMax - 1) {
+		MaxZone = ZonesMax - 1;
+	}
+	declare Text ZonePath = PlayerGroups::Get_ZoneText(Users[0].ZonePath, MaxZone);
+	NewDataList_GroupCount = PlayerGroups::GetPlayerGroupsCount();
+
+	if ((MaxZone == -1) || (ZonesMax == 0)) {
+		NewDataList_Name = Text[];
+		NewDataList_Time = Integer[];
+		NewDataList_Rank = Integer[];
+		UpdateListData += 1;
+	} else {
+		declare Ident MyUserID for Players[0].User;
+		G_TaskResultPlayerList        = ScoreMgr.MapLeaderBoard_GetPlayerList(MyUserID, Map.MapInfo.MapUid, "", ZonePath, 1, 10);
+		G_PlayerRanking     = ScoreMgr.MapLeaderBoard_GetPlayerRanking(MyUserID, Map.MapInfo.MapUid, "", ZonePath);
+		G_PlayerCount       = ScoreMgr.MapLeaderBoard_GetPlayerCount(Map.MapInfo.MapUid, "", ZonePath);
+		NewDataList_Title   = PlayerGroups::Get_ZoneLabelText(Users[0].ZonePath, MaxZone);
+		G_TimeMaxToWaitTask = Now + 20;
+	}
+}
+
+Void SoloYield() {
+	MB_Yield();
+	Game::Loop();
+	
+	//Task
+	//if((G_TaskResultPlayerList != Null && !G_TaskResultPlayerList.IsProcessing) && (G_TimeMaxToWaitTask < Now && G_TimeMaxToWaitTask !=-1 || (G_PlayerRanking != 0 && G_PlayerCount != 0))) {
+	if(G_TaskResultPlayerList != Null) {
+		G_TimeMaxToWaitTask -= 1;
+		if(!G_TaskResultPlayerList.IsProcessing && (G_TimeMaxToWaitTask < Now || (G_PlayerRanking != 0 && G_PlayerCount != 0))) {
+			//MB_Yield(); // TODO : Remplacer par SoloYield();
+			//Game::Loop();
+			//SoloYield();
+			declare UI <=> UIManager.GetUI(Players[0]);
+			if(UI == Null) return;
+			declare netwrite Text[]		NewDataList_Login	for UI;
+			declare netwrite Text[]		NewDataList_Name	for UI;
+			declare netwrite Integer[]	NewDataList_Time	for UI;
+			declare netwrite Integer[]	NewDataList_Rank	for UI;
+			declare netwrite Text[]		NewDataList_Replay	for UI;
+			declare netwrite Text[]		NewDataList_FileName for UI;
+			declare netwrite Text		PlayerRankingText	for UI;
+			declare netwrite Integer	PlayerCount			for UI;
+			declare netwrite Integer 	UpdateListData		for UI;
+
+			if(G_PlayerRanking == 0)
+			{
+				PlayerRankingText = Players[0].User.Name ^"$fff: ---/---";
+			}
+			else
+			{
+				PlayerRankingText = Players[0].User.Name ^"$fff: "^ G_PlayerRanking ^ "/" ^G_PlayerCount;
+			}
+
+			UpdateListData += 1;
+			NewDataList_Login.clear();
+			NewDataList_Name.clear();
+			NewDataList_Time.clear();
+			NewDataList_Rank.clear();
+			NewDataList_Replay.clear();
+			NewDataList_FileName.clear();
+			if(G_TaskResultPlayerList.HasSucceeded) {
+				declare Ident MyUserID for Players[0].User;
+				declare Integer Time = ScoreMgr.Map_GetRecord(MyUserID, Map.MapInfo.MapUid, "");
+				foreach(LeaderBoardIndex => LeaderBoardEntry in G_TaskResultPlayerList.LeaderBoardInfo) {
+					if ((G_PlayerRanking >= 10) && (LeaderBoardIndex >= 9) && (Time != -1)) {
+						NewDataList_Login.add(Players[0].User.Login);
+						NewDataList_Name.add(Players[0].User.Name);
+						NewDataList_Replay.add("");
+						NewDataList_FileName.add("");
+						NewDataList_Rank.add(G_PlayerRanking);
+						NewDataList_Time.add(Time);
+					} else if (LeaderBoardEntry.Score != -1) {
+						NewDataList_Login.add(LeaderBoardEntry.Login);
+						NewDataList_Name.add(LeaderBoardEntry.DisplayName);
+						NewDataList_Replay.add(LeaderBoardEntry.ReplayUrl);
+						NewDataList_FileName.add(LeaderBoardEntry.FileName);
+						NewDataList_Rank.add(LeaderBoardEntry.Rank);
+						NewDataList_Time.add(LeaderBoardEntry.Score);
+					}
+				}
+			}
+			DataFileMgr.TaskResult_Release(G_TaskResultPlayerList.Id);
+			G_TaskResultPlayerList = Null;
+		}
+	}
+
+	//+++SoloYield++
+	declare UI <=> UIManager.GetUI(Players[0]);
+	if(UI != Null)
+	{
+		declare	netread Integer	UpdateSendWorldRecordInfos	for UI;
+		declare	netread Integer	SendWorldRecord_ZoneFocus	for UI;
+
+		if(UpdateSendWorldRecordInfos != G_UpdateSendWorldRecordInfos)
+		{
+			SendWorldRecordInfos(SendWorldRecord_ZoneFocus);
+			G_UpdateSendWorldRecordInfos = UpdateSendWorldRecordInfos;
+		}
+	}
+	//G_TaskNewRecord
+
+	ReplayAndStandByLoop();
+	
+	
+	if(UICampaign::PlayerWantsToQuit()) {
+		G_PlayerWantsToQuit = True;
+	}
+	
+}
+
+Void WaitRecordCenterChoice() {
+	while(UICampaign::GetRecordCenterChoice() == -1) {
+		SoloYield();
+	}
+}
+
+Void WaitWorldRecordChoice() {
+	while(UICampaign::GetWorldRecordChoices().count <= 0) {
+		SoloYield();
+	}
+}
+
+Void SetNewRecord(Text _Context) {
+	if(G_BestTimePlayer != -1) 		UICampaign::NewRecord(G_BestTimePlayer);
+	
+	// We always destroy the player ghost we don't need. If the ghost comes from an online task, we release it
+	if(G_PlayerGhost != Null) {
+		ReleasePlayerGhost();
+	}
+
+	G_PlayerGhost 				= Ghosts::GetLastGhostFromPlayer(Players[G_ThePlayerId]);
+	
+	G_BestTimePlayer 			= Players[G_ThePlayerId].CurRace.Time;
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Text BestTimePlayer for UI;
+	BestTimePlayer = TL::TimeToText(G_BestTimePlayer, True);
+	BestTimePlayer ^= TL::SubText(G_BestTimePlayer  ^"", (TL::Length(G_BestTimePlayer^"")-1), 1);
+
+
+	if(G_PlayerGhost != Null)
+	{
+		G_TaskNewRecord = ScoreMgr.Map_SetNewRecord(Players[0].Id, MapList[NextMapIndex].MapUid, _Context, G_PlayerGhost);
+		if (G_TaskNewRecord == Null) {
+
+		}
+	}
+
+	while(G_TaskNewRecord != Null && G_TaskNewRecord.IsProcessing)
+	{
+		SoloYield();
+	}
+	
+
+	if(G_TaskNewRecord != Null && G_TaskNewRecord.HasSucceeded)
+	{
+		ScoreMgr.TaskResult_Release(G_TaskNewRecord.Id);
+	}
+	else if (G_TaskNewRecord != Null)
+	{
+		
+	}
+
+	UICampaign::SetBestTime(G_BestTimePlayer);
+	declare Text MedalPlayer = Medals::GetMedalName(TMC_MEDAL_PLAYER);
+	UICampaign::SetPersonalButtonContent(MedalPlayer);
+}
+
+Void SetNewRecord()
+{
+	SetNewRecord("");
+}
+
+Void SendRecordCenterInfos() {
+	declare CTaskResult_BuddiesChallengeRecordsComparison Task_BuddiesChallengeRecord = ScoreMgr.Campaign_GetBuddiesMapRecordsComparison(Players[0].Id, Map.MapInfo.MapUid);
+	/*
+	if(Task_BuddiesChallengeRecord == Null) return;
+	while(Task_BuddiesChallengeRecord.IsProcessing) {
+		SoloYield();
+	}
+	log("Task_BuddiesChallengeRecord.HasSucceeded: "^ Task_BuddiesChallengeRecord.HasSucceeded);
+	*/
+	//if(!Task_BuddiesChallengeRecord.HasSucceeded) return;
+	declare Text[Text][] RequestedRecordsResume;
+	for (I, 0, 3) {
+		declare Integer BestRecordCount         = MathLib::Rand(1, 60);
+		declare Integer OpponentBestRecordCount = MathLib::Rand(1, 60);
+		declare Integer Date                    = MathLib::Rand(1, 6000);
+		RequestedRecordsResume.add(
+		[
+		"Category1" => TL::ToText(BestRecordCount),
+		"Category2" => TL::ToText(OpponentBestRecordCount),
+		"CoreInfo" => "userdata",
+		"Flag"		=> Players[0].User.CountryFlagUrl, // TODO : Changer cette info
+		"Category0" => """Names[{{{I}}}]""",
+		"Category3" => """{{{Date}}}"""]);
+	}
+	ListDisplayerController_Ingame::ChangeListData("Layer_RecordCenterPopup", RequestedRecordsResume);
+}
+
+Void WaitForChallengeChoice() {	
+	declare Integer GhostChosen = UICampaign::GetGhostChosen();
+
+	while(GhostChosen == -1 && !G_PlayerWantsToQuit) {
+		SoloYield();
+		GhostChosen			= UICampaign::GetGhostChosen();
+	}
+	G_OpponentChosen = GhostChosen;
+
+	declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+	declare netwrite Integer Net_MedalOpponent for UI;
+	Net_MedalOpponent = G_OpponentChosen;
+	
+	+++FunctionWaitForChallengeChoice+++
+}
+
+Text GetVersusTimeText(Boolean _OpponentOrMedal, Integer _GhostIndex) {
+	declare Text VersusText = "";
+	
+	declare TimeText = TL::TimeToText(G_LastTimePlayer, True);
+	//TimeText ^= TL::SubText(G_LastTimePlayer  ^"", (TL::Length(G_LastTimePlayer^"")-1), 1);
+	declare Integer GhostIndex = _GhostIndex;
+	declare Text PlayerName    = Players[G_ThePlayerId].User.Name;
+	//if(GhostIndex <= -1) GhostIndex = 0;
+	GhostIndex = 0;
+
+	if(G_OpponentPlayerGhost.count > 0 && G_OpponentPlayerGhost.existskey(GhostIndex)) {
+		if(PlayerName == G_OpponentPlayerGhost[GhostIndex].Nickname) PlayerName = TL::GetTranslatedText("Your Time");
+		declare OponentTimeText = TL::TimeToText(G_OpponentPlayerGhost[GhostIndex].Result.Time, True);
+		OponentTimeText ^= TL::SubText(G_OpponentPlayerGhost[GhostIndex].Result.Time  ^"", (TL::Length(G_OpponentPlayerGhost[GhostIndex].Result.Time^"")-1), 1);
+		VersusText = TL::Compose("$<%1$>: %2 - $<%3$>: %4", PlayerName, TimeText, G_OpponentPlayerGhost[GhostIndex].Nickname, OponentTimeText);
+	}
+
+	/*
+	if(_OpponentOrMedal) {
+	} else {
+		declare OponentTimeText = TL::TimeToText(G_OpponentFinalTime, True);
+		OponentTimeText ^= TL::SubText(G_OpponentFinalTime  ^"", (TL::Length(G_OpponentFinalTime^"")-1), 1);
+		VersusText = TL::Compose("$<%1$>: %2 - $<%3$>: %4", Players[G_ThePlayerId].User.Name, TimeText, Medals::GetMedalName(G_OpponentChosen), OponentTimeText);
+	}
+	*/
+	return VersusText;
+}
+
+Text GetVersusTimeText(Boolean _OpponentOrMedal) {
+	return GetVersusTimeText(_OpponentOrMedal, -1);
+}
+
+Void WorldRecordSequence() {
+	G_CurrentFrameDisplay = TMC_WINDOWFRAMESTEP_WORLD;
+	UICampaign::SetVisibilityWorldRecordPopup(True);
+	declare Ident MyUserID for Players[0].User;
+
+	PlayerGroups::LoadIngame(Users[0]);
+	
+	SendWorldRecordInfos(G_WorldRecordFocus);
+	WaitWorldRecordChoice();
+	declare WorldRecordChoice = UICampaign::GetWorldRecordChoice();
+	declare Text[] WorldRecordChoices          = UICampaign::GetWorldRecordChoices();
+	declare Text[] WorldRecordChoices_Replay   = UICampaign::GetWorldRecordChoices_Replay();
+	declare Text[] WorldRecordChoices_FileName = UICampaign::GetWorldRecordChoices_FileName();
+	UICampaign::SetVisibilityWorldRecordPopup(False);
+	Game::WaitTime(500);
+	if(WorldRecordChoice == -2) { //Switch To WorldRecord
+		G_WorldRecordPreparation = True;
+		return;
+	}
+	else if(WorldRecordChoice == -3) { //Cancel - Return to Medal Selection
+		G_WorldRecordMode = False;
+		G_WorldRecordPreparation = False;
+		SetGamePhase(C_GAMEPHASE_CHALLENGE);
+	}
+	else {
+		G_OpponentPlayerGhost.clear();
+		for(I, 0, WorldRecordChoices.count-1)
+		{
+				
+			G_OpponentChosen = TMC_MEDAL_WORLDRECORD;
+
+			if(WorldRecordChoices[I] == Players[0].User.Login) {
+				G_AddGhostPlayer = True;
+			}
+			else
+			{
+				declare Text VersusReplayPath = WorldRecordChoices_Replay[I];
+				declare Text ReplayFileName   = WorldRecordChoices_FileName[I];
+				
+				declare CGhost WorldRecordOpponent <=> Ghosts::GetGhostFromOnline(ReplayFileName, VersusReplayPath);
+				if (WorldRecordOpponent != Null) {
+					G_OpponentPlayerGhost.add(WorldRecordOpponent);
+				}
+			}
+		}
+		G_WorldRecordPreparation = False;
+		SetGamePhase(C_GAMEPHASE_PREPARATION);
+	}
+}
+
+
+Void RecordCenterSequence() {
+	G_CurrentFrameDisplay = TMC_WINDOWFRAMESTEP_RESTARTRECORD;
+	UICampaign::SetVisibilityRecordCenterPopup(True);
+	SendRecordCenterInfos();
+	WaitRecordCenterChoice();
+	declare RecordCenterChoice = UICampaign::GetRecordCenterChoice();
+	UICampaign::SetVisibilityRecordCenterPopup(False);
+	Game::WaitTime(1000);
+	
+	if(RecordCenterChoice == -2) { //Switch To WorldRecord
+		return;
+	}
+	else if(RecordCenterChoice == -3) { //Cancel - Return to Medal Selection
+
+		G_WorldRecordMode = False;
+		G_WorldRecordPreparation = False;
+		SetGamePhase(C_GAMEPHASE_CHALLENGE);
+	}
+	else {
+		G_FriendsOpponentUrl = "";
+		G_WorldRecordPreparation = False;
+		SetGamePhase(C_GAMEPHASE_PREPARATION);
+	}
+}
+
+Void WaitRewardAnswer() {
+	while(!Game::GetRewardAnswer(Players[G_ThePlayerId])) {
+		SoloYield();
+	}
+}

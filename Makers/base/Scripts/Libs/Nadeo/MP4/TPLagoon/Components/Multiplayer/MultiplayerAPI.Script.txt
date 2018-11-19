@@ -8,12 +8,17 @@
 #Const C_WaitTimeMax			5000
 #Const C_MaxNbServersPerPage	9
 
+#Const C_ARRAY_NOORDER			0
+#Const C_ARRAY_INCREASINGORDER	1
+#Const C_ARRAY_DECREASINGORDER	2
+
 declare Text					G_Base_API_Url;
 declare CHttpRequest			G_Request;
 declare Boolean					G_HasFetched;
 declare Boolean					G_HasStartedFetch;
 
 declare Text					G_OrderBy;
+declare Integer					G_Order;
 declare Text					G_TextFilter;
 declare Text					G_ScriptFilter;
 declare Text					G_ZoneFilter;
@@ -306,7 +311,7 @@ Void ServerPull() {
 	Xml.Destroy(XmlDoc);
 }
 
-Void Private_FetchServerListAsync(Text[Text] _Filters, Text _OrderBy, Integer _Offset, Integer _Length, Boolean _TitleServersOnly)
+Void Private_FetchServerListAsync(Text[Text] _Filters, Text _OrderBy, Text _Order, Integer _Offset, Integer _Length, Boolean _TitleServersOnly)
 {
 	G_CanPageUp = False;
 	declare Text[] QueryArgs;
@@ -318,6 +323,7 @@ Void Private_FetchServerListAsync(Text[Text] _Filters, Text _OrderBy, Integer _O
 	}
 	QueryArgs.add("offset=" ^ _Offset);
 	QueryArgs.add("length=" ^ _Length);
+	QueryArgs.add("order=" ^ _Order);
 	declare Text QueryString = TextLib::Join("&", QueryArgs);
 	if (G_Request != Null) {
 		Http.Destroy(G_Request);
@@ -362,6 +368,22 @@ Text[Text] GetFilters()
 	return Result;
 }
 
+Text GetOrder()
+{
+	switch (G_Order) {
+		case C_ARRAY_NOORDER: {
+			return "DESC";
+		}
+		case C_ARRAY_INCREASINGORDER: {
+			return "ASC";
+		}
+		case C_ARRAY_DECREASINGORDER: {
+			return "DESC";
+		}
+	}
+	return "DESC";
+}
+
 Text GetOrderBy()
 {
 	return G_OrderBy;
@@ -371,9 +393,10 @@ Void Private_FetchServerListAsync()
 {
 	declare Text[Text] 	Filters	= GetFilters();
 	declare Text 		OrderBy	= GetOrderBy();
+	declare Text 		Order	= GetOrder();
 	declare Integer 	Offset	= G_CurrentPage * C_MaxNbServersPerPage;
 	declare Integer 	Length	= C_MaxNbServersPerPage + 1;
-	Private_FetchServerListAsync(Filters, OrderBy, Offset, Length, G_DisplayTitleServersOnly);
+	Private_FetchServerListAsync(Filters, OrderBy, Order, Offset, Length, G_DisplayTitleServersOnly);
 }
 
 Boolean HasFetched()
@@ -515,6 +538,7 @@ Boolean ServerList_SetTextFilter(Text _Value)
 Boolean ServerList_SortElements(Integer _SortId)
 {
 	G_CurrentPage = 0;
+	declare Text TmpOrderBy = G_OrderBy;
 	declare LevelClass = GetPlayerLevelClass();
 	switch(_SortId) {
 		case 0: {
@@ -534,6 +558,20 @@ Boolean ServerList_SortElements(Integer _SortId)
 		}
 		default: {
 			return False;
+		}
+	}
+	if (TmpOrderBy != G_OrderBy) {
+		G_Order = C_ARRAY_NOORDER;
+	}
+	switch (G_Order) {
+		case C_ARRAY_NOORDER: {
+			G_Order = C_ARRAY_INCREASINGORDER;
+		}
+		case C_ARRAY_INCREASINGORDER: {
+			G_Order = C_ARRAY_DECREASINGORDER;
+		}
+		case C_ARRAY_DECREASINGORDER: {
+			G_Order = C_ARRAY_INCREASINGORDER;
 		}
 	}
 	return True;

@@ -46,6 +46,9 @@ declare CAudioSource G_SoundStartValidation;
 declare CAudioSource G_SoundImprove;
 declare CAudioSource G_SoundSnap;
 
+declare CGhost 		G_BestPlayerGhost;
+declare Integer[] 	G_BestCheckpointsTimes;
+
 // ---------------------------------- //
 // Functions
 // ---------------------------------- //
@@ -92,15 +95,16 @@ Void UpdateValidability() {
 	
 	// It's a multilap
 	if (StartsFinishes > 0) {
-		// Exactly one multilap block
-		if (StartsFinishes != 1) {
+		// No start line block, so there must be exactly one multilap block, so that we know where the car will spawn.
+		if (Starts == 0 && StartsFinishes > 1) {
 			ValidationStatus = CMapType::ValidationStatus::NotValidable;
 			//L16N [MapEditor] Message explaining to the player that a track can contain only one start line block.
 			ValidabilityRequirementsMessage = _("You can place only one starting point!");
 			return;
 		}
-		// No start
-		if (Starts != 0) {
+		// A start line block may be present: in that case the car will spawn on it, and not on the multilap block.
+		// But there must be only one start line block (and there could be more than one multilap block).
+		if (Starts > 1) {
 			ValidationStatus = CMapType::ValidationStatus::NotValidable;
 			//L16N [MapEditor] Message explaining to the player that a track can contain only one start line block.
 			ValidabilityRequirementsMessage = _("You can place only one starting point!");
@@ -179,7 +183,7 @@ Void InitUIIngame()
 {
 	Game::Load(Mode, "Trackbuilder");
 	//Mode.NbLaps = Map.TMObjective_NbLaps;
-	Game::SetNbLaps(0, Map.TMObjective_IsLapRace);
+	Game::SetNbLaps(Map.TMObjective_NbLaps, Map.TMObjective_IsLapRace);
 	//Game::WaitTime(100);
 	GameUI::SetMapNameFrameVisibility(True); ///< Force the map name to be hidden
 	GameUI::IsTrackbuilder(True); ///< Force the map name to be hidden again
@@ -252,6 +256,8 @@ Void StartValidation(Boolean _Validation) {
 	}
 	*/
 	
+	InitUIIngame();
+	
 	declare Player <=> Mode.AllPlayers[0];
 	//Player.ForceModelId = TrackbuilderSkin;
 	Player.RaceStartTime = -1;
@@ -295,8 +301,14 @@ Void StartValidation(Boolean _Validation) {
 		if (Player.RaceStartTime <= 0 && Game::IsWaiting(Player)) {
 			InitUIIngame();
 			if (_Validation) {
-				//SetBestCheckpointsTimes(BestCheckpointsTimes);
 				Game::StartRace(Player, Mode.Now + Game::GetSpawnDuration(), False);
+				if (G_BestCheckpointsTimes.count != 0) {
+					Game::SetOpponent(0, G_BestCheckpointsTimes);
+					if (G_BestPlayerGhost != Null) {
+						Mode.RaceGhost_RemoveAll();
+						Mode.RaceGhost_Add(G_BestPlayerGhost, True);
+					}
+				}
 			} else {
 				Game::StartRace(Player, Mode.Now, False, False);
 			}
@@ -331,7 +343,8 @@ Void StartValidation(Boolean _Validation) {
 					}
 					// Update checkpoints times
 					if (BestTime > 0 && PlayerCheckpointsTimes.count > 0 && (Map.TMObjective_AuthorTime <= 0 || BestTime < Map.TMObjective_AuthorTime)) {
-						//BestCheckpointsTimes = PlayerCheckpointsTimes;
+						G_BestCheckpointsTimes = PlayerCheckpointsTimes;
+						G_BestPlayerGhost = Mode.ScoreMgr.Playground_GetPlayerGhost(Player);
 					}
 					
 					// Try again ?
@@ -426,7 +439,6 @@ Void StartValidation(Boolean _Validation) {
 // ---------------------------------- //
 main() {
 	Buttons::Load();
-	InitUIIngame();
 	UpdateValidability();
 	if (ValidationStatus != CMapType::ValidationStatus::Validated) {
 		MapType::ResetObjectives();
@@ -443,6 +455,9 @@ main() {
 				case CPluginEvent::Type::MapModified: {
 					UpdateValidability();
 					
+					G_BestCheckpointsTimes = Integer[];
+					G_BestPlayerGhost = Null;
+
 					if (ValidationStatus != CMapType::ValidationStatus::Validated) {
 						MapType::ResetObjectives();
 					}

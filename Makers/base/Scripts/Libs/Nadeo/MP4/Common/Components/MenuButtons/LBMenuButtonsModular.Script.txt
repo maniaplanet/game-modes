@@ -1,0 +1,438 @@
+#Const C_MenuButtons_MaxCount	12
+
+// REQUIRES FRAMEMODEL : MenuButtons_FrameModel
+Text Manialink(Text _Align) {
+	declare Text MLText = """
+	<frame id="MenuButtons_ButtonsFrame">""";
+	for(ButtonIndex, 0, C_MenuButtons_MaxCount - 1) {
+		MLText ^= """		<frame pos="300 0" hidden="1">
+			<quad id="MenuButtons_Quad" z-index="-1" {{{_Align}}} scriptevents="1"/>
+			<frameinstance modelid="MenuButtons_FrameModel" id="MenuButtons_FrameInstance-{{{ButtonIndex}}}"/>
+		</frame>
+""";
+	}
+	MLText ^= """	</frame>""";
+	return MLText;
+}
+
+// REQUIRES FRAMEMODEL : MenuButtons_FrameModel
+Text Manialink() {
+	return Manialink(""" halign="center" valign="center" """);
+}
+
+Text Includes()
+{
+	return """// -- MenuButtons - Includes
+	#Include "TextLib" as MenuButtons_TextLib
+	#Const C_HidingDelay	2000
+	""";
+}
+
+Text FirstDeclares() {
+	return """// -- MenuButtons - FirstDeclares
+	// <script>
+	declare Boolean				G_Private_MenuButtons_IsRunning;
+	declare Integer				G_Private_MenuButtons_HideTime;
+	declare Integer				G_Private_MenuButtons_Focus;
+	declare Integer				G_Private_MenuButtons_TimeOfSelection;
+	declare Boolean				G_Private_MenuButtons_IsVertical;
+	declare Text[Text][]		G_Private_MenuButtons_Metadata;
+	declare Vec2[]				G_Private_MenuButtons_Positions;
+	declare Vec2[]				G_Private_MenuButtons_Sizes;
+	declare Text[]				G_Private_MenuButtons_EventNames;
+	declare CMlFrame[]			G_Private_MenuButtons_Buttons;
+	declare CMlFrame[]			G_Private_MenuButtons_ContainingFrames;
+	declare CMlControl[]		G_Private_MenuButtons_Quads;
+	declare Boolean[]			G_Private_MenuButtons_IsActive;
+	declare Integer[CMlControl]	G_Private_MenuButtons_ButtonIndexFromClickedQuad;
+
+	Void MenuButtons_Init() {
+		G_Private_MenuButtons_Buttons.clear();
+		G_Private_MenuButtons_ContainingFrames.clear();
+		declare CMlFrame ButtonsFrame <=> (Page.GetFirstChild("MenuButtons_ButtonsFrame") as CMlFrame);
+		foreach (ButtonIndex => Control in ButtonsFrame.Controls) {
+			declare CMlFrame ContainingFrame <=> (Control as CMlFrame);
+			G_Private_MenuButtons_ContainingFrames.add(ContainingFrame);
+			declare CMlFrame ButtonFrame <=> (ContainingFrame.GetFirstChild("MenuButtons_FrameInstance-" ^ ButtonIndex) as CMlFrame);
+			G_Private_MenuButtons_Buttons.add(ButtonFrame);
+			declare CMlControl ButtonQuad <=> ContainingFrame.GetFirstChild("MenuButtons_Quad");
+			G_Private_MenuButtons_ButtonIndexFromClickedQuad[ButtonQuad] = ButtonIndex;
+			G_Private_MenuButtons_Quads.add(ButtonQuad);
+		}
+		G_Private_MenuButtons_IsRunning			= True;
+		G_Private_MenuButtons_HideTime			= -1;
+		G_Private_MenuButtons_Focus				= -1;
+		G_Private_MenuButtons_TimeOfSelection	= -1;
+	}
+
+	Void Private_MenuButtons_HideAllQuads()
+	{
+		foreach(Quad in G_Private_MenuButtons_Quads) {
+			Quad.Hide();
+		}
+	}
+
+	CMlFrame[] MenuButtons_AllButtons()
+	{
+		declare CMlFrame[] Result;
+		foreach(ButtonIndex => Metadata in G_Private_MenuButtons_Metadata) {
+			Result.add(G_Private_MenuButtons_Buttons[ButtonIndex]);
+		}
+		return Result;
+	}
+
+	Vec2[] MenuButtons_AllPositions()
+	{
+		return G_Private_MenuButtons_Positions;
+	}
+
+	Boolean MenuButtons_IsButtonActive(Integer _ButtonIndex)
+	{
+		return (G_Private_MenuButtons_IsRunning && G_Private_MenuButtons_IsActive[_ButtonIndex]);
+	}
+
+	Boolean MenuButtons_IsButtonActive(CMlFrame _Button)
+	{
+		if (!G_Private_MenuButtons_Buttons.exists(_Button)) return False;
+		declare ButtonIndex = G_Private_MenuButtons_Buttons.keyof(_Button);
+		return MenuButtons_IsButtonActive(ButtonIndex);
+	}
+
+	Void MenuButtons_StopRunning()
+	{
+		G_Private_MenuButtons_IsRunning = False;
+	}
+
+	Void Private_MenuButtons_StartHidingMenu()
+	{
+		G_Private_MenuButtons_HideTime = C_HidingDelay + Now;
+	}
+
+	Boolean Private_MenuButtons_IsHidden()
+	{
+		return (Now > G_Private_MenuButtons_HideTime && G_Private_MenuButtons_HideTime != -1);
+	}
+
+	Integer Private_MenuButtons_GetNextButton()
+	{
+		if(G_Private_MenuButtons_Focus < G_Private_MenuButtons_Metadata.count-1)
+		{
+			for(I, G_Private_MenuButtons_Focus+1, G_Private_MenuButtons_Metadata.count-1)
+			{
+				if(MenuButtons_IsButtonActive(I)) return I;
+			}
+		}
+		return -1;
+	}
+
+	Integer Private_MenuButtons_GetPrevButton()
+	{
+		declare Integer IndexMax = G_Private_MenuButtons_Focus-1;
+		for(I, 0, IndexMax)
+		{
+			declare Integer Index = IndexMax - I;
+			if(MenuButtons_IsButtonActive(Index)) return Index;
+		}
+		return -1;
+	}
+
+	Integer Private_MenuButtons_GetFirstButton()
+	{
+		for(I, 0, G_Private_MenuButtons_Metadata.count-1)
+		{
+			if(MenuButtons_IsButtonActive(I)) return I;
+		}
+
+		return -1;
+	}
+	""";
+}
+//<script>
+Text ConditionalMenuNavigation(Boolean _Add)
+{
+	if (_Add) {
+		return """			Private_MenuButtons_MenuNavigation(Event);""";
+	}
+	return "";
+}
+
+Text ConditionalLayerBuilderNavigation(Boolean _Add)
+{
+	if (_Add) {
+		return """
+	Void Input_Select()
+	{
+		MenuButtons_Input_Select();
+	}
+
+	Void Input_Up()
+	{
+		MenuButtons_Input_Up();
+	}
+
+	Void Input_Down()
+	{
+		MenuButtons_Input_Down();
+	}
+
+	Void Input_Left()
+	{
+		MenuButtons_Input_Left();
+	}
+
+	Void Input_Right()
+	{
+		MenuButtons_Input_Right();
+	}
+""";
+	}
+	return "";
+}
+
+Text ConditionalHide(Boolean _Add)
+{
+	if (_Add) {
+		return """		BaseLib_Hide();""";
+	}
+	return "";
+}
+
+// REQUIRES THE FOLLOWING FUNCTIONS :
+// Void MenuButtons_ShowButton(CMlFrame _Button, Integer _ButtonIndex, Text[Text] _ButtonMetadata, Boolean _IsActive, Vec2 _ButtonSize)
+// Void MenuButtons_HideButton(CMlFrame _Button, Integer _ButtonIndex, Text[Text] _ButtonMetadata, Boolean _IsActive, Vec2 _ButtonSize)
+// Void MenuButtons_SelectButton(CMlFrame _Button, Text[Text] _ButtonMetadata)
+// Void MenuButtons_FocusButton(CMlFrame _Button, Text[Text] _ButtonMetadata)
+// Void MenuButtons_UnFocusButton(CMlFrame _Button, Text[Text] _ButtonMetadata)
+// Void MenuButtons_UpdateLightFocus(CMlFrame _Button, Text[Text] _ButtonMetadata, Integer _TimeSinceFocusInMilliseconds)
+Text SecondDeclares(Boolean _HasLayerBuilder, Boolean _HasLayerBuilderNavigation) {
+	return """
+//<script>
+	Void Private_MenuButtons_DisplayButtons() {
+		Private_MenuButtons_HideAllQuads();
+		foreach(ContainingFrame in G_Private_MenuButtons_ContainingFrames) {
+			ContainingFrame.Hide();
+		}
+		foreach(ButtonIndex => Metadata in G_Private_MenuButtons_Metadata) {
+			declare ContainingFrame	<=> G_Private_MenuButtons_ContainingFrames[ButtonIndex];
+			declare Button			<=> G_Private_MenuButtons_Buttons[ButtonIndex];
+			declare Quad			<=> G_Private_MenuButtons_Quads[ButtonIndex];
+			declare Vec2 ButtonSize	 =	G_Private_MenuButtons_Sizes[ButtonIndex];
+			ContainingFrame.Show();
+			ContainingFrame.RelativePosition_V3 = G_Private_MenuButtons_Positions[ButtonIndex];
+			Quad.Show();
+			Quad.Size = ButtonSize;
+			MenuButtons_ShowButton(Button, ButtonIndex, Metadata, G_Private_MenuButtons_IsActive[ButtonIndex], ButtonSize);
+		}
+	}
+
+	Void Private_MenuButtons_UndisplayButtons()
+	{
+		Private_MenuButtons_HideAllQuads();
+		foreach(ButtonIndex => Metadata in G_Private_MenuButtons_Metadata) {
+			declare ContainingFrame	<=> G_Private_MenuButtons_ContainingFrames[ButtonIndex];
+			declare Button			<=> G_Private_MenuButtons_Buttons[ButtonIndex];
+			declare Vec2 ButtonSize	 =	G_Private_MenuButtons_Sizes[ButtonIndex];
+			MenuButtons_HideButton(Button, ButtonIndex, Metadata, G_Private_MenuButtons_IsActive[ButtonIndex], ButtonSize);
+		}
+	}
+
+	Void MenuButtons_Hide()
+	{
+		Private_MenuButtons_UndisplayButtons();
+		MenuButtons_StopRunning();
+		Private_MenuButtons_StartHidingMenu();
+	}
+
+	Void Private_MenuButtons_ChangeData() {
+		declare Text[Text][] Page_MenuButtons_Metadata			for Page;
+		declare Vec2[]		Page_MenuButtons_ButtonPositions	for Page;
+		declare Vec2[]		Page_MenuButtons_ButtonSizes		for Page;
+		declare Text[]		Page_MenuButtons_EventNames			for Page;
+		declare Boolean[]	Page_MenuButtons_ButtonIsActive		for Page;
+		declare Boolean		Page_MenuButtons_IsNavVertical		for Page;
+		G_Private_MenuButtons_Metadata		= Page_MenuButtons_Metadata;
+		G_Private_MenuButtons_Positions		= Page_MenuButtons_ButtonPositions;
+		G_Private_MenuButtons_Sizes			= Page_MenuButtons_ButtonSizes;
+		G_Private_MenuButtons_EventNames	= Page_MenuButtons_EventNames;
+		G_Private_MenuButtons_IsActive		= Page_MenuButtons_ButtonIsActive;
+		G_Private_MenuButtons_IsVertical	= Page_MenuButtons_IsNavVertical;
+	}
+
+	Void LightFocus()
+	{
+		if(Private_MenuButtons_IsHidden() || G_Private_MenuButtons_Focus <= -1) return;
+		MenuButtons_FocusButton(G_Private_MenuButtons_Buttons[G_Private_MenuButtons_Focus],
+			G_Private_MenuButtons_Metadata[G_Private_MenuButtons_Focus]);
+		G_Private_MenuButtons_TimeOfSelection = Now;
+	}
+
+	Void UnlightFocus()
+	{
+		if(Private_MenuButtons_IsHidden() || G_Private_MenuButtons_Focus <= -1) return;
+		MenuButtons_UnFocusButton(G_Private_MenuButtons_Buttons[G_Private_MenuButtons_Focus],
+			G_Private_MenuButtons_Metadata[G_Private_MenuButtons_Focus]);
+		G_Private_MenuButtons_TimeOfSelection = -1;
+	}
+
+	Void Private_MenuButtons_UpdateLightFocus()
+	{
+		if (G_Private_MenuButtons_Focus <= -1 || G_Private_MenuButtons_TimeOfSelection == -1) return;
+		MenuButtons_UpdateLightFocus(G_Private_MenuButtons_Buttons[G_Private_MenuButtons_Focus],
+			G_Private_MenuButtons_Metadata[G_Private_MenuButtons_Focus],
+			Now - G_Private_MenuButtons_TimeOfSelection);
+	}
+
+	Void Private_MenuButtons_FocusButton(Integer _ButtonIndex)
+	{
+		UnlightFocus();
+		G_Private_MenuButtons_Focus = _ButtonIndex;
+		LightFocus();
+	}
+
+	Void Private_MenuButtons_Disappear()
+	{
+{{{ConditionalHide(_HasLayerBuilder)}}}
+		G_Private_MenuButtons_HideTime	= -1;
+	}
+
+	Void MenuButtons_ClickOnButton(Integer _ButtonIndex)
+	{
+		if(!MenuButtons_IsButtonActive(_ButtonIndex)) return;
+		SendCustomEvent(G_Private_MenuButtons_EventNames[_ButtonIndex], Text[]);
+		MenuButtons_StopRunning();
+	}
+
+	Void MenuButtons_Input_Select()
+	{
+		if (G_Private_MenuButtons_Focus == -1) Private_MenuButtons_FocusButton(Private_MenuButtons_GetFirstButton());
+		if (G_Private_MenuButtons_Focus != -1) MenuButtons_ClickOnButton(G_Private_MenuButtons_Focus);
+	}
+
+	Void MenuButtons_Input_Previous()
+	{
+		if (G_Private_MenuButtons_Focus > 0) {
+			Private_MenuButtons_FocusButton(Private_MenuButtons_GetPrevButton());
+		} else {
+			Private_MenuButtons_FocusButton(Private_MenuButtons_GetFirstButton());
+		}
+	}
+
+	Void MenuButtons_Input_Next()
+	{
+		declare Integer NextButton = Private_MenuButtons_GetNextButton();
+		if(NextButton != -1) {
+			Private_MenuButtons_FocusButton(NextButton);
+		}
+	}
+
+	Void MenuButtons_Input_Up()
+	{
+		if (G_Private_MenuButtons_IsVertical) {
+			MenuButtons_Input_Previous();
+		}
+	}
+
+	Void MenuButtons_Input_Down()
+	{
+		if (G_Private_MenuButtons_IsVertical) {
+			MenuButtons_Input_Next();
+		}
+	}
+
+	Void MenuButtons_Input_Left()
+	{
+		if (!G_Private_MenuButtons_IsVertical) {
+			MenuButtons_Input_Previous();
+		}
+	}
+
+	Void MenuButtons_Input_Right()
+	{
+		if (!G_Private_MenuButtons_IsVertical) {
+			MenuButtons_Input_Next();
+		}
+	}
+
+	Void MenuButtons_Show()
+	{
+		G_Private_MenuButtons_HideTime	= -1;
+		G_Private_MenuButtons_IsRunning	= True;
+		Private_MenuButtons_DisplayButtons();
+	}
+
+	Void Private_MenuButtons_MenuNavigation(CMlScriptEvent _Event)
+	{
+		if (_Event.Type == CMlScriptEvent::Type::MenuNavigation) {
+			switch(_Event.MenuNavAction) {
+				case CMlEvent::EMenuNavAction::Select : {
+					MenuButtons_Input_Select();
+				}
+				case CMlEvent::EMenuNavAction::Up : {
+					MenuButtons_Input_Up();
+				}
+				case CMlEvent::EMenuNavAction::Down : {
+					MenuButtons_Input_Down();
+				}
+				case CMlEvent::EMenuNavAction::Left : {
+					MenuButtons_Input_Left();
+				}
+				case CMlEvent::EMenuNavAction::Right : {
+					MenuButtons_Input_Right();
+				}
+			}
+		}
+	}
+
+{{{ConditionalLayerBuilderNavigation(_HasLayerBuilderNavigation)}}}
+	Void MenuButtons_Loop()
+	{
+		if(Private_MenuButtons_IsHidden()) {
+			Private_MenuButtons_Disappear();
+			return;
+		}
+		Private_MenuButtons_UpdateLightFocus();
+
+		foreach(Event in PendingEvents) {
+			switch(Event.Type) {
+				case CMlEvent::Type::MouseClick: {
+					if (G_Private_MenuButtons_ButtonIndexFromClickedQuad.existskey(Event.Control)) {
+						declare ButtonIndex = G_Private_MenuButtons_ButtonIndexFromClickedQuad[Event.Control];
+						if(!MenuButtons_IsButtonActive(ButtonIndex)) continue;
+						MenuButtons_ClickOnButton(ButtonIndex);
+					}
+				}
+				case CMlEvent::Type::MouseOver: {
+					if (G_Private_MenuButtons_ButtonIndexFromClickedQuad.existskey(Event.Control)) {
+						declare ButtonIndex = G_Private_MenuButtons_ButtonIndexFromClickedQuad[Event.Control];
+						if(!MenuButtons_IsButtonActive(ButtonIndex)) continue;
+						Private_MenuButtons_FocusButton(ButtonIndex);
+					}
+				}
+				case CMlEvent::Type::MouseOut: {
+					if (G_Private_MenuButtons_ButtonIndexFromClickedQuad.existskey(Event.Control)) {
+						Private_MenuButtons_FocusButton(-1);
+					}
+				}
+				case CMlScriptEvent::Type::PluginCustomEvent: {
+					if (Event.CustomEventType == "MenuButtons_ChangeData") {
+						Private_MenuButtons_ChangeData();
+					}
+				}
+			}
+{{{ConditionalMenuNavigation(!_HasLayerBuilder)}}}
+		}
+	}
+
+	""";
+}
+//<script>
+Text SecondDeclares()
+{
+	declare Boolean HasLayerBuilder				= True;
+	declare Boolean HasLayerBuilderNavigation	= True;
+	return SecondDeclares(HasLayerBuilder, HasLayerBuilderNavigation);
+}
+
+Text Declares() {
+	return FirstDeclares() ^ SecondDeclares();
+}
