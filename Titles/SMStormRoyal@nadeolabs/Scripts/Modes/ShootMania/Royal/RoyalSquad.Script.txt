@@ -17,40 +17,38 @@
 #Include "Libs/Nadeo/ShootMania/MultiClans2.Script.txt" as MultiClans
 #Include "ManiaApps/Nadeo/Shootmania/Royal/TeamSelection2_Server.Script.txt" as TeamSelectionUI
 #Include "Libs/Nadeo/Layers.Script.txt" as Layers
+#Include "ColorLib" as CL
 
 // ---------------------------------- //
 // Settings
 // ---------------------------------- //
+#Setting S_UseRoundLimit						False	 as _("Use the rounds limit to end match ?")
 #Setting S_MapPointsLimit						400		 as _("Points to win a map")
+#Setting S_MapRoundsLimit						5			 as _("Rounds after map ends")
 #Setting S_OffZoneActivationTime		4			 as _("Tornado activation duration")
 #Setting S_OffZoneAutoStartTime			90		 as _("Time before auto activation of the tornado")
 #Setting S_OffZoneTimeLimit					70		 as _("Tornado shrink duration")
 #Setting S_OffZoneMaxSpeed					1.	 	 as _("Maximum speed multiplier for the tornado")
-#Setting S_OffZoneMinRadius					18.		 as "<hidden>" ///< Minimum size of the OffZone at the end
+#Setting S_OffZoneMinRadius					13.		 as "<hidden>" ///< Minimum size of the OffZone at the end
 #Setting S_EndRoundTimeLimit				60		 as _("Time limit after the tornado is completly shrunk")
 #Setting S_SpawnInterval						0			 as _("Time between each wave of spawns")
 #Setting S_UseEarlyRespawn					True	 as _("Allow early respawn")
-#Setting S_EndMapChatTime						20		 as _("End map chat time")
-#Const S_MultiClans									False	
-#Setting S_MinPlayersNbPerClan			3			 as _("Minimum number of players per clan")
-#Setting S_ReloadSpeed							1.		 as _("Reload speed")
-#Setting S_StartingArmor						2			 as _("Starting armor amount")
-#Setting S_RegenPerHit							100 	 as _("Armor gained when touched by mate")
-#Setting S_ReloadRocketGain					1.	 as _("Rocket reload speed")
-#Setting S_RocketAmmo								3		 	 as _("Rocket Ammo number")
-#Setting S_HitComboForBonus					2			 as _("The numbers of hit recquired to rise the Hit Value")
+#Setting S_RegenPerHit							100 	 as "<hidden>"
+#Setting S_ReloadRocketGain					3.	 as _("Rocket reload speed")
+#Setting S_RocketAmmo								4		 	 as _("Rocket Ammo number")
+#Setting S_HitComboForBonus					3			 as _("The numbers of hit recquired to rise the Hit Value")
 
 #Setting S_TeamCreationTimer				30		 as _("Time for the team creation sequence")
 
 //TeamSelection Settings
 #Setting S_PlayersPerTeam 					 4 		 as _("Players per team recquired") ///< Players recquired in a team to start playing on a map
-#Setting S_IsTeamsFullNeededToSpawn False as _("Is Team have to be full to play")///< Unspawn players if their team isn't full (Like Chase Attack for example)
-#Setting S_MatchMakingAlgorythm 		 0 		 as _("Choose matchmaking algorythm : 0 = Random, 1 = Balanced")///< Type of algorythm for the matchmaking system 0 is a fast but random matchmaking system, 1 is a system based on the Rank of players and try to put players with players of same levela 
+#Setting S_IsTeamsFullNeededToSpawn False as "<hidden>"///< Unspawn players if their team isn't full (Like Chase Attack for example)
+#Setting S_MatchMakingAlgorythm 		 0 		 as "<hidden>"///< Type of algorythm for the matchmaking system 0 is a fast but random matchmaking system, 1 is a system based on the Rank of players and try to put players with players of same levela 
 
 #Setting S_ResetScoreLeavers				 False	as "<hidden>" ///< Reset the score of the leavers
 #Setting S_DisableWidgets						 False	as "<hidden>"	///< Disable the "tops" and "players remaining" UI widgets
 // Matchmaking
-#Setting S_NbPlayersMax	18	as "<hidden>"
+#Setting S_NbPlayersMax	24	as "<hidden>"
 #Setting S_NbPlayersMin	2		as "<hidden>"
 #Setting S_MapsPerMatch	5		as "<hidden>"
 
@@ -105,6 +103,10 @@
 	Text 		Leader;
 	Text[] 	AllTeamMembers;
 	Vec3 		TeamColor;
+	Boolean TeamInAutoFill;
+	Boolean TeamReady;
+	Integer MaxMatesNumber;
+	Integer ClanId;
 	Boolean VipInTeam;
 	Integer TeamScore;
 	Text		TeamEventName;
@@ -118,10 +120,10 @@
 #Const C_Callback_Royal_PlayerSpawn	"Shootmania.Royal.PlayerSpawn"
 #Const C_Callback_Royal_RoundWinner	"Shootmania.Royal.RoundWinner"
 
-#Const C_NbBots 0	///< Number of bots for debug
+#Const C_NbBots 0 ///< Number of bots for debug
 
-//L16N [Royal] Description of the Royal game mode rules
-#Const Description _("Survive as long as possible, eliminate others players and capture the pole to score a maximum of points. Once eliminated you won't respawn before the next round. The first player to reach the points limit wins.")
+//L16N [Royal] Description of the Royal Squad game mode rules
+#Const Description _("Survive as long as possible, eliminate others players and capture the pole to score a maximum of points. Once eliminated you won't respawn before the next round. The players with the highest points at the rounds limit win the match")
 
 // ---------------------------------- //
 // Globales
@@ -152,12 +154,9 @@ declare Integer G_PrevCheckHealTimer;
 
 declare Boolean G_HealEnabled;
 declare Boolean G_TeamCreationStart;
-
+declare Boolean G_LastRoundMessageDisplayed;
 declare Integer[Text] G_PlayersHitCount;
 declare Integer[Text] G_PlayersHealCount;
-//NeoFlux Globales
-
-declare Integer G_NeoFlux_count;
 
 // ---------------------------------- //
 // Extends
@@ -221,6 +220,14 @@ Hud_Load(C_HudModulePath);
 if (Hud != Null && Hud.ScoresTable != Null) {
 	Hud.ScoresTable.Scores_Sort(CModulePlaygroundScoresTable::EScoreSortOrder::SMPoints);
 }
+/* Not ready for production
+declare Ident ST = Hud.RetrieveModuleId("ScoresTable");
+if (Hud != Null && Hud.Modules.existskey(ST)) {
+	declare CModulePlaygroundScoresTable ScoresTable <=> (Hud.Modules[ST] as CModulePlaygroundScoresTable);
+	ScoresTable.SetFooterText(TL::Compose("%1 "^S_MapPointsLimit, _("Points limit : ")));
+	ScoresTable.Scores_Sort(CModulePlaygroundScoresTable::EScoreSortOrder::SMPoints);
+}
+*/
 ***
 
 ***Match_SpawnScreen***
@@ -262,9 +269,29 @@ foreach (Event in PendingEvents) {
 		IsPlayerWatchingMates = False;
 		declare Text[] SpawnedMember for Event.Player;
 		SpawnedMember = [];
+		if(Hud != Null){
+			declare CModulePlaygroundScoresTable ScoresTable;
+			foreach(Module in Hud.Modules){
+				if(Module is CModulePlaygroundScoresTable){
+					ScoresTable <=> (Module as CModulePlaygroundScoresTable);
+				}
+			}
+			if(Hud.Modules.existskey(ScoresTable.Id)){
+				declare CScore ScoreOfMember;
+				foreach(Player in Players){
+					if(Player.User.Login == Event.Player.Login){
+						ScoreOfMember <=> Player.Score;
+					}
+				}
+				if(ScoreOfMember != Null){
+					ScoresTable.SetColor(ScoreOfMember, <0.15, 0.15, 0.15>);
+				}
+			}
+		}
 	}
 }
 TeamSelectionUI::Yield();
+TeamSelectionUI::UseSquadMatchMaking(0);
 if(MatchEndRequested){
 	TeamSelectionUI::HideTeamSelectionUI();
 	declare netwrite Boolean Net_NewMap for Teams[0];
@@ -278,6 +305,7 @@ declare AllowDoubleCapture = C_AllowDoubleCapture;
 declare OffZoneMaxSpeedTime = 20; ///<Duration of capture to reach maximum speed
 Users_SetNbFakeUsers(C_NbBots, 0);
 UseClans = False;
+UseMultiClans = True;
 
 declare Real TopXPosition	= -70.5;
 declare Real TopYPosition	= 31.;
@@ -313,20 +341,15 @@ G_PlayersPerTeam = TeamSelectionUI::GetMaxPlayerNumber(S_PlayersPerTeam);
 if(G_PrevPlayersPerTeam != G_PlayersPerTeam){
 	TeamSelectionUI::UpdatePlayersPerTeam(G_PlayersPerTeam);
 }
-foreach(Player in Players){
-	declare UI <=> UIManager.GetUI(Player);
-	declare KTeam TeamOfMember for Player;
-	declare KTeam NewTeam;
-	TeamOfMember = NewTeam;
-}
 declare netwrite Integer Net_S_MatchMakingAlgorythm for Teams[0];
 Net_S_MatchMakingAlgorythm = UseMatchMakingAlgorythm(S_MatchMakingAlgorythm);
 foreach(Player in Players){
-	declare UI <=> UIManager.GetUI(Player);
 	declare KTeam TeamOfMember for Player;
 	declare KTeam NewTeam;
 	TeamOfMember = NewTeam;
 }
+
+
 
 // ---------------------------------- //
 // Set mode options and tops
@@ -424,7 +447,6 @@ if(G_PrevPlayersPerTeam != G_PlayersPerTeam){
 	TeamSelectionUI::UpdatePlayersPerTeam(G_PlayersPerTeam);
 }
 foreach(Player in Players){
-	declare UI <=> UIManager.GetUI(Player);
 	declare KTeam TeamOfMember for Player;
 	declare KTeam NewTeam;
 	TeamOfMember = NewTeam;
@@ -435,14 +457,13 @@ foreach(Player in Players){
 ***
 declare netwrite Boolean Net_NewMap for Teams[0];
 Net_NewMap = False;
-
+G_LastRoundMessageDisplayed = False;
 G_AllTeams = TeamSelectionUI::GetAllTeams(True);
 G_PlayersPerTeam = TeamSelectionUI::GetMaxPlayerNumber(S_PlayersPerTeam);
 if(G_PrevPlayersPerTeam != G_PlayersPerTeam){
 	TeamSelectionUI::UpdatePlayersPerTeam(G_PlayersPerTeam);
 }
 foreach(Player in Players){
-	declare UI <=> UIManager.GetUI(Player);
 	declare KTeam TeamOfMember for Player;
 	declare KTeam NewTeam;
 	TeamOfMember = NewTeam;
@@ -495,25 +516,64 @@ foreach (Base in MapBases) {
 	Base.IsActive = True;
 }
 
+G_PlayersHitCount.clear();
+G_PlayersHealCount.clear();
+
 
 Top::ResetAll();
 
-// ---------------------------------- //
-// Set clans color
-MultiClans::ClearClansColors();
-for (Clan, 1, MapLandmarks_PlayerSpawn.count) {
-	MultiClans::SetClanColor(Clan, Color::GetNewColor());
+
+declare CGamePlaygroundModuleServerScoresTable ScoresTable; 
+if(Hud != Null){
+	foreach(Player in Players){
+		declare IsPlayerInATeam = TeamSelectionUI::IsPlayerInTeam(Player);
+		if(IsPlayerInATeam){
+			declare CModulePlaygroundScoresTable ScoresTable;
+			foreach(Module in Hud.Modules){
+				if(Module is CModulePlaygroundScoresTable){
+					ScoresTable <=> (Module as CModulePlaygroundScoresTable);
+				}
+			}
+		
+			if(Hud.Modules.existskey(ScoresTable.Id)){
+				foreach(Team in G_AllTeams){
+					if(Team.AllTeamMembers.exists(Player.User.Login)){
+						declare ScoreOfMember <=> GetCScoreFromLogin(Player.User.Login);
+						if(ScoreOfMember != Null){
+							declare Vec3 NewTeamColor = Team.TeamColor;
+							declare HSVColor = CL::RgbToHsv(NewTeamColor);
+							HSVColor.Y -= 0.5;
+							HSVColor.Z -= 0.3;
+							NewTeamColor = CL::HsvToRgb(HSVColor);
+							ScoresTable.SetColor(ScoreOfMember, NewTeamColor);
+						}
+					}
+				}
+			}
+		} else {
+			declare CModulePlaygroundScoresTable ScoresTable;
+			foreach(Module in Hud.Modules){
+				if(Module is CModulePlaygroundScoresTable){
+					ScoresTable <=> (Module as CModulePlaygroundScoresTable);
+				}
+			}
+		
+			if(Hud.Modules.existskey(ScoresTable.Id)){
+				declare ScoreOfMember <=> GetCScoreFromLogin(Player.User.Login);
+				if(ScoreOfMember != Null){
+					ScoresTable.SetColor(ScoreOfMember, <0.15, 0.15, 0.15>);
+				}
+				
+			}
+		}
+	}
 }
-
-// ---------------------------------- //
-//Set Timer
-
 ***
 
 ***Match_InitRound***
 ***
 TeamSelectionUI::ShowTeamSelectionUI();
-
+G_LastRoundMessageDisplayed = False;
 declare RoundWinnerPlayer = NullId; ///< User Id of the round winner
 declare LastSpawnTime = -S_SpawnInterval * 1000; ///< Last time a batch of player was spawned
 declare EarlyRespawnAllowed = True; ///< Check if the players can early respawn
@@ -532,7 +592,6 @@ declare OffZoneStartingRadiusSpeed = 1.; ///< Starting speed of the OffZone
 declare EarlyRespawnPool = CSmMapLandmark[]; ///< Pool of available spawns for early respawn
 declare SpawnOrderMax = -1; ///< Highest order of the spawns used during the initial spawning phase
 declare PoleCapturedByAPlayer = True;
-declare UseMultiClans = False;
 declare IsCapturing = False;
 G_FirstSequenceTimer = Now;
 // To colorize max hit player
@@ -562,6 +621,51 @@ if(TeamRefresh > G_PrevTeamRefresh) {
 	G_PrevTeamRefresh = TeamRefresh;
 }
 G_HealEnabled = True;
+declare CGamePlaygroundModuleServerScoresTable ScoresTable; 
+if(Hud != Null){
+	foreach(Player in Players){
+		declare IsPlayerInATeam = TeamSelectionUI::IsPlayerInTeam(Player);
+		if(IsPlayerInATeam){
+			declare CModulePlaygroundScoresTable ScoresTable;
+			foreach(Module in Hud.Modules){
+				if(Module is CModulePlaygroundScoresTable){
+					ScoresTable <=> (Module as CModulePlaygroundScoresTable);
+				}
+			}
+		
+			if(Hud.Modules.existskey(ScoresTable.Id)){
+				foreach(Team in G_AllTeams){
+					if(Team.AllTeamMembers.exists(Player.User.Login)){
+						declare ScoreOfMember <=> GetCScoreFromLogin(Player.User.Login);
+						if(ScoreOfMember != Null){
+							declare Vec3 NewTeamColor = Team.TeamColor;
+							declare HSVColor = CL::RgbToHsv(NewTeamColor);
+							HSVColor.Y -= 0.5;
+							HSVColor.Z -= 0.3;
+							NewTeamColor = CL::HsvToRgb(HSVColor);
+							ScoresTable.SetColor(ScoreOfMember, NewTeamColor);
+						}
+					}
+				}
+			}
+		} else {
+			declare CModulePlaygroundScoresTable ScoresTable;
+			foreach(Module in Hud.Modules){
+				if(Module is CModulePlaygroundScoresTable){
+					ScoresTable <=> (Module as CModulePlaygroundScoresTable);
+				}
+			}
+		
+			if(Hud.Modules.existskey(ScoresTable.Id)){
+				declare ScoreOfMember <=> GetCScoreFromLogin(Player.User.Login);
+				if(ScoreOfMember != Null){
+					ScoresTable.SetColor(ScoreOfMember, <0.15, 0.15, 0.15>);
+				}
+				
+			}
+		}
+	}
+}
 ***
 
 ***Match_StartRound***
@@ -581,6 +685,8 @@ foreach(Player in Players){
 	declare netwrite Text[] Net_PlayersNeedHelp	for UI;
 	MatesHealed = [];
 	Net_PlayersNeedHelp = [];
+	declare netwrite Integer MatesHealedTimer for UI;
+	MatesHealedTimer = Now;
 	declare Boolean IsPlayerWatchingMates for Player;
 	IsPlayerWatchingMates = False;
 	declare netwrite Boolean StartPlaying for UI;
@@ -624,13 +730,7 @@ OffZoneCenterLandmarkId = Pole.Id;
 // Wait until the round starting conditions are met
 WaitForPlayers();
 MB_Sleep(10);
-// ---------------------------------- //
-// Check if we can use the multi clans mode
-if (S_MultiClans && Players.count / MapLandmarks_PlayerSpawn.count >= S_MinPlayersNbPerClan) {
-	UseMultiClans = True;
-} else {
-	UseMultiClans = False;
-}
+
 if (Hud != Null && Hud.ScoresTable != Null) {
 	Hud.ScoresTable.SetColumnVisibility("Team", False/*UseMultiClans*/);
 }
@@ -656,15 +756,6 @@ foreach (Player in Players) {
 	if(Player.Score != Null) {
 		UpdateFooterStat(Player, "");
 	}
-	// ---------------------------------- //
-	// Set the players in their clan
-	if (UseMultiClans) {
-		MultiClans::SetClan(Player, ClanNb);
-		ClanNb += 1;
-		if (ClanNb > MapLandmarks_PlayerSpawn.count) ClanNb = 1;
-	} else {
-		MultiClans::SetClan(Player, 0);
-	}
 }
 
 PlayersSpawnQueue = PlayersSpawnQueue.sort();
@@ -672,13 +763,32 @@ PlayersSpawnQueue = PlayersSpawnQueue.sort();
 // Update UI
 Layers::Attach("SpawnQueue");
 Layers::Update("ScoresInSpawn", UpdateLayerScoresInSpawn());
-if (Hud != Null && Hud.ScoresTable != Null) {
-	//L16N [Royal] Message displayed in the footer of the scores table with the number of points to reach to win the map.
-	Hud.ScoresTable.SetFooterText(TL::Compose("%1 "^S_MapPointsLimit, _("Points limit : ")));
+if(Hud != Null){
+	declare CModulePlaygroundScoresTable ScoresTable;
+	foreach(Module in Hud.Modules){
+		if(Module is CModulePlaygroundScoresTable){
+			ScoresTable <=> (Module as CModulePlaygroundScoresTable);
+		}
+	}
+ 
+	if(Hud.Modules.existskey(ScoresTable.Id)){
+		if(S_UseRoundLimit){
+			ScoresTable.SetFooterText(TL::Compose("%1 "^RoundCount^" / "^S_MapRoundsLimit, _("Current Round : ")));
+		} else {
+			ScoresTable.SetFooterText(TL::Compose("%1 "^S_MapPointsLimit, _("Points limit : ")));
+		}
+	}
 }
 
+/*if (Hud != Null && Hud.Modules.existskey(ST)){
+	//L16N [Royal] Message displayed in the footer of the scores table with the number of points to reach to win the map.
+	Hud.ScoresTable.SetFooterText(TL::Compose("%1 "^S_MapPointsLimit, _("Points limit : ")));
+}*/
+
 SM::SetupDefaultVisibility();
-UIManager.UIAll.OpposingTeamLabelsVisibility = CUIConfig::ELabelsVisibility::Never;
+UIManager.UIAll.OpposingTeamLabelsVisibility = CUIConfig::ELabelsVisibility::WhenInMiddleOfScreen;
+UIManager.UIAll.TeamLabelsVisibility = CUIConfig::ELabelsVisibility::Never;
+UIManager.UIAll.AlliesLabelsVisibility = CUIConfig::ELabelsVisibility::Never;
 StartTime = Now;
 EndTime = -1;
 UIManager.UIAll.CountdownEndTime = -1;
@@ -743,8 +853,41 @@ foreach(Player in Players){
 		IsPlayerWatchingMates = False;
 		declare Text[] SpawnedMember for Player;
 		SpawnedMember = [];
-		G_PlayersHitCount[Player.User.Login] = 0;
-		G_PlayersHealCount[Player.User.Login] = 0;
+		declare Text[] MatesHealed for UI;
+		MatesHealed = [];
+		declare netwrite Integer MatesHealedTimer for UI;
+		MatesHealedTimer = Now;
+		declare Boolean RemoveKTeam = RemoveKTeamForPlayer(Player);
+		if(RemoveKTeam){
+			declare KTeam NewTeam;
+			TeamOfMember = NewTeam;
+			TeamSelectionUI::ShowPlayerTeamCreationUI(Player.User.Login);
+			StartPlaying = False;
+			IsPlayerWatchingMates = False;
+			declare netwrite Text[] Net_PlayersNeedHelp for UI;
+			Net_PlayersNeedHelp.clear();
+			declare Text[] MatesHealed for UI;
+			MatesHealed = [];
+			declare netwrite Integer MatesHealedTimer for UI;
+			MatesHealedTimer = Now;
+			G_PlayersHealCount[Player.User.Login] = 0;
+			G_PlayersHitCount[Player.User.Login] = 0;
+			declare netwrite Integer[Text] Net_PlayersHealCount for Teams[0];
+			declare netwrite Integer[Text] Net_PlayersHitCount for Teams[0];
+			Net_PlayersHealCount = G_PlayersHealCount;
+			Net_PlayersHitCount = G_PlayersHitCount;
+			SetPlayerClan(Player, 0);
+		} else {
+			foreach(Team in G_AllTeams){
+				if(Team.AllTeamMembers.exists(Player.User.Login)){
+					TeamOfMember.AllTeamMembers = Team.AllTeamMembers;
+					TeamOfMember.ClanId = Team.ClanId;
+					if(Player.CurrentClan != TeamOfMember.ClanId){
+						SetPlayerClan(Player, TeamOfMember.ClanId);
+					}
+				}
+			}
+		}
 		declare netwrite Text[] Net_PlayersNeedHelp for UI;
 		Net_PlayersNeedHelp.clear();
 	}
@@ -754,6 +897,51 @@ declare netwrite Integer[Text] Net_PlayersHealCount for Teams[0];
 Net_PlayersHealCount = G_PlayersHealCount;
 declare netwrite Integer[Text] Net_PlayersHitCount for Teams[0];
 Net_PlayersHitCount = G_PlayersHitCount;
+declare CGamePlaygroundModuleServerScoresTable ScoresTable; 
+if(Hud != Null){
+	foreach(Player in Players){
+		declare IsPlayerInATeam = TeamSelectionUI::IsPlayerInTeam(Player);
+		if(IsPlayerInATeam){
+			declare CModulePlaygroundScoresTable ScoresTable;
+			foreach(Module in Hud.Modules){
+				if(Module is CModulePlaygroundScoresTable){
+					ScoresTable <=> (Module as CModulePlaygroundScoresTable);
+				}
+			}
+		
+			if(Hud.Modules.existskey(ScoresTable.Id)){
+				foreach(Team in G_AllTeams){
+					if(Team.AllTeamMembers.exists(Player.User.Login)){
+						declare ScoreOfMember <=> GetCScoreFromLogin(Player.User.Login);
+						if(ScoreOfMember != Null){
+							declare Vec3 NewTeamColor = Team.TeamColor;
+							declare HSVColor = CL::RgbToHsv(NewTeamColor);
+							HSVColor.Y -= 0.5;
+							HSVColor.Z -= 0.3;
+							NewTeamColor = CL::HsvToRgb(HSVColor);
+							ScoresTable.SetColor(ScoreOfMember, NewTeamColor);
+						}
+					}
+				}
+			}
+		} else {
+			declare CModulePlaygroundScoresTable ScoresTable;
+			foreach(Module in Hud.Modules){
+				if(Module is CModulePlaygroundScoresTable){
+					ScoresTable <=> (Module as CModulePlaygroundScoresTable);
+				}
+			}
+		
+			if(Hud.Modules.existskey(ScoresTable.Id)){
+				declare ScoreOfMember <=> GetCScoreFromLogin(Player.User.Login);
+				if(ScoreOfMember != Null){
+					ScoresTable.SetColor(ScoreOfMember, <0.15, 0.15, 0.15>);
+				}
+				
+			}
+		}
+	}
+}
 ***
 
 ***Match_PlayLoop***
@@ -775,6 +963,50 @@ declare netwrite Integer TeamRefresh for Teams[0];
 //Refresh the list of team
 if(TeamRefresh > G_PrevTeamRefresh) {
 	G_AllTeams = TeamSelectionUI::GetAllTeams(True);
+	declare CGamePlaygroundModuleServerScoresTable ScoresTable; 
+	if(Hud != Null){
+		foreach(Player in Players){
+			declare IsPlayerInATeam = TeamSelectionUI::IsPlayerInTeam(Player);
+			if(IsPlayerInATeam){
+				declare CModulePlaygroundScoresTable ScoresTable;
+				foreach(Module in Hud.Modules){
+					if(Module is CModulePlaygroundScoresTable){
+						ScoresTable <=> (Module as CModulePlaygroundScoresTable);
+					}
+				}
+			
+				if(Hud.Modules.existskey(ScoresTable.Id)){
+					foreach(Team in G_AllTeams){
+						if(Team.AllTeamMembers.exists(Player.User.Login)){
+							declare ScoreOfMember <=> GetCScoreFromLogin(Player.User.Login);
+							if(ScoreOfMember != Null){
+								declare Vec3 NewTeamColor = Team.TeamColor;
+								declare HSVColor = CL::RgbToHsv(NewTeamColor);
+								HSVColor.Y -= 0.5;
+								HSVColor.Z -= 0.3;
+								NewTeamColor = CL::HsvToRgb(HSVColor);
+								ScoresTable.SetColor(ScoreOfMember, NewTeamColor);
+							}
+						}
+					}
+				}
+			} else {
+				declare CModulePlaygroundScoresTable ScoresTable;
+				foreach(Module in Hud.Modules){
+					if(Module is CModulePlaygroundScoresTable){
+						ScoresTable <=> (Module as CModulePlaygroundScoresTable);
+					}
+				}
+			
+				if(Hud.Modules.existskey(ScoresTable.Id)){
+					declare ScoreOfMember <=> GetCScoreFromLogin(Player.User.Login);
+					if(ScoreOfMember != Null){
+						ScoresTable.SetColor(ScoreOfMember, <0.15, 0.15, 0.15>);
+					}
+				}
+			}
+		}
+	}
 	foreach(Player in Players){
 		declare UI <=> UIManager.GetUI(Player);
 		declare netwrite Boolean StartPlaying for UI;
@@ -782,42 +1014,64 @@ if(TeamRefresh > G_PrevTeamRefresh) {
 		declare Integer PlayerGetTeamTimer for Player;
 		declare Text[] MembersOfPlayerSpawned for Player;
 		declare Boolean IsPlayerWatchingMates for Player;
+		declare Text[] MatesHealed for UI;
+		MatesHealed = [];
+		declare netwrite Integer MatesHealedTimer for UI;
+		MatesHealedTimer = Now;
 		declare Boolean RemoveKTeam = RemoveKTeamForPlayer(Player);
 		if(RemoveKTeam){
 			declare KTeam NewTeam;
 			TeamOfMember = NewTeam;
 			TeamSelectionUI::ShowPlayerTeamCreationUI(Player.User.Login);
+			declare CanEarlyRespawn for Player = False;
+			CanEarlyRespawn = False;
 			StartPlaying = False;
 			IsPlayerWatchingMates = False;
 			declare netwrite Text[] Net_PlayersNeedHelp for UI;
 			Net_PlayersNeedHelp.clear();
+			declare Text[] MatesHealed for UI;
+			MatesHealed = [];
+			declare netwrite Integer MatesHealedTimer for UI;
+			MatesHealedTimer = Now;
+			G_PlayersHealCount[Player.User.Login] = 0;
+			G_PlayersHitCount[Player.User.Login] = 0;
+			declare netwrite Integer[Text] Net_PlayersHealCount for Teams[0];
+			declare netwrite Integer[Text] Net_PlayersHitCount for Teams[0];
+			Net_PlayersHealCount = G_PlayersHealCount;
+			Net_PlayersHitCount = G_PlayersHitCount;
+			
 		} else {
 			foreach(Team in G_AllTeams){
 				if(Team.AllTeamMembers.exists(Player.User.Login)){
 					TeamOfMember.AllTeamMembers = Team.AllTeamMembers;
+					TeamOfMember.TeamReady = Team.TeamReady;
+					TeamOfMember.ClanId = Team.ClanId;
+					if(Player.CurrentClan != TeamOfMember.ClanId){
+						SetPlayerClan(Player, TeamOfMember.ClanId);
+					}
 				}
 			}
 		}
 		if(Player.SpawnStatus == CSmPlayer::ESpawnStatus::Spawned){
 			if(TeamRefresh > PlayerGetTeamTimer){
 				MembersOfPlayerSpawned = TeamSelectionUI::GetCSmPlayerTeamMembers(Player);
-				Player.AmmoGain = S_ReloadRocketGain - ((MembersOfPlayerSpawned.count/G_PlayersPerTeam) * 0.1) + 0.025;
+				//Player.AmmoGain = S_ReloadRocketGain - ((MembersOfPlayerSpawned.count/G_PlayersPerTeam) * 0.1) + 0.025;
 				PlayerGetTeamTimer = TeamRefresh;
 			}
-			declare netwrite Boolean IsPlayerSpawned for UI;
-			declare netwrite Integer IsPlayerSpawnedTimer for UI;
 			
 			declare CanEarlyRespawn for Player = False;
 			if(!S_IsTeamsFullNeededToSpawn){
 				if(MembersOfPlayerSpawned.count == 0){
-					declare netwrite Boolean StartPlaying for UI;
 					Scores::SetPlayerRoundPoints(Player.Score, 0);
 					UnspawnPlayer(Player);
 					StartPlaying = False;
 					UpdateLayerInfo(PlayersNbAlive - 1);
-					IsPlayerSpawned = False;
-					IsPlayerSpawnedTimer = Now;
+					TeamSelectionUI::SetPlayerReadyToSpawn(Player, False);
 					CanEarlyRespawn = False;
+					UI.SpectatorForcedTarget = NullId;
+					UI.SpectatorForceCameraType = -1;
+					IsPlayerWatchingMates = False;
+					SetPlayerClan(Player, 0);
 				}
 			}
 		} if (Player.SpawnStatus == CSmPlayer::ESpawnStatus::NotSpawned && GameplaySequence > 0){
@@ -848,7 +1102,9 @@ if(TeamRefresh > G_PrevTeamRefresh) {
 	G_PrevTeamRefresh = TeamRefresh;
 	UpdateMarkers(True);
 	UpdateTeamsAlive();
+
 }
+
 // ---------------------------------- //
 // New player
 declare NeedTeamsAliveUpdate = False;
@@ -860,32 +1116,20 @@ foreach (Player in Players) {
 	}
 	declare Royal_IsNewPlayer for Player = True;
 	declare Royal_IsNewSpectator for Player = True;
-	declare Boolean CanEarlyRespawn for Player;
+	declare Boolean CanEarlyRespawn for Player = False;
 	declare Boolean IsPlayerWatchingMates for Player;
 	declare UI <=> UIManager.GetUI(Player);
 	declare netwrite Integer Net_S_PlayersPerTeam for UI;
 	declare netwrite Boolean StartPlaying for UI;
 	Net_S_PlayersPerTeam = G_PlayersPerTeam;
-	//Check if the player is watching his mates
-	if(Player.SpawnStatus == CSmPlayer::ESpawnStatus::NotSpawned && IsPlayerWatchingMates && StartPlaying){
+	if(Player.SpawnStatus == CSmPlayer::ESpawnStatus::NotSpawned && StartPlaying){
 		declare UI <=> UIManager.GetUI(Player);
 		declare MatesOfPlayer = TeamSelectionUI::GetCSmPlayerTeamMembers(Player);
-		declare KTeam TeamOfMember for Player;
-		declare Integer MatesAlive = GetPlayerMatesAlive(TeamOfMember.AllTeamMembers);
-		if(MatesAlive > 0){
-			foreach(MateOfPlayer in MatesOfPlayer){
-				declare MatePlayer <=> TeamSelectionUI::GetCSmPlayerFromLogin(MateOfPlayer);
-				if(MatePlayer != Null && !IsPlayerWatchingMates){
-					if(MatePlayer != Player && MatePlayer.SpawnStatus == CSmPlayer::ESpawnStatus::Spawned && !CanEarlyRespawn){
-						UI.SpectatorForcedTarget = MatePlayer.Id;
-						UI.SpectatorForceCameraType = 1;
-						IsPlayerWatchingMates = True;
-					}
-				}
-			} 
-		} else {
-			UI.SpectatorForcedTarget = NullId;
-			UI.SpectatorForceCameraType = 1;
+		declare MatePlayerId = GetMateToSpec(MatesOfPlayer, Player, GameplaySequence);
+		UI.SpectatorForcedTarget = MatePlayerId;
+		UI.SpectatorForceCameraType = 1;
+		IsPlayerWatchingMates = True;
+		if(MatePlayerId == NullId){
 			IsPlayerWatchingMates = False;
 		}
 	} else if (Player.SpawnStatus == CSmPlayer::ESpawnStatus::NotSpawned && !StartPlaying){
@@ -893,7 +1137,8 @@ foreach (Player in Players) {
 		declare MatesOfPlayer = TeamSelectionUI::GetCSmPlayerTeamMembers(Player);
 		declare Integer MatesAlive = GetPlayerMatesAlive(TeamOfMember.AllTeamMembers);
 		declare UI <=> UIManager.GetUI(Player);
-		if(!IsPlayerWatchingMates){
+		//Manage spectate for player that don't start playing
+		if(!IsPlayerWatchingMates && MatesOfPlayer.count > 0){
 			if(MatesAlive > 0){
 				foreach(MateOfPlayer in MatesOfPlayer){
 					declare MatePlayer <=> TeamSelectionUI::GetCSmPlayerFromLogin(MateOfPlayer);
@@ -902,12 +1147,12 @@ foreach (Player in Players) {
 							UI.SpectatorForcedTarget = MatePlayer.Id;
 							UI.SpectatorForceCameraType = 1;
 							IsPlayerWatchingMates = True;
-							TeamSelectionUI::HidePlayerTeamCreationUI(Player.User.Login);
+							//TeamSelectionUI::HidePlayerTeamCreationUI(Player.User.Login);
 						}
 					}
 				} 
 			}
-		} else if(IsPlayerWatchingMates && MatesAlive == 0){
+		} else if(MatesAlive == 0){
 			UI.SpectatorForcedTarget = NullId;
 			UI.SpectatorForceCameraType = 1;
 			IsPlayerWatchingMates = False;
@@ -917,7 +1162,6 @@ foreach (Player in Players) {
 			IsPlayerWatchingMates = False;
 		}
 	}
-	
 	declare CSmPlayer::ESpawnStatus PrevSpawnStatus for Player;
 	if (PrevSpawnStatus != Player.SpawnStatus) {
 		PrevSpawnStatus = Player.SpawnStatus;
@@ -927,12 +1171,20 @@ foreach (Player in Players) {
 		}
 		
 		if(Player.SpawnStatus == CSmPlayer::ESpawnStatus::NotSpawned){
+			TeamSelectionUI::GetIfPlayerIsSpawningToUI(Player, False);
 			declare Boolean IsColorSet for Player;
 			IsColorSet = False;
 			UI.MarkersXML = "";
 		} else if(Player.SpawnStatus == CSmPlayer::ESpawnStatus::Spawned){
+			TeamSelectionUI::GetIfPlayerIsSpawningToUI(Player, False);
 			declare netwrite Boolean PlayerIsSpawned for UI;
 			PlayerIsSpawned = True;
+			NewPlayerInSpawnedTime = Now;
+			UpdateMarkers(True);
+		} else if(Player.SpawnStatus == CSmPlayer::ESpawnStatus::Spawning){
+			TeamSelectionUI::GetIfPlayerIsSpawningToUI(Player, True);
+			declare netwrite Boolean PlayerIsSpawned for UI;
+			PlayerIsSpawned = False;
 			NewPlayerInSpawnedTime = Now;
 			UpdateMarkers(True);
 		} else {
@@ -950,7 +1202,7 @@ foreach (Player in Players) {
 		declare LastLocationSpawn for Player <=> CSmMapLandmark;
 		CanEarlyRespawn = False;
 		LastLocationSpawn <=> Null;
-		
+		TeamSelectionUI::AddPlayerRoundCount(Player);
 		// Player join during the round
 		if (Now > StartTime + 10) UpdateMarkers = True;
 		declare UI <=> UIManager.GetUI(Player);
@@ -978,6 +1230,7 @@ if(NewPlayerInSpawnedTime > PrevNewPlayerInSpawnedTime){
 	UpdateMarkers(True);
 	PrevNewPlayerInSpawnedTime = NewPlayerInSpawnedTime;
 }
+
 // ------------------------------------- //
 	/// Heal Mates
 if(G_PlayersHealed.count > 0 && G_HealEnabled){
@@ -1001,10 +1254,14 @@ if(G_PlayersHealed.count > 0 && G_HealEnabled){
 				ArmorGained += 6;
 				foreach(Member in HealedMembers){
 					declare MemberPlayer <=> TeamSelectionUI::GetCSmPlayerFromLogin(Member);
-					declare UI <=> UIManager.GetUI(MemberPlayer);
-					declare netwrite Text[] MatesHealed for UI;
-					if(!MatesHealed.exists(Player.User.Login)){
-						MatesHealed.add(Player.User.Login);
+					if(MemberPlayer != Null){
+						declare UI <=> UIManager.GetUI(MemberPlayer);
+						declare netwrite Text[] MatesHealed for UI;
+						if(!MatesHealed.exists(Player.User.Login)){
+							MatesHealed.add(Player.User.Login);
+							declare netwrite Integer MatesHealedTimer for UI;
+							MatesHealedTimer = Now;
+						}
 					}
 				}
 			}
@@ -1015,10 +1272,14 @@ if(G_PlayersHealed.count > 0 && G_HealEnabled){
 				G_PlayersHealed.remove(Player.User.Login);
 				foreach(Member in HealedMembers){
 					declare MemberPlayer <=> TeamSelectionUI::GetCSmPlayerFromLogin(Member);
-					declare UI <=> UIManager.GetUI(MemberPlayer);
-					declare netwrite Text[] MatesHealed for UI;
-					if(MatesHealed.exists(Player.User.Login)){
-						MatesHealed.remove(Player.User.Login);
+					if(MemberPlayer != Null){
+						declare UI <=> UIManager.GetUI(MemberPlayer);
+						declare netwrite Text[] MatesHealed for UI;
+						if(MatesHealed.exists(Player.User.Login)){
+							MatesHealed.remove(Player.User.Login);
+							declare netwrite Integer MatesHealedTimer for UI;
+							MatesHealedTimer = Now;
+						}
 					}
 				}
 			}
@@ -1029,10 +1290,14 @@ if(G_PlayersHealed.count > 0 && G_HealEnabled){
 			HealedMembers = TeamSelectionUI::GetCSmPlayerTeamMembers(Player);
 			foreach(Member in HealedMembers){
 				declare MemberPlayer <=> TeamSelectionUI::GetCSmPlayerFromLogin(Member);
-				declare UI <=> UIManager.GetUI(MemberPlayer);
-				declare Text[] MatesHealed for UI;
-				if(MatesHealed.exists(Player.User.Login)){
-					MatesHealed.remove(Player.User.Login);
+				if(MemberPlayer != Null){
+					declare UI <=> UIManager.GetUI(MemberPlayer);
+					declare Text[] MatesHealed for UI;
+					if(MatesHealed.exists(Player.User.Login)){
+						MatesHealed.remove(Player.User.Login);
+						declare netwrite Integer MatesHealedTimer for UI;
+						MatesHealedTimer = Now;
+					}
 				}
 			}
 			HitByOpponent = False;
@@ -1103,7 +1368,8 @@ Net_TeamsRemaining = G_TeamsAliveCount;
 switch (GameplaySequence) {
 	//Team Creations
 	case -2: {
-		if(G_AllTeams.count > 0){
+		declare TeamsReadyCount = TeamSelectionUI::GetTeamsReadyCount();
+		if(TeamsReadyCount > 0){
 			if(G_TeamCreationStart){
 				UIManager.UIAll.CountdownEndTime = Now + S_TeamCreationTimer * 1000;
 				G_TeamCreationStart = False;
@@ -1118,38 +1384,42 @@ switch (GameplaySequence) {
 					SpawnOrder = 0;
 				}
 				GameplaySequence = 0;
+				TeamSelectionUI::CreateTeamForPlayersWaiting();
 			}
 		} else {
 			G_FirstSequenceTimer = Now;
 			UIManager.UIAll.CountdownEndTime = Now + S_TeamCreationTimer * 1000;
 			G_TeamCreationStart = True;
 		} 
-	
-		
 	}
-	
-	
 	case -1: {
-		GameplaySequence = 0;
-		G_AllTeams = TeamSelectionUI::GetAllTeams(True);
-		foreach(Player in Players){
-			declare SpawnOrder for Player = 0;
-			if (MM_PlayerIsAllowedToPlay(Player)) {
-				PlayersSpawnQueue[Player.Id] = SpawnOrder;
+		declare TeamsReadyCount = TeamSelectionUI::GetTeamsReadyCount();
+		if(TeamsReadyCount > 0){
+			foreach(Player in Players){
+				declare SpawnOrder for Player = 0;
+				if (MM_PlayerIsAllowedToPlay(Player)) {
+					PlayersSpawnQueue[Player.Id] = SpawnOrder;
+				}
+				SpawnOrder = 0;
 			}
-			SpawnOrder = 0;
+			GameplaySequence = 0;
+			TeamSelectionUI::CreateTeamForPlayersWaiting();
+			G_AllTeams = TeamSelectionUI::GetAllTeams(True);
+		} else {
+			GameplaySequence = -2;
+			G_TeamCreationStart = True;
 		}
+	
 	}
 	// ---------------------------------- //
 	// Spawning players
 	
 	case 0: {
 		//Refresh the list of team
-		UIManager.UIAll.BigMessage = _("Wait for spawn");
 		if(G_PlayersHealed.count > 0 || G_PlayersHitCount.count > 0 || G_PlayersHealCount.count > 0){
 			G_PlayersHealed.clear();
-			G_PlayersHitCount.clear();
-			G_PlayersHealCount.clear();
+			//G_PlayersHitCount.clear();
+			//G_PlayersHealCount.clear();
 			declare netwrite Integer[Text] Net_PlayersHitCount for Teams[0];
 			Net_PlayersHitCount = G_PlayersHitCount;
 			declare netwrite Integer[Text] Net_PlayersHealCount for Teams[0];
@@ -1190,12 +1460,7 @@ switch (GameplaySequence) {
 							
 							declare Integer AllianceId for Players[QueuePlayerId];
 							declare Ident[] AlliancePlayers;
-							if (UseMultiClans) {
-								declare ClanPlayers = MultiClans::GetClanPlayers(ClanNb);
-								foreach (Player in ClanPlayers) AlliancePlayers.add(Player.Id);
-							} else {
-								AlliancePlayers = [QueuePlayerId];
-							}
+							AlliancePlayers = [QueuePlayerId];
 							foreach (PlayerId in AlliancePlayers) {
 								ToRemove.add(PlayerId);
 								if (
@@ -1206,7 +1471,6 @@ switch (GameplaySequence) {
 									declare Player <=> Players[PlayerId];
 									declare UI <=> UIManager.GetUI(Player);
 									declare Text[] PlayerMembers for Player;
-									declare netread Boolean InATeamForMode for UI;
 									declare Boolean GoesThroughTeamSpawning for UI;
 									GoesThroughTeamSpawning = False;
 									PlayerMembers = TeamSelectionUI::GetCSmPlayerTeamMembers(Player);
@@ -1223,66 +1487,80 @@ switch (GameplaySequence) {
 										}
 										
 									}
-										if (!S_IsTeamsFullNeededToSpawn){
-											if (PlayerMembers.count >= G_PlayersPerTeam && PlayerMembers.count != 0 || PlayerMembers.count >= 1){
-												foreach(Member in PlayerMembers){
-													declare CSmPlayer PlayerMember <=> GetPlayerFromLogin(Member);
-													if(PlayerMember != Null){ 
-														declare UIOfMembers <=> UIManager.GetUI(PlayerMember);
-														declare netwrite Boolean IsPlayerSpawned for UIOfMembers;
-														declare netwrite Integer IsPlayerSpawnedTimer for UIOfMembers;
-														declare Boolean GoesThroughTeamSpawning for UIOfMembers;
-														declare KTeam TeamOfMember for PlayerMember;
-														declare netwrite Boolean StartPlaying for UIOfMembers;
-														declare Boolean HitByMate for PlayerMember;
-														declare Integer ArmorGained for PlayerMember;
-														declare Boolean HitByOpponent for PlayerMember;
-														declare Boolean IsPlayerWatchingMates for PlayerMember;
-														declare CMapSpawn TeamSpawn for PlayerMember; 
-														TeamSpawn <=> Null;
-														TeamSpawn <=> LandmarkPlayerSpawn.PlayerSpawn; 
-														declare Boolean CanEarlyRespawn;
-														declare Text[] MatesHealed for UIOfMembers;
-														MatesHealed.clear();
-														IsPlayerWatchingMates = False;
-														HitByMate = False;
-														HitByOpponent = False;
-														TeamOfMember = G_AllTeams[PlayerMembers[0]];
-														declare netwrite Vec3 Net_TeamColor for UIOfMembers;
-														Net_TeamColor = TeamOfMember.TeamColor;
-														PlayerMember.ForceColor = TeamOfMember.TeamColor;
-														declare netwrite Integer TeamScore for UIOfMembers;
-														declare netwrite Integer TeamCombo for UIOfMembers;
-														declare netwrite Integer GetHitTimer for UIOfMembers;
-														GetHitTimer = 0;
-														TeamCombo = 1;
-														ArmorGained = 0;
-														ToRemove.add(PlayerMember.Id);
-														SetPlayerAmmoMax (PlayerMember, CSmMode::EWeapon::Rocket, S_RocketAmmo);
-														PlayerMember.AmmoGain = S_ReloadRocketGain - ((PlayerMembers.count/G_PlayersPerTeam) * 0.1) + 0.025;
-														PlayerMember.ArmorMax = 200;
-														PlayerMember.ArmorReplenishGain = 0;
-														SM::Spawn(PlayerMember, 0, 200, TeamSpawn, Now);
-														G_PlayersHitCount[PlayerMember.User.Login] = 0;
+									if (!S_IsTeamsFullNeededToSpawn){
+										if (PlayerMembers.count >= G_PlayersPerTeam && PlayerMembers.count != 0 || PlayerMembers.count >= 1){
+											foreach(Member in PlayerMembers){
+												declare CSmPlayer PlayerMember <=> GetPlayerFromLogin(Member);
+												if(PlayerMember != Null){ 
+													declare UIOfMembers <=> UIManager.GetUI(PlayerMember);
+													declare Boolean GoesThroughTeamSpawning for UIOfMembers;
+													declare KTeam TeamOfMember for PlayerMember;
+													TeamOfMember = G_AllTeams[PlayerMembers[0]];
+													if(TeamOfMember.TeamReady){
+													declare netwrite Boolean StartPlaying for UIOfMembers;
+													declare Boolean HitByMate for PlayerMember;
+													declare Integer ArmorGained for PlayerMember;
+													declare Boolean HitByOpponent for PlayerMember;
+													declare Boolean IsPlayerWatchingMates for PlayerMember;
+													declare CMapSpawn TeamSpawn for PlayerMember; 
+													TeamSpawn <=> Null;
+													TeamSpawn <=> LandmarkPlayerSpawn.PlayerSpawn; 
+													declare Boolean CanEarlyRespawn;
+													declare Text[] MatesHealed for UIOfMembers;
+													MatesHealed.clear();
+													declare netwrite Integer MatesHealedTimer for UIOfMembers;
+													MatesHealedTimer = Now;
+													IsPlayerWatchingMates = False;
+													HitByMate = False;
+													HitByOpponent = False;
+													declare netwrite Vec3 Net_TeamColor for UIOfMembers;
+													Net_TeamColor = TeamOfMember.TeamColor;
+													PlayerMember.ForceColor = TeamOfMember.TeamColor;
+													declare netwrite Integer TeamScore for UIOfMembers;
+													declare netwrite Integer TeamCombo for UIOfMembers;
+													declare netwrite Integer GetHitTimer for UIOfMembers;
+													GetHitTimer = 0;
+													TeamCombo = 1;
+													ArmorGained = 0;
+													ToRemove.add(PlayerMember.Id);
+													declare RocketNumber = S_RocketAmmo;
+													/*if(PlayerMembers.count == 1){
+														RocketNumber = 3;
+													}*/
+													SetPlayerAmmoMax (PlayerMember, CSmMode::EWeapon::Rocket, RocketNumber);
+													SetPlayerAmmoGain(PlayerMember, PlayerMembers.count);
+													PlayerMember.ArmorMax = 200;
+													PlayerMember.ArmorReplenishGain = 0;
+													/*if(PlayerMembers.count == 1){
+														Player.ArmorMax = 300;
+													} else Player.ArmorMax = 200;*/
+													SM::Spawn(PlayerMember, TeamOfMember.ClanId, PlayerMember.ArmorMax, TeamSpawn, Now);
+													//G_PlayersHitCount[PlayerMember.User.Login] = 0;
+													//G_PlayersHealCount[PlayerMember.User.Login] = 0;
+													if(!G_PlayersHealCount.existskey(PlayerMember.User.Login)){
 														G_PlayersHealCount[PlayerMember.User.Login] = 0;
-														PlayerSpawned = True;
-														SpawnOrderMax = I;
-														StartPlaying = True;
-														GoesThroughTeamSpawning = True;
-														AlliancePlayers.remove(PlayerMember.Id);
-														SendCallbackPlayerSpawn(PlayerMember, False);
-														IsPlayerSpawned = True;
-														IsPlayerSpawnedTimer = Now;
-														TeamOfMember.BonusStreakValue = 1;
-														TeamOfMember.TeamHitCombo = 0;
-														if (PlayerMember.Score != Null) {
-															PlayersAlive[PlayerMember.Id] = PlayerMember.Score.Id;
-														} else PlayersAlive[PlayerMember.Id] = NullId;
-														CanEarlyRespawn = True;
-														PlayersSpawnedNb += 1;
-														Slider::HideSlider(PlayerMember, 3000);
+													}
+													if(!G_PlayersHitCount.existskey(PlayerMember.User.Login)){
+														G_PlayersHitCount[PlayerMember.User.Login] = 0;
+													}
+													PlayerSpawned = True;
+													SpawnOrderMax = I;
+													StartPlaying = True;
+													GoesThroughTeamSpawning = True;
+													AlliancePlayers.remove(PlayerMember.Id);
+													SendCallbackPlayerSpawn(PlayerMember, False);
+													TeamSelectionUI::SetPlayerReadyToSpawn(PlayerMember, True);
+													TeamOfMember.BonusStreakValue = 1;
+													TeamOfMember.TeamHitCombo = 0;
+													if (PlayerMember.Score != Null) {
+														PlayersAlive[PlayerMember.Id] = PlayerMember.Score.Id;
+													} else PlayersAlive[PlayerMember.Id] = NullId;
+													CanEarlyRespawn = True;
+													PlayersSpawnedNb += 1;
+													Slider::HideSlider(PlayerMember, 3000);
 													}
 												}
+											}
 										}
 									}
 								}
@@ -1318,6 +1596,16 @@ switch (GameplaySequence) {
 			declare OffZoneAutoStartTime = S_OffZoneAutoStartTime * 1000;
 			if (OffZoneAutoStartTime < 0) OffZoneAutoStartTime = 0;
 			UIManager.UIAll.CountdownEndTime = Now + OffZoneAutoStartTime;
+			if(S_UseRoundLimit && !G_LastRoundMessageDisplayed){
+				if(RoundCount == S_MapRoundsLimit){
+					//L16N [Royal] Message displayed at the last round of the match
+					Message::SendBigMessage(_("last round !"), 5000, 2, CUIConfig::EUISound::PhaseChange, 0);
+					G_LastRoundMessageDisplayed = True;
+				} else {
+					Message::SendBigMessage(TL::Compose("%1 "^RoundCount^" / "^S_MapRoundsLimit, _("Round : ")), 5000, 2, CUIConfig::EUISound::PhaseChange, 0);
+					G_LastRoundMessageDisplayed = True;
+				}
+			}
 			UIManager.UIAll.BigMessage = "";
 			Message::SendStatusMessage(
 				//L16N [Royal] Message displayed once every players have been spawned and that the pole can be captured.
@@ -1429,19 +1717,13 @@ switch (GameplaySequence) {
 	}
 }
 
-if(GameplaySequence >= 2 || GameplaySequence == -2){
-	TeamSelectionUI::UseMatchMakingForPlayersJoining(0);
-	TeamSelectionUI::UseMatchMakingToFillTeam(0);
-	if(GameplaySequence >= 2){
-		TeamSelectionUI::FillSpawnedTeam();
-	}
-}
 // ---------------------------------- //
 // Early respawn
-if (S_UseEarlyRespawn && EarlyRespawnAllowed) {
+if (S_UseEarlyRespawn && EarlyRespawnAllowed && GameplaySequence > 0) {
 	foreach (Player in Players) {
 		declare CanEarlyRespawn for Player = False;
-		if (CanEarlyRespawn && Player.SpawnStatus == CSmPlayer::ESpawnStatus::NotSpawned && MM_PlayerIsAllowedToPlay(Player)) {
+		declare PlayerInATeam = TeamSelectionUI::GetIfPlayerInATeam(Player);
+		if (CanEarlyRespawn && Player.SpawnStatus == CSmPlayer::ESpawnStatus::NotSpawned && MM_PlayerIsAllowedToPlay(Player) && PlayerInATeam) {
 			declare RandomPlayerSpawn <=> CSmMapLandmark;
 			declare OldestPlayerSpawn <=> CSmMapLandmark;
 			declare OldestSpawnTime = -1;
@@ -1476,7 +1758,7 @@ if (S_UseEarlyRespawn && EarlyRespawnAllowed) {
 				declare Removed = EarlyRespawnPool.remove(RandomPlayerSpawn);
 				
 				declare LastLocationSpawn for Player <=> CSmMapLandmark;
-				if (LastLocationSpawn == Null || (C_RandomEarlyRespawn && !UseMultiClans)) {
+				if (LastLocationSpawn == Null || (C_RandomEarlyRespawn)) {
 					LastLocationSpawn <=> RandomPlayerSpawn;
 				}
 				
@@ -1484,44 +1766,27 @@ if (S_UseEarlyRespawn && EarlyRespawnAllowed) {
 				Royal_LastSpawnTime = Now;
 				
 				declare CaptureSpeedBonus for Player = 1.;
-				Player.AmmoGain = S_ReloadRocketGain;
 				CaptureSpeedBonus = C_CaptureSpeedBonus;
 				
-				Player.ArmorMax = C_ArmorRespawn;
 				declare PlayerMembers = TeamSelectionUI::GetPlayerTeamMembers(Player);
+				if(Player.ArmorMax > 100){
+					Player.ArmorMax = Player.ArmorMax - 100;
+				}
 				declare UI <=> UIManager.GetUI(Player);
-				declare netread Boolean InATeamForMode for UI;
-				declare netwrite Boolean IsPlayerSpawned for UI;
-				declare netwrite Integer IsPlayerSpawnedTimer for UI;
 				declare Boolean GoesThroughTeamSpawning for UI;
 				if (PlayerMembers.count >= G_PlayersPerTeam && PlayerMembers.count != 0 && GameplaySequence > 0 && GoesThroughTeamSpawning || (PlayerMembers.count >= 1 && GameplaySequence > 0 && GoesThroughTeamSpawning)){
 					declare KTeam TeamOfMember for Player;
 					declare netwrite Vec3 Net_TeamColor for UI;
 					Net_TeamColor = TeamOfMember.TeamColor;
 					Player.ForceColor = TeamOfMember.TeamColor;
-					Player.AmmoGain = S_ReloadRocketGain - ((PlayerMembers.count/G_PlayersPerTeam) * 0.1) + 0.025;
-					declare CMapSpawn TeamSpawn for Player; 
-					SM::Spawn(Player, 0, Player.ArmorMax, TeamSpawn, Now);
-					IsPlayerSpawned = True;
-					IsPlayerSpawnedTimer = Now;
+					declare CMapSpawn TeamSpawn for Player;
+					SM::Spawn(Player, Player.CurrentClan, Player.ArmorMax, TeamSpawn, Now);
+					TeamSelectionUI::SetPlayerReadyToSpawn(Player, True);
 					SendCallbackPlayerSpawn(Player, True);
 				}
 				Slider::HideSlider(Player, 5000);
 			}
 		}
-	}
-}
-
-// ---------------------------------- //
-/// Desactivate multi clans once only one clan remains
-if (UseMultiClans) {
-	if (MultiClans::GetClansNbAlive() <= 1) {
-		UseMultiClans = False;
-		foreach (Player in Players) {
-			MultiClans::SetClan(Player, 0);
-		}
-		//L16N [Royal] Message displayed when a round started with the multiclans features activated and that only one team remains.
-		Message::SendBigMessage(_("Free for all activated!"), 3000, 2, CUIConfig::EUISound::PhaseChange, 0);
 	}
 }
 
@@ -1613,23 +1878,40 @@ foreach (Event in PendingEvents) {
 					declare UIOfVictim <=> UIManager.GetUI(Event.Victim);
 					declare netwrite Integer GetHitTimer for UIOfVictim;
 					GetHitTimer = Now;
+					
+
 					foreach(Member in MembersOfShooter){
 						declare MemberOfScorer <=> GetPlayerFromLogin(Member);
 						if(MemberOfScorer != Null){
 							declare UI <=> UIManager.GetUI(MemberOfScorer);
 							declare KTeam TeamOfMember for MemberOfScorer;
+							declare HitsForBonus = S_HitComboForBonus;
+							declare StreakBonus = 1;
 							declare netwrite Integer TeamScore for UI;
 							declare netwrite Integer TeamCombo for UI;
 							declare netwrite Text TeamEventName for UI;
 							declare netwrite Text TeamEventPlayer for UI;
 							declare netwrite Integer Net_TeamEventTimer for UI;
 							declare netwrite Integer TeamEventScore for UI;
+							/*if(TeamOfMember.AllTeamMembers.count == 1){
+								HitsForBonus = 1;
+								StreakBonus = 1;
+							} else if (TeamOfMember.AllTeamMembers.count == 2){
+								HitsForBonus = 2;
+								StreakBonus = 1;
+							} else if(TeamOfMember.AllTeamMembers.count == 3){
+								HitsForBonus = 3;
+								StreakBonus = 1;
+							} else {
+								HitsForBonus = 3;
+								StreakBonus = 1;
+							}*/
 							TeamOfMember.TeamHitCombo += 1;
 							if(TeamOfMember.BonusStreakValue <= 0){
 								TeamOfMember.BonusStreakValue = 1;
 							}
-							if(TeamOfMember.TeamHitCombo >= S_HitComboForBonus){
-								TeamOfMember.BonusStreakValue += 1;
+							if(TeamOfMember.TeamHitCombo >= HitsForBonus){
+								TeamOfMember.BonusStreakValue += StreakBonus;
 								TeamOfMember.TeamHitCombo = 0;
 							}
 							Points = TeamOfMember.BonusStreakValue;
@@ -1711,22 +1993,27 @@ foreach (Event in PendingEvents) {
 					declare netwrite Boolean Royal_ServToUIPlayerIsEliminated for UI;
 					declare Boolean IsPlayerWatchingMates for Event.Victim;
 					declare MatesOfVictim = TeamSelectionUI::GetCSmPlayerTeamMembers(Event.Victim);
-					declare Boolean CanEarlyRespawn for Event.Victim;
-					
+					declare Boolean CanEarlyRespawn for Event.Victim = False;
+					if(GameplaySequence > 2){
+						CanEarlyRespawn = False;
+					}
 					foreach(MateOfVictim in MatesOfVictim){
 						declare MatePlayer <=> TeamSelectionUI::GetCSmPlayerFromLogin(MateOfVictim);
-
 						if(MatePlayer != Null){
 							if(!IsPlayerWatchingMates && MatePlayer != Event.Victim && GameplaySequence > 1 && MatePlayer.SpawnStatus != CSmPlayer::ESpawnStatus::NotSpawned){
 								UI.SpectatorForcedTarget = MatePlayer.Id;
 								UI.SpectatorForceCameraType = 1;
 								IsPlayerWatchingMates = True;
 							}
+							declare UIOfVictimMate <=> UIManager.GetUI(MatePlayer);
+							declare netwrite Text[] MatesHealed for UIOfVictimMate;
+							if(MatesHealed.exists(Event.Victim.Login)){
+								MatesHealed.remove(Event.Victim.Login);
+								declare netwrite Integer MatesHealedTimer for UIOfVictimMate;
+								MatesHealedTimer = Now;
+							}
 						}
 					}
-					
-					
-				
 					if(Royal_UIToServShowRulesReminder) {
 						Royal_ServToUIPlayerIsEliminated = False;
 					}
@@ -1818,22 +2105,24 @@ foreach (Event in PendingEvents) {
 						//Add score to Team Members
 						foreach(Member in MembersOfScorer){
 							declare MemberOfScorer <=> GetPlayerFromLogin(Member);
-							declare UI <=> UIManager.GetUI(MemberOfScorer);
-							declare KTeam TeamOfMember for MemberOfScorer;
-							declare netwrite Integer TeamScore for UI;
-							declare netwrite Text TeamEventName for UI;
-							TeamOfMember.TeamEventName = "pole";
-							TeamEventName = "pole";
-							TeamOfMember.TeamScore += Points;
-							declare netwrite Integer Net_TeamEventTimer for UI;
-							Net_TeamEventTimer = Now;
-							declare netwrite Integer TeamEventScore for UI;
-							TeamOfMember.PointsScored = Points;
-							TeamEventScore = TeamOfMember.PointsScored;
 							if(MemberOfScorer != Null){
-								UpdatePlayerScores(MemberOfScorer, C_ScorePole, Points);
+								declare UI <=> UIManager.GetUI(MemberOfScorer);
+								declare KTeam TeamOfMember for MemberOfScorer;
+								declare netwrite Integer TeamScore for UI;
+								declare netwrite Text TeamEventName for UI;
+								TeamOfMember.TeamEventName = "pole";
+								TeamEventName = "pole";
+								TeamOfMember.TeamScore += Points;
+								declare netwrite Integer Net_TeamEventTimer for UI;
+								Net_TeamEventTimer = Now;
+								declare netwrite Integer TeamEventScore for UI;
+								TeamOfMember.PointsScored = Points;
+								TeamEventScore = TeamOfMember.PointsScored;
+								if(MemberOfScorer != Null){
+									UpdatePlayerScores(MemberOfScorer, C_ScorePole, Points);
+								}
+								TeamScore = TeamOfMember.TeamScore;
 							}
-							TeamScore = TeamOfMember.TeamScore;
 						}
 						
 						//Top::IncrementPlayerPoints("Pole", Player, Points);
@@ -1844,7 +2133,7 @@ foreach (Event in PendingEvents) {
 							TL::Compose(_("$<%1$> captured the pole."), Player.User.Name^"$>$<"), 
 							CUIConfig::ENoticeLevel::MatchInfo, Null, 
 							CUIConfig::EAvatarVariant::Default, 
-							CUIConfig::EUISound::StartRound, 0
+							CUIConfig::EUISound::Capture, 0
 						);
 					}
 				}
@@ -1946,6 +2235,9 @@ foreach (Event in PendingEvents) {
 			UpdateLastEliminations(Event.Player.Score);
 			UpdateLayerInfo(PlayersNbAlive - 1);
 			declare Boolean IsPlayerWatchingMates for Event.Player;
+			if(Event.Player != Null){
+
+			}
 			declare UI <=> UIManager.GetUI(Event.Player);
 			declare MatesOfVictim = TeamSelectionUI::GetCSmPlayerTeamMembers(Event.Player);
 			foreach(MateOfVictim in MatesOfVictim){
@@ -1961,14 +2253,16 @@ foreach (Event in PendingEvents) {
 			declare RespawningMembers = TeamSelectionUI::GetCSmPlayerTeamMembers(Event.Player);
 			foreach(Member in RespawningMembers){
 				declare MemberPlayer <=> TeamSelectionUI::GetCSmPlayerFromLogin(Member);
-				declare UI <=> UIManager.GetUI(MemberPlayer);
-				declare netwrite Text[] MatesHealed for UI;
-				if(MatesHealed.exists(Event.Player.Login)){
-					MatesHealed.remove(Event.Player.Login);
+				if(MemberPlayer != Null){
+					declare UIOfMemberPlayer <=> UIManager.GetUI(MemberPlayer);
+					declare netwrite Text[] MatesHealed for UIOfMemberPlayer;
+					if(MatesHealed.exists(Event.Player.Login)){
+						MatesHealed.remove(Event.Player.Login);
+						declare netwrite Integer MatesHealedTimer for UIOfMemberPlayer;
+						MatesHealedTimer = Now;
+					}
 				}
 			}
-				
-			
 			declare SpawnOrder for Event.Player = 0;
 			SpawnOrder = Now;
 			if (!EarlyRespawnAllowed && FirstElimId == NullId) {
@@ -2015,6 +2309,17 @@ foreach (PlayerId in ToRemove) {
 	UpdateSurvivalScore(PlayersAlive, PlayerFromIdEliminated);
 	UpdateMarkers = True;
 }
+
+/*TODO
+if(GameplaySequence > 0 && !MessageMatchCloseToEnd){
+	MessageMatchCloseToEnd = CheckRoundScores(RoundCount);
+	if(MessageMatchCloseToEnd){
+		MessageMatchCloseToEnd = False;
+	}
+
+}*/
+
+
 // ---------------------------------- //
 // Round end conditions
 if(G_TeamsAlive.count == 1 && GameplaySequence > 2){
@@ -2086,7 +2391,6 @@ declare netwrite Integer TeamRefresh for Teams[0];
 if(TeamRefresh > G_PrevTeamRefresh) {
 	G_AllTeams = TeamSelectionUI::GetAllTeams(True);
 	foreach(Player in Players){
-		declare UI <=> UIManager.GetUI(Player);
 		declare KTeam TeamOfMember for Player;
 		foreach(TeamKey => Team in G_AllTeams){
 			if(G_AllTeams[TeamKey].AllTeamMembers.exists(Player.User.Login)){
@@ -2205,7 +2509,7 @@ foreach(Player in AllPlayers) {
 // ---------------------------------- //
 // Display the name of the round winner
 DisplayWinnerName("Round", RoundWinnerPlayer, IdsOfMapWinners);
-MB_Sleep(2000);
+MB_Sleep(3000);
 MB_EnablePlayMode(False);
 
 // ---------------------------------- //
@@ -2217,22 +2521,19 @@ UIManager.UIAll.CountdownEndTime = -1;
 SM::UnspawnAllPlayers();
 foreach(Player in Players){
 	declare UI <=> UIManager.GetUI(Player);
-	declare netwrite Boolean IsPlayerSpawned for UI;
-	declare netwrite Integer IsPlayerSpawnedTimer for UI;
-	if(IsPlayerSpawned){
+	declare IsPlayerReadyToSpawn = TeamSelectionUI::GetIfPlayerIsReadyToSpawn(Player);
+	if(IsPlayerReadyToSpawn){
 		UI.ScoreTableVisibility = CUIConfig::EVisibility::ForcedVisible;
 	} else {
 		UI.ScoreTableVisibility = CUIConfig::EVisibility::Normal;
 	}
-	IsPlayerSpawned = False;
-	IsPlayerSpawnedTimer = Now;
-
+	TeamSelectionUI::SetPlayerReadyToSpawn(Player, False);
 }
 
 
-MB_Sleep(6000);
+MB_Sleep(2000);
 Scores::EndRound();
-MB_Sleep(4000);
+MB_Sleep(2000);
 
 Layers::Detach("Tops");
 UIManager.UIAll.UISequence = CUIConfig::EUISequence::EndRound;
@@ -2264,31 +2565,104 @@ foreach (Score in Scores) {
 
 declare PointLimitReached = MaxPoints >= S_MapPointsLimit;
 declare RequestTieBreak = (!C_AllowDrawMap && MapWinnerPlayer == NullId);
-if (PointLimitReached && !RequestTieBreak) {
-	declare netwrite Boolean Net_NewMap for Teams[0];
-	Net_NewMap = True;
-	TeamSelectionUI::HideTeamSelectionUI();
-	MB_StopMap();
-	MapWinnerPlayer = Scores[0].Id;
-	foreach(Score in Scores){
-		if(Score.Points == Scores[0].Points){
-			if(!IdsOfMapWinners.exists(Score.Id)){
-				IdsOfMapWinners.add(Score.Id);
+if(S_UseRoundLimit){
+	if (RoundCount == S_MapRoundsLimit/* || PointLimitReached && !RequestTieBreak*/) {
+		declare netwrite Boolean Net_NewMap for Teams[0];
+		Net_NewMap = True;
+		TeamSelectionUI::HideTeamSelectionUI();
+		MB_StopMap();
+		MapWinnerPlayer = Scores[0].Id;
+		foreach(Score in Scores){
+			if(Score.Points == Scores[0].Points){
+				if(!IdsOfMapWinners.exists(Score.Id)){
+					IdsOfMapWinners.add(Score.Id);
+				}
+			}
+		}
+		declare PlayerWinner <=> GetPlayerFromId(MapWinnerPlayer);
+		G_WinningTeam = [];
+		if(PlayerWinner != Null){
+			foreach(TeamIndex => Team in G_AllTeams){
+				if(G_AllTeams[TeamIndex].AllTeamMembers.exists(PlayerWinner.User.Login)){
+					G_WinningTeam[TeamIndex] = Team;
+				}
+			}
+		}
+		DisplayWinnerName("Map", MapWinnerPlayer, IdsOfMapWinners);
+		MB_Sleep(5000);
+	}
+} else {
+	if (PointLimitReached && !RequestTieBreak) {
+		declare netwrite Boolean Net_NewMap for Teams[0];
+		Net_NewMap = True;
+		TeamSelectionUI::HideTeamSelectionUI();
+		MB_StopMap();
+		MapWinnerPlayer = Scores[0].Id;
+		foreach(Score in Scores){
+			if(Score.Points == Scores[0].Points){
+				if(!IdsOfMapWinners.exists(Score.Id)){
+					IdsOfMapWinners.add(Score.Id);
+				}
+			}
+		}
+		declare PlayerWinner <=> GetPlayerFromId(MapWinnerPlayer);
+		G_WinningTeam = [];
+		if(PlayerWinner != Null){
+			foreach(TeamIndex => Team in G_AllTeams){
+				if(G_AllTeams[TeamIndex].AllTeamMembers.exists(PlayerWinner.User.Login)){
+					G_WinningTeam[TeamIndex] = Team;
+				}
+			}
+		}
+		DisplayWinnerName("Map", MapWinnerPlayer, IdsOfMapWinners);
+		MB_Sleep(5000);
+	}
+}
+
+declare CModulePlaygroundScoresTable ScoresTable; 
+if(Hud != Null){
+	foreach(Player in Players){
+		declare IsPlayerInATeam = TeamSelectionUI::IsPlayerInTeam(Player);
+		if(IsPlayerInATeam){
+			declare CModulePlaygroundScoresTable ScoresTable;
+			foreach(Module in Hud.Modules){
+				if(Module is CModulePlaygroundScoresTable){
+					ScoresTable <=> (Module as CModulePlaygroundScoresTable);
+				}
+			}
+			if(Hud.Modules.existskey(ScoresTable.Id)){
+				foreach(Team in G_AllTeams){
+					if(Team.AllTeamMembers.exists(Player.User.Login)){
+						declare ScoreOfMember <=> GetCScoreFromLogin(Player.User.Login);
+						if(ScoreOfMember != Null){
+							declare Vec3 NewTeamColor = Team.TeamColor;
+							declare HSVColor = CL::RgbToHsv(NewTeamColor);
+							HSVColor.Y -= 0.5;
+							HSVColor.Z -= 0.3;
+							NewTeamColor = CL::HsvToRgb(HSVColor);
+							ScoresTable.SetColor(ScoreOfMember, NewTeamColor);
+						}
+					}
+				}
+			}
+		} else {
+			declare CModulePlaygroundScoresTable ScoresTable;
+			foreach(Module in Hud.Modules){
+				if(Module is CModulePlaygroundScoresTable){
+					ScoresTable <=> (Module as CModulePlaygroundScoresTable);
+				}
+			}
+			if(Hud.Modules.existskey(ScoresTable.Id)){
+				declare ScoreOfMember <=> GetCScoreFromLogin(Player.User.Login);
+				if(ScoreOfMember != Null){
+					ScoresTable.SetColor(ScoreOfMember, <0.15, 0.15, 0.15>);
+				}
+				
 			}
 		}
 	}
-	declare PlayerWinner <=> GetPlayerFromId(MapWinnerPlayer);
-	G_WinningTeam = [];
-	if(PlayerWinner != Null){
-		foreach(TeamIndex => Team in G_AllTeams){
-			if(G_AllTeams[TeamIndex].AllTeamMembers.exists(PlayerWinner.User.Login)){
-				G_WinningTeam[TeamIndex] = Team;
-			}
-		}
-	}
-	DisplayWinnerName("Map", MapWinnerPlayer, IdsOfMapWinners);
-	MB_Sleep(5000);
-} 
+}
+ 
 ***
 
 ***Match_EndMap***
@@ -2300,7 +2674,6 @@ declare netwrite Integer TeamRefresh for Teams[0];
 if(TeamRefresh > G_PrevTeamRefresh) {
 	G_AllTeams = TeamSelectionUI::GetAllTeams(True);
 	foreach(Player in Players){
-		declare UI <=> UIManager.GetUI(Player);
 		declare KTeam TeamOfMember for Player;
 		foreach(TeamKey => Team in G_AllTeams){
 			if(G_AllTeams[TeamKey].AllTeamMembers.exists(Player.User.Login)){
@@ -2313,6 +2686,51 @@ if(TeamRefresh > G_PrevTeamRefresh) {
 G_PlayersPerTeam = TeamSelectionUI::GetMaxPlayerNumber(S_PlayersPerTeam);
 if(G_PrevPlayersPerTeam != G_PlayersPerTeam){
 	TeamSelectionUI::UpdatePlayersPerTeam(G_PlayersPerTeam);
+}
+declare CGamePlaygroundModuleServerScoresTable ScoresTable; 
+if(Hud != Null){
+	foreach(Player in Players){
+		declare IsPlayerInATeam = TeamSelectionUI::IsPlayerInTeam(Player);
+		if(IsPlayerInATeam){
+			declare CModulePlaygroundScoresTable ScoresTable;
+			foreach(Module in Hud.Modules){
+				if(Module is CModulePlaygroundScoresTable){
+					ScoresTable <=> (Module as CModulePlaygroundScoresTable);
+				}
+			}
+		
+			if(Hud.Modules.existskey(ScoresTable.Id)){
+				foreach(Team in G_AllTeams){
+					if(Team.AllTeamMembers.exists(Player.User.Login)){
+						declare ScoreOfMember <=> GetCScoreFromLogin(Player.User.Login);
+						if(ScoreOfMember != Null){
+							declare Vec3 NewTeamColor = Team.TeamColor;
+							declare HSVColor = CL::RgbToHsv(NewTeamColor);
+							HSVColor.Y -= 0.5;
+							HSVColor.Z -= 0.3;
+							NewTeamColor = CL::HsvToRgb(HSVColor);
+							ScoresTable.SetColor(ScoreOfMember, NewTeamColor);
+						}
+					}
+				}
+			}
+		} else {
+			declare CModulePlaygroundScoresTable ScoresTable;
+			foreach(Module in Hud.Modules){
+				if(Module is CModulePlaygroundScoresTable){
+					ScoresTable <=> (Module as CModulePlaygroundScoresTable);
+				}
+			}
+		
+			if(Hud.Modules.existskey(ScoresTable.Id)){
+				declare ScoreOfMember <=> GetCScoreFromLogin(Player.User.Login);
+				if(ScoreOfMember != Null){
+					ScoresTable.SetColor(ScoreOfMember, <0.15, 0.15, 0.15>);
+				}
+				
+			}
+		}
+	}
 }
 if (MM_IsMatchServer()) {
 	if (MB_GetMapCount() >= S_MapsPerMatch) MB_StopMatch();
@@ -2332,7 +2750,6 @@ declare netwrite Integer TeamRefresh for Teams[0];
 if(TeamRefresh > G_PrevTeamRefresh) {
 	G_AllTeams = TeamSelectionUI::GetAllTeams(True);
 	foreach(Player in Players){
-		declare UI <=> UIManager.GetUI(Player);
 		declare KTeam TeamOfMember for Player;
 		foreach(TeamKey => Team in G_AllTeams){
 			if(G_AllTeams[TeamKey].AllTeamMembers.exists(Player.User.Login)){
@@ -2381,7 +2798,6 @@ declare netwrite Integer TeamRefresh for Teams[0];
 if(TeamRefresh > G_PrevTeamRefresh) {
 	G_AllTeams = TeamSelectionUI::GetAllTeams(True);
 	foreach(Player in Players){
-		declare UI <=> UIManager.GetUI(Player);
 		declare KTeam TeamOfMember for Player;
 		foreach(TeamKey => Team in G_AllTeams){
 			if(G_AllTeams[TeamKey].AllTeamMembers.exists(Player.User.Login)){
@@ -2409,7 +2825,6 @@ declare netwrite Integer TeamRefresh for Teams[0];
 if(TeamRefresh > G_PrevTeamRefresh) {
 	G_AllTeams = TeamSelectionUI::GetAllTeams(True);
 	foreach(Player in Players){
-		declare UI <=> UIManager.GetUI(Player);
 		declare KTeam TeamOfMember for Player;
 		foreach(TeamKey => Team in G_AllTeams){
 			if(G_AllTeams[TeamKey].AllTeamMembers.exists(Player.User.Login)){
@@ -2457,6 +2872,17 @@ XmlRpc::UnregisterCallback(C_Callback_Royal_RoundWinner);
 // Functions
 // ---------------------------------- //
 // ---------------------------------- //
+
+Boolean CheckRoundScores(Integer _RoundCount){
+	foreach(Score in Scores){
+		declare NewScore = Scores::GetPlayerMapPoints(Scores[0]);
+		if(S_MapPointsLimit - 100 <= NewScore){
+			return True;
+		}
+	}
+	return False;
+}
+
 /** Send a callback with the login,
  *	the type of points and the number
  *	of points scores by a player
@@ -2506,13 +2932,31 @@ Integer GetPlayerMatesAlive(Text[] _WinnerMembers){
 	foreach(Member in _WinnerMembers){
 		declare PlayerWinner <=> GetPlayerFromLogin(Member);
 		if(PlayerWinner != Null){
-			if(PlayerWinner.SpawnStatus == CSmPlayer::ESpawnStatus::Spawned){
+			if(PlayerWinner.SpawnStatus == CSmPlayer::ESpawnStatus::Spawned || PlayerWinner.SpawnStatus == CSmPlayer::ESpawnStatus::Spawning){
 				Count += 1;
 			}
 		}
 		
 	}
 	return Count;
+}
+
+Void SetPlayerAmmoGain(CSmPlayer _Player, Integer _MatesCount){
+	/*switch(_MatesCount){
+		case 1: {
+			_Player.AmmoGain = S_ReloadRocketGain;
+		}
+		case 2: {
+			_Player.AmmoGain = S_ReloadRocketGain - 1.;
+		}
+		case 3: {
+			_Player.AmmoGain = S_ReloadRocketGain - 1.5;
+		}
+		case 4: {
+			_Player.AmmoGain = S_ReloadRocketGain - 2.;
+		}
+	}*/
+	_Player.AmmoGain = S_ReloadRocketGain - 1.75;
 }
 
 
@@ -2550,17 +2994,19 @@ Void SendCallbackPlayerSpawn(CSmPlayer _Player, Boolean _Respawn) {
 // ---------------------------------- //
 /// Update the status message of the mode
 Void UpdateModeStatusMessage() {
-	declare Text BaseRules = _("TYPE: Individual\nOBJECTIVE: Survive as long as possible to score a maximum of points.");
+	//L16N [Royal] Rules displayed before connecting to the server
+	declare Text BaseRules = _("TYPE: Team\nOBJECTIVE: Survive as long as possible with mates to score a maximum of points.");
 	
-	declare Text ScoreToWinSetting = ""^S_MapPointsLimit;
+	declare Text ScoreToWinSetting = ""^S_MapRoundsLimit;
 	declare Text BestPlayerScore = "-";
 	if(Scores.count > 0){
 		BestPlayerScore = ""^(Scores::GetPlayerMapPoints(Scores[0]) + Scores::GetPlayerRoundPoints(Scores[0]));
 	} else {
+		//L16N [Royal] Message displayed before connecting to the server when there is no best score yet
 		BestPlayerScore = _("no score");
 	}
-	
-	ModeInfo::SetStatusMessage(TL::Compose("%1\nPoints to win: %2, Current best score: %3", BaseRules, ScoreToWinSetting, BestPlayerScore));
+	//L16N [Royal] Displayed rounds limit and the current best score before connecting to the server. %1 Are the rules, %2 is the rounds limit and %3 is for the best score
+	ModeInfo::SetStatusMessage(TL::Compose("%1\nRounds limit: %2, Current best score: %3", BaseRules, ScoreToWinSetting, BestPlayerScore));
 }
 
 Boolean RemoveKTeamForPlayer(CSmPlayer _Player) {
@@ -2570,35 +3016,6 @@ Boolean RemoveKTeamForPlayer(CSmPlayer _Player) {
 		}
 	}
 	return True;
-}
-
-// ---------------------------------- //
-/** Get the ammo gain of a player
- *
- *	@param	_Player				The player to check
- *
- *	@return						The ammo gain
- */
-Real GetAmmoGain(CSmPlayer _Player) {
-	if (_Player == Null) return 1.;
-	
-	declare AutoBalance_ReloadSpeedBonus for _Player.User = 1.;
-	
-	declare AmmoGain = AutoBalance_ReloadSpeedBonus * S_ReloadSpeed;
-	if (AmmoGain < 0.) AmmoGain = 0.;
-	else if (AmmoGain > 10.) AmmoGain = 3.;
-	return AmmoGain;
-}
-
-// ---------------------------------- //
-/** Get the armor max
- *
- *	@return						The armor max
- */
-Integer GetArmorMax() {
-	declare ArmorMax = S_StartingArmor * 100;
-	if (ArmorMax < 100) ArmorMax = 100;
-	return ArmorMax;
 }
 
 // ---------------------------------- //
@@ -2664,7 +3081,7 @@ Void DisplayWinnerName(Text _Level, Ident _WinnerPlayer, Ident[] _IdsOfMapWinner
 						TL::Compose(_("$<%1$> Won the round"), WinnerPlayer.User.Name), 
 						CUIConfig::ENoticeLevel::MatchInfo, Null, 
 						CUIConfig::EAvatarVariant::Default, 
-						CUIConfig::EUISound::StartRound, 0
+						CUIConfig::EUISound::EndRound, 0
 					);
 				}
 			} else {
@@ -2675,7 +3092,7 @@ Void DisplayWinnerName(Text _Level, Ident _WinnerPlayer, Ident[] _IdsOfMapWinner
 						TL::Compose(_("$<%1$> Won the match"), PlayerMapWinner.User.Name), 
 						CUIConfig::ENoticeLevel::MatchInfo, Null, 
 						CUIConfig::EAvatarVariant::Default, 
-						CUIConfig::EUISound::StartRound, 0
+						CUIConfig::EUISound::EndRound, 0
 					);
 				}
 			}
@@ -2683,7 +3100,7 @@ Void DisplayWinnerName(Text _Level, Ident _WinnerPlayer, Ident[] _IdsOfMapWinner
 		}
 	} 
 	else if (G_WinningTeam.count == 1 && !Users.existskey(_WinnerPlayer)){
-		UIManager.UIAll.BigMessageSound = CUIConfig::EUISound::EndRound;
+		UIManager.UIAll.BigMessageSound = CUIConfig::EUISound::EndMatch;
 		declare Text[] TeamOfWinners;
 		
 		foreach(TeamIndex => Team in G_WinningTeam){
@@ -2696,7 +3113,7 @@ Void DisplayWinnerName(Text _Level, Ident _WinnerPlayer, Ident[] _IdsOfMapWinner
 				TL::Compose(_("$<%1$> Won the round"), WinnerPlayer.User.Name), 
 				CUIConfig::ENoticeLevel::MatchInfo, Null, 
 				CUIConfig::EAvatarVariant::Default, 
-				CUIConfig::EUISound::StartRound, 0
+				CUIConfig::EUISound::EndMatch, 0
 			);
 			
 		}
@@ -2796,6 +3213,18 @@ Void UpdateTeamsAlive(){
 	}
 }
 
+Ident GetMateToSpec(Text[] _TeamMembers, CSmPlayer _Player, Integer _GameplaySequence) {
+	foreach(MateOfPlayer in _TeamMembers){
+		declare MatePlayer <=> TeamSelectionUI::GetCSmPlayerFromLogin(MateOfPlayer);
+		if(MatePlayer != Null){
+			if(MatePlayer != _Player && MatePlayer.SpawnStatus == CSmPlayer::ESpawnStatus::Spawned && _GameplaySequence > 2){
+				return MatePlayer.Id;
+			}
+		}
+	} 
+	return NullId;
+}
+
 
 /**
  * Update the score
@@ -2813,9 +3242,11 @@ Void UpdateMarkers(Boolean _ShowPoleMarker) {
 		declare Text Markers = "";
 		declare UI <=> UIManager.GetUI(Player);
 		declare Integer MembersCount  for Player;
+		declare netwrite Boolean Net_IsHealEnabled for UI;
+		Net_IsHealEnabled = G_HealEnabled;
 		UI.MarkersXML = "";
 		MembersCount = 0;
-	
+		
 		foreach(TeamIndex => Team in G_AllTeams){
 			if(G_AllTeams[TeamIndex].AllTeamMembers.exists(Player.User.Login)){
 				foreach(MemberIndex => Member in G_AllTeams[TeamIndex].AllTeamMembers){
@@ -2833,8 +3264,13 @@ Void UpdateMarkers(Boolean _ShowPoleMarker) {
 	}
 }
 
-Void SetSpectatorTarget(CSmPlayer _Player, Text[] _MatesOfPlayer){
-	
+CScore GetCScoreFromLogin(Text _Login){
+	foreach(Player in Players){
+		if(Player.User.Login == _Login){
+			return Player.Score;
+		}
+	}
+	return Null;
 }
 
 // ---------------------------------- //
@@ -2922,6 +3358,7 @@ Text CreateLayerRoundInfos() {
 			PrevEliminatedBy = Net_LayerInfo_EliminatedBy;
 			
 			if (PrevEliminatedBy != "") {
+				//L16N [Royal] Displayed when the player has been eliminated by an other player. %1 is the player who eliminate the player
 				Label_EliminatedBy.Value = TL::Compose("%1 $<%2$>", _("Eliminated by :"), PrevEliminatedBy);
 				Label_EliminatedBy.Visible = True;
 			} else {
@@ -3004,6 +3441,82 @@ if (InputPlayer != Null) {
 """;
 }
 
+/*Void UpdateScoresOfSurvival(CSmPlayer _Player, Integer MembersNumbers, Integer MatesAlive){
+	declare UI <=> UIManager.GetUI(_Player);
+	declare KTeam TeamOfMember for _Player;
+	
+	switch(MembersNumbers){
+		case 1: {
+			log(_Player.User.Login^"  :  "^MatesAlive);
+			TeamOfMember.TeamScore += (13*(MatesAlive/MembersNumbers));
+			declare netwrite Text TeamEventName for UI;
+			declare netwrite Integer Net_TeamEventTimer for UI;
+			Net_TeamEventTimer = Now;
+			TeamOfMember.TeamEventName = "survival";
+			declare netwrite Integer TeamScore for UI;
+			TeamScore = TeamOfMember.TeamScore;
+			TeamEventName = TeamOfMember.TeamEventName;
+			declare netwrite Integer TeamEventScore for UI;
+			TeamOfMember.PointsScored = (13*(MatesAlive/MembersNumbers));
+			TeamEventScore = TeamOfMember.PointsScored;
+			if(_Player != Null){
+				UpdatePlayerScores(_Player, C_ScoreSurvival, (13*(MatesAlive/MembersNumbers)));
+			}
+		}
+		case 2: {
+			log(_Player.User.Login^"  :  "^MatesAlive);
+			TeamOfMember.TeamScore += (14*(MatesAlive/MembersNumbers));
+			declare netwrite Text TeamEventName for UI;
+			declare netwrite Integer Net_TeamEventTimer for UI;
+			Net_TeamEventTimer = Now;
+			TeamOfMember.TeamEventName = "survival";
+			declare netwrite Integer TeamScore for UI;
+			TeamScore = TeamOfMember.TeamScore;
+			TeamEventName = TeamOfMember.TeamEventName;
+			declare netwrite Integer TeamEventScore for UI;
+			TeamOfMember.PointsScored = (14*(MatesAlive/MembersNumbers));
+			TeamEventScore = TeamOfMember.PointsScored;
+			if(_Player != Null){
+				UpdatePlayerScores(_Player, C_ScoreSurvival, (14*(MatesAlive/MembersNumbers)));
+			}
+		}
+		case 3: {
+			log(_Player.User.Login^"  :  "^MatesAlive);
+			TeamOfMember.TeamScore += (15*(MatesAlive/MembersNumbers));
+			declare netwrite Text TeamEventName for UI;
+			declare netwrite Integer Net_TeamEventTimer for UI;
+			Net_TeamEventTimer = Now;
+			TeamOfMember.TeamEventName = "survival";
+			declare netwrite Integer TeamScore for UI;
+			TeamScore = TeamOfMember.TeamScore;
+			TeamEventName = TeamOfMember.TeamEventName;
+			declare netwrite Integer TeamEventScore for UI;
+			TeamOfMember.PointsScored = (15*(MatesAlive/MembersNumbers));
+			TeamEventScore = TeamOfMember.PointsScored;
+			if(_Player != Null){
+				UpdatePlayerScores(_Player, C_ScoreSurvival, (15*(MatesAlive/MembersNumbers)));
+			}
+		}
+		case 4: {
+			log(_Player.User.Login^"  :  "^MatesAlive);
+			TeamOfMember.TeamScore += (17*(MatesAlive/MembersNumbers));
+			declare netwrite Text TeamEventName for UI;
+			declare netwrite Integer Net_TeamEventTimer for UI;
+			Net_TeamEventTimer = Now;
+			TeamOfMember.TeamEventName = "survival";
+			declare netwrite Integer TeamScore for UI;
+			TeamScore = TeamOfMember.TeamScore;
+			TeamEventName = TeamOfMember.TeamEventName;
+			declare netwrite Integer TeamEventScore for UI;
+			TeamOfMember.PointsScored = (17*(MatesAlive/MembersNumbers));
+			TeamEventScore = TeamOfMember.PointsScored;
+			if(_Player != Null){
+				UpdatePlayerScores(_Player, C_ScoreSurvival, (17*(MatesAlive/MembersNumbers)));
+			}
+		}
+	}
+}*/
+
 // ---------------------------------- //
 /** Update the survival score of the remaining players
  *
@@ -3020,8 +3533,43 @@ Void UpdateSurvivalScore(Ident[Ident] _PlayersAlive, CSmPlayer _PlayerEliminated
 				declare PlayerOfId <=> GetPlayerFromId(PlayerId);
 				if(!TeamMembersOfEliminated.exists(PlayerOfId.User.Login)){
 					TeamMembers = TeamSelectionUI::GetCSmPlayerTeamMembers(PlayerOfId);
+					declare MatesAlive = GetPlayerMatesAlive(TeamMembers);
+					//UpdateScoresOfSurvival(PlayerOfId, TeamMembers.count, MatesAlive);
 					foreach(Member in TeamMembers){
 						declare PlayerMember <=> TeamSelectionUI::GetCSmPlayerFromLogin(Member);
+						if(PlayerMember != Null){
+							declare UI <=> UIManager.GetUI(PlayerMember);
+							declare KTeam TeamOfMember for PlayerMember;
+							TeamOfMember.TeamScore += 1;
+							declare netwrite Text TeamEventName for UI;
+							declare netwrite Integer Net_TeamEventTimer for UI;
+							Net_TeamEventTimer = Now;
+							TeamOfMember.TeamEventName = "survival";
+							declare netwrite Integer TeamScore for UI;
+							TeamScore = TeamOfMember.TeamScore;
+							TeamEventName = TeamOfMember.TeamEventName;
+							declare netwrite Integer TeamEventScore for UI;
+							TeamOfMember.PointsScored = 1;
+							TeamEventScore = TeamOfMember.PointsScored;
+							if(PlayerMember != Null){
+								UpdatePlayerScores(PlayerMember, C_ScoreSurvival, 1);
+							}
+						}
+					
+					}
+				}
+				//Top::IncrementPlayerPoints("Survival", Players[PlayerId], 1);
+			}
+		}
+	} else {
+			foreach (PlayerId => ScoreId in _PlayersAlive) {
+			if (Players.existskey(PlayerId)) {
+				declare Text[] TeamMembers;
+				declare PlayerOfId <=> GetPlayerFromId(PlayerId);
+				TeamMembers = TeamSelectionUI::GetCSmPlayerTeamMembers(PlayerOfId);
+				foreach(Member in TeamMembers){
+					declare PlayerMember <=> TeamSelectionUI::GetCSmPlayerFromLogin(Member);
+					if(PlayerMember != Null){
 						declare UI <=> UIManager.GetUI(PlayerMember);
 						declare KTeam TeamOfMember for PlayerMember;
 						TeamOfMember.TeamScore += 1;
@@ -3039,34 +3587,7 @@ Void UpdateSurvivalScore(Ident[Ident] _PlayersAlive, CSmPlayer _PlayerEliminated
 							UpdatePlayerScores(PlayerMember, C_ScoreSurvival, 1);
 						}
 					}
-				}
-				//Top::IncrementPlayerPoints("Survival", Players[PlayerId], 1);
-			}
-		}
-	} else {
-			foreach (PlayerId => ScoreId in _PlayersAlive) {
-			if (Players.existskey(PlayerId)) {
-				declare Text[] TeamMembers;
-				declare PlayerOfId <=> GetPlayerFromId(PlayerId);
-				TeamMembers = TeamSelectionUI::GetCSmPlayerTeamMembers(PlayerOfId);
-				foreach(Member in TeamMembers){
-					declare PlayerMember <=> TeamSelectionUI::GetCSmPlayerFromLogin(Member);
-					declare UI <=> UIManager.GetUI(PlayerMember);
-					declare KTeam TeamOfMember for PlayerMember;
-					TeamOfMember.TeamScore += 1;
-					declare netwrite Text TeamEventName for UI;
-					declare netwrite Integer Net_TeamEventTimer for UI;
-					Net_TeamEventTimer = Now;
-					TeamOfMember.TeamEventName = "survival";
-					declare netwrite Integer TeamScore for UI;
-					TeamScore = TeamOfMember.TeamScore;
-					TeamEventName = TeamOfMember.TeamEventName;
-					declare netwrite Integer TeamEventScore for UI;
-					TeamOfMember.PointsScored = 1;
-					TeamEventScore = TeamOfMember.PointsScored;
-					if(PlayerMember != Null){
-						UpdatePlayerScores(PlayerMember, C_ScoreSurvival, 1);
-					}
+					
 				}
 				//Top::IncrementPlayerPoints("Survival", Players[PlayerId], 1);
 			}

@@ -35,6 +35,7 @@ declare Text  Instrument_Distance_Repere_ImageUrl			= "file://Media/Manialinks/N
 declare Text	Instrument_Distance_Tornado_ImageUrl		=	"file://Media/Manialinks/Nadeo/ShootMania/Royal/ASSET_UI_SquadRoyal_Tornado.dds";
 declare Text	Instrument_Distance_Character_ImageUrl	=	"file://Media/Manialinks/Nadeo/ShootMania/Royal/ASSET_UI_SquadRoyal_Character.dds";
 declare Text	Instrument_Distance_Pole_ImageUrl				=	"file://Media/Manialinks/Nadeo/ShootMania/Royal/ASSET_UI_SquadRoyal_Pole.dds";
+declare Text	Tips_Ping_ImageUrl											=	"file://Media/Manialinks/Nadeo/ShootMania/Royal/Ping.dds";
 declare Text PoleMarkerImg = "file://Media/Manialinks/Shootmania/Common/goal_cap.dds";
 declare Real PoleImgSize = 10.;
 declare Real PlayersImgSize = 6.;
@@ -44,6 +45,9 @@ declare PlayersSquadSmallML = "";
 declare Img_CadreReady = "file://Media/ManiaLinks/Nadeo/TeamSelectionModule/ASSET_UI_SquadRoyal_Frame_Ready.dds";
 declare Img_HitIcon = "file://Media/ManiaLinks/Nadeo/ShootMania/Royal/ASSET_UI_SquadRoyal_HitIcon_V2.dds";
 declare Img_HealIcon = "file://Media/ManiaLinks/Nadeo/ShootMania/Royal/ASSET_UI_SquadRoyal_HealIcon_V2.dds";
+
+//L16N [Royal] A quick sentence to warn player that they can use the horn input to ping theirs mates
+declare TutoRoyalSquad_HornToPing = _("horn (ctrl by default) to ping");
 
 //SmallSquadList
 for (I, 0, 6) {
@@ -61,6 +65,11 @@ for (I, 0, 6) {
   <style class="text-button" textfont="BiryaniDemiBold" textcolor="ffffff" textsize="3" textemboss="1" />
 </stylesheet>
 <frame id="frame-global" hidden="1">
+	<frame id="frame-horntoping" hidden="1"> 
+		<label id="label-horntoping" textsize="2" text="{{{TutoRoyalSquad_HornToPing}}}" pos="-155 85" z-index="0" size="60 20" halign="left" valign="center"/>
+		<quad pos="-160 85" z-index="-1" size="60 10" halign="left" valign="center" bgcolor="000" opacity="0.6" id="horntoping-background"/>
+		<quad pos="-105 85" z-index="1" size="7 7" halign="center" valign="center" bgcolor="000" opacity="0.6" id="horntoping-ping" image="{{{Tips_Ping_ImageUrl}}}"/>
+	</frame>
 	<framemodel id="framemodel-playersquad-small">
 		<frame id="SquadMemberSmall">
 			<quad pos="-120 -46.5" z-index="1" size="70 10" halign="left" valign="center" bgcolor="111111FF" opacity="0.8" id="squadmembersmall-background"/>
@@ -287,13 +296,26 @@ Boolean IsMatesLooseArmor(Text[] _SquadForClient){
 	foreach(Member in _SquadForClient){
 		declare PlayerMember <=> GetCSmPlayerFromLogin(Member);
 		if(PlayerMember != Null){
-			if(PlayerMember.Armor < PlayerMember.ArmorMax){
+			if(PlayerMember.Armor < PlayerMember.ArmorMax && PlayerMember.SpawnStatus != CSmPlayer::ESpawnStatus::NotSpawned){
 				return True;
 			}
 		}
 		
 	}
 	return False;
+}
+
+Text GetFirstPlayerLoosingArmor(Text[] _SquadForClient){
+	foreach(Member in _SquadForClient){
+		declare PlayerMember <=> GetCSmPlayerFromLogin(Member);
+		if(PlayerMember != Null){
+			if(PlayerMember.Armor < PlayerMember.ArmorMax && PlayerMember.SpawnStatus != CSmPlayer::ESpawnStatus::NotSpawned){
+				return PlayerMember.User.Login;
+			}
+		}
+		
+	}
+	return "";
 }
 
 main() {
@@ -317,17 +339,19 @@ main() {
 	declare G_Label_ScoreAdded <=> (G_Frame_Score.GetFirstChild("label-scoreadded") as CMlLabel);
 	declare G_Quad_ContourScoreBottomR <=> (G_Frame_Score.GetFirstChild("quad-HitCombobottomlineright") as CMlQuad);
 	declare G_Quad_ContourScoreBottomL <=> (G_Frame_Score.GetFirstChild("quad-HitCombobottomlineleft") as CMlQuad);
-
+	declare G_Frame_HornToPing <=> (G_Frame_Globale.GetFirstChild("frame-horntoping") as CMlFrame); 
+	declare G_Label_HornToPing <=> (G_Frame_Globale.GetFirstChild("label-horntoping") as CMlLabel); 
+	declare G_BackGround_HornToPing <=> (G_Frame_Globale.GetFirstChild("horntoping-background") as CMlQuad); 
+	declare G_Ping_HornToPing <=> (G_Frame_Globale.GetFirstChild("horntoping-ping") as CMlQuad);
 	Frame_NeedHelpGauge <=> (G_Frame_Globale.GetFirstChild("frame_needhelpgauge") as CMlFrame);
 	Quad_HelpTimerGauge <=> (G_Frame_Globale.GetFirstChild("quad-gaugeneedhelp") as CMlQuad);
-
+	G_Frame_HornToPing.Visible = False;
 	declare G_Frame_HealReceived <=> (G_Frame_Globale.GetFirstChild("frame-Heal") as CMlFrame);
 	declare G_Quad_HealReceived <=> (G_Frame_Globale.GetFirstChild("quad-vignetteheal") as CMlQuad);
 
-	
+	declare persistent RoyalSquadPing_Checked458978 for LocalUser = False;
 
 	declare netread Boolean ScoreTableVisible for UI;
-	declare netread Boolean IsPlayerSpawned for UI;
 	declare netread Integer TeamScore for UI;
 	declare netread Text TeamEventName for UI;
 	declare netread Text[] SquadForClient for UI;
@@ -363,6 +387,7 @@ main() {
 	declare Integer PrevPlayersNeedHelpCount;
 	declare Boolean AudioIsPlaying;
 	declare netread Vec3 Net_TeamColor for UI;
+	declare Vec3 PrevTeamColor;
 	declare netread Integer TeamEventScore for UI;
 	declare netread Boolean StartPlaying for UI;
 	declare netread Integer GetHitTimer for UI;
@@ -373,6 +398,7 @@ main() {
 	declare netread Integer Net_TS2_PlayersPerTeam for Teams[0];
 	declare netread Integer[Text] Net_PlayersHealCount for Teams[0];
 	declare netread Integer[Text] Net_PlayersHitCount for Teams[0];
+	declare netread Integer Net_TeamSelection2_RoundCount for UI;
 	declare Integer PrevPlayersPerTeam;
 	declare netread Integer Net_S_PlayersPerTeam for UI;
 	declare Integer PrevPlayerMemberArmor;
@@ -386,8 +412,16 @@ main() {
 	declare Boolean IsAMateLooseArmor;
 	declare netread Integer HitPlayerTime for UI;
 	declare Integer PrevHitPlayerTime;
+	declare Text LastMembersHurted;
+	declare Text PrevMembersHurted;
+	declare netread Integer MatesHealedTimer for UI;
+	declare Integer PingStartTime;
+	declare Boolean FirstSpawn = False;
+	declare Integer FirstSpawnTime;
+	declare Boolean LaunchPingTipsAnim;
 	while (True) {
 		yield;
+		
 		declare Owner <=> GetOwner();
 		PlayerOwner <=> GetCSmPlayerFromLogin(LocalUser.Login);
 		if(Net_TS2_PlayersPerTeam != PrevPlayersPerTeam){
@@ -410,12 +444,39 @@ main() {
 				} 
 			}
 		}
+		if(PlayerOwner != Null){
+			if(PlayerOwner.SpawnStatus == CSmPlayer::ESpawnStatus::Spawned){
+				if(PrevTeamColor != Net_TeamColor){
+					PrevTeamColor = Net_TeamColor;
+					G_Ping_HornToPing.Colorize = Net_TeamColor;
+				}
+				if(!RoyalSquadPing_Checked458978 && !G_Frame_HornToPing.Visible) {
+					G_Frame_HornToPing.Visible = True;
+					FirstSpawnTime = Now;
+				}
+			}
+		}
+		if(Now < FirstSpawnTime + 8000 && FirstSpawnTime > 0){
+			G_X = Now * 0.0035;
+			//G_Label_HornToPing.Opacity = ML::Abs(ML::Sin(G_X))/1.5 + 0.1;
+			G_BackGround_HornToPing.Opacity = ML::Abs(ML::Sin(G_X))/1.1;
+		} else if (Now > FirstSpawnTime + 5000 && FirstSpawnTime > 0){
+			G_BackGround_HornToPing.Opacity = 0.8;
+			G_Label_HornToPing.Opacity = 1.;
+		}
+		if(!RoyalSquadPing_Checked458978 && Net_TeamSelection2_RoundCount > 6 && G_Frame_HornToPing.Visible){
+			RoyalSquadPing_Checked458978 = True;
+			G_Frame_HornToPing.Visible = False;
+		}
+		
 		if(StartPlaying){
 			Frame_SmallSquadMembers.Visible = True;
 			IsAMateLooseArmor = IsMatesLooseArmor(SquadForClient);
+			LastMembersHurted = GetFirstPlayerLoosingArmor(SquadForClient);
 		} else Frame_SmallSquadMembers.Visible = False;
 
-		if(IsAMateLooseArmor){
+		if(IsAMateLooseArmor && LastMembersHurted != PrevMembersHurted){
+			PrevMembersHurted = LastMembersHurted;
 			MemberGetHurtTime = Now;
 			IsAMateLooseArmor = False;
 		}
@@ -429,10 +490,10 @@ main() {
 			PrevHitPlayerTime = HitPlayerTime;
 			UpdateSmallSquadMembers(Frame_SmallSquadMembers, SquadForClient, Net_S_PlayersPerTeam, Membersunspawned, Net_PlayersNeedHelp, Net_TeamColor, MatesHealed, Net_PlayersHitCount, Net_PlayersHealCount);
 		}
-		if(UpdateClientSquad > PrevUpdateClientSquad || MatesHealed.count != PrevMatesHealedCount){
+		if(UpdateClientSquad > PrevUpdateClientSquad || MatesHealedTimer != PrevMatesHealedCount){
 			UpdateSmallSquadMembers(Frame_SmallSquadMembers, SquadForClient, Net_S_PlayersPerTeam, Membersunspawned, Net_PlayersNeedHelp, Net_TeamColor, MatesHealed, Net_PlayersHitCount, Net_PlayersHealCount);
 			PrevUpdateClientSquad = UpdateClientSquad;
-			PrevMatesHealedCount = MatesHealed.count;
+			PrevMatesHealedCount = MatesHealedTimer;
 		}
 
 		if(Frame_SmallSquadMembers.Visible){
@@ -557,6 +618,15 @@ main() {
 				PlayerJustGetHit = False;
 			}
 		}
+		if(PlayerOwner != Null){
+			if(PlayerOwner.SpawnStatus == CSmPlayer::ESpawnStatus::NotSpawned || MatesHealed.exists(LocalUser.Login)){
+				PrevNeedHelpTimerSent = NeedHelpTimerSent;
+				SendCustomEvent("{{{Const::C_UIEvent_TeamSelection_PlayersNeedHelpReceived}}}", [LocalUser.Login]);
+				IsTimerElapsed = False;
+				PlayerJustGetHit = False;
+			}
+		}
+		
 	}
 }
 --></script>
