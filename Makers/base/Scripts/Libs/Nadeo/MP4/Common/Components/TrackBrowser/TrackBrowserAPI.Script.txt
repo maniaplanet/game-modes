@@ -53,8 +53,8 @@ Void Load()
 	G_IsSortingFromDateRatherThanName	= False;
 	G_IsFilteringUnvalidatedTracks		= False;
 	G_IsInHardFetchMetadata				= False;
-	G_MainData							= Text[Text][];
-	G_ForbiddenTracks					= Text[];
+	G_MainData							= [];
+	G_ForbiddenTracks					= [];
 	G_MainDataNeedsRefreshing			= False;
 	G_CurrentPage						= 0;
 	G_MaxPages							= 0;
@@ -193,7 +193,7 @@ Text[Text] GetMetadataFromMapInfo(CMapInfo _MapInfo, Text _2ndState)
 	declare Text Flag = _MapInfo.AuthorCountryFlagUrl;
 	declare Text PersonalTime = TextLib::ToText(ScoreMgr.Map_GetRecord(UserMgr.MainUser.Id, _MapInfo.MapUid, ""));
 	declare Integer Index = ScoreMgr.Map_GetMultiAsyncLevel(UserMgr.MainUser.Id, _MapInfo.MapUid, "");
-	if(!C_MedalsFromFalguiere.existskey(Index)) return Text[Text];
+	if(!C_MedalsFromFalguiere.existskey(Index)) return [];
 	declare PersonalMedal = C_MedalNumbers[C_MedalsFromFalguiere[Index]];
 	if (Flag == "file://ZoneFlags/Path/") {
 		Flag = "file://ZoneFlags/Path/World";
@@ -288,7 +288,7 @@ Text[Text] HardPullMetadata(Text _Path)
 		}
 	}
 	Logger::Warn("HardPullMetadata : Path non trouvé (\"" ^ _Path ^ "\")");
-	return Text[Text];
+	return [];
 }
 
 Text[Text] HardGetMetadata(Text _Path)
@@ -353,14 +353,11 @@ Void UpdateMainDataForPage()
 			break;
 		}
 		declare CMapInfo MapInfo <=> G_ListTaskResult.MapInfos[UnfilteredMediaIndex];
-		if (G_IsFilteringUnvalidatedTracks && !MapInfo.IsPlayable) {
+		if (
+			(G_IsFilteringUnvalidatedTracks && !MapInfo.IsPlayable) ||
+			G_ForbiddenTracks.exists(MapInfo.FileName)
+		) {
 			Skip = True;
-		}
-		foreach(ForbiddenTrack in G_ForbiddenTracks) {
-			if (ForbiddenTrack == MapInfo.FileName) {
-				Skip = True;
-				continue;
-			}
 		}
 
 		declare Text _2ndState = "Valid";
@@ -402,16 +399,15 @@ Void Private_UpdateMainData()
 	//declare CMapInfo[] RequestedMapInfos = GetAllSortedMapInfos(G_IsSortingFromDateRatherThanName, G_IsSortingFromDescendingOrder);
 	declare UnfilteredMediaIndex = 0;
 	declare Boolean IsEndPage = False;
-	foreach(MapInfo in G_ListTaskResult.MapInfos) {
+	foreach(Index => MapInfo in G_ListTaskResult.MapInfos) {
+		if (Index % 1000 == 0) yield; //< Yield every 1000 maps to avoid the script performance runtime error
+		
 		IsEndPage = False;
-		if (G_IsFilteringUnvalidatedTracks && !MapInfo.IsPlayable) {
+		if (
+			(G_IsFilteringUnvalidatedTracks && !MapInfo.IsPlayable) ||
+			G_ForbiddenTracks.exists(MapInfo.FileName)
+		) {
 			Skip = True;
-		}
-		foreach(ForbiddenTrack in G_ForbiddenTracks) {
-			if (ForbiddenTrack == MapInfo.FileName) {
-				Skip = True;
-				continue;
-			}
 		}
 
 		declare Text _2ndState = "Valid";
