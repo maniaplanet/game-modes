@@ -3,6 +3,7 @@
 #Include "Libs/Nadeo/Common/ManiascriptTools/XmlParser.Script.txt"											as XmlParser
 #Include "Libs/Nadeo/MP4/TPLagoon/TokenManager.Script.txt"										as TokenManager
 #Include "Libs/Nadeo/Common/Core/Logger.Script.txt"												as Logger
+#Include "Libs/Nadeo/MP4/TPLagoon/Components/Multiplayer/ChannelInfoStructs.Script.txt"			as ChannelInfoStructs
 
 #Const C_ImgBase	"file://Media/MEDIABROWSER_HiddenResources/Common/Images/Menus/"
 #Const C_WaitTimeMax			5000
@@ -16,6 +17,9 @@ declare Text					G_Base_API_Url;
 declare CHttpRequest			G_Request;
 declare Boolean					G_HasFetched;
 declare Boolean					G_HasStartedFetch;
+
+declare CHttpRequest								G_RequestChannelInfo;
+declare ChannelInfoStructs::K_ChannelInfoResult		G_ChannelInfoResult;
 
 declare Text					G_OrderBy;
 declare Integer					G_Order;
@@ -43,7 +47,8 @@ Void Load(Boolean _TitleServersOnly)
 {
 	G_LimitTime					= -1;
 	G_Request					= Null;
-	G_Base_API_Url				= "https://www.maniaplanet.com";
+	G_RequestChannelInfo		= Null;
+	G_Base_API_Url				= "https://prod.live.maniaplanet.com";
 	G_CurrentPage				= 0;
 	G_DisplayTitleServersOnly	= _TitleServersOnly;
 }
@@ -53,8 +58,14 @@ Void Load()
 	Load(True);
 }
 
+Text Http_GetHeaders(Boolean UseJson) {
+	declare Text AcceptHeader = "xml";
+	if (UseJson) AcceptHeader = "json";
+	return """Maniaplanet-Auth: Login="{{{ LocalUser.Login }}}", Token="{{{ Authentication_Token }}}" """ ^ "\nAccept: application/"^AcceptHeader;
+}
+
 Text Http_GetHeaders() {
-	return """Maniaplanet-Auth: Login="{{{ LocalUser.Login }}}", Token="{{{ Authentication_Token }}}" """ ^ "\nAccept: application/xml";
+	return Http_GetHeaders(False);
 }
 
 Integer GetPlayerLevelClass(Integer _LadderPoints, Integer  _MaxLadderPoints)
@@ -628,4 +639,40 @@ Text[] GetMultiplayerPlayerRanking() {
 			PlayerCount);
 	}
 	return Result;
+}
+
+
+// Channel info http request
+Void FetchChannelInfo() {
+	if (G_RequestChannelInfo != Null) return;
+
+	declare Text UidKey = TextLib::URLEncode("uid[]");
+	declare Text TitleKey = TextLib::URLEncode("trackmania");
+	declare Text ProjectEnviro for LocalUser;
+	if (ProjectEnviro == "Storm") TitleKey = TextLib::URLEncode("shootmania");
+
+	G_RequestChannelInfo = Http.CreateGet("""{{{G_Base_API_Url}}}/ingame/public/channels?{{{UidKey}}}={{{TitleKey}}}""", True, Http_GetHeaders(True));
+}
+
+Boolean HasFetchedChannelInfo() {
+	if (G_RequestChannelInfo == Null || !TokenManager::Is_Auth_Success()) return False;
+
+	if (G_RequestChannelInfo.IsCompleted) {
+		if (G_RequestChannelInfo.StatusCode < 200 || G_RequestChannelInfo.StatusCode >= 300) {
+			Logger::Warn("ERROR Url		" ^ G_RequestChannelInfo.Url);
+			Logger::Warn("ERROR Code	" ^ G_RequestChannelInfo.StatusCode);
+			Logger::Warn("ERROR Content	" ^ G_RequestChannelInfo.Result);
+			return False;
+		} else {
+			G_ChannelInfoResult.fromjson(G_RequestChannelInfo.Result);
+			Http.Destroy(G_RequestChannelInfo);
+			G_RequestChannelInfo = Null;
+			return True;
+		}
+	}
+	return False;
+}
+
+ChannelInfoStructs::K_ChannelInfoResult GetChannelInfo() {
+	return G_ChannelInfoResult;
 }

@@ -2,6 +2,7 @@
 #Include "Libs/Nadeo/Common/ManialinkTools/Manialink3WPrevAnims.Script.txt"	as Manialink
 #Include "Libs/Nadeo/MP4/Common/Components/ListDisplayer/LBListDisplayer.Script.txt"	as ListDisplayer
 #Include "Libs/Nadeo/MP4/Common/ManialinkTools/FontManager.Script.txt" 	as Font
+#Include "Libs/Nadeo/MP4/TPLagoon/Components/Multiplayer/ChannelInfoStructs.Script.txt"	as ChannelInfoStructs
 
 #Const C_ImgBase	"file://Media/MEDIABROWSER_HiddenResources/Common/Images/Menus/"
 #Const C_LPMinToJoin 60000
@@ -29,14 +30,43 @@ Text Build() {
 
 	declare Text[]	Levels_Instructions = [_("|Server|Very easy"), _("|Server|Easy"), _("|Server|At your level"), _("|Server|Difficult"), _("|Server|Very Difficult"), LPToJoin, _("|Server|Private")];
 
+	declare Text Main = Font::GetFontName("Main");
+	declare Text Chrono = Font::GetFontName("Chrono");
 	declare Text SubFont = Font::GetFontName("SubTitle");
 
+	declare Real QuadSizeX = 53.;
+	declare Real ChannelPos = 112.;
 
 	declare Text MLText = """
 <manialink version="3" name="L_Multiplayer_Find">
 {{{ListDisplayer::ManialinkFrameModels()}}}
 
 	<frame id="Frame_All">
+		<frame id="frame-channel" pos="{{{ChannelPos}}} -12" hidden="1">
+			<quad id="quad-image" halign="center" valign="center" size="{{{QuadSizeX}}} 30" scriptevents="1" z-index="-1"/>
+			<quad halign="center" valign="center" size="{{{QuadSizeX}}} 39.5" bgcolor="000" z-index="-1"/>
+			<frame id="frame-headline" pos="0 17.5">
+				<label halign="left" valign="center" size="{{{QuadSizeX}}} 5" pos="-25 0" textsize="2" textprefix="$t" text="{{{_("Channels")}}}" textfont="{{{Main}}}"/>
+				<label id="label-players" halign="right" valign="center" size="{{{QuadSizeX}}} 5" pos="25 0" textsize="1" text="0 " textfont="{{{Main}}}"/>
+			</frame>
+			<frame id="frame-timer" pos="0 -17.5">
+				<label id="label-starttime" halign="left" valign="center2" size="{{{QuadSizeX}}} 5" pos="-25 0" textsize="0.8" textfont="{{{Chrono}}}"/>
+				<label id="label-timeleft" halign="right" valign="center2" size="{{{QuadSizeX}}} 5" pos="25 0" textsize="0.8" textfont="{{{Chrono}}}" textcolor="F00"/>
+			</frame>
+			<frame id="frame-progress" pos="0 -15.25">
+				<quad id="quad-progress" halign="left" valign="center" size="0 0.5" pos="-26.5 0" bgcolor="F00" z-index="-1"/>
+			</frame>
+			<frame id="frame-play" hidden="1">
+				<quad halign="center" valign="center" size="{{{QuadSizeX}}} 30" bgcolor="000" opacity="0.5" z-index="-1"/>
+				<label halign="center" valign="center" size="{{{QuadSizeX}}} 5" pos="0 3" textsize="7" text=""/>
+				<label halign="center" valign="center" size="{{{QuadSizeX}}} 5" pos="0 -6" textsize="4" textprefix="$t" text="{{{_("Play for free")}}}" textfont="{{{Main}}}"/>
+			</frame>
+			<frame id="frame-play-button" pos="0 -25">
+				<quad id="button-play" halign="center" valign="center" size="{{{QuadSizeX}}} 10" bgcolor="111" bgcolorfocus="444" opacity="0.6" scriptevents="1" z-index="-1"/>
+				<label halign="center" valign="center" size="{{{QuadSizeX}}} 10" pos="0 0" textsize="4" textprefix="$t" text="{{{_("Play for free")}}}" textfont="{{{Main}}}"/>
+			</frame>	
+		</frame>
+
 		<frame id="Frame_CursorHelper" z-index="5" hidden="1">
 			<quad halign="center" valign="center" size="50 15" pos="0 10" z-index="-1" bgcolor="666"/>
 			<label id="Label_CursorHelper" halign="center" valign="center" size="40 5" pos="0 10" textfont="{{{SubFont}}}" autonewline="1"/>
@@ -46,11 +76,19 @@ Text Build() {
 
 	<script><!--
 		#Include "TextLib" as Multiplayer_Find_TextLib
+		#Include "MathLib" as Multiplayer_Find_MathLib
+		#Include "TimeLib" as Multiplayer_Find_TimeLib
 {{{ListDisplayer::Includes()}}}
 		#Const C_IMG_Levels				{{{dump(IMG_Levels)}}}
 		#Const C_Levels_Instructions	{{{dump(Levels_Instructions)}}}
+{{{ChannelInfoStructs::K_ChannelInfo_ML}}}
+		// Timer to resend http request
+		#Const C_TimerRequest 120000
 
 	declare Boolean G_IsCursorHelperShown;
+	
+	declare Text G_ChannelTimeStampEnd;
+	declare Integer G_ChannelTimeDuration;
 
 	Text ListDisplayer_ConvertToImageUrl(Integer _QuadId) {
 		return "";
@@ -85,6 +123,8 @@ Text Build() {
 	Void Init()
 	{
 		G_IsCursorHelperShown = False;
+		G_ChannelTimeStampEnd = "";
+		G_ChannelTimeDuration = 0;
 	}
 
 	Void ShowCursorHelper(Text _CursorHelperText)
@@ -111,8 +151,39 @@ Text Build() {
 		declare Frame_CursorHelper <=> Page.GetFirstChild("Frame_CursorHelper");
 		Frame_CursorHelper.RelativePosition_V3 = <MouseX, MouseY>;
 	}
+	
+	Void UpdateChannelInfo(Integer TimeSlotNumber, Boolean Animate) {
+		declare CMlFrame Frame_Channel <=> (Page.GetFirstChild("frame-channel") as CMlFrame);
+		Frame_Channel.Show();
+		if (Animate) {
+			Frame_Channel.RelativePosition_V3.X = 250.;
+			AnimMgr.Add(Frame_Channel, "<frame pos=\"{{{ChannelPos}}} -12\"/>", Now+350, 500, CAnimManager::EAnimManagerEasing::CubicOut);
+		}
+
+		declare K_ChannelInfoResult ChannelInfoResultShare for Page;
+		declare K_ChannelTimeSlot ChannelTimeSlot;
+		foreach (TimeSlot in ChannelInfoResultShare.time_slots) {
+			if (TimeSlot.existskey(0) && TimeSlot[0].existskey(TimeSlotNumber)) {
+				ChannelTimeSlot = TimeSlot[0][TimeSlotNumber];
+				break;
+			}
+		}
+		(Frame_Channel.GetFirstChild("quad-image") as CMlQuad).ChangeImageUrl(ChannelTimeSlot.program_card_image_url);
+		G_ChannelTimeStampEnd = Multiplayer_Find_TextLib::ToText(ChannelTimeSlot.time_slot_end_timestamp);
+		G_ChannelTimeDuration = ChannelTimeSlot.time_slot_duration;
+		(Frame_Channel.GetFirstChild("label-starttime") as CMlLabel).SetText(Multiplayer_Find_TimeLib::FormatDate(ChannelTimeSlot.time_slot_start_timestamp^"",  Multiplayer_Find_TimeLib::EDateFormats::TimeShort));
+		
+		declare K_ChannelInfo ChannelInfo;
+		foreach (ChannelInfoTmp in ChannelInfoResultShare.channels) {
+			ChannelInfo = ChannelInfoTmp;
+			break;
+		}
+		(Frame_Channel.GetFirstChild("label-players") as CMlLabel).SetText(ChannelInfo.channel_online_players^" ");
+	}
 
 	main() {
+		declare Boolean JustShowed = False;
+		declare Integer LastTimeRequest = -1;
 		Init();
 		ListDisplayer_Init();
 		while(True) {
@@ -122,6 +193,30 @@ Text Build() {
 			ListDisplayer_Loop();
 			CursorHelper_Loop();
 			LibManialink_AnimLoop();
+
+			if (LastTimeRequest > 0 && LastTimeRequest <= Now) {
+				SendCustomEvent("Multiplayer_GetChannelInfo", []);
+				G_ChannelTimeStampEnd = "";
+			}
+
+			if (G_ChannelTimeStampEnd != "" && Multiplayer_Find_TimeLib::Compare(G_ChannelTimeStampEnd, Multiplayer_Find_TimeLib::GetCurrent()) <= 0) {
+				UpdateChannelInfo(1, False);
+			}
+
+			if (G_ChannelTimeStampEnd != "") {
+				declare Text TimeLeftUI = Multiplayer_Find_TimeLib::FormatDelta(G_ChannelTimeStampEnd, Multiplayer_Find_TimeLib::GetCurrent(), Multiplayer_Find_TimeLib::EDurationFormats::Chrono);
+				(Page.GetFirstChild("label-timeleft") as CMlLabel).SetText(TimeLeftUI);
+
+				declare Integer TimeLeft = Multiplayer_Find_TimeLib::GetDelta(G_ChannelTimeStampEnd, Multiplayer_Find_TimeLib::GetCurrent());
+				TimeLeft = Multiplayer_Find_MathLib::Max(0, TimeLeft);
+				TimeLeft = Multiplayer_Find_MathLib::Min(G_ChannelTimeDuration, TimeLeft);
+				declare CMlQuad Quad_Progress = (Page.GetFirstChild("quad-progress") as CMlQuad);
+				if (G_ChannelTimeDuration != 0) {
+					Quad_Progress.Size.X = {{{QuadSizeX}}}-{{{QuadSizeX}}}*TimeLeft/G_ChannelTimeDuration;
+				} else {
+					Quad_Progress.Size.X = 0.;
+				}
+			}
 
 			foreach(Event in PendingEvents) {
 				switch(Event.Type) {
@@ -158,6 +253,14 @@ Text Build() {
 							declare Integer ListDisplayer_Id for Label;
 							SendCustomEvent("SetFilterForScript", [Multiplayer_Find_TextLib::ToText(ListDisplayer_Id)]);
 							HideCursorHelper();
+						} else if (Event.ControlId == "quad-image" || Event.ControlId == "button-play") {
+							declare K_ChannelInfoResult ChannelInfoResultShare for Page;
+							declare K_ChannelInfo ChannelInfo;
+							foreach (ChannelInfoTmp in ChannelInfoResultShare.channels) {
+								ChannelInfo = ChannelInfoTmp;
+								break;
+							}
+							OpenLink(ChannelInfo.channel_join_manialink, CMlScript::LinkType::ManialinkBrowser);
 						}
 					}
 					case CMlEvent::Type::MouseOver: {
@@ -175,22 +278,29 @@ Text Build() {
 							if (Label != Null) {
 								ShowCursorHelper(Multiplayer_Find_TextLib::Compose("{{{_("Click to filter by %1")}}}", Label.Value));
 							}
+						} else if (Event.ControlId == "quad-image") {
+							Page.GetFirstChild("frame-play").Show();
 						}
 					}
 					case CMlEvent::Type::MouseOut: {
 						if (Event.ControlId == "Elem_Category4" || Event.ControlId == "Elem_Category2") {
 							HideCursorHelper();
+						} else if (Event.ControlId == "quad-image") {
+							Page.GetFirstChild("frame-play").Hide();
 						}
 					}
 					case CMlEvent::Type::PluginCustomEvent: {
 						switch(Event.CustomEventType) {
 							case "Show" : {
+								JustShowed = True;
 								ShowPage();
 								SendCustomEvent("UpdateBarreSection", ["Multiplayer_Find"]);
 								SendCustomEvent("GetServers", ["Multiplayer_Find"]);
+								SendCustomEvent("Multiplayer_GetChannelInfo", []);
 								ListDisplayer_Show();
 								declare PreviousPage = Event.CustomEventData[1];
 								AnimShow_Frame(PreviousPage == "SectionsSelector");
+								Page.GetFirstChild("frame-channel").Hide();
 							}
 							case "Hide" : {
 								EnableMenuNavigation(True,False,Null,0);
@@ -202,6 +312,11 @@ Text Build() {
 							case "OpenLink" : {
 								declare Text ServerLink = Event.CustomEventData[0];
 								OpenLink(ServerLink, CMlScript::LinkType::Goto);
+							}
+							case "Multiplayer_GetChannelInfo" : {
+								LastTimeRequest = Now + C_TimerRequest;
+								UpdateChannelInfo(0, JustShowed);
+								JustShowed = False;
 							}
 						}
 					}
