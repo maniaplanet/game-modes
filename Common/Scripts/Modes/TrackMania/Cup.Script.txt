@@ -21,6 +21,7 @@
 #Setting S_NbOfWinners			3	as _("Number of winners :")
 #Setting S_WarmUpNb				0	as _("Number of warm up :")
 #Setting S_WarmUpDuration	0	as _("Duration of one warm up :")
+#Setting S_StopMatchNotEnoughPlayers False as "<hidden>"
 // Matchmaking
 #Setting S_NbOfPlayersMax	4		as "<hidden>" //_("Maximum number of players per team in matchmaking")
 #Setting S_NbOfPlayersMin	4		as "<hidden>" //_("Minimum number of players per team in matchmaking")
@@ -51,13 +52,13 @@ declare Integer G_NbOfValidRounds;
 // ---------------------------------- //
 ***MM_SetupMatchmaking***
 ***
-declare Format = Integer[];
+declare Integer[] Format;
 for (I, 1, S_NbOfPlayersMax) {
 	Format.add(1);
 }
 MM_SetFormat(Format);
 Format.clear();
-declare ProgressiveFormat = Integer[][];
+declare Integer[][] ProgressiveFormat;
 for (I, 1, S_NbOfPlayersMin) {
 	Format.add(1);
 }
@@ -124,8 +125,8 @@ foreach (User in Users) {
 // ---------------------------------- //
 // Restore score from the previous map
 foreach (Score in Scores) {
-	declare Cup_RoundsPerformance for Score = Real[];
-	Cup_RoundsPerformance = Real[];
+	declare Real[] Cup_RoundsPerformance for Score;
+	Cup_RoundsPerformance = [];
 }
 
 // ---------------------------------- //
@@ -250,7 +251,7 @@ if (ForceEndRound || SkipPauseRound) {
 			RoundPerformance = ((A / B) * 0.9) + 0.1;
 		}
 		
-		declare Cup_RoundsPerformance for Score = Real[];
+		declare Real[] Cup_RoundsPerformance for Score;
 		Cup_RoundsPerformance.add(RoundPerformance);
 		
 		Log::Log("""[Cup] RoundPerformance > {{{Score.User.Login}}} > | PrevRaceTime : {{{PrevRaceTime}}} | BronzeTime : {{{Map.MapInfo.TMObjective_BronzeTime}}} | AuthorTime : {{{Map.MapInfo.TMObjective_AuthorTime}}} | BestRaceTime : {{{BestRaceTime}}} | ReferenceTime : {{{ReferenceTime}}} | RoundPerformance: {{{RoundPerformance}}}""");
@@ -258,18 +259,21 @@ if (ForceEndRound || SkipPauseRound) {
 	
 	// Get the last round points
 	ComputeLatestRaceScores();
+	LogPlayersAndScores("EndRound B");
 	MB_SortScores(CTmMode::ETmScoreSortOrder::TotalPoints);
 	UIManager.UIAll.ScoreTableVisibility = CUIConfig::EVisibility::ForcedVisible;
 	UIManager.UIAll.UISequence = CUIConfig::EUISequence::EndRound;
 	MB_Sleep(3000);
 	// Add them to the total scores
 	ComputeScores();
+	LogPlayersAndScores("EndRound C");
 	MB_SortScores(CTmMode::ETmScoreSortOrder::TotalPoints);
 	MB_Sleep(3000);
 	UIManager.UIAll.ScoreTableVisibility = CUIConfig::EVisibility::Normal;
 	UIManager.UIAll.UISequence = CUIConfig::EUISequence::Playing;
 	UIManager.UIAll.BigMessage = "";
 	
+	LogPlayersAndScores("Match|MapIsOver");
 	// ---------------------------------- //
 	// Match is over, we have all the winners
 	if (MatchIsOver()) {
@@ -289,7 +293,7 @@ if (MM_IsMatchServer()) {
 	MM_SetScores([BestScore]);
 }
 
-LogPlayersAndScores("EndRound B");
+LogPlayersAndScores("EndRound D");
 ***
 
 ***Match_EndMap***
@@ -314,7 +318,7 @@ if (!MB_MatchIsRunning()) {
 if (ChannelProgression::IsEnabled()) {
 	declare RoundsCount = MB_GetRoundCount();
 	foreach (Score in Scores) {
-		declare Cup_RoundsPerformance for Score = Real[];
+		declare Real[] Cup_RoundsPerformance for Score;
 		declare RoundsPerformance = 0.;
 		if (RoundsCount != 0) {
 			foreach (RoundPerformance in Cup_RoundsPerformance) {
@@ -341,7 +345,7 @@ if (ChannelProgression::IsEnabled()) {
  *	@return					The format with the given number of players
  */
 Integer[] GetMatchmakingFormat(Integer _PlayersNb) {
-	declare Format = Integer[];
+	declare Integer[] Format;
 	for (I, 1, _PlayersNb) {
 		Format.add(1);
 	}
@@ -564,8 +568,8 @@ Boolean MatchIsOver() {
 	// If there's only one player he needs to reach the points limit to win
 	// If there's more than one player then all players except one must reach the points limit
 	declare PlayerWinnersLimit = ML::Max(Players.count - 1, 1);
-	Log::Log("""[Cup] Match is over ? {{{(NbOfScoreWinners >= S_NbOfWinners || NbOfPlayerWinners >= PlayerWinnersLimit)}}} | ({{{NbOfScoreWinners}}} >= {{{S_NbOfWinners}}} || {{{NbOfPlayerWinners}}} >= {{{PlayerWinnersLimit}}})""");
-	if (NbOfScoreWinners >= S_NbOfWinners || NbOfPlayerWinners >= PlayerWinnersLimit) return True;
+	Log::Log("""[Cup] Match is over ? {{{(NbOfScoreWinners >= S_NbOfWinners || (S_StopMatchNotEnoughPlayers && NbOfPlayerWinners >= PlayerWinnersLimit))}}} | ({{{NbOfScoreWinners}}} >= {{{S_NbOfWinners}}} || ({{{S_StopMatchNotEnoughPlayers}}} && {{{NbOfPlayerWinners}}} >= {{{PlayerWinnersLimit}}}))""");
+	if (NbOfScoreWinners >= S_NbOfWinners || (S_StopMatchNotEnoughPlayers && NbOfPlayerWinners >= PlayerWinnersLimit)) return True;
 	
 	return False;
 }
