@@ -15,6 +15,7 @@
 #Include "Libs/Trackmania/Ingame/FlavourText.Script.txt" 					as FlavourText
 #Include "Libs/Trackmania/Ingame/RewardScreens.Script.txt" 					as RewardScreens
 #Include "Libs/Nadeo/MP4/Common/GlobalVariables.Script.txt"					as GlobalVariables
+#Include "Libs/Nadeo/MP4/Common/SharedVariables.Script.txt"					as SharedVariables
 #Include "Libs/Nadeo/Common/Components/ListDisplayer/ListDisplayerController_Ingame.Script.txt" as ListDisplayerController_Ingame
 #Include "Libs/Trackmania/Ingame/Game.Script.txt" 							as Game
 #Include "Libs/Trackmania/Ingame/UI/UISequences.Script.txt" 				as UISequence
@@ -207,6 +208,9 @@ MB_LogVersion(ScriptName, Version);
 ***
 declare Integer PrevTimeLimit = S_TimeLimit;
 declare Integer StartTime;
+declare Text Server_AutoLoadReplayLogin;
+declare Text Server_AutoLoadReplayFileName;
+declare Text Server_AutoLoadReplayUrl;
 
 GlobalVariables::Init(GlobalVariables::LaunchContext_Title());
 ***
@@ -232,6 +236,11 @@ G_OpponentsNames[TMC_MEDAL_GOLD] 		= Medals::GetMedalName(TMC_MEDAL_GOLD);
 G_OpponentsNames[TMC_MEDAL_SILVER] 		= Medals::GetMedalName(TMC_MEDAL_SILVER);
 G_OpponentsNames[TMC_MEDAL_BRONZE] 		= Medals::GetMedalName(TMC_MEDAL_BRONZE);
 G_OpponentsNames[TMC_MEDAL_PLAYER] 		= Medals::GetMedalName(TMC_MEDAL_PLAYER);
+
+Server_AutoLoadReplayLogin = SharedVariables::GetAutoLoadReplayLogin(System);
+Server_AutoLoadReplayFileName = SharedVariables::GetAutoLoadReplayFileName(System);
+Server_AutoLoadReplayUrl = SharedVariables::GetAutoLoadReplayUrl(System);
+SharedVariables::ResetAutoLoadReplay(System);
 
 // ---------------------------------- //
 // Initialize mode
@@ -450,36 +459,50 @@ if(G_GamePhase == C_GAMEPHASE_CHALLENGE)
 	//+++GamePhase_Challenge+++
 
 	declare Integer RecordCenterChoice = 0;
-	
-	if(!G_WorldRecordMode) {
-		UICampaign::SetStartMenuVisibility(True);
-
-		G_CurrentFrameDisplay = TMC_WINDOWFRAMESTEP_OPPONENT;
-		Game::WaitTime(1000);
-		WaitForChallengeChoice();
+	declare Boolean AutoLoadedReplay = False;
+	if (Server_AutoLoadReplayLogin != "" && Server_AutoLoadReplayFileName != "" && Server_AutoLoadReplayUrl != "") {
+		// Disable medal opponent, like it's done in WaitForChallengeChoice();
+		declare UI <=> UIManager.GetUI(Players[G_ThePlayerId]);
+		declare netwrite Integer Net_MedalOpponent for UI;
+		Net_MedalOpponent = -1;
 		
-
-		
-		if(G_OpponentChosen == TMC_MEDAL_RECORDCENTER) {
-			G_WorldRecordMode 			= True;
-			G_AskRecordCenterRestart 	= False;
-			UICampaign::SetStartMenuVisibility(False);
-			Game::WaitTime(500);
-			UICampaign::SetFriendsRecordsVisibility(True);
-			G_CurrentFrameDisplay = TMC_WINDOWFRAMESTEP_FRIENDS;
-			Game::WaitTime(500);
-			G_FriendsOpponentUrl = "";
-		}
+		LoadSelectedGhosts([Server_AutoLoadReplayLogin], [Server_AutoLoadReplayFileName], [Server_AutoLoadReplayUrl]);
+		AutoLoadedReplay = True;
 	}
+	Server_AutoLoadReplayLogin = "";
+	Server_AutoLoadReplayFileName = "";
+	Server_AutoLoadReplayUrl = "";
 	
-
-	if(G_WorldRecordMode) {
-		declare Boolean IsWorldRecord = True;
-		G_WorldRecordPreparation = True;
-		while(G_WorldRecordPreparation) {
-			if(IsWorldRecord) WorldRecordSequence();
-			else              RecordCenterSequence();
-			IsWorldRecord = !IsWorldRecord;
+	if (!AutoLoadedReplay) {
+		if(!G_WorldRecordMode) {
+			UICampaign::SetStartMenuVisibility(True);
+	
+			G_CurrentFrameDisplay = TMC_WINDOWFRAMESTEP_OPPONENT;
+			Game::WaitTime(1000);
+			WaitForChallengeChoice();
+			
+	
+			
+			if(G_OpponentChosen == TMC_MEDAL_RECORDCENTER) {
+				G_WorldRecordMode 			= True;
+				G_AskRecordCenterRestart 	= False;
+				UICampaign::SetStartMenuVisibility(False);
+				Game::WaitTime(500);
+				UICampaign::SetFriendsRecordsVisibility(True);
+				G_CurrentFrameDisplay = TMC_WINDOWFRAMESTEP_FRIENDS;
+				Game::WaitTime(500);
+				G_FriendsOpponentUrl = "";
+			}
+		}
+	
+		if(G_WorldRecordMode) {
+			declare Boolean IsWorldRecord = True;
+			G_WorldRecordPreparation = True;
+			while(G_WorldRecordPreparation) {
+				if(IsWorldRecord) WorldRecordSequence();
+				else              RecordCenterSequence();
+				IsWorldRecord = !IsWorldRecord;
+			}
 		}
 	}
 
@@ -638,7 +661,7 @@ if(G_GamePhase == C_GAMEPHASE_GAME)
 			PassOn(Event);
 		}
 		else if(Event.Type == CTmModeEvent::EType::Respawn) {
-			log(Now^">EVENT RESPAWN");
+			
 		}
 		else if(Event.Type == CTmModeEvent::EType::Unknown) {
 
@@ -1605,6 +1628,31 @@ Text GetVersusTimeText(Boolean _OpponentOrMedal) {
 	return GetVersusTimeText(_OpponentOrMedal, -1);
 }
 
+Void LoadSelectedGhosts(Text[] _Logins, Text[] _Filenames, Text[] _Paths) {
+	G_OpponentPlayerGhost.clear();
+	for(I, 0, _Logins.count-1)
+	{
+			
+		G_OpponentChosen = TMC_MEDAL_WORLDRECORD;
+
+		if(_Logins[I] == Players[0].User.Login) {
+			G_AddGhostPlayer = True;
+		}
+		else
+		{
+			declare Text VersusReplayPath = _Paths[I];
+			declare Text ReplayFileName   = _Filenames[I];
+			
+			declare CGhost WorldRecordOpponent <=> Ghosts::GetGhostFromOnline(ReplayFileName, VersusReplayPath);
+			if (WorldRecordOpponent != Null) {
+				G_OpponentPlayerGhost.add(WorldRecordOpponent);
+			}
+		}
+	}
+	G_WorldRecordPreparation = False;
+	SetGamePhase(C_GAMEPHASE_PREPARATION);
+}
+
 Void WorldRecordSequence() {
 	G_CurrentFrameDisplay = TMC_WINDOWFRAMESTEP_WORLD;
 	UICampaign::SetVisibilityWorldRecordPopup(True);
@@ -1630,28 +1678,7 @@ Void WorldRecordSequence() {
 		SetGamePhase(C_GAMEPHASE_CHALLENGE);
 	}
 	else {
-		G_OpponentPlayerGhost.clear();
-		for(I, 0, WorldRecordChoices.count-1)
-		{
-				
-			G_OpponentChosen = TMC_MEDAL_WORLDRECORD;
-
-			if(WorldRecordChoices[I] == Players[0].User.Login) {
-				G_AddGhostPlayer = True;
-			}
-			else
-			{
-				declare Text VersusReplayPath = WorldRecordChoices_Replay[I];
-				declare Text ReplayFileName   = WorldRecordChoices_FileName[I];
-				
-				declare CGhost WorldRecordOpponent <=> Ghosts::GetGhostFromOnline(ReplayFileName, VersusReplayPath);
-				if (WorldRecordOpponent != Null) {
-					G_OpponentPlayerGhost.add(WorldRecordOpponent);
-				}
-			}
-		}
-		G_WorldRecordPreparation = False;
-		SetGamePhase(C_GAMEPHASE_PREPARATION);
+		LoadSelectedGhosts(WorldRecordChoices, WorldRecordChoices_FileName, WorldRecordChoices_Replay);
 	}
 }
 

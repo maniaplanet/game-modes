@@ -15,16 +15,30 @@
 #Include "Libs/Nadeo/MP4/TPLagoon/Components/G_RankingModule/LBRankingModule.Script.txt"		as LBRankingModule
 #Include "Libs/Nadeo/MP4/TPLagoon/Components/G_RankingModule/LBRankingPage.Script.txt"			as LBRankingPage
 
+#Struct K_MapRecord {
+	Text MapName;
+	Integer SkillPoints;
+	Text Thumbnail;
+	Text MapPath;
+	Text ReplayLogin;
+	Text ReplayFileName;
+	Text ReplayUrl;
+}
+
 #Const C_LBRankingModule	    "RankingModule"
 #Const C_LBRankingPage		    "RankingPage"
 #Const C_NextUpdateInterval		1000
+#Const C_OpponentRecordsLimit 10
 
 declare CTaskResult_NaturalLeaderBoardInfoList G_TaskPlayerList;
+declare Ident G_TaskIdOpponentRecords;
+declare Text G_TaskIdOpponentLogin;
 declare Integer G_NextUpdateTime;
 declare Text    G_CurrentRankingSection;
 declare Integer G_ZoneFocus;
 declare Boolean G_HasFetched;
 declare Text[]  G_PlayerListInfoLogin;
+declare Text[Text] G_CampaignsMapUidToFileName;
 
 Void UpdateRankingModule(Boolean _Visibility)
 {
@@ -73,11 +87,15 @@ Void SendPlayerInfo(Integer _Zone)
 	declare Integer[]	Page_PlayersScoreList	for LayerToSend.LocalPage;
 	declare Integer	    NewDataList_GroupCount  for LayerToSend.LocalPage;
 	declare Text		Page_PlayersZone		for LayerToSend.LocalPage;
+	declare Ident[] Page_PlayersUserIdList for LayerToSend.LocalPage;
+	declare Text[] Page_PlayersLoginList for LayerToSend.LocalPage;
 
 	Page_PlayersNameList.clear();
 	Page_PlayersRankList.clear();
 	Page_PlayersScoreList.clear();
 	G_PlayerListInfoLogin.clear();
+	Page_PlayersUserIdList.clear();
+	Page_PlayersLoginList.clear();
 	NewDataList_GroupCount = PlayerGroups::GetPlayerGroupsCount();
 	Page_PlayersZone = PlayerGroups::Get_ZoneLabelText(LocalUser.ZonePath, _Zone);
 	declare PlayerRanking = SoloAPI::Get_PlayerRanking(_Zone);
@@ -87,17 +105,60 @@ Void SendPlayerInfo(Integer _Zone)
 			Page_PlayersNameList.add(LocalUser.Name);
 			Page_PlayersScoreList.add(ScoreMgr.Campaign_GetSkillPoints (UserMgr.MainUser.Id, SoloAPI::Get_CampaignId()));
 			Page_PlayersRankList.add(PlayerRanking);
+			Page_PlayersUserIdList.add(UserMgr.MainUser.Id);
+			Page_PlayersLoginList.add(LocalUser.Login);
 		} else {
 			G_PlayerListInfoLogin.add("" ^ LeaderBoardEntry.Login);
 			Page_PlayersNameList.add(LeaderBoardEntry.DisplayName);
 			Page_PlayersRankList.add(LeaderBoardEntry.Rank);
 			Page_PlayersScoreList.add(LeaderBoardEntry.Score);
+			Page_PlayersUserIdList.add(LeaderBoardEntry.UserId);
+			Page_PlayersLoginList.add(LeaderBoardEntry.Login);
 		}
 	}
 
 	LayerCustomEvent(LayerToSend, "Update_PlayersLabels", [""]);
 }
 
+// Update the top 10 maps with the more skill points of the selected player
+Void SendOpponentRecords(CTaskResult_MapRecordList _Task, Text _Login) {
+	declare K_MapRecord[] MapRecords;
+	
+	if (_Task != Null && !_Task.IsProcessing) {
+		declare Integer[Integer] SkillPointsSorting;
+		foreach (Key => MapRecord in _Task.MapRecordList) {
+			// Add only records on maps that are still available in the campaign
+			if (G_CampaignsMapUidToFileName.existskey(MapRecord.MapUid)) {
+				SkillPointsSorting[Key] = MapRecord.SkillPoints;
+			}
+		}
+		SkillPointsSorting = SkillPointsSorting.sortreverse();
+		
+		foreach (Key => SkillPoints in SkillPointsSorting) {
+			declare CTaskResult_MapRecord MapRecord <=> _Task.MapRecordList[Key];
+			declare Text MapPath = "";
+			if (G_CampaignsMapUidToFileName.existskey(MapRecord.MapUid)) {
+				MapPath = G_CampaignsMapUidToFileName[MapRecord.MapUid];
+			}
+			MapRecords.add(K_MapRecord {
+				MapName = MapRecord.MapName,
+				SkillPoints = MapRecord.SkillPoints,
+				Thumbnail = "file://Thumbnails/MapUid/"^MapRecord.MapUid,
+				MapPath = MapPath,
+				ReplayLogin = _Login,
+				ReplayFileName = MapRecord.FileName,
+				ReplayUrl = MapRecord.ReplayUrl
+			});
+			if (MapRecords.count >= C_OpponentRecordsLimit) break;
+		}
+	}
+	
+	declare CUILayer Layer = Layers::Get(C_LBRankingPage);
+	declare K_MapRecord[] Ranking_OpponentRecords for Layer.LocalPage;
+	Ranking_OpponentRecords = MapRecords;
+	
+	LayerCustomEvent(Layer, "Update_OpponentRecords", []);
+}
 
 Void UpdateRanking()
 {
@@ -133,6 +194,14 @@ Void Load() {
 	Build(C_LBRankingPage, False);
 	
 	Pages::Compose(C_LBRankingPage, [C_LBRankingPage]);
+	
+	foreach (Campaign in DataFileMgr.Campaigns) {
+		foreach (MapGroup in Campaign.MapGroups) {
+			foreach (MapInfo in MapGroup.MapInfos) {
+				G_CampaignsMapUidToFileName[MapInfo.MapUid] = MapInfo.FileName;
+			}
+		}
+	}
 }
 
 
@@ -152,6 +221,23 @@ Void Loop() {
 			{
 				log("G_TaskPlayerList Fail: " ^ G_TaskPlayerList.ErrorDescription);
 			}
+		}
+	}
+	
+	if (G_TaskIdOpponentRecords != NullId) {
+		if (ScoreMgr.TaskResults.existskey(G_TaskIdOpponentRecords)) {
+			declare TaskResult = (ScoreMgr.TaskResults[G_TaskIdOpponentRecords] as CTaskResult_MapRecordList);
+			if (!TaskResult.IsProcessing) {
+				if (TaskResult.HasSucceeded) {
+					SendOpponentRecords(TaskResult, G_TaskIdOpponentLogin);
+				} else {
+					log(Now^"> [RankingModule] Opponent records task failed. Error: "^TaskResult.ErrorType^" (Code "^TaskResult.ErrorCode^") "^TaskResult.ErrorDescription);
+				}
+				ScoreMgr.TaskResult_Release(G_TaskIdOpponentRecords);
+				G_TaskIdOpponentRecords = NullId;
+			}
+		} else {
+			G_TaskIdOpponentRecords = NullId;
 		}
 	}
 	
@@ -184,6 +270,22 @@ Void Loop() {
 				declare Integer Index   = TextLib::ToInteger(Event.CustomEventData[0]);
 				declare Text Url = "profile?" ^ G_PlayerListInfoLogin[Index];
 				OpenLink(Url, CManiaApp::ELinkType::ManialinkBrowser);
+			}
+			case "GetOpponentRecords": {
+				declare Integer Index = TextLib::ToInteger(Event.CustomEventData[0]);
+				if (G_PlayerListInfoLogin.existskey(Index)) {
+					if (G_TaskIdOpponentRecords != NullId && ScoreMgr.TaskResults.existskey(G_TaskIdOpponentRecords)) {
+						ScoreMgr.TaskResult_Release(G_TaskIdOpponentRecords);
+					}
+					G_TaskIdOpponentRecords = NullId;
+					G_TaskIdOpponentLogin = "";
+					declare Task <=> ScoreMgr.Campaign_GetOpponentRecords(UserMgr.MainUser.Id, SoloAPI::Get_CampaignId(), G_PlayerListInfoLogin[Index]);
+					if (Task != Null) {
+						G_TaskIdOpponentRecords = Task.Id;
+						G_TaskIdOpponentLogin = G_PlayerListInfoLogin[Index];
+					}
+					SendOpponentRecords(Task, G_TaskIdOpponentLogin);
+				}
 			}
 		}
 	}
